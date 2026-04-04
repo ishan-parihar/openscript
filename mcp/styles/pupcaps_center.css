@@ -1,0 +1,67 @@
+/* Fonts */
+@font-face {
+  font-family: 'Bebas Neue';
+  src: url('../fonts/BebasNeue-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Full video container */
+#video { position: relative; width: 100%; height: 100%; display: flex; background: transparent; }
+
+/* Center captions vertically and horizontally */
+.captions {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 48px; /* safe margin */
+}
+
+/* One phrase block */
+.caption { opacity: 0; animation: fadeUp .22s ease both; }
+
+/* Word style */
+.word {
+  display: inline-block;
+  font-family: 'Bebas Neue', Arial, sans-serif;
+  font-weight: 400;
+  font-size: 88px;
+  line-height: 1.15;
+  color: #FFFFFF;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.6), 0 0 1px rgba(0,0,0,0.9);
+  padding: 8px 14px;
+  border-radius: 12px;
+  margin: 2px 4px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* Only show the highlighted word; hide others to ensure one-word-at-a-time display */
+.word.before-highlighted, .word.after-highlighted { opacity: 0; visibility: hidden; }
+.word { opacity: 0; visibility: hidden; }
+.word.highlighted { opacity: 1; visibility: visible; }
+
+.word.highlighted {
+  background-color: rgba(103,10,189,0.85);
+  box-shadow: 0 6px 22px rgba(103,10,189,0.45);
+  animation: pulse 0.18s ease;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%   { transform: scale(1.00); }
+  50%  { transform: scale(1.03); }
+  100% { transform: scale(1.00); }
+}

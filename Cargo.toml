@@ -1,0 +1,31 @@
+[workspace]
+members = [
+    "crates/openscript-core",
+    "crates/openscript-mcp",
+    "crates/openscript-ffmpeg",
+    "crates/openscript-transcribe",
+    "crates/openscript-tts",
+    "crates/openscript-assets",
+    "crates/openscript-ui",
+    "crates/openscript-cli",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+reqwest = { version = "0.12", features = ["json"] }
+clap = { version = "4", features = ["derive"] }
+ratatui = "0.29"
+crossterm = "0.28"
+notify = "7.0"
+sha2 = "0.10"
+futures = "0.3"
+tempfile = "3.10"

@@ -1,0 +1,22 @@
+[package]
+name = "openscript-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "openscript"
+path = "src/main.rs"
+
+[dependencies]
+openscript-core = { path = "../openscript-core" }
+openscript-mcp = { path = "../openscript-mcp" }
+openscript-ui = { path = "../openscript-ui" }
+openscript-ffmpeg = { path = "../openscript-ffmpeg" }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+notify = { workspace = true }
+serde_json = { workspace = true }

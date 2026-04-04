@@ -1,0 +1,6029 @@
+{
+  "version": "1.0",
+  "created_at": "2026-04-03T04:27:05+05:30",
+  "sfx_path": "/home/ishanp/Videos/Assets/SFX",
+  "total_assets": 261,
+  "categories": {
+    "00_INTROS_OPENERS": 16,
+    "01_FOLEY_ESSENTIALS": 21,
+    "02_NATURE_ELEMENTS": 22,
+    "03_MATERIAL_IMPACTS": 14,
+    "04_HUMAN_SOUNDS": 6,
+    "05_VEHICLES": 15,
+    "10_TRANSITIONS": 12,
+    "11_HIGHLIGHTS_MOMENTS": 57,
+    "12_CTA_CALL_TO_ACTION": 13,
+    "13_AMBIENCE_MOOD": 32,
+    "14_TEXT_POPUPS": 32,
+    "15_EMOTIONAL_ACCENTS": 12,
+    "16_OUTROS_CLOSINGS": 9
+  },
+  "editorial_roles": {
+    "intro": 16,
+    "transition": 90,
+    "highlight": 57,
+    "cta": 13,
+    "ambience": 32,
+    "text": 32,
+    "emotion": 12,
+    "outro": 9
+  },
+  "assets": [
+    {
+      "id": "sfx_0000",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/cinematic_rise/rise 1.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "cinematic_rise",
+      "editorial_role": "intro",
+      "duration_ms": 3370,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "rise 1"
+    },
+    {
+      "id": "sfx_0001",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/cinematic_rise/rise 2.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "cinematic_rise",
+      "editorial_role": "intro",
+      "duration_ms": 3636,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "rise 2"
+    },
+    {
+      "id": "sfx_0002",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/cinematic_rise/rise 3.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "cinematic_rise",
+      "editorial_role": "intro",
+      "duration_ms": 3636,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "rise 3"
+    },
+    {
+      "id": "sfx_0003",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/cinematic_rise/tension rise 1.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "cinematic_rise",
+      "editorial_role": "intro",
+      "duration_ms": 2469,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "tension rise 1"
+    },
+    {
+      "id": "sfx_0004",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/cinematic_rise/tension rise 2.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "cinematic_rise",
+      "editorial_role": "intro",
+      "duration_ms": 8808,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "tension rise 2"
+    },
+    {
+      "id": "sfx_0005",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/digital_tech/Power Up.mp3",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "digital_tech",
+      "editorial_role": "intro",
+      "duration_ms": 3024,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "power up"
+      ],
+      "filename": "Power Up"
+    },
+    {
+      "id": "sfx_0006",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/digital_tech/sci-fi_device_item_power_up_flash_01.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "digital_tech",
+      "editorial_role": "intro",
+      "duration_ms": 1204,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "sci-fi_device_item_power_up_flash_01"
+      ],
+      "filename": "sci-fi_device_item_power_up_flash_01"
+    },
+    {
+      "id": "sfx_0007",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/digital_tech/sci-fi_power_up_01.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "digital_tech",
+      "editorial_role": "intro",
+      "duration_ms": 1003,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "sci-fi_power_up_01"
+      ],
+      "filename": "sci-fi_power_up_01"
+    },
+    {
+      "id": "sfx_0008",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/digital_tech/sci-fi_power_up_02.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "digital_tech",
+      "editorial_role": "intro",
+      "duration_ms": 1400,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "sci-fi_power_up_02"
+      ],
+      "filename": "sci-fi_power_up_02"
+    },
+    {
+      "id": "sfx_0009",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/digital_tech/sci-fi_power_up_03.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "digital_tech",
+      "editorial_role": "intro",
+      "duration_ms": 1149,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "sci-fi_power_up_03"
+      ],
+      "filename": "sci-fi_power_up_03"
+    },
+    {
+      "id": "sfx_0010",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/dramatic_whoosh/Whoosh Bass.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "dramatic_whoosh",
+      "editorial_role": "intro",
+      "duration_ms": 6159,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "Whoosh Bass"
+    },
+    {
+      "id": "sfx_0011",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/dramatic_whoosh/Whoosh Deep Short.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "dramatic_whoosh",
+      "editorial_role": "intro",
+      "duration_ms": 2343,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "Whoosh Deep Short"
+    },
+    {
+      "id": "sfx_0012",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/dramatic_whoosh/whoosh_low_deep_01.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "dramatic_whoosh",
+      "editorial_role": "intro",
+      "duration_ms": 200,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "whoosh_low_deep_01"
+    },
+    {
+      "id": "sfx_0013",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/dramatic_whoosh/whoosh_swish_med_01.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "dramatic_whoosh",
+      "editorial_role": "intro",
+      "duration_ms": 292,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh",
+        "swish"
+      ],
+      "filename": "whoosh_swish_med_01"
+    },
+    {
+      "id": "sfx_0014",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/dramatic_whoosh/whoosh_swish_small_01.wav",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "dramatic_whoosh",
+      "editorial_role": "intro",
+      "duration_ms": 312,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh",
+        "swish"
+      ],
+      "filename": "whoosh_swish_small_01"
+    },
+    {
+      "id": "sfx_0015",
+      "path": "/home/ishanp/Videos/Assets/SFX/00_INTROS_OPENERS/pop_bubble/CARTOON POP.mp3",
+      "category": "00_INTROS_OPENERS",
+      "subcategory": "pop_bubble",
+      "editorial_role": "intro",
+      "duration_ms": 768,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "pop"
+      ],
+      "filename": "CARTOON POP"
+    },
+    {
+      "id": "sfx_0016",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/cloth_movement/CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "cloth_movement",
+      "editorial_role": "transition",
+      "duration_ms": 9311,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "clothmvmt_fabric knot foley 01_b00m_one"
+      ],
+      "filename": "CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0017",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/cloth_movement/CLOTHMvmt_Folding Sail By Hands 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "cloth_movement",
+      "editorial_role": "transition",
+      "duration_ms": 42476,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "clothmvmt_folding sail by hands 01_b00m_one"
+      ],
+      "filename": "CLOTHMvmt_Folding Sail By Hands 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0018",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/cloth_movement/CLOTHMvmt_Sail Open Hard 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "cloth_movement",
+      "editorial_role": "transition",
+      "duration_ms": 14067,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard"
+      ],
+      "filename": "CLOTHMvmt_Sail Open Hard 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0019",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_creak/DOORCreak_Old Wooden Door Close_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_creak",
+      "editorial_role": "transition",
+      "duration_ms": 6878,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorcreak_old wooden door close_b00m_one"
+      ],
+      "filename": "DOORCreak_Old Wooden Door Close_B00M_ONE"
+    },
+    {
+      "id": "sfx_0020",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_creak/DOORCreak_Old Wooden Door Open_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_creak",
+      "editorial_role": "transition",
+      "duration_ms": 9595,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorcreak_old wooden door open_b00m_one"
+      ],
+      "filename": "DOORCreak_Old Wooden Door Open_B00M_ONE"
+    },
+    {
+      "id": "sfx_0021",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_creak/DOORWood_Wooden Creak Fast 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_creak",
+      "editorial_role": "transition",
+      "duration_ms": 10900,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorwood_wooden creak fast 01_b00m_one"
+      ],
+      "filename": "DOORWood_Wooden Creak Fast 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0022",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_creak/DOORWood_Wooden Creak Slow 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_creak",
+      "editorial_role": "transition",
+      "duration_ms": 20481,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorwood_wooden creak slow 01_b00m_one"
+      ],
+      "filename": "DOORWood_Wooden Creak Slow 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0023",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_open_close/DOORWood_Old Rattly Wooden Door Close_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_open_close",
+      "editorial_role": "transition",
+      "duration_ms": 6475,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorwood_old rattly wooden door close_b00m_one"
+      ],
+      "filename": "DOORWood_Old Rattly Wooden Door Close_B00M_ONE"
+    },
+    {
+      "id": "sfx_0024",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_open_close/DOORWood_Old Rattly Wooden Door Open_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_open_close",
+      "editorial_role": "transition",
+      "duration_ms": 6786,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorwood_old rattly wooden door open_b00m_one"
+      ],
+      "filename": "DOORWood_Old Rattly Wooden Door Open_B00M_ONE"
+    },
+    {
+      "id": "sfx_0025",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_open_close/DOORWood_Wooden Open Close Fast 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_open_close",
+      "editorial_role": "transition",
+      "duration_ms": 12250,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorwood_wooden open close fast 01_b00m_one"
+      ],
+      "filename": "DOORWood_Wooden Open Close Fast 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0026",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/doors_open_close/DOORWood_Wooden Open Close Slow 01_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "doors_open_close",
+      "editorial_role": "transition",
+      "duration_ms": 11850,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "doorwood_wooden open close slow 01_b00m_one"
+      ],
+      "filename": "DOORWood_Wooden Open Close Slow 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0027",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_concrete/FEETHmn_Leather Boot Heavy Concrete Run_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_concrete",
+      "editorial_role": "transition",
+      "duration_ms": 33465,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy concrete run_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Concrete Run_B00M_ONE"
+    },
+    {
+      "id": "sfx_0028",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_concrete/FEETHmn_Leather Boot Heavy Concrete Walk_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_concrete",
+      "editorial_role": "transition",
+      "duration_ms": 11628,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy concrete walk_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Concrete Walk_B00M_ONE"
+    },
+    {
+      "id": "sfx_0029",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_concrete/FEETHmn_Leather Boot Light Concrete Gritty Walk_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_concrete",
+      "editorial_role": "transition",
+      "duration_ms": 9137,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot light concrete gritty walk_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Light Concrete Gritty Walk_B00M_ONE"
+    },
+    {
+      "id": "sfx_0030",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_grass/FEETHmn_Leather Boot Heavy Grass Run_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_grass",
+      "editorial_role": "transition",
+      "duration_ms": 26516,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy grass run_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Grass Run_B00M_ONE"
+    },
+    {
+      "id": "sfx_0031",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_grass/FEETHmn_Leather Boot Heavy Grass Walk_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_grass",
+      "editorial_role": "transition",
+      "duration_ms": 18849,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy grass walk_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Grass Walk_B00M_ONE"
+    },
+    {
+      "id": "sfx_0032",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_snow/FEETHmn_Leather Boot Heavy Snow Run_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_snow",
+      "editorial_role": "transition",
+      "duration_ms": 28145,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy snow run_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Snow Run_B00M_ONE"
+    },
+    {
+      "id": "sfx_0033",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_snow/FEETHmn_Leather Boot Heavy Snow Walk_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_snow",
+      "editorial_role": "transition",
+      "duration_ms": 16911,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy snow walk_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Snow Walk_B00M_ONE"
+    },
+    {
+      "id": "sfx_0034",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_wood/FEETHmn_Leather Boot Heavy Wood Run_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_wood",
+      "editorial_role": "transition",
+      "duration_ms": 31734,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy wood run_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Wood Run_B00M_ONE"
+    },
+    {
+      "id": "sfx_0035",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_wood/FEETHmn_Leather Boot Heavy Wood Walk_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_wood",
+      "editorial_role": "transition",
+      "duration_ms": 15510,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot heavy wood walk_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Heavy Wood Walk_B00M_ONE"
+    },
+    {
+      "id": "sfx_0036",
+      "path": "/home/ishanp/Videos/Assets/SFX/01_FOLEY_ESSENTIALS/footsteps_wood/FEETHmn_Leather Boot Light Concrete Walk (wood)_B00M_ONE.wav",
+      "category": "01_FOLEY_ESSENTIALS",
+      "subcategory": "footsteps_wood",
+      "editorial_role": "transition",
+      "duration_ms": 14278,
+      "sample_rate": 96000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "feethmn_leather boot light concrete walk (wood)_b00m_one"
+      ],
+      "filename": "FEETHmn_Leather Boot Light Concrete Walk (wood)_B00M_ONE"
+    },
+    {
+      "id": "sfx_0037",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/fire_burn/FIREBurn_Matchstick Ignition Medium_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "fire_burn",
+      "editorial_role": "transition",
+      "duration_ms": 15570,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "fireburn_matchstick ignition medium_b00m_one"
+      ],
+      "filename": "FIREBurn_Matchstick Ignition Medium_B00M_ONE"
+    },
+    {
+      "id": "sfx_0038",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/fire_burn/FIREBurn_Nighttime Campfire Close Up 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "fire_burn",
+      "editorial_role": "transition",
+      "duration_ms": 112267,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "fireburn_nighttime campfire close up 01_b00m_one"
+      ],
+      "filename": "FIREBurn_Nighttime Campfire Close Up 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0039",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/fire_crackle/FIRECrkl_Fire Crackle At Clay Bakery_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "fire_crackle",
+      "editorial_role": "transition",
+      "duration_ms": 11421,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "firecrkl_fire crackle at clay bakery_b00m_one"
+      ],
+      "filename": "FIRECrkl_Fire Crackle At Clay Bakery_B00M_ONE"
+    },
+    {
+      "id": "sfx_0040",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/fire_crackle/FIRECrkl_Plastic Bottle Burn Crackle Long XY_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "fire_crackle",
+      "editorial_role": "transition",
+      "duration_ms": 27864,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "firecrkl_plastic bottle burn crackle long xy_b00m_one"
+      ],
+      "filename": "FIRECrkl_Plastic Bottle Burn Crackle Long XY_B00M_ONE"
+    },
+    {
+      "id": "sfx_0041",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/fire_crackle/FIRECrkl_Plastic Bottle Burn Crackle XY_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "fire_crackle",
+      "editorial_role": "transition",
+      "duration_ms": 28998,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "firecrkl_plastic bottle burn crackle xy_b00m_one"
+      ],
+      "filename": "FIRECrkl_Plastic Bottle Burn Crackle XY_B00M_ONE"
+    },
+    {
+      "id": "sfx_0042",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/AMBPark_Park After Rain Ukraine 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 238370,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "ambpark_park after rain ukraine 01_b00m_one"
+      ],
+      "filename": "AMBPark_Park After Rain Ukraine 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0043",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/AMBPark_Park After Rain Ukraine 02_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 188100,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "ambpark_park after rain ukraine 02_b00m_one"
+      ],
+      "filename": "AMBPark_Park After Rain Ukraine 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0044",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/RAINMetl_Heavy Inside Caravan 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 100050,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rainmetl_heavy inside caravan 01_b00m_one"
+      ],
+      "filename": "RAINMetl_Heavy Inside Caravan 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0045",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/RAINMetl_Heavy Inside Caravan 02_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 91276,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rainmetl_heavy inside caravan 02_b00m_one"
+      ],
+      "filename": "RAINMetl_Heavy Inside Caravan 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0046",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/STORM_Close Soft Rain Heavy Distant Thunder_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 238965,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "STORM_Close Soft Rain Heavy Distant Thunder_B00M_ONE"
+    },
+    {
+      "id": "sfx_0047",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/STORM_Soft Rain And Thunder_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 94104,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "STORM_Soft Rain And Thunder_B00M_ONE"
+    },
+    {
+      "id": "sfx_0048",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/rain_thunder/THUN_Thunder Blast Close Heavy 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "rain_thunder",
+      "editorial_role": "transition",
+      "duration_ms": 29732,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "thun_thunder blast close heavy 01_b00m_one"
+      ],
+      "filename": "THUN_Thunder Blast Close Heavy 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0049",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_drip/WATRDrip_Chemical Reactions Water Dripping Burst 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_drip",
+      "editorial_role": "transition",
+      "duration_ms": 13876,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrdrip_chemical reactions water dripping burst 01_b00m_one"
+      ],
+      "filename": "WATRDrip_Chemical Reactions Water Dripping Burst 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0050",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_drip/WATRDrip_Chemical Reactions Water Dripping Puff Sequence 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_drip",
+      "editorial_role": "transition",
+      "duration_ms": 22100,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrdrip_chemical reactions water dripping puff sequence 01_b00m_one"
+      ],
+      "filename": "WATRDrip_Chemical Reactions Water Dripping Puff Sequence 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0051",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_drip/WATRDrip_Chemical Reactions Water Dripping Puff Sequence Hard 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_drip",
+      "editorial_role": "transition",
+      "duration_ms": 12099,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard"
+      ],
+      "filename": "WATRDrip_Chemical Reactions Water Dripping Puff Sequence Hard 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0052",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_flow/WATRFlow_Sink Water Flow Medium_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_flow",
+      "editorial_role": "transition",
+      "duration_ms": 70804,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrflow_sink water flow medium_b00m_one"
+      ],
+      "filename": "WATRFlow_Sink Water Flow Medium_B00M_ONE"
+    },
+    {
+      "id": "sfx_0053",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_flow/WATRFlow_Small River Stream After Rain 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_flow",
+      "editorial_role": "transition",
+      "duration_ms": 91750,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrflow_small river stream after rain 01_b00m_one"
+      ],
+      "filename": "WATRFlow_Small River Stream After Rain 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0054",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_flow/WATRFlow_Tap Flow Water On Metal Sink Medium Loop 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_flow",
+      "editorial_role": "transition",
+      "duration_ms": 13023,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrflow_tap flow water on metal sink medium loop 01_b00m_one"
+      ],
+      "filename": "WATRFlow_Tap Flow Water On Metal Sink Medium Loop 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0055",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_splash/WATRFlow_River Medium Splashing 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_splash",
+      "editorial_role": "transition",
+      "duration_ms": 93200,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrflow_river medium splashing 01_b00m_one"
+      ],
+      "filename": "WATRFlow_River Medium Splashing 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0056",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_splash/WATRFlow_River Small Splashing 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_splash",
+      "editorial_role": "transition",
+      "duration_ms": 93350,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrflow_river small splashing 01_b00m_one"
+      ],
+      "filename": "WATRFlow_River Small Splashing 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0057",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_splash/WATRImpt_Wooden Object Hit Water Medium 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_splash",
+      "editorial_role": "transition",
+      "duration_ms": 7489,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hit"
+      ],
+      "filename": "WATRImpt_Wooden Object Hit Water Medium 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0058",
+      "path": "/home/ishanp/Videos/Assets/SFX/02_NATURE_ELEMENTS/water_splash/WATRMvmt_Water Splash 01_B00M_ONE.wav",
+      "category": "02_NATURE_ELEMENTS",
+      "subcategory": "water_splash",
+      "editorial_role": "transition",
+      "duration_ms": 23689,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "watrmvmt_water splash 01_b00m_one"
+      ],
+      "filename": "WATRMvmt_Water Splash 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0059",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/metal_impact/METLImpt_Casual Games UI Coins 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "metal_impact",
+      "editorial_role": "transition",
+      "duration_ms": 2846,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "ui"
+      ],
+      "filename": "METLImpt_Casual Games UI Coins 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0060",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/metal_impact/METLImpt_Heavy Metal Drop On Wooden Surface Hard 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "metal_impact",
+      "editorial_role": "transition",
+      "duration_ms": 4553,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard"
+      ],
+      "filename": "METLImpt_Heavy Metal Drop On Wooden Surface Hard 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0061",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/metal_impact/METLImpt_Heavy Metal Drop On Wooden Surface Hard 02_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "metal_impact",
+      "editorial_role": "transition",
+      "duration_ms": 4345,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard"
+      ],
+      "filename": "METLImpt_Heavy Metal Drop On Wooden Surface Hard 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0062",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/metal_impact/METLImpt_Heavy Metal Drop On Wooden Surface Medium 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "metal_impact",
+      "editorial_role": "transition",
+      "duration_ms": 4595,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "metlimpt_heavy metal drop on wooden surface medium 01_b00m_one"
+      ],
+      "filename": "METLImpt_Heavy Metal Drop On Wooden Surface Medium 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0063",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/metal_impact/METLImpt_Heavy Metal Drop On Wooden Surface Medium 02_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "metal_impact",
+      "editorial_role": "transition",
+      "duration_ms": 4920,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "metlimpt_heavy metal drop on wooden surface medium 02_b00m_one"
+      ],
+      "filename": "METLImpt_Heavy Metal Drop On Wooden Surface Medium 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0064",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/plastic_drop/PLASImpt_Impact Organic Plastic Crunch High Bright Crackle 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "plastic_drop",
+      "editorial_role": "transition",
+      "duration_ms": 11880,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "bright",
+        "impact"
+      ],
+      "filename": "PLASImpt_Impact Organic Plastic Crunch High Bright Crackle 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0065",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/plastic_drop/PLASImpt_Impact Organic Plastic Crunch High Bright Crackle 02_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "plastic_drop",
+      "editorial_role": "transition",
+      "duration_ms": 11644,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "bright",
+        "impact"
+      ],
+      "filename": "PLASImpt_Impact Organic Plastic Crunch High Bright Crackle 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0066",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/plastic_drop/PLASImpt_Impact Organic Plastic Crunch High Bright Long 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "plastic_drop",
+      "editorial_role": "transition",
+      "duration_ms": 13129,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "bright",
+        "impact"
+      ],
+      "filename": "PLASImpt_Impact Organic Plastic Crunch High Bright Long 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0067",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/plastic_drop/PLASImpt_Impact Organic Plastic Crunch High Bright Long 02_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "plastic_drop",
+      "editorial_role": "transition",
+      "duration_ms": 13220,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "bright",
+        "impact"
+      ],
+      "filename": "PLASImpt_Impact Organic Plastic Crunch High Bright Long 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0068",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/wood_hit/WOODFric_Creaky Wood Movement 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "wood_hit",
+      "editorial_role": "transition",
+      "duration_ms": 20149,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "woodfric_creaky wood movement 01_b00m_one"
+      ],
+      "filename": "WOODFric_Creaky Wood Movement 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0069",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/wood_hit/WOODFric_Small Wood Squeak Hard 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "wood_hit",
+      "editorial_role": "transition",
+      "duration_ms": 11528,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard"
+      ],
+      "filename": "WOODFric_Small Wood Squeak Hard 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0070",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/wood_hit/WOODFric_Small Wood Squeak Medium 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "wood_hit",
+      "editorial_role": "transition",
+      "duration_ms": 11947,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "woodfric_small wood squeak medium 01_b00m_one"
+      ],
+      "filename": "WOODFric_Small Wood Squeak Medium 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0071",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/wood_hit/WOODFric_Small Wood Squeak Soft 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "wood_hit",
+      "editorial_role": "transition",
+      "duration_ms": 11344,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "WOODFric_Small Wood Squeak Soft 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0072",
+      "path": "/home/ishanp/Videos/Assets/SFX/03_MATERIAL_IMPACTS/wood_hit/WOODFric_Wood Creaky Movement 01_B00M_ONE.wav",
+      "category": "03_MATERIAL_IMPACTS",
+      "subcategory": "wood_hit",
+      "editorial_role": "transition",
+      "duration_ms": 15759,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "woodfric_wood creaky movement 01_b00m_one"
+      ],
+      "filename": "WOODFric_Wood Creaky Movement 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0073",
+      "path": "/home/ishanp/Videos/Assets/SFX/04_HUMAN_SOUNDS/breath_gasp/HMNBrth_Female 03 Gasp Hard 01_B00M_ONE.wav",
+      "category": "04_HUMAN_SOUNDS",
+      "subcategory": "breath_gasp",
+      "editorial_role": "transition",
+      "duration_ms": 3780,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard"
+      ],
+      "filename": "HMNBrth_Female 03 Gasp Hard 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0074",
+      "path": "/home/ishanp/Videos/Assets/SFX/04_HUMAN_SOUNDS/breath_gasp/HMNBrth_Female 03 Gasp Soft 01_B00M_ONE.wav",
+      "category": "04_HUMAN_SOUNDS",
+      "subcategory": "breath_gasp",
+      "editorial_role": "transition",
+      "duration_ms": 3208,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "HMNBrth_Female 03 Gasp Soft 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0075",
+      "path": "/home/ishanp/Videos/Assets/SFX/04_HUMAN_SOUNDS/breath_heavy/HMNBrth_Breathing Mouth Heavy Female A_B00M_ONE.wav",
+      "category": "04_HUMAN_SOUNDS",
+      "subcategory": "breath_heavy",
+      "editorial_role": "transition",
+      "duration_ms": 19974,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hmnbrth_breathing mouth heavy female a_b00m_one"
+      ],
+      "filename": "HMNBrth_Breathing Mouth Heavy Female A_B00M_ONE"
+    },
+    {
+      "id": "sfx_0076",
+      "path": "/home/ishanp/Videos/Assets/SFX/04_HUMAN_SOUNDS/breath_heavy/HMNBrth_Breathing Mouth Heavy Male A_B00M_ONE.wav",
+      "category": "04_HUMAN_SOUNDS",
+      "subcategory": "breath_heavy",
+      "editorial_role": "transition",
+      "duration_ms": 20752,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hmnbrth_breathing mouth heavy male a_b00m_one"
+      ],
+      "filename": "HMNBrth_Breathing Mouth Heavy Male A_B00M_ONE"
+    },
+    {
+      "id": "sfx_0077",
+      "path": "/home/ishanp/Videos/Assets/SFX/04_HUMAN_SOUNDS/breath_normal/HMNBrth_Breathing Nose To Nose Female A_B00M_ONE.wav",
+      "category": "04_HUMAN_SOUNDS",
+      "subcategory": "breath_normal",
+      "editorial_role": "transition",
+      "duration_ms": 25564,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hmnbrth_breathing nose to nose female a_b00m_one"
+      ],
+      "filename": "HMNBrth_Breathing Nose To Nose Female A_B00M_ONE"
+    },
+    {
+      "id": "sfx_0078",
+      "path": "/home/ishanp/Videos/Assets/SFX/04_HUMAN_SOUNDS/breath_normal/HMNBrth_Breathing Nose To Nose Male A_B00M_ONE.wav",
+      "category": "04_HUMAN_SOUNDS",
+      "subcategory": "breath_normal",
+      "editorial_role": "transition",
+      "duration_ms": 41830,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hmnbrth_breathing nose to nose male a_b00m_one"
+      ],
+      "filename": "HMNBrth_Breathing Nose To Nose Male A_B00M_ONE"
+    },
+    {
+      "id": "sfx_0079",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_door/VEHDoor_Lada Niva Exterior Foley Door Close_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_door",
+      "editorial_role": "transition",
+      "duration_ms": 7771,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehdoor_lada niva exterior foley door close_b00m_one"
+      ],
+      "filename": "VEHDoor_Lada Niva Exterior Foley Door Close_B00M_ONE"
+    },
+    {
+      "id": "sfx_0080",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_door/VEHDoor_Lada Niva Exterior Foley Door Open_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_door",
+      "editorial_role": "transition",
+      "duration_ms": 7754,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehdoor_lada niva exterior foley door open_b00m_one"
+      ],
+      "filename": "VEHDoor_Lada Niva Exterior Foley Door Open_B00M_ONE"
+    },
+    {
+      "id": "sfx_0081",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_door/VEHDoor_Lada Niva Interior Foley Door Close_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_door",
+      "editorial_role": "transition",
+      "duration_ms": 5923,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehdoor_lada niva interior foley door close_b00m_one"
+      ],
+      "filename": "VEHDoor_Lada Niva Interior Foley Door Close_B00M_ONE"
+    },
+    {
+      "id": "sfx_0082",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_door/VEHDoor_Lada Niva Interior Foley Door Open_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_door",
+      "editorial_role": "transition",
+      "duration_ms": 6287,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehdoor_lada niva interior foley door open_b00m_one"
+      ],
+      "filename": "VEHDoor_Lada Niva Interior Foley Door Open_B00M_ONE"
+    },
+    {
+      "id": "sfx_0083",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_horn/VEHHorn_BMW 120i Exterior Horn_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_horn",
+      "editorial_role": "transition",
+      "duration_ms": 9704,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehhorn_bmw 120i exterior horn_b00m_one"
+      ],
+      "filename": "VEHHorn_BMW 120i Exterior Horn_B00M_ONE"
+    },
+    {
+      "id": "sfx_0084",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_horn/VEHHorn_BMW 120i Interior Horn_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_horn",
+      "editorial_role": "transition",
+      "duration_ms": 10857,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehhorn_bmw 120i interior horn_b00m_one"
+      ],
+      "filename": "VEHHorn_BMW 120i Interior Horn_B00M_ONE"
+    },
+    {
+      "id": "sfx_0085",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_horn/VEHHorn_Lada Niva Interior Horn_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_horn",
+      "editorial_role": "transition",
+      "duration_ms": 5444,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehhorn_lada niva interior horn_b00m_one"
+      ],
+      "filename": "VEHHorn_Lada Niva Interior Horn_B00M_ONE"
+    },
+    {
+      "id": "sfx_0086",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_horn/VEHHorn_Peugeot 207 Exterior Horn_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_horn",
+      "editorial_role": "transition",
+      "duration_ms": 14093,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehhorn_peugeot 207 exterior horn_b00m_one"
+      ],
+      "filename": "VEHHorn_Peugeot 207 Exterior Horn_B00M_ONE"
+    },
+    {
+      "id": "sfx_0087",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_passby/VEHCar_Cross Pass Of Two Cars_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_passby",
+      "editorial_role": "transition",
+      "duration_ms": 12125,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehcar_cross pass of two cars_b00m_one"
+      ],
+      "filename": "VEHCar_Cross Pass Of Two Cars_B00M_ONE"
+    },
+    {
+      "id": "sfx_0088",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_passby/VEHCar_Hyundai Elantra Soft Pass_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_passby",
+      "editorial_role": "transition",
+      "duration_ms": 7992,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "VEHCar_Hyundai Elantra Soft Pass_B00M_ONE"
+    },
+    {
+      "id": "sfx_0089",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_passby/VEHCar_Small Ford Truck Pass Fast_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_passby",
+      "editorial_role": "transition",
+      "duration_ms": 15417,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehcar_small ford truck pass fast_b00m_one"
+      ],
+      "filename": "VEHCar_Small Ford Truck Pass Fast_B00M_ONE"
+    },
+    {
+      "id": "sfx_0090",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/car_passby/VEHCar_Small Ford Truck Pass Slow_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "car_passby",
+      "editorial_role": "transition",
+      "duration_ms": 26407,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehcar_small ford truck pass slow_b00m_one"
+      ],
+      "filename": "VEHCar_Small Ford Truck Pass Slow_B00M_ONE"
+    },
+    {
+      "id": "sfx_0091",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/engine_start/VEHCar_Ford Fusion Exterior Start Engine Idle And Turn Off_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "engine_start",
+      "editorial_role": "transition",
+      "duration_ms": 51138,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehcar_ford fusion exterior start engine idle and turn off_b00m_one"
+      ],
+      "filename": "VEHCar_Ford Fusion Exterior Start Engine Idle And Turn Off_B00M_ONE"
+    },
+    {
+      "id": "sfx_0092",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/engine_start/VEHCar_Lada Niva Interior Engine Ignition Start Stop_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "engine_start",
+      "editorial_role": "transition",
+      "duration_ms": 16289,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehcar_lada niva interior engine ignition start stop_b00m_one"
+      ],
+      "filename": "VEHCar_Lada Niva Interior Engine Ignition Start Stop_B00M_ONE"
+    },
+    {
+      "id": "sfx_0093",
+      "path": "/home/ishanp/Videos/Assets/SFX/05_VEHICLES/engine_start/VEHCar_Toyota Vitz Exterior Start Engine Work Idle And Turn Off_B00M_ONE.wav",
+      "category": "05_VEHICLES",
+      "subcategory": "engine_start",
+      "editorial_role": "transition",
+      "duration_ms": 70341,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vehcar_toyota vitz exterior start engine work idle and turn off_b00m_one"
+      ],
+      "filename": "VEHCar_Toyota Vitz Exterior Start Engine Work Idle And Turn Off_B00M_ONE"
+    },
+    {
+      "id": "sfx_0094",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/cloth_foley/CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "cloth_foley",
+      "editorial_role": "transition",
+      "duration_ms": 9311,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "clothmvmt_fabric knot foley 01_b00m_one"
+      ],
+      "filename": "CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0095",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/cloth_foley/CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "cloth_foley",
+      "editorial_role": "transition",
+      "duration_ms": 9877,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "CLOTHMvmt_Sail Open Soft 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0096",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/digital_glitch/glitch 1.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "digital_glitch",
+      "editorial_role": "transition",
+      "duration_ms": 1000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "glitch 1"
+      ],
+      "filename": "glitch 1"
+    },
+    {
+      "id": "sfx_0097",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/digital_glitch/glitch 2.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "digital_glitch",
+      "editorial_role": "transition",
+      "duration_ms": 960,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "glitch 2"
+      ],
+      "filename": "glitch 2"
+    },
+    {
+      "id": "sfx_0098",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/digital_glitch/glitch 3.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "digital_glitch",
+      "editorial_role": "transition",
+      "duration_ms": 440,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "glitch 3"
+      ],
+      "filename": "glitch 3"
+    },
+    {
+      "id": "sfx_0099",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/digital_glitch/vhs 1.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "digital_glitch",
+      "editorial_role": "transition",
+      "duration_ms": 7240,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vhs 1"
+      ],
+      "filename": "vhs 1"
+    },
+    {
+      "id": "sfx_0100",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/digital_glitch/vhs 2.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "digital_glitch",
+      "editorial_role": "transition",
+      "duration_ms": 1067,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "vhs 2"
+      ],
+      "filename": "vhs 2"
+    },
+    {
+      "id": "sfx_0101",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/swish_sweep/Smooth Woosh.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "swish_sweep",
+      "editorial_role": "transition",
+      "duration_ms": 12750,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "smooth"
+      ],
+      "filename": "Smooth Woosh"
+    },
+    {
+      "id": "sfx_0102",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/swish_sweep/Swoosh 01 - 01.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "swish_sweep",
+      "editorial_role": "transition",
+      "duration_ms": 257,
+      "sample_rate": 48000,
+      "channels": 1,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "swoosh 01 - 01"
+      ],
+      "filename": "Swoosh 01 - 01"
+    },
+    {
+      "id": "sfx_0103",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/swish_sweep/Swoosh 4.mp3",
+      "category": "10_TRANSITIONS",
+      "subcategory": "swish_sweep",
+      "editorial_role": "transition",
+      "duration_ms": 213,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "swoosh 4"
+      ],
+      "filename": "Swoosh 4"
+    },
+    {
+      "id": "sfx_0104",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/swish_sweep/long whoosh 1.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "swish_sweep",
+      "editorial_role": "transition",
+      "duration_ms": 6160,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "long whoosh 1"
+    },
+    {
+      "id": "sfx_0105",
+      "path": "/home/ishanp/Videos/Assets/SFX/10_TRANSITIONS/swish_sweep/simple whoosh 1.wav",
+      "category": "10_TRANSITIONS",
+      "subcategory": "swish_sweep",
+      "editorial_role": "transition",
+      "duration_ms": 1440,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "simple whoosh 1"
+    },
+    {
+      "id": "sfx_0106",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/boom_crash/energy_blast_large_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "boom_crash",
+      "editorial_role": "highlight",
+      "duration_ms": 1333,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "energy_blast_large_01"
+      ],
+      "filename": "energy_blast_large_01"
+    },
+    {
+      "id": "sfx_0107",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/boom_crash/explosion_big_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "boom_crash",
+      "editorial_role": "highlight",
+      "duration_ms": 6520,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "explosion_big_01"
+      ],
+      "filename": "explosion_big_01"
+    },
+    {
+      "id": "sfx_0108",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/boom_crash/explosion_big_02.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "boom_crash",
+      "editorial_role": "highlight",
+      "duration_ms": 5200,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "explosion_big_02"
+      ],
+      "filename": "explosion_big_02"
+    },
+    {
+      "id": "sfx_0109",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/boom_crash/explosion_large_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "boom_crash",
+      "editorial_role": "highlight",
+      "duration_ms": 1685,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "explosion_large_01"
+      ],
+      "filename": "explosion_large_01"
+    },
+    {
+      "id": "sfx_0110",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/boom_crash/explosion_large_02.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "boom_crash",
+      "editorial_role": "highlight",
+      "duration_ms": 1752,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "explosion_large_02"
+      ],
+      "filename": "explosion_large_02"
+    },
+    {
+      "id": "sfx_0111",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/boom_crash/explosion_med_long_tail_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "boom_crash",
+      "editorial_role": "highlight",
+      "duration_ms": 3101,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "explosion_med_long_tail_01"
+      ],
+      "filename": "explosion_med_long_tail_01"
+    },
+    {
+      "id": "sfx_0112",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/crowd_cheer/CRWDApls_Crowd Applause Feet Stomp 01_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "crowd_cheer",
+      "editorial_role": "highlight",
+      "duration_ms": 18424,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "crwdapls_crowd applause feet stomp 01_b00m_one"
+      ],
+      "filename": "CRWDApls_Crowd Applause Feet Stomp 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0113",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/crowd_cheer/CRWDApls_Crowd Applause Medium 01_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "crowd_cheer",
+      "editorial_role": "highlight",
+      "duration_ms": 15142,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "crwdapls_crowd applause medium 01_b00m_one"
+      ],
+      "filename": "CRWDApls_Crowd Applause Medium 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0114",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/crowd_cheer/CRWDApls_Crowd Concert Applause Loud_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "crowd_cheer",
+      "editorial_role": "highlight",
+      "duration_ms": 14974,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "loud"
+      ],
+      "filename": "CRWDApls_Crowd Concert Applause Loud_B00M_ONE"
+    },
+    {
+      "id": "sfx_0115",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/DSGNDron_Cinematic Dark Tension Drone 01_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 35637,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "dark"
+      ],
+      "filename": "DSGNDron_Cinematic Dark Tension Drone 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0116",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/DSGNDron_Cinematic Dark Tension Drone 02_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 34680,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "dark"
+      ],
+      "filename": "DSGNDron_Cinematic Dark Tension Drone 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0117",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/DSGNDron_Cinematic Suspense Tension Drone 01_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 39731,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "dsgndron_cinematic suspense tension drone 01_b00m_one"
+      ],
+      "filename": "DSGNDron_Cinematic Suspense Tension Drone 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0118",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/DSGNStngr_Cinematic Tension Low Impact_B00M_ONE.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 21033,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "impact"
+      ],
+      "filename": "DSGNStngr_Cinematic Tension Low Impact_B00M_ONE"
+    },
+    {
+      "id": "sfx_0119",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Air Bellow Deep \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 1500,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_air bellow deep \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Air Bellow Deep \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0120",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Breathy Low Deep Reverse \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 7625,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_breathy low deep reverse \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Breathy Low Deep Reverse \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0121",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Cinematic Buffed Hit \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3583,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hit"
+      ],
+      "filename": "Filmkid_Cinematic Buffed Hit \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0122",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Cinematic Heavy Bass Ramp Up \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3375,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_cinematic heavy bass ramp up \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Cinematic Heavy Bass Ramp Up \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0123",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Cinematic Time Warp \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 10000,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_cinematic time warp \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Cinematic Time Warp \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0124",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Cold AIr Swing \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 875,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "cold"
+      ],
+      "filename": "Filmkid_Cold AIr Swing \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0125",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Crisp High Short Reverb \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 4333,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_crisp high short reverb \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Crisp High Short Reverb \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0126",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Crisp Wind Long Echo \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 6458,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_crisp wind long echo \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Crisp Wind Long Echo \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0127",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Deep Airy Ring Out Short \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 1958,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_deep airy ring out short \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Deep Airy Ring Out Short \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0128",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Deep Heavy Climb \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 4458,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_deep heavy climb \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Deep Heavy Climb \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0129",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Deep Rise Breath \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3250,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "Filmkid_Deep Rise Breath \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0130",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Distorted Dreams Sequence \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 9166,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_distorted dreams sequence \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Distorted Dreams Sequence \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0131",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Heavy Depth Air \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3791,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_heavy depth air \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Heavy Depth Air \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0132",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Hit Shake Intense Rise \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 7333,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rise",
+        "hit"
+      ],
+      "filename": "Filmkid_Hit Shake Intense Rise \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0133",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Incoming Judgement \uff08Filmkid_.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3500,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_incoming judgement \uff08filmkid_"
+      ],
+      "filename": "Filmkid_Incoming Judgement \uff08Filmkid_"
+    },
+    {
+      "id": "sfx_0134",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Kinetic Ramp Up \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2208,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_kinetic ramp up \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Kinetic Ramp Up \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0135",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Low Wind Blow \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3666,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_low wind blow \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Low Wind Blow \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0136",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Metallic Reverb Ring Out \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 4708,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_metallic reverb ring out \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Metallic Reverb Ring Out \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0137",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Pass Through Time Low Deep \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 5791,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_pass through time low deep \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Pass Through Time Low Deep \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0138",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Put It In Slow Mo \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 8625,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_put it in slow mo \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Put It In Slow Mo \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0139",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Ramp Up Short Mid Range \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 1375,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_ramp up short mid range \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Ramp Up Short Mid Range \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0140",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Ramp Up Whoosh Time \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 3875,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "Filmkid_Ramp Up Whoosh Time \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0141",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Rapid Warper \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2708,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_rapid warper \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Rapid Warper \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0142",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Reverse Cinematic Dark Shaky Low \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 4750,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "dark"
+      ],
+      "filename": "Filmkid_Reverse Cinematic Dark Shaky Low \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0143",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Reverse Metal Rise \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 1791,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "Filmkid_Reverse Metal Rise \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0144",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Rise Whoosh Tack \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 6458,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rise",
+        "whoosh"
+      ],
+      "filename": "Filmkid_Rise Whoosh Tack \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0145",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Rising Digital Slice \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2291,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "digital"
+      ],
+      "filename": "Filmkid_Rising Digital Slice \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0146",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Shaky Flame Out \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2958,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_shaky flame out \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Shaky Flame Out \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0147",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Short Rise Up Projectile \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2500,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "rise"
+      ],
+      "filename": "Filmkid_Short Rise Up Projectile \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0148",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Shots in 5 \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2375,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_shots in 5 \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Shots in 5 \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0149",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Simple Airy Vacuum Low \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2000,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_simple airy vacuum low \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Simple Airy Vacuum Low \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0150",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Simple Ramp Rollercoaster Short \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 1833,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_simple ramp rollercoaster short \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Simple Ramp Rollercoaster Short \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0151",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Spunned Up Shut Down \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 1500,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_spunned up shut down \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Spunned Up Shut Down \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0152",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Tension Simultaneous \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 2125,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_tension simultaneous \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Tension Simultaneous \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0153",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Thud Air Blow \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 916,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_thud air blow \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Thud Air Blow \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0154",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Thunderous Tension Tinnitus \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 4666,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_thunderous tension tinnitus \uff08filmkid\uff09"
+      ],
+      "filename": "Filmkid_Thunderous Tension Tinnitus \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0155",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Trillobyte Double Back Bass \uff08Filmkid.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 5916,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "filmkid_trillobyte double back bass \uff08filmkid"
+      ],
+      "filename": "Filmkid_Trillobyte Double Back Bass \uff08Filmkid"
+    },
+    {
+      "id": "sfx_0156",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/epic_stinger/Filmkid_Whoosh Slow Build Cutoff Low \uff08Filmkid\uff09.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "epic_stinger",
+      "editorial_role": "highlight",
+      "duration_ms": 10958,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "whoosh"
+      ],
+      "filename": "Filmkid_Whoosh Slow Build Cutoff Low \uff08Filmkid\uff09"
+    },
+    {
+      "id": "sfx_0157",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/impact_hit/Impact_sound_design_hit_chime_resonant_hit_chime_accent_tinkle_fast.mp3",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "impact_hit",
+      "editorial_role": "highlight",
+      "duration_ms": 6005,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "chime",
+        "hit",
+        "impact"
+      ],
+      "filename": "Impact_sound_design_hit_chime_resonant_hit_chime_accent_tinkle_fast"
+    },
+    {
+      "id": "sfx_0158",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/impact_hit/bullet_impact_body_thump_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "impact_hit",
+      "editorial_role": "highlight",
+      "duration_ms": 621,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "impact"
+      ],
+      "filename": "bullet_impact_body_thump_01"
+    },
+    {
+      "id": "sfx_0159",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/impact_hit/bullet_impact_body_thump_02.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "impact_hit",
+      "editorial_role": "highlight",
+      "duration_ms": 470,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "impact"
+      ],
+      "filename": "bullet_impact_body_thump_02"
+    },
+    {
+      "id": "sfx_0160",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/impact_hit/impact_shatter_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "impact_hit",
+      "editorial_role": "highlight",
+      "duration_ms": 997,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "impact"
+      ],
+      "filename": "impact_shatter_01"
+    },
+    {
+      "id": "sfx_0161",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/impact_hit/kick_hard_impact_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "impact_hit",
+      "editorial_role": "highlight",
+      "duration_ms": 784,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "hard",
+        "impact"
+      ],
+      "filename": "kick_hard_impact_01"
+    },
+    {
+      "id": "sfx_0162",
+      "path": "/home/ishanp/Videos/Assets/SFX/11_HIGHLIGHTS_MOMENTS/impact_hit/punch_general_body_impact_01.wav",
+      "category": "11_HIGHLIGHTS_MOMENTS",
+      "subcategory": "impact_hit",
+      "editorial_role": "highlight",
+      "duration_ms": 424,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -6.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "impact"
+      ],
+      "filename": "punch_general_body_impact_01"
+    },
+    {
+      "id": "sfx_0163",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/button_press/CMPTKey_Flat Keyboard Single Enter Key 01_B00M_ONE.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "button_press",
+      "editorial_role": "cta",
+      "duration_ms": 9215,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "cmptkey_flat keyboard single enter key 01_b00m_one"
+      ],
+      "filename": "CMPTKey_Flat Keyboard Single Enter Key 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0164",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/button_press/CMPTKey_Flat Keyboard Single Generic Key 01_B00M_ONE.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "button_press",
+      "editorial_role": "cta",
+      "duration_ms": 8183,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "cmptkey_flat keyboard single generic key 01_b00m_one"
+      ],
+      "filename": "CMPTKey_Flat Keyboard Single Generic Key 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0165",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/button_press/CMPTKey_Mac Keyboard Single Generic Key 01_B00M_ONE.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "button_press",
+      "editorial_role": "cta",
+      "duration_ms": 8549,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "cmptkey_mac keyboard single generic key 01_b00m_one"
+      ],
+      "filename": "CMPTKey_Mac Keyboard Single Generic Key 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0166",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/notification_chime/Ni Sound - Cute Interface - Clinking Chimes Notification.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "notification_chime",
+      "editorial_role": "cta",
+      "duration_ms": 1544,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "notification"
+      ],
+      "filename": "Ni Sound - Cute Interface - Clinking Chimes Notification"
+    },
+    {
+      "id": "sfx_0167",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/notification_chime/notification-alert-i-380000.mp3",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "notification_chime",
+      "editorial_role": "cta",
+      "duration_ms": 2136,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "notification"
+      ],
+      "filename": "notification-alert-i-380000"
+    },
+    {
+      "id": "sfx_0168",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/notification_chime/sample_soft_alert02_kofi_by_miraclei-360125.mp3",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "notification_chime",
+      "editorial_role": "cta",
+      "duration_ms": 1593,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "sample_soft_alert02_kofi_by_miraclei-360125"
+    },
+    {
+      "id": "sfx_0169",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/ui_click/Button.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "ui_click",
+      "editorial_role": "cta",
+      "duration_ms": 983,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "button"
+      ],
+      "filename": "Button"
+    },
+    {
+      "id": "sfx_0170",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/ui_click/Click 2.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "ui_click",
+      "editorial_role": "cta",
+      "duration_ms": 1000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "click"
+      ],
+      "filename": "Click 2"
+    },
+    {
+      "id": "sfx_0171",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/ui_click/Click.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "ui_click",
+      "editorial_role": "cta",
+      "duration_ms": 500,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "click"
+      ],
+      "filename": "Click"
+    },
+    {
+      "id": "sfx_0172",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/ui_click/Tactile Click.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "ui_click",
+      "editorial_role": "cta",
+      "duration_ms": 200,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "click"
+      ],
+      "filename": "Tactile Click"
+    },
+    {
+      "id": "sfx_0173",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/upward_rise/Riser 1.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "upward_rise",
+      "editorial_role": "cta",
+      "duration_ms": 1866,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "riser 1"
+      ],
+      "filename": "Riser 1"
+    },
+    {
+      "id": "sfx_0174",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/upward_rise/sci-fi_power_up_01.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "upward_rise",
+      "editorial_role": "cta",
+      "duration_ms": 1003,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "sci-fi_power_up_01"
+      ],
+      "filename": "sci-fi_power_up_01"
+    },
+    {
+      "id": "sfx_0175",
+      "path": "/home/ishanp/Videos/Assets/SFX/12_CTA_CALL_TO_ACTION/upward_rise/sci-fi_power_up_02.wav",
+      "category": "12_CTA_CALL_TO_ACTION",
+      "subcategory": "upward_rise",
+      "editorial_role": "cta",
+      "duration_ms": 1400,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": false,
+      "tags": [
+        "sci-fi_power_up_02"
+      ],
+      "filename": "sci-fi_power_up_02"
+    },
+    {
+      "id": "sfx_0176",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/atmospheric_bg/city atmosphere.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "atmospheric_bg",
+      "editorial_role": "ambience",
+      "duration_ms": 18818,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "city atmosphere"
+      ],
+      "filename": "city atmosphere"
+    },
+    {
+      "id": "sfx_0177",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/atmospheric_bg/server room atmosphere.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "atmospheric_bg",
+      "editorial_role": "ambience",
+      "duration_ms": 3570,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "server room atmosphere"
+      ],
+      "filename": "server room atmosphere"
+    },
+    {
+      "id": "sfx_0178",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/atmospheric_bg/tention atmosphere.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "atmospheric_bg",
+      "editorial_role": "ambience",
+      "duration_ms": 48800,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "tention atmosphere"
+      ],
+      "filename": "tention atmosphere"
+    },
+    {
+      "id": "sfx_0179",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_Africa Limpopo River Day Lively Birdsong_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 540635,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_africa limpopo river day lively birdsong_b00m_one"
+      ],
+      "filename": "AMBBird_Africa Limpopo River Day Lively Birdsong_B00M_ONE"
+    },
+    {
+      "id": "sfx_0180",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Bed Dawn Birds Bedlam 01_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 60142,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river bed dawn birds bedlam 01_b00m_one"
+      ],
+      "filename": "AMBBird_River Bed Dawn Birds Bedlam 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0181",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Bed Dawn Birds Bedlam 02_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 120140,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river bed dawn birds bedlam 02_b00m_one"
+      ],
+      "filename": "AMBBird_River Bed Dawn Birds Bedlam 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0182",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Bed Dawn Birds Call Quack_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 120034,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river bed dawn birds call quack_b00m_one"
+      ],
+      "filename": "AMBBird_River Bed Dawn Birds Call Quack_B00M_ONE"
+    },
+    {
+      "id": "sfx_0183",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Bed Dawn Birds Sing_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 119787,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river bed dawn birds sing_b00m_one"
+      ],
+      "filename": "AMBBird_River Bed Dawn Birds Sing_B00M_ONE"
+    },
+    {
+      "id": "sfx_0184",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Bed Dawn Birds Upset_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 60140,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river bed dawn birds upset_b00m_one"
+      ],
+      "filename": "AMBBird_River Bed Dawn Birds Upset_B00M_ONE"
+    },
+    {
+      "id": "sfx_0185",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Bed Dawn Birds_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 105142,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river bed dawn birds_b00m_one"
+      ],
+      "filename": "AMBBird_River Bed Dawn Birds_B00M_ONE"
+    },
+    {
+      "id": "sfx_0186",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Dawn Bird Calls_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 67282,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river dawn bird calls_b00m_one"
+      ],
+      "filename": "AMBBird_River Dawn Bird Calls_B00M_ONE"
+    },
+    {
+      "id": "sfx_0187",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Dawn Bird Close 01_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 78180,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river dawn bird close 01_b00m_one"
+      ],
+      "filename": "AMBBird_River Dawn Bird Close 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0188",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBBird_River Dawn Bird Close 02_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 52832,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambbird_river dawn bird close 02_b00m_one"
+      ],
+      "filename": "AMBBird_River Dawn Bird Close 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0189",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/AMBForst_Plitvize National Park Calm Forest Insects Movements_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 127159,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "calm"
+      ],
+      "filename": "AMBForst_Plitvize National Park Calm Forest Insects Movements_B00M_ONE"
+    },
+    {
+      "id": "sfx_0190",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/BIRDS IN THE FOREST.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 18840,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "birds in the forest"
+      ],
+      "filename": "BIRDS IN THE FOREST"
+    },
+    {
+      "id": "sfx_0191",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/nature_outdoor/FOREST AND BIRDS.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "nature_outdoor",
+      "editorial_role": "ambience",
+      "duration_ms": 25480,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "forest and birds"
+      ],
+      "filename": "FOREST AND BIRDS"
+    },
+    {
+      "id": "sfx_0192",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Big Server Room 01_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 91100,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_big server room 01_b00m_one"
+      ],
+      "filename": "AMBRoom_Big Server Room 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0193",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Big Server Room 02_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 90907,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_big server room 02_b00m_one"
+      ],
+      "filename": "AMBRoom_Big Server Room 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0194",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Big Pendulums and Ticking Fast_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 61536,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks big pendulums and ticking fast_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Big Pendulums and Ticking Fast_B00M_ONE"
+    },
+    {
+      "id": "sfx_0195",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Big Pendulums and Ticking_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 58314,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks big pendulums and ticking_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Big Pendulums and Ticking_B00M_ONE"
+    },
+    {
+      "id": "sfx_0196",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Big Pendulums_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 60181,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks big pendulums_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Big Pendulums_B00M_ONE"
+    },
+    {
+      "id": "sfx_0197",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Dry Fast_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 60125,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks dry fast_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Dry Fast_B00M_ONE"
+    },
+    {
+      "id": "sfx_0198",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Dry_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 60000,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks dry_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Dry_B00M_ONE"
+    },
+    {
+      "id": "sfx_0199",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Pendulums_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 60581,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks pendulums_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Pendulums_B00M_ONE"
+    },
+    {
+      "id": "sfx_0200",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Small Pendulums and Ticking Fast_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 60679,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks small pendulums and ticking fast_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Small Pendulums and Ticking Fast_B00M_ONE"
+    },
+    {
+      "id": "sfx_0201",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Room Of Clocks Small Pendulums and Ticking_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 62337,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_room of clocks small pendulums and ticking_b00m_one"
+      ],
+      "filename": "AMBRoom_Room Of Clocks Small Pendulums and Ticking_B00M_ONE"
+    },
+    {
+      "id": "sfx_0202",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Server Room Ventilation Hole 01_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 91100,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_server room ventilation hole 01_b00m_one"
+      ],
+      "filename": "AMBRoom_Server Room Ventilation Hole 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0203",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Small Server Rack 01_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 91050,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambroom_small server rack 01_b00m_one"
+      ],
+      "filename": "AMBRoom_Small Server Rack 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0204",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Utility Room Loud Hum 01_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 91100,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "loud"
+      ],
+      "filename": "AMBRoom_Utility Room Loud Hum 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0205",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/room_tone/AMBRoom_Utility Room Loud Hum 02_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "room_tone",
+      "editorial_role": "ambience",
+      "duration_ms": 92200,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "loud"
+      ],
+      "filename": "AMBRoom_Utility Room Loud Hum 02_B00M_ONE"
+    },
+    {
+      "id": "sfx_0206",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/urban_city/AMBTown_Hailing Weather Small Town_B00M_ONE.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "urban_city",
+      "editorial_role": "ambience",
+      "duration_ms": 150018,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "ambtown_hailing weather small town_b00m_one"
+      ],
+      "filename": "AMBTown_Hailing Weather Small Town_B00M_ONE"
+    },
+    {
+      "id": "sfx_0207",
+      "path": "/home/ishanp/Videos/Assets/SFX/13_AMBIENCE_MOOD/urban_city/city atmosphere.wav",
+      "category": "13_AMBIENCE_MOOD",
+      "subcategory": "urban_city",
+      "editorial_role": "ambience",
+      "duration_ms": 18818,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -20.0,
+      "recommended_use": "bed",
+      "safe_overlay": true,
+      "tags": [
+        "city atmosphere"
+      ],
+      "filename": "city atmosphere"
+    },
+    {
+      "id": "sfx_0208",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/keyboard_tap/Typing.wav",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "keyboard_tap",
+      "editorial_role": "text",
+      "duration_ms": 100,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "typing"
+      ],
+      "filename": "Typing"
+    },
+    {
+      "id": "sfx_0209",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/keyboard_tap/keyboard-typing.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "keyboard_tap",
+      "editorial_role": "text",
+      "duration_ms": 8097,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "keyboard-typing"
+      ],
+      "filename": "keyboard-typing"
+    },
+    {
+      "id": "sfx_0210",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/- 2 Anime Pop Sound Effects.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 4620,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "pop"
+      ],
+      "filename": "- 2 Anime Pop Sound Effects"
+    },
+    {
+      "id": "sfx_0211",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/- Anime Shine Sound Effect 2 high quality.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 7523,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "- anime shine sound effect 2 high quality"
+      ],
+      "filename": "- Anime Shine Sound Effect 2 high quality"
+    },
+    {
+      "id": "sfx_0212",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/- Anime Shine Sound Effect ProSounds.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 2600,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "- anime shine sound effect prosounds"
+      ],
+      "filename": "- Anime Shine Sound Effect ProSounds"
+    },
+    {
+      "id": "sfx_0213",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/- Comical anime sound effects used by Fizz Sound Creation Part 2.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 238770,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "- comical anime sound effects used by fizz sound creation part 2"
+      ],
+      "filename": "- Comical anime sound effects used by Fizz Sound Creation Part 2"
+    },
+    {
+      "id": "sfx_0214",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/- Fizz Sound Old anime sound effects.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 34922,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "- fizz sound old anime sound effects"
+      ],
+      "filename": "- Fizz Sound Old anime sound effects"
+    },
+    {
+      "id": "sfx_0215",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/Anime Sling 2.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 1204,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "anime sling 2"
+      ],
+      "filename": "Anime Sling 2"
+    },
+    {
+      "id": "sfx_0216",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/Bonk Sound Effect 2.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 1880,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "bonk sound effect 2"
+      ],
+      "filename": "Bonk Sound Effect 2"
+    },
+    {
+      "id": "sfx_0217",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON BOING #2.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 1104,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon boing #2"
+      ],
+      "filename": "CARTOON BOING #2"
+    },
+    {
+      "id": "sfx_0218",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON BOING #3.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 2136,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon boing #3"
+      ],
+      "filename": "CARTOON BOING #3"
+    },
+    {
+      "id": "sfx_0219",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON BOING.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 528,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon boing"
+      ],
+      "filename": "CARTOON BOING"
+    },
+    {
+      "id": "sfx_0220",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON CHOMP.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 336,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon chomp"
+      ],
+      "filename": "CARTOON CHOMP"
+    },
+    {
+      "id": "sfx_0221",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON CLOCK.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 912,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon clock"
+      ],
+      "filename": "CARTOON CLOCK"
+    },
+    {
+      "id": "sfx_0222",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON LAUGH.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 2280,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon laugh"
+      ],
+      "filename": "CARTOON LAUGH"
+    },
+    {
+      "id": "sfx_0223",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON POP.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 768,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "pop"
+      ],
+      "filename": "CARTOON POP"
+    },
+    {
+      "id": "sfx_0224",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON RICOCHET #2.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 936,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon ricochet #2"
+      ],
+      "filename": "CARTOON RICOCHET #2"
+    },
+    {
+      "id": "sfx_0225",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON RICOCHET.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 816,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon ricochet"
+      ],
+      "filename": "CARTOON RICOCHET"
+    },
+    {
+      "id": "sfx_0226",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON SPIN.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 3216,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon spin"
+      ],
+      "filename": "CARTOON SPIN"
+    },
+    {
+      "id": "sfx_0227",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/CARTOON TRANSITION.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 1512,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon transition"
+      ],
+      "filename": "CARTOON TRANSITION"
+    },
+    {
+      "id": "sfx_0228",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/Cartoon Slide Up.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 998,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon slide up"
+      ],
+      "filename": "Cartoon Slide Up"
+    },
+    {
+      "id": "sfx_0229",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/Cartoon Slip.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 1980,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon slip"
+      ],
+      "filename": "Cartoon Slip"
+    },
+    {
+      "id": "sfx_0230",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/boing boing.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 1750,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "boing boing"
+      ],
+      "filename": "boing boing"
+    },
+    {
+      "id": "sfx_0231",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/pop_elastic/cartoon run.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "pop_elastic",
+      "editorial_role": "text",
+      "duration_ms": 7941,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cartoon run"
+      ],
+      "filename": "cartoon run"
+    },
+    {
+      "id": "sfx_0232",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/typewriter/COMType_Historical Typewriter Processing Steady Soft 01_B00M_ONE.wav",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "typewriter",
+      "editorial_role": "text",
+      "duration_ms": 39011,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "soft"
+      ],
+      "filename": "COMType_Historical Typewriter Processing Steady Soft 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0233",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/typewriter/COMType_Historical Typewriter Processing Steady Strong 01_B00M_ONE.wav",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "typewriter",
+      "editorial_role": "text",
+      "duration_ms": 31483,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "comtype_historical typewriter processing steady strong 01_b00m_one"
+      ],
+      "filename": "COMType_Historical Typewriter Processing Steady Strong 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0234",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/typewriter/COMType_Historical Typewriter Ratchet Large 01_B00M_ONE.wav",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "typewriter",
+      "editorial_role": "text",
+      "duration_ms": 15603,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "comtype_historical typewriter ratchet large 01_b00m_one"
+      ],
+      "filename": "COMType_Historical Typewriter Ratchet Large 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0235",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/typewriter/COMType_Historical Typewriter Slider Error 01_B00M_ONE.wav",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "typewriter",
+      "editorial_role": "text",
+      "duration_ms": 10900,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "comtype_historical typewriter slider error 01_b00m_one"
+      ],
+      "filename": "COMType_Historical Typewriter Slider Error 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0236",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/typewriter/COMType_Historical Typewriter Slider Error Short 01_B00M_ONE.wav",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "typewriter",
+      "editorial_role": "text",
+      "duration_ms": 8576,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "comtype_historical typewriter slider error short 01_b00m_one"
+      ],
+      "filename": "COMType_Historical Typewriter Slider Error Short 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0237",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/ui_hover/minimal-pop-click-ui-3-198303.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "ui_hover",
+      "editorial_role": "text",
+      "duration_ms": 1032,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "ui",
+        "pop",
+        "click"
+      ],
+      "filename": "minimal-pop-click-ui-3-198303"
+    },
+    {
+      "id": "sfx_0238",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/ui_hover/sample_hover_subtle03_kofi_by_miraclei-364168.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "ui_hover",
+      "editorial_role": "text",
+      "duration_ms": 2115,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "hover"
+      ],
+      "filename": "sample_hover_subtle03_kofi_by_miraclei-364168"
+    },
+    {
+      "id": "sfx_0239",
+      "path": "/home/ishanp/Videos/Assets/SFX/14_TEXT_POPUPS/ui_hover/ui-pop-up-2-197887.mp3",
+      "category": "14_TEXT_POPUPS",
+      "subcategory": "ui_hover",
+      "editorial_role": "text",
+      "duration_ms": 456,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -10.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "ui",
+        "pop"
+      ],
+      "filename": "ui-pop-up-2-197887"
+    },
+    {
+      "id": "sfx_0240",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/heart_beat/voice_male_breathing_mask_loop_jog_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "heart_beat",
+      "editorial_role": "emotion",
+      "duration_ms": 6422,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "voice_male_breathing_mask_loop_jog_01"
+      ],
+      "filename": "voice_male_breathing_mask_loop_jog_01"
+    },
+    {
+      "id": "sfx_0241",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/heart_beat/voice_male_breathing_mask_loop_run_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "heart_beat",
+      "editorial_role": "emotion",
+      "duration_ms": 3086,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "voice_male_breathing_mask_loop_run_01"
+      ],
+      "filename": "voice_male_breathing_mask_loop_run_01"
+    },
+    {
+      "id": "sfx_0242",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/casting_charge_matter_fast_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 424,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "casting_charge_matter_fast_01"
+      ],
+      "filename": "casting_charge_matter_fast_01"
+    },
+    {
+      "id": "sfx_0243",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/chimes_magic_bell_ding_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 1758,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "bell",
+        "ding"
+      ],
+      "filename": "chimes_magic_bell_ding_01"
+    },
+    {
+      "id": "sfx_0244",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/chimes_magical_bells_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 2000,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "chimes_magical_bells_01"
+      ],
+      "filename": "chimes_magical_bells_01"
+    },
+    {
+      "id": "sfx_0245",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/dark_portal_wind_effect_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 7336,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "dark"
+      ],
+      "filename": "dark_portal_wind_effect_01"
+    },
+    {
+      "id": "sfx_0246",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/dark_wind_growls_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 4600,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "dark"
+      ],
+      "filename": "dark_wind_growls_01"
+    },
+    {
+      "id": "sfx_0247",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/fear_confuse_horror_spell_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 2110,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "fear_confuse_horror_spell_01"
+      ],
+      "filename": "fear_confuse_horror_spell_01"
+    },
+    {
+      "id": "sfx_0248",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/ice_spell_forming_shards_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 3587,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "ice_spell_forming_shards_01"
+      ],
+      "filename": "ice_spell_forming_shards_01"
+    },
+    {
+      "id": "sfx_0249",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/magic_sparkle/light_in_dark_spell_01.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "magic_sparkle",
+      "editorial_role": "emotion",
+      "duration_ms": 3600,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "dark"
+      ],
+      "filename": "light_in_dark_spell_01"
+    },
+    {
+      "id": "sfx_0250",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/success_cash/Cash Register sounds effects No Copyright free use.mp3",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "success_cash",
+      "editorial_role": "emotion",
+      "duration_ms": 2321,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "cash register sounds effects no copyright free use"
+      ],
+      "filename": "Cash Register sounds effects No Copyright free use"
+    },
+    {
+      "id": "sfx_0251",
+      "path": "/home/ishanp/Videos/Assets/SFX/15_EMOTIONAL_ACCENTS/success_cash/MA_Tuttkile_ChaChingCashRegister_1.wav",
+      "category": "15_EMOTIONAL_ACCENTS",
+      "subcategory": "success_cash",
+      "editorial_role": "emotion",
+      "duration_ms": 2982,
+      "sample_rate": 48000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -12.0,
+      "recommended_use": "single_hit",
+      "safe_overlay": true,
+      "tags": [
+        "ma_tuttkile_chachingcashregister_1"
+      ],
+      "filename": "MA_Tuttkile_ChaChingCashRegister_1"
+    },
+    {
+      "id": "sfx_0252",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/credits_roll/COMType_Historical Typewriter Processing Steady Soft 01_B00M_ONE.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "credits_roll",
+      "editorial_role": "outro",
+      "duration_ms": 39011,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "soft"
+      ],
+      "filename": "COMType_Historical Typewriter Processing Steady Soft 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0253",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/credits_roll/COMType_Historical Typewriter Processing Steady Strong 01_B00M_ONE.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "credits_roll",
+      "editorial_role": "outro",
+      "duration_ms": 31483,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "comtype_historical typewriter processing steady strong 01_b00m_one"
+      ],
+      "filename": "COMType_Historical Typewriter Processing Steady Strong 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0254",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/credits_roll/COMType_Historical Typewriter Ratchet Large 01_B00M_ONE.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "credits_roll",
+      "editorial_role": "outro",
+      "duration_ms": 15603,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "comtype_historical typewriter ratchet large 01_b00m_one"
+      ],
+      "filename": "COMType_Historical Typewriter Ratchet Large 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0255",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/fade_out/DSGNDron_Dark Industrial Atmo 01_B00M_ONE.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "fade_out",
+      "editorial_role": "outro",
+      "duration_ms": 149980,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "dark"
+      ],
+      "filename": "DSGNDron_Dark Industrial Atmo 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0256",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/fade_out/DSGNDron_Dark Industrial Atmo Intense 01_B00M_ONE.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "fade_out",
+      "editorial_role": "outro",
+      "duration_ms": 149980,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "dark"
+      ],
+      "filename": "DSGNDron_Dark Industrial Atmo Intense 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0257",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/fade_out/DSGNDron_Dark Industrial Atmo Soft 01_B00M_ONE.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "fade_out",
+      "editorial_role": "outro",
+      "duration_ms": 150000,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "soft",
+        "dark"
+      ],
+      "filename": "DSGNDron_Dark Industrial Atmo Soft 01_B00M_ONE"
+    },
+    {
+      "id": "sfx_0258",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/thank_you/Ni Sound - Cute Interface - Clinking Chimes Notification.wav",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "thank_you",
+      "editorial_role": "outro",
+      "duration_ms": 1544,
+      "sample_rate": 96000,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "notification"
+      ],
+      "filename": "Ni Sound - Cute Interface - Clinking Chimes Notification"
+    },
+    {
+      "id": "sfx_0259",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/thank_you/sample_confirm_success01_kofi_by_miraclei-360153.mp3",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "thank_you",
+      "editorial_role": "outro",
+      "duration_ms": 1593,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "sample_confirm_success01_kofi_by_miraclei-360153"
+      ],
+      "filename": "sample_confirm_success01_kofi_by_miraclei-360153"
+    },
+    {
+      "id": "sfx_0260",
+      "path": "/home/ishanp/Videos/Assets/SFX/16_OUTROS_CLOSINGS/thank_you/sample_confirm_success02_kofi_by_miraclei-360154.mp3",
+      "category": "16_OUTROS_CLOSINGS",
+      "subcategory": "thank_you",
+      "editorial_role": "outro",
+      "duration_ms": 1593,
+      "sample_rate": 44100,
+      "channels": 2,
+      "peak_db": 0.0,
+      "loudness_lufs": 0.0,
+      "recommended_gain_db": -8.0,
+      "recommended_use": "stinger",
+      "safe_overlay": false,
+      "tags": [
+        "sample_confirm_success02_kofi_by_miraclei-360154"
+      ],
+      "filename": "sample_confirm_success02_kofi_by_miraclei-360154"
+    }
+  ],
+  "search_aliases": {
+    "intro sfx": [
+      "sfx_0000",
+      "sfx_0001",
+      "sfx_0002",
+      "sfx_0003",
+      "sfx_0004",
+      "sfx_0005",
+      "sfx_0006",
+      "sfx_0007",
+      "sfx_0008",
+      "sfx_0009"
+    ],
+    "intro sound": [
+      "sfx_0000",
+      "sfx_0001",
+      "sfx_0002",
+      "sfx_0003",
+      "sfx_0004",
+      "sfx_0005",
+      "sfx_0006",
+      "sfx_0007",
+      "sfx_0008",
+      "sfx_0009"
+    ],
+    "hook sfx": [],
+    "hook sound": [],
+    "transition sfx": [
+      "sfx_0016",
+      "sfx_0017",
+      "sfx_0018",
+      "sfx_0019",
+      "sfx_0020",
+      "sfx_0021",
+      "sfx_0022",
+      "sfx_0023",
+      "sfx_0024",
+      "sfx_0025"
+    ],
+    "transition sound": [
+      "sfx_0016",
+      "sfx_0017",
+      "sfx_0018",
+      "sfx_0019",
+      "sfx_0020",
+      "sfx_0021",
+      "sfx_0022",
+      "sfx_0023",
+      "sfx_0024",
+      "sfx_0025"
+    ],
+    "highlight sfx": [
+      "sfx_0106",
+      "sfx_0107",
+      "sfx_0108",
+      "sfx_0109",
+      "sfx_0110",
+      "sfx_0111",
+      "sfx_0112",
+      "sfx_0113",
+      "sfx_0114",
+      "sfx_0115"
+    ],
+    "highlight sound": [
+      "sfx_0106",
+      "sfx_0107",
+      "sfx_0108",
+      "sfx_0109",
+      "sfx_0110",
+      "sfx_0111",
+      "sfx_0112",
+      "sfx_0113",
+      "sfx_0114",
+      "sfx_0115"
+    ],
+    "cta sfx": [
+      "sfx_0163",
+      "sfx_0164",
+      "sfx_0165",
+      "sfx_0166",
+      "sfx_0167",
+      "sfx_0168",
+      "sfx_0169",
+      "sfx_0170",
+      "sfx_0171",
+      "sfx_0172"
+    ],
+    "cta sound": [
+      "sfx_0163",
+      "sfx_0164",
+      "sfx_0165",
+      "sfx_0166",
+      "sfx_0167",
+      "sfx_0168",
+      "sfx_0169",
+      "sfx_0170",
+      "sfx_0171",
+      "sfx_0172"
+    ],
+    "ambience sfx": [
+      "sfx_0176",
+      "sfx_0177",
+      "sfx_0178",
+      "sfx_0179",
+      "sfx_0180",
+      "sfx_0181",
+      "sfx_0182",
+      "sfx_0183",
+      "sfx_0184",
+      "sfx_0185"
+    ],
+    "ambience sound": [
+      "sfx_0176",
+      "sfx_0177",
+      "sfx_0178",
+      "sfx_0179",
+      "sfx_0180",
+      "sfx_0181",
+      "sfx_0182",
+      "sfx_0183",
+      "sfx_0184",
+      "sfx_0185"
+    ],
+    "text sfx": [
+      "sfx_0208",
+      "sfx_0209",
+      "sfx_0210",
+      "sfx_0211",
+      "sfx_0212",
+      "sfx_0213",
+      "sfx_0214",
+      "sfx_0215",
+      "sfx_0216",
+      "sfx_0217"
+    ],
+    "text sound": [
+      "sfx_0208",
+      "sfx_0209",
+      "sfx_0210",
+      "sfx_0211",
+      "sfx_0212",
+      "sfx_0213",
+      "sfx_0214",
+      "sfx_0215",
+      "sfx_0216",
+      "sfx_0217"
+    ],
+    "emotion sfx": [
+      "sfx_0240",
+      "sfx_0241",
+      "sfx_0242",
+      "sfx_0243",
+      "sfx_0244",
+      "sfx_0245",
+      "sfx_0246",
+      "sfx_0247",
+      "sfx_0248",
+      "sfx_0249"
+    ],
+    "emotion sound": [
+      "sfx_0240",
+      "sfx_0241",
+      "sfx_0242",
+      "sfx_0243",
+      "sfx_0244",
+      "sfx_0245",
+      "sfx_0246",
+      "sfx_0247",
+      "sfx_0248",
+      "sfx_0249"
+    ],
+    "outro sfx": [
+      "sfx_0252",
+      "sfx_0253",
+      "sfx_0254",
+      "sfx_0255",
+      "sfx_0256",
+      "sfx_0257",
+      "sfx_0258",
+      "sfx_0259",
+      "sfx_0260"
+    ],
+    "outro sound": [
+      "sfx_0252",
+      "sfx_0253",
+      "sfx_0254",
+      "sfx_0255",
+      "sfx_0256",
+      "sfx_0257",
+      "sfx_0258",
+      "sfx_0259",
+      "sfx_0260"
+    ],
+    "02 nature elements": [
+      "sfx_0037",
+      "sfx_0038",
+      "sfx_0039",
+      "sfx_0040",
+      "sfx_0041",
+      "sfx_0042",
+      "sfx_0043",
+      "sfx_0044",
+      "sfx_0045",
+      "sfx_0046"
+    ],
+    "05 vehicles": [
+      "sfx_0079",
+      "sfx_0080",
+      "sfx_0081",
+      "sfx_0082",
+      "sfx_0083",
+      "sfx_0084",
+      "sfx_0085",
+      "sfx_0086",
+      "sfx_0087",
+      "sfx_0088"
+    ],
+    "16 outros closings": [
+      "sfx_0252",
+      "sfx_0253",
+      "sfx_0254",
+      "sfx_0255",
+      "sfx_0256",
+      "sfx_0257",
+      "sfx_0258",
+      "sfx_0259",
+      "sfx_0260"
+    ],
+    "12 cta call to action": [
+      "sfx_0163",
+      "sfx_0164",
+      "sfx_0165",
+      "sfx_0166",
+      "sfx_0167",
+      "sfx_0168",
+      "sfx_0169",
+      "sfx_0170",
+      "sfx_0171",
+      "sfx_0172"
+    ],
+    "01 foley essentials": [
+      "sfx_0016",
+      "sfx_0017",
+      "sfx_0018",
+      "sfx_0019",
+      "sfx_0020",
+      "sfx_0021",
+      "sfx_0022",
+      "sfx_0023",
+      "sfx_0024",
+      "sfx_0025"
+    ],
+    "04 human sounds": [
+      "sfx_0073",
+      "sfx_0074",
+      "sfx_0075",
+      "sfx_0076",
+      "sfx_0077",
+      "sfx_0078"
+    ],
+    "03 material impacts": [
+      "sfx_0059",
+      "sfx_0060",
+      "sfx_0061",
+      "sfx_0062",
+      "sfx_0063",
+      "sfx_0064",
+      "sfx_0065",
+      "sfx_0066",
+      "sfx_0067",
+      "sfx_0068"
+    ],
+    "11 highlights moments": [
+      "sfx_0106",
+      "sfx_0107",
+      "sfx_0108",
+      "sfx_0109",
+      "sfx_0110",
+      "sfx_0111",
+      "sfx_0112",
+      "sfx_0113",
+      "sfx_0114",
+      "sfx_0115"
+    ],
+    "00 intros openers": [
+      "sfx_0000",
+      "sfx_0001",
+      "sfx_0002",
+      "sfx_0003",
+      "sfx_0004",
+      "sfx_0005",
+      "sfx_0006",
+      "sfx_0007",
+      "sfx_0008",
+      "sfx_0009"
+    ],
+    "10 transitions": [
+      "sfx_0094",
+      "sfx_0095",
+      "sfx_0096",
+      "sfx_0097",
+      "sfx_0098",
+      "sfx_0099",
+      "sfx_0100",
+      "sfx_0101",
+      "sfx_0102",
+      "sfx_0103"
+    ],
+    "13 ambience mood": [
+      "sfx_0176",
+      "sfx_0177",
+      "sfx_0178",
+      "sfx_0179",
+      "sfx_0180",
+      "sfx_0181",
+      "sfx_0182",
+      "sfx_0183",
+      "sfx_0184",
+      "sfx_0185"
+    ],
+    "15 emotional accents": [
+      "sfx_0240",
+      "sfx_0241",
+      "sfx_0242",
+      "sfx_0243",
+      "sfx_0244",
+      "sfx_0245",
+      "sfx_0246",
+      "sfx_0247",
+      "sfx_0248",
+      "sfx_0249"
+    ],
+    "14 text popups": [
+      "sfx_0208",
+      "sfx_0209",
+      "sfx_0210",
+      "sfx_0211",
+      "sfx_0212",
+      "sfx_0213",
+      "sfx_0214",
+      "sfx_0215",
+      "sfx_0216",
+      "sfx_0217"
+    ],
+    "rise": [
+      "sfx_0000",
+      "sfx_0001",
+      "sfx_0002",
+      "sfx_0003",
+      "sfx_0004",
+      "sfx_0129",
+      "sfx_0132",
+      "sfx_0143",
+      "sfx_0144",
+      "sfx_0147"
+    ],
+    "power up": [
+      "sfx_0005"
+    ],
+    "sci-fi_device_item_power_up_flash_01": [
+      "sfx_0006"
+    ],
+    "sci-fi_power_up_01": [
+      "sfx_0007",
+      "sfx_0174"
+    ],
+    "sci-fi_power_up_02": [
+      "sfx_0008",
+      "sfx_0175"
+    ],
+    "sci-fi_power_up_03": [
+      "sfx_0009"
+    ],
+    "whoosh": [
+      "sfx_0010",
+      "sfx_0011",
+      "sfx_0012",
+      "sfx_0013",
+      "sfx_0014",
+      "sfx_0104",
+      "sfx_0105",
+      "sfx_0140",
+      "sfx_0144",
+      "sfx_0156"
+    ],
+    "swish": [
+      "sfx_0013",
+      "sfx_0014"
+    ],
+    "pop": [
+      "sfx_0015",
+      "sfx_0210",
+      "sfx_0223",
+      "sfx_0237",
+      "sfx_0239"
+    ],
+    "clothmvmt_fabric knot foley 01_b00m_one": [
+      "sfx_0016",
+      "sfx_0094"
+    ],
+    "clothmvmt_folding sail by hands 01_b00m_one": [
+      "sfx_0017"
+    ],
+    "hard": [
+      "sfx_0018",
+      "sfx_0051",
+      "sfx_0060",
+      "sfx_0061",
+      "sfx_0069",
+      "sfx_0073",
+      "sfx_0161"
+    ],
+    "doorcreak_old wooden door close_b00m_one": [
+      "sfx_0019"
+    ],
+    "doorcreak_old wooden door open_b00m_one": [
+      "sfx_0020"
+    ],
+    "doorwood_wooden creak fast 01_b00m_one": [
+      "sfx_0021"
+    ],
+    "doorwood_wooden creak slow 01_b00m_one": [
+      "sfx_0022"
+    ],
+    "doorwood_old rattly wooden door close_b00m_one": [
+      "sfx_0023"
+    ],
+    "doorwood_old rattly wooden door open_b00m_one": [
+      "sfx_0024"
+    ],
+    "doorwood_wooden open close fast 01_b00m_one": [
+      "sfx_0025"
+    ],
+    "doorwood_wooden open close slow 01_b00m_one": [
+      "sfx_0026"
+    ],
+    "feethmn_leather boot heavy concrete run_b00m_one": [
+      "sfx_0027"
+    ],
+    "feethmn_leather boot heavy concrete walk_b00m_one": [
+      "sfx_0028"
+    ],
+    "feethmn_leather boot light concrete gritty walk_b00m_one": [
+      "sfx_0029"
+    ],
+    "feethmn_leather boot heavy grass run_b00m_one": [
+      "sfx_0030"
+    ],
+    "feethmn_leather boot heavy grass walk_b00m_one": [
+      "sfx_0031"
+    ],
+    "feethmn_leather boot heavy snow run_b00m_one": [
+      "sfx_0032"
+    ],
+    "feethmn_leather boot heavy snow walk_b00m_one": [
+      "sfx_0033"
+    ],
+    "feethmn_leather boot heavy wood run_b00m_one": [
+      "sfx_0034"
+    ],
+    "feethmn_leather boot heavy wood walk_b00m_one": [
+      "sfx_0035"
+    ],
+    "feethmn_leather boot light concrete walk (wood)_b00m_one": [
+      "sfx_0036"
+    ],
+    "fireburn_matchstick ignition medium_b00m_one": [
+      "sfx_0037"
+    ],
+    "fireburn_nighttime campfire close up 01_b00m_one": [
+      "sfx_0038"
+    ],
+    "firecrkl_fire crackle at clay bakery_b00m_one": [
+      "sfx_0039"
+    ],
+    "firecrkl_plastic bottle burn crackle long xy_b00m_one": [
+      "sfx_0040"
+    ],
+    "firecrkl_plastic bottle burn crackle xy_b00m_one": [
+      "sfx_0041"
+    ],
+    "ambpark_park after rain ukraine 01_b00m_one": [
+      "sfx_0042"
+    ],
+    "ambpark_park after rain ukraine 02_b00m_one": [
+      "sfx_0043"
+    ],
+    "rainmetl_heavy inside caravan 01_b00m_one": [
+      "sfx_0044"
+    ],
+    "rainmetl_heavy inside caravan 02_b00m_one": [
+      "sfx_0045"
+    ],
+    "soft": [
+      "sfx_0046",
+      "sfx_0047",
+      "sfx_0071",
+      "sfx_0074",
+      "sfx_0088",
+      "sfx_0095",
+      "sfx_0168",
+      "sfx_0232",
+      "sfx_0252",
+      "sfx_0257"
+    ],
+    "thun_thunder blast close heavy 01_b00m_one": [
+      "sfx_0048"
+    ],
+    "watrdrip_chemical reactions water dripping burst 01_b00m_one": [
+      "sfx_0049"
+    ],
+    "watrdrip_chemical reactions water dripping puff sequence 01_b00m_one": [
+      "sfx_0050"
+    ],
+    "watrflow_sink water flow medium_b00m_one": [
+      "sfx_0052"
+    ],
+    "watrflow_small river stream after rain 01_b00m_one": [
+      "sfx_0053"
+    ],
+    "watrflow_tap flow water on metal sink medium loop 01_b00m_one": [
+      "sfx_0054"
+    ],
+    "watrflow_river medium splashing 01_b00m_one": [
+      "sfx_0055"
+    ],
+    "watrflow_river small splashing 01_b00m_one": [
+      "sfx_0056"
+    ],
+    "hit": [
+      "sfx_0057",
+      "sfx_0121",
+      "sfx_0132",
+      "sfx_0157"
+    ],
+    "watrmvmt_water splash 01_b00m_one": [
+      "sfx_0058"
+    ],
+    "ui": [
+      "sfx_0059",
+      "sfx_0237",
+      "sfx_0239"
+    ],
+    "metlimpt_heavy metal drop on wooden surface medium 01_b00m_one": [
+      "sfx_0062"
+    ],
+    "metlimpt_heavy metal drop on wooden surface medium 02_b00m_one": [
+      "sfx_0063"
+    ],
+    "bright": [
+      "sfx_0064",
+      "sfx_0065",
+      "sfx_0066",
+      "sfx_0067"
+    ],
+    "impact": [
+      "sfx_0064",
+      "sfx_0065",
+      "sfx_0066",
+      "sfx_0067",
+      "sfx_0118",
+      "sfx_0157",
+      "sfx_0158",
+      "sfx_0159",
+      "sfx_0160",
+      "sfx_0161"
+    ],
+    "woodfric_creaky wood movement 01_b00m_one": [
+      "sfx_0068"
+    ],
+    "woodfric_small wood squeak medium 01_b00m_one": [
+      "sfx_0070"
+    ],
+    "woodfric_wood creaky movement 01_b00m_one": [
+      "sfx_0072"
+    ],
+    "hmnbrth_breathing mouth heavy female a_b00m_one": [
+      "sfx_0075"
+    ],
+    "hmnbrth_breathing mouth heavy male a_b00m_one": [
+      "sfx_0076"
+    ],
+    "hmnbrth_breathing nose to nose female a_b00m_one": [
+      "sfx_0077"
+    ],
+    "hmnbrth_breathing nose to nose male a_b00m_one": [
+      "sfx_0078"
+    ],
+    "vehdoor_lada niva exterior foley door close_b00m_one": [
+      "sfx_0079"
+    ],
+    "vehdoor_lada niva exterior foley door open_b00m_one": [
+      "sfx_0080"
+    ],
+    "vehdoor_lada niva interior foley door close_b00m_one": [
+      "sfx_0081"
+    ],
+    "vehdoor_lada niva interior foley door open_b00m_one": [
+      "sfx_0082"
+    ],
+    "vehhorn_bmw 120i exterior horn_b00m_one": [
+      "sfx_0083"
+    ],
+    "vehhorn_bmw 120i interior horn_b00m_one": [
+      "sfx_0084"
+    ],
+    "vehhorn_lada niva interior horn_b00m_one": [
+      "sfx_0085"
+    ],
+    "vehhorn_peugeot 207 exterior horn_b00m_one": [
+      "sfx_0086"
+    ],
+    "vehcar_cross pass of two cars_b00m_one": [
+      "sfx_0087"
+    ],
+    "vehcar_small ford truck pass fast_b00m_one": [
+      "sfx_0089"
+    ],
+    "vehcar_small ford truck pass slow_b00m_one": [
+      "sfx_0090"
+    ],
+    "vehcar_ford fusion exterior start engine idle and turn off_b00m_one": [
+      "sfx_0091"
+    ],
+    "vehcar_lada niva interior engine ignition start stop_b00m_one": [
+      "sfx_0092"
+    ],
+    "vehcar_toyota vitz exterior start engine work idle and turn off_b00m_one": [
+      "sfx_0093"
+    ],
+    "glitch 1": [
+      "sfx_0096"
+    ],
+    "glitch 2": [
+      "sfx_0097"
+    ],
+    "glitch 3": [
+      "sfx_0098"
+    ],
+    "vhs 1": [
+      "sfx_0099"
+    ],
+    "vhs 2": [
+      "sfx_0100"
+    ],
+    "smooth": [
+      "sfx_0101"
+    ],
+    "swoosh 01 - 01": [
+      "sfx_0102"
+    ],
+    "swoosh 4": [
+      "sfx_0103"
+    ],
+    "energy_blast_large_01": [
+      "sfx_0106"
+    ],
+    "explosion_big_01": [
+      "sfx_0107"
+    ],
+    "explosion_big_02": [
+      "sfx_0108"
+    ],
+    "explosion_large_01": [
+      "sfx_0109"
+    ],
+    "explosion_large_02": [
+      "sfx_0110"
+    ],
+    "explosion_med_long_tail_01": [
+      "sfx_0111"
+    ],
+    "crwdapls_crowd applause feet stomp 01_b00m_one": [
+      "sfx_0112"
+    ],
+    "crwdapls_crowd applause medium 01_b00m_one": [
+      "sfx_0113"
+    ],
+    "loud": [
+      "sfx_0114",
+      "sfx_0204",
+      "sfx_0205"
+    ],
+    "dark": [
+      "sfx_0115",
+      "sfx_0116",
+      "sfx_0142",
+      "sfx_0245",
+      "sfx_0246",
+      "sfx_0249",
+      "sfx_0255",
+      "sfx_0256",
+      "sfx_0257"
+    ],
+    "dsgndron_cinematic suspense tension drone 01_b00m_one": [
+      "sfx_0117"
+    ],
+    "filmkid_air bellow deep \uff08filmkid\uff09": [
+      "sfx_0119"
+    ],
+    "filmkid_breathy low deep reverse \uff08filmkid\uff09": [
+      "sfx_0120"
+    ],
+    "filmkid_cinematic heavy bass ramp up \uff08filmkid\uff09": [
+      "sfx_0122"
+    ],
+    "filmkid_cinematic time warp \uff08filmkid\uff09": [
+      "sfx_0123"
+    ],
+    "cold": [
+      "sfx_0124"
+    ],
+    "filmkid_crisp high short reverb \uff08filmkid\uff09": [
+      "sfx_0125"
+    ],
+    "filmkid_crisp wind long echo \uff08filmkid\uff09": [
+      "sfx_0126"
+    ],
+    "filmkid_deep airy ring out short \uff08filmkid\uff09": [
+      "sfx_0127"
+    ],
+    "filmkid_deep heavy climb \uff08filmkid\uff09": [
+      "sfx_0128"
+    ],
+    "filmkid_distorted dreams sequence \uff08filmkid\uff09": [
+      "sfx_0130"
+    ],
+    "filmkid_heavy depth air \uff08filmkid\uff09": [
+      "sfx_0131"
+    ],
+    "filmkid_incoming judgement \uff08filmkid_": [
+      "sfx_0133"
+    ],
+    "filmkid_kinetic ramp up \uff08filmkid\uff09": [
+      "sfx_0134"
+    ],
+    "filmkid_low wind blow \uff08filmkid\uff09": [
+      "sfx_0135"
+    ],
+    "filmkid_metallic reverb ring out \uff08filmkid\uff09": [
+      "sfx_0136"
+    ],
+    "filmkid_pass through time low deep \uff08filmkid\uff09": [
+      "sfx_0137"
+    ],
+    "filmkid_put it in slow mo \uff08filmkid\uff09": [
+      "sfx_0138"
+    ],
+    "filmkid_ramp up short mid range \uff08filmkid\uff09": [
+      "sfx_0139"
+    ],
+    "filmkid_rapid warper \uff08filmkid\uff09": [
+      "sfx_0141"
+    ],
+    "digital": [
+      "sfx_0145"
+    ],
+    "filmkid_shaky flame out \uff08filmkid\uff09": [
+      "sfx_0146"
+    ],
+    "filmkid_shots in 5 \uff08filmkid\uff09": [
+      "sfx_0148"
+    ],
+    "filmkid_simple airy vacuum low \uff08filmkid\uff09": [
+      "sfx_0149"
+    ],
+    "filmkid_simple ramp rollercoaster short \uff08filmkid\uff09": [
+      "sfx_0150"
+    ],
+    "filmkid_spunned up shut down \uff08filmkid\uff09": [
+      "sfx_0151"
+    ],
+    "filmkid_tension simultaneous \uff08filmkid\uff09": [
+      "sfx_0152"
+    ],
+    "filmkid_thud air blow \uff08filmkid\uff09": [
+      "sfx_0153"
+    ],
+    "filmkid_thunderous tension tinnitus \uff08filmkid\uff09": [
+      "sfx_0154"
+    ],
+    "filmkid_trillobyte double back bass \uff08filmkid": [
+      "sfx_0155"
+    ],
+    "chime": [
+      "sfx_0157"
+    ],
+    "cmptkey_flat keyboard single enter key 01_b00m_one": [
+      "sfx_0163"
+    ],
+    "cmptkey_flat keyboard single generic key 01_b00m_one": [
+      "sfx_0164"
+    ],
+    "cmptkey_mac keyboard single generic key 01_b00m_one": [
+      "sfx_0165"
+    ],
+    "notification": [
+      "sfx_0166",
+      "sfx_0167",
+      "sfx_0258"
+    ],
+    "button": [
+      "sfx_0169"
+    ],
+    "click": [
+      "sfx_0170",
+      "sfx_0171",
+      "sfx_0172",
+      "sfx_0237"
+    ],
+    "riser 1": [
+      "sfx_0173"
+    ],
+    "city atmosphere": [
+      "sfx_0176",
+      "sfx_0207"
+    ],
+    "server room atmosphere": [
+      "sfx_0177"
+    ],
+    "tention atmosphere": [
+      "sfx_0178"
+    ],
+    "ambbird_africa limpopo river day lively birdsong_b00m_one": [
+      "sfx_0179"
+    ],
+    "ambbird_river bed dawn birds bedlam 01_b00m_one": [
+      "sfx_0180"
+    ],
+    "ambbird_river bed dawn birds bedlam 02_b00m_one": [
+      "sfx_0181"
+    ],
+    "ambbird_river bed dawn birds call quack_b00m_one": [
+      "sfx_0182"
+    ],
+    "ambbird_river bed dawn birds sing_b00m_one": [
+      "sfx_0183"
+    ],
+    "ambbird_river bed dawn birds upset_b00m_one": [
+      "sfx_0184"
+    ],
+    "ambbird_river bed dawn birds_b00m_one": [
+      "sfx_0185"
+    ],
+    "ambbird_river dawn bird calls_b00m_one": [
+      "sfx_0186"
+    ],
+    "ambbird_river dawn bird close 01_b00m_one": [
+      "sfx_0187"
+    ],
+    "ambbird_river dawn bird close 02_b00m_one": [
+      "sfx_0188"
+    ],
+    "calm": [
+      "sfx_0189"
+    ],
+    "birds in the forest": [
+      "sfx_0190"
+    ],
+    "forest and birds": [
+      "sfx_0191"
+    ],
+    "ambroom_big server room 01_b00m_one": [
+      "sfx_0192"
+    ],
+    "ambroom_big server room 02_b00m_one": [
+      "sfx_0193"
+    ],
+    "ambroom_room of clocks big pendulums and ticking fast_b00m_one": [
+      "sfx_0194"
+    ],
+    "ambroom_room of clocks big pendulums and ticking_b00m_one": [
+      "sfx_0195"
+    ],
+    "ambroom_room of clocks big pendulums_b00m_one": [
+      "sfx_0196"
+    ],
+    "ambroom_room of clocks dry fast_b00m_one": [
+      "sfx_0197"
+    ],
+    "ambroom_room of clocks dry_b00m_one": [
+      "sfx_0198"
+    ],
+    "ambroom_room of clocks pendulums_b00m_one": [
+      "sfx_0199"
+    ],
+    "ambroom_room of clocks small pendulums and ticking fast_b00m_one": [
+      "sfx_0200"
+    ],
+    "ambroom_room of clocks small pendulums and ticking_b00m_one": [
+      "sfx_0201"
+    ],
+    "ambroom_server room ventilation hole 01_b00m_one": [
+      "sfx_0202"
+    ],
+    "ambroom_small server rack 01_b00m_one": [
+      "sfx_0203"
+    ],
+    "ambtown_hailing weather small town_b00m_one": [
+      "sfx_0206"
+    ],
+    "typing": [
+      "sfx_0208"
+    ],
+    "keyboard-typing": [
+      "sfx_0209"
+    ],
+    "- anime shine sound effect 2 high quality": [
+      "sfx_0211"
+    ],
+    "- anime shine sound effect prosounds": [
+      "sfx_0212"
+    ],
+    "- comical anime sound effects used by fizz sound creation part 2": [
+      "sfx_0213"
+    ],
+    "- fizz sound old anime sound effects": [
+      "sfx_0214"
+    ],
+    "anime sling 2": [
+      "sfx_0215"
+    ],
+    "bonk sound effect 2": [
+      "sfx_0216"
+    ],
+    "cartoon boing #2": [
+      "sfx_0217"
+    ],
+    "cartoon boing #3": [
+      "sfx_0218"
+    ],
+    "cartoon boing": [
+      "sfx_0219"
+    ],
+    "cartoon chomp": [
+      "sfx_0220"
+    ],
+    "cartoon clock": [
+      "sfx_0221"
+    ],
+    "cartoon laugh": [
+      "sfx_0222"
+    ],
+    "cartoon ricochet #2": [
+      "sfx_0224"
+    ],
+    "cartoon ricochet": [
+      "sfx_0225"
+    ],
+    "cartoon spin": [
+      "sfx_0226"
+    ],
+    "cartoon transition": [
+      "sfx_0227"
+    ],
+    "cartoon slide up": [
+      "sfx_0228"
+    ],
+    "cartoon slip": [
+      "sfx_0229"
+    ],
+    "boing boing": [
+      "sfx_0230"
+    ],
+    "cartoon run": [
+      "sfx_0231"
+    ],
+    "comtype_historical typewriter processing steady strong 01_b00m_one": [
+      "sfx_0233",
+      "sfx_0253"
+    ],
+    "comtype_historical typewriter ratchet large 01_b00m_one": [
+      "sfx_0234",
+      "sfx_0254"
+    ],
+    "comtype_historical typewriter slider error 01_b00m_one": [
+      "sfx_0235"
+    ],
+    "comtype_historical typewriter slider error short 01_b00m_one": [
+      "sfx_0236"
+    ],
+    "hover": [
+      "sfx_0238"
+    ],
+    "voice_male_breathing_mask_loop_jog_01": [
+      "sfx_0240"
+    ],
+    "voice_male_breathing_mask_loop_run_01": [
+      "sfx_0241"
+    ],
+    "casting_charge_matter_fast_01": [
+      "sfx_0242"
+    ],
+    "bell": [
+      "sfx_0243"
+    ],
+    "ding": [
+      "sfx_0243"
+    ],
+    "chimes_magical_bells_01": [
+      "sfx_0244"
+    ],
+    "fear_confuse_horror_spell_01": [
+      "sfx_0247"
+    ],
+    "ice_spell_forming_shards_01": [
+      "sfx_0248"
+    ],
+    "cash register sounds effects no copyright free use": [
+      "sfx_0250"
+    ],
+    "ma_tuttkile_chachingcashregister_1": [
+      "sfx_0251"
+    ],
+    "sample_confirm_success01_kofi_by_miraclei-360153": [
+      "sfx_0259"
+    ],
+    "sample_confirm_success02_kofi_by_miraclei-360154": [
+      "sfx_0260"
+    ]
+  }
+}

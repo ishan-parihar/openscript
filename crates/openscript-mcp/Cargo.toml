@@ -1,0 +1,16 @@
+[package]
+name = "openscript-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+openscript-core = { path = "../openscript-core" }
+openscript-ffmpeg = { path = "../openscript-ffmpeg" }
+openscript-transcribe = { path = "../openscript-transcribe" }
+openscript-tts = { path = "../openscript-tts" }
+openscript-assets = { path = "../openscript-assets" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

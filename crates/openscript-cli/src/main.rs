@@ -1,0 +1,426 @@
+use clap::{Parser, Subcommand};
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
+    ExecutableCommand,
+};
+use openscript_core::timeline::Timeline;
+use openscript_ui::app::App;
+use ratatui::{backend::CrosstermBackend, Terminal};
+use std::io::stdout;
+use std::path::Path;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+#[derive(Parser)]
+#[command(name = "openscript")]
+#[command(about = "OpenScript Rust Video Editor - MCP Server & TUI")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Start the MCP server on stdio
+    RunMcp,
+    /// Start the TUI with a timeline file
+    RunTui {
+        /// Path to timeline JSON file
+        #[arg(short, long)]
+        timeline: Option<String>,
+        /// Path to source video (creates new timeline)
+        #[arg(short, long)]
+        source: Option<String>,
+    },
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("openscript=info".parse()?),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::RunMcp => {
+            tracing::info!("Starting OpenScript MCP server");
+            openscript_mcp::server::run().await?;
+        }
+        Commands::RunTui { timeline, source } => {
+            run_tui(timeline, source).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_tui(
+    timeline_path: Option<String>,
+    source: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let timeline: Arc<RwLock<Timeline>>;
+    let path_str: String;
+
+    if let Some(path) = timeline_path {
+        let tl = Timeline::load(&path)?;
+        path_str = path;
+        timeline = Arc::new(RwLock::new(tl));
+    } else if let Some(src) = source {
+        let src_path = std::path::PathBuf::from(&src);
+        let stem = src_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("timeline");
+        let tl_path = format!("{}.timeline.json", stem);
+        let tl = Timeline::new(src_path, "9:16", 30, None);
+        tl.save(&tl_path)?;
+        tracing::info!("Created new timeline: {}", tl_path);
+        path_str = tl_path;
+        timeline = Arc::new(RwLock::new(tl));
+    } else {
+        return Err("Either --timeline or --source is required".into());
+    }
+
+    stdout().execute(EnterAlternateScreen)?;
+    execute!(stdout(), EnableMouseCapture)?;
+
+    let backend = CrosstermBackend::new(stdout());
+    let mut terminal = Terminal::new(backend)?;
+    terminal.hide_cursor()?;
+
+    let mut app = App::new(timeline, path_str);
+
+    if let Err(e) = setup_file_watcher(&mut app).await {
+        tracing::warn!("File watcher init failed (app will work without auto-reload): {e}");
+    }
+
+    let mut running = true;
+    let tick_rate = std::time::Duration::from_millis(50);
+    let mut render_rx: Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>> = None;
+
+    while running {
+        app.process_file_events();
+
+        terminal.draw(|f| openscript_ui::ui::render(f, &app))?;
+
+        if let Some(rx) = &mut render_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(output) => app.complete_render(output),
+                    Err(e) => app.fail_render(e.to_string()),
+                }
+                render_rx = None;
+            }
+        }
+
+        if crossterm::event::poll(tick_rate)? {
+            if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
+                if key.kind != crossterm::event::KeyEventKind::Press {
+                    continue;
+                }
+
+                match app.mode {
+                    openscript_ui::app::AppMode::Normal => {
+                        handle_normal_mode(&mut app, key.code, &mut running, &mut render_rx)
+                    }
+                    openscript_ui::app::AppMode::EditCaption => handle_caption_mode(&mut app, key),
+                    openscript_ui::app::AppMode::AddingSegment => handle_adding_mode(&mut app, key),
+                }
+            }
+        }
+    }
+
+    terminal.show_cursor()?;
+    execute!(stdout(), DisableMouseCapture)?;
+    execute!(stdout(), LeaveAlternateScreen)?;
+
+    Ok(())
+}
+
+fn handle_normal_mode(
+    app: &mut App,
+    key: crossterm::event::KeyCode,
+    running: &mut bool,
+    render_rx: &mut Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>>,
+) {
+    use crossterm::event::KeyCode;
+    use openscript_ui::app::StatusType;
+
+    if app.is_rendering {
+        app.set_status("Render in progress... press Esc to cancel", StatusType::Info);
+        if key == KeyCode::Esc {
+            *render_rx = None;
+            app.is_rendering = false;
+            app.set_status("Render cancelled", StatusType::Info);
+        }
+        return;
+    }
+
+    match key {
+        KeyCode::Char('j') | KeyCode::Down => app.navigate_down(),
+        KeyCode::Char('k') | KeyCode::Up => app.navigate_up(),
+        KeyCode::Char('t') => app.cycle_track(),
+        KeyCode::Tab => app.toggle_view_focus(),
+
+        KeyCode::Char('v') => {
+            let preview = app.get_or_compute_preview();
+            if preview.render_ready {
+                app.set_status("Timeline is valid and render-ready", StatusType::Success);
+            } else {
+                app.set_status(
+                    &format!("{} issue(s)", preview.validation_errors.len()),
+                    StatusType::Error,
+                );
+            }
+        }
+
+        KeyCode::Enter => {
+            let has_segments = app
+                .timeline
+                .try_read()
+                .map(|tl| !tl.segments.is_empty())
+                .unwrap_or(false);
+            if has_segments {
+                app.start_caption_edit();
+            } else {
+                app.set_status("No segments to edit. Add one first with 'a'", StatusType::Info);
+            }
+        }
+
+        KeyCode::Char('a') => {
+            app.start_add_segment();
+        }
+
+        KeyCode::Char('d') => {
+            app.trigger_delete();
+        }
+
+        KeyCode::Char('r') => {
+            if let Some(rx) = spawn_render_task(app) {
+                *render_rx = Some(rx);
+            }
+        }
+
+        KeyCode::Char('x') => {
+            app.show_track_details = !app.show_track_details;
+            app.set_status(
+                if app.show_track_details {
+                    "Track details shown"
+                } else {
+                    "Track details hidden"
+                },
+                StatusType::Info,
+            );
+        }
+
+        KeyCode::Char('l') => {
+            match Timeline::load(&app.timeline_path) {
+                Ok(tl) => {
+                    if let Ok(mut guard) = app.timeline.try_write() {
+                        *guard = tl;
+                    }
+                    app.timeline_revision += 1;
+                    app.invalidate_preview();
+                    app.set_status("Timeline reloaded from disk", StatusType::Success);
+                }
+                Err(e) => app.set_status(&format!("Reload failed: {e}"), StatusType::Error),
+            }
+        }
+
+        KeyCode::Char('q') => *running = false,
+
+        KeyCode::Esc => {
+            app.cancel_delete();
+            app.set_status("", StatusType::Info);
+        }
+
+        _ => {}
+    }
+}
+
+fn handle_caption_mode(app: &mut App, key: crossterm::event::KeyEvent) {
+    match key.code {
+        crossterm::event::KeyCode::Enter => app.commit_caption(),
+        crossterm::event::KeyCode::Esc => app.cancel_caption(),
+        crossterm::event::KeyCode::Backspace => app.caption_input_backspace(),
+        crossterm::event::KeyCode::Delete => app.caption_input_delete(),
+        crossterm::event::KeyCode::Left => app.caption_input_left(),
+        crossterm::event::KeyCode::Right => app.caption_input_right(),
+        crossterm::event::KeyCode::Char(c) => app.caption_input_char(c),
+        _ => {}
+    }
+}
+
+fn handle_adding_mode(app: &mut App, key: crossterm::event::KeyEvent) {
+    match key.code {
+        crossterm::event::KeyCode::Enter => app.add_input_submit(),
+        crossterm::event::KeyCode::Esc => app.cancel_add_segment(),
+        crossterm::event::KeyCode::Backspace => app.add_input_backspace(),
+        crossterm::event::KeyCode::Char(c) => app.add_input_char(c),
+        _ => {}
+    }
+}
+
+fn spawn_render_task(
+    app: &mut App,
+) -> Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>> {
+    use openscript_ui::app::StatusType;
+
+    let render_data = match extract_render_data(app) {
+        Ok(data) => data,
+        Err(msg) => {
+            app.set_status(&msg, StatusType::Error);
+            return None;
+        }
+    };
+
+    let edl_path = render_data.edl_path.clone();
+    if let Err(e) = std::fs::write(&edl_path, serde_json::to_string_pretty(&render_data.edl_data).unwrap_or_default()) {
+        app.set_status(&format!("Failed to write EDL: {e}"), StatusType::Error);
+        return None;
+    }
+
+    app.start_render();
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    tokio::spawn(async move {
+        let config = openscript_ffmpeg::render::RenderConfig {
+            video_path: render_data.video_path,
+            edl_path: render_data.edl_path,
+            burn_captions: render_data.burn_captions,
+            srt_path: None,
+            ass_path: None,
+            overlay_mov: None,
+            aspect: render_data.aspect,
+            crf: 20,
+            fps: render_data.fps,
+        };
+
+        let result = openscript_ffmpeg::render::render(config)
+            .await
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
+
+        let _ = tx.send(result);
+    });
+
+    Some(rx)
+}
+
+struct RenderData {
+    video_path: String,
+    burn_captions: bool,
+    aspect: String,
+    fps: u32,
+    edl_path: String,
+    edl_data: serde_json::Value,
+}
+
+fn extract_render_data(app: &App) -> Result<RenderData, String> {
+    let guard = app.timeline.try_read().map_err(|_| "Timeline locked".to_string())?;
+
+    if guard.segments.is_empty() {
+        return Err("No segments to render".to_string());
+    }
+
+    let source = guard.source.clone();
+    if !source.exists() {
+        return Err(format!("Source video not found: {:?}", source));
+    }
+
+    let burn_captions = guard.effects.burn_captions;
+    let aspect = guard.target.aspect.clone();
+    let fps = guard.target.fps;
+    let loudnorm = guard.effects.audio.loudnorm;
+    let segments = guard.segments.clone();
+
+    let edl_data = serde_json::json!({
+        "version": "2.0",
+        "source": source.to_string_lossy(),
+        "target": {
+            "aspect": &aspect,
+            "fps": fps,
+        },
+        "segments": segments,
+        "effects": {
+            "burn_captions": burn_captions,
+            "audio": {
+                "loudnorm": loudnorm,
+            },
+        },
+    });
+
+    let edl_path = std::path::Path::new(&app.timeline_path)
+        .with_extension("edl.json")
+        .to_string_lossy()
+        .to_string();
+
+    Ok(RenderData {
+        video_path: source.to_string_lossy().to_string(),
+        burn_captions,
+        aspect,
+        fps,
+        edl_path,
+        edl_data,
+    })
+}
+
+async fn setup_file_watcher(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+    use std::sync::mpsc as std_mpsc;
+
+    let (tx, rx) = tokio::sync::mpsc::channel(32);
+    let timeline_path_clone = app.timeline_path.clone();
+    let watcher_tx = tx.clone();
+
+    let (std_tx, std_rx) = std_mpsc::channel();
+    let mut watcher = RecommendedWatcher::new(std_tx, Config::default())?;
+
+    let watch_path = Path::new(&timeline_path_clone);
+    if let Some(parent) = watch_path.parent() {
+        watcher.watch(parent, RecursiveMode::NonRecursive)?;
+    } else {
+        watcher.watch(watch_path, RecursiveMode::NonRecursive)?;
+    }
+
+    tokio::spawn(async move {
+        let timeline_path = timeline_path_clone;
+        let basename = Path::new(&timeline_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        while let Ok(event) = std_rx.recv() {
+            if let Ok(event) = event {
+                for path in event.paths {
+                    let fname = path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if fname == basename || fname.ends_with(".timeline.json") {
+                        match event.kind {
+                            EventKind::Modify(_) => {
+                                let _ = watcher_tx.send(openscript_ui::app::FileWatchEvent::Modified).await;
+                            }
+                            EventKind::Remove(_) => {
+                                let _ = watcher_tx.send(openscript_ui::app::FileWatchEvent::Deleted).await;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    std::mem::forget(watcher);
+
+    app.set_file_watcher(rx);
+    Ok(())
+}

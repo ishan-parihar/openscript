@@ -1,0 +1,11 @@
+[package]
+name = "openscript-ui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+openscript-core = { path = "../openscript-core" }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }

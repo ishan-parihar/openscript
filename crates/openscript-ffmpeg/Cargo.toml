@@ -1,0 +1,11 @@
+[package]
+name = "openscript-ffmpeg"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+openscript-core = { path = "../openscript-core" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tempfile = { workspace = true }

@@ -1,0 +1,15 @@
+{
+  "test_narrator": {
+    "id": "test_narrator",
+    "provider": "faster-qwen3-tts",
+    "mode": "clone",
+    "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "ref_audio": "/home/ishanp/Documents/GitHub/openscript/mcp/assets/test_narrator_ref.wav",
+    "ref_text": "आप ज़ भाई तो आप यह साब तो तो बग़्द लोग ज़ा यह यह आप ग़्पचरर आग़, अवाज तो दवाई आप पना करझें चालू रखा, लेकिन आप जिसी साब से तो म देख रेग लेग लेए, पेल पोष्ती ए बन करन लोग यह, कालंट बन करन लेए, अवच्",
+    "language": "Hindi",
+    "xvec_only": false,
+    "description": "Test narrator - extracted from source video",
+    "sample_rate": 24000,
+    "created_at": "2026-04-04T22:00:00Z"
+  }
+}
