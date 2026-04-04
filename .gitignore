@@ -1,65 +1,7 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-dist/
-build/
-
-# Rust
 target/
-*.rs.bk
-
-# Generated video artifacts
-*.mp4
-*.mov
-*.avi
-*.mkv
-*.webm
-*.ass
-*.edl.json
-*.render.log
-*.metrics.json
-*.reel.mp4
-*.overlay.mov
-*.analysis.json
-*.prepared.srt
-*.prepared.ass
-*.prepared.edited.edl.json
-*.prepared.edl.reel.mp4
-*.prepared.edl.render.log
-*.prepared.edl.reel.metrics.json
-*.fresh.srt
-*.fresh.prepared.srt
-*.fresh.edl.json
-*.fresh.edl.reel.mp4
-*.fresh.edl.render.log
-*.fresh.edl.overlay.mov
-*.fresh.analysis.json
-*.edited.edl.json
-*.edited.edl.reel.mp4
-*.edited.edl.render.log
-*.edited.edl.reel.metrics.json
-
-# Keep only source SRT
-!VID_*.srt
-
-# Test artifacts
-test.center.*
-
-# Cache
-.ruff_cache/
-.pytest_cache/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Converted files
-video_converted.*
+third_party/
+*.onnx
+*.bin
+.venv/
+__pycache__/
+artifacts/
