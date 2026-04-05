@@ -84,21 +84,15 @@ cargo build --release
 ### MCP Server
 
 ```bash
-# Start the MCP server (Rust implementation)
-cargo run -p openscript-mcp
-
-# Or use the Python server
-python3 mcp/reels_mcp_server_v2.py
+# Start the MCP server (Rust implementation, stdio transport)
+cargo run -p openscript-mcp --bin mcp-server
 ```
 
 ### Run Full Pipeline
 
 ```bash
-# End-to-end: video → transcribed, captioned reel
+# One-command: raw video → 9:16 reel with captions, b-roll, music, SFX
 cargo run -p openscript-cli -- reelize input.mp4
-
-# Or via Python scripts
-python3 mcp/scripts/reelize.py --input input.mp4 --output reel.mp4
 ```
 
 ## MCP Tools (41)
@@ -134,7 +128,7 @@ openscript/
 ├── remotion/
 │   └── src/                  # TypeScript composition engine
 ├── third_party/              # faster-qwen3-tts (TTS sidecar)
-└── artifacts/                # Test outputs and sample data
+└── LICENSE                   # MIT License
 ```
 
 ## Code Metrics
@@ -174,6 +168,14 @@ Active development. Core timeline system, MCP server, FFmpeg rendering, and TTS 
 | Asset libraries | Production |
 | Remotion composition | Beta |
 | Terminal TUI | Beta |
+
+---
+
+## Why OpenScript
+
+Traditional video editing requires manual timeline work in Premiere, DaVinci, or Final Cut. OpenScript flips this: **you direct, the AI edits**. Feed it raw footage, tell it what kind of reel you want, and it handles transcription, timing, b-roll selection, audio mixing, caption burning, and rendering — all through a structured, type-safe pipeline.
+
+Built as a demonstration of what's possible when AI agents have **real tools** instead of just text interfaces.
 
 ---
 
