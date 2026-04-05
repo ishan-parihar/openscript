@@ -12,24 +12,29 @@
 
 ## What It Does
 
-OpenScript turns raw video into edited short-form content through a structured pipeline: **transcribe → analyze → edit decision list → multi-track timeline → render**. It exposes 41 MCP tools so AI coding agents can direct the entire editing workflow — selecting b-roll, composing voiceovers, mixing music with ducking, and rendering final video — without human intervention.
+OpenScript turns raw video into edited short-form content through a structured pipeline: **transcribe → analyze → edit decision list → multi-track timeline → render**. It exposes **43 MCP tools** so AI coding agents can direct the entire editing workflow — selecting b-roll, composing voiceovers, mixing music with ducking, and rendering final video — without human intervention.
+
+Two editing modes:
+- **`reelize.timeline`** — One-call pipeline: raw video → complete 9:16 reel with captions, b-roll, music, and SFX
+- **`reelize.brief` → `reelize.direct`** — Two-step workflow: AI analyzes footage and returns a structured brief, then executes creative direction with full control over every track
 
 ## Key Features
 
 - **Multi-Track Timeline (EDL v2)** — Six independent tracks: dialogue, voiceover, captions, b-roll, music, SFX. Full validation and backward compatibility with EDL v1.
-- **Transcription Pipeline** — Whisper-based speech-to-text with language detection, phrase-level grouping, and human-editable SRT workflow.
-- **TTS Voiceover Engine** — Voice profile registry with `faster-qwen3-tts` integration, caching, and duration estimation.
-- **Asset Libraries** — 261 indexed SFX and 16 music tracks with editorial-role and mood-based search. Pexels API integration for stock b-roll.
-- **FFmpeg Rendering** — Multi-track audio mixing, automatic ducking, ASS caption burning, preview/standard/quality modes.
+- **Transcription Pipeline** — Apex (Oriserve/Whisper-Hindi2Hinglish-Apex) speech-to-text with word-level timestamps, phrase-level grouping, and human-editable SRT workflow. Optimized for Hinglish content.
+- **TTS Voiceover Engine** — Voice profile registry with `faster-qwen3-tts` integration, caching, duration estimation, and multi-speaker commentary generation.
+- **Asset Libraries** — 261 indexed SFX and 16 music tracks with editorial-role and mood-based search. Pexels API integration for stock b-roll with director-mode concept extraction.
+- **FFmpeg Rendering** — Multi-track audio mixing, automatic ducking, ASS caption burning with Bebas Neue font, preview/standard/quality modes.
 - **Remotion Composition** — TypeScript-based renderer for rich visual compositions with crossfade transitions and layered animations.
-- **MCP Server (41 Tools)** — Model Context Protocol server for AI agent control across the entire pipeline.
+- **MCP Server (43 Tools)** — Rust-native Model Context Protocol server with stdio transport, progress notifications, and type-safe tool schemas.
 - **Terminal TUI** — `ratatui`-based interactive interface for timeline browsing and editing.
+- **Verification Layer** — Post-render quality checks for audio levels, caption synchronization, and render fidelity.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        MCP Server (41 tools)                     │
+│                        MCP Server (43 tools)                     │
 │  AI Agents ─────────────────────────────────────────────────────│
 └──────┬──────────┬──────────┬──────────┬──────────┬──────────────┘
        │          │          │          │          │
@@ -58,11 +63,11 @@ OpenScript turns raw video into edited short-form content through a structured p
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | Core | Rust (8 crates) | Timeline schema, SRT parsing, type-safe EDL |
-| Transcription | Whisper / Apex | Speech-to-text (Hinglish-optimized) |
+| Transcription | Apex (Whisper-Hindi2Hinglish) | Speech-to-text (Hinglish-optimized) |
 | TTS | faster-qwen3-tts | Voiceover generation |
 | Rendering | FFmpeg + Remotion | Video composition and output |
 | Assets | JSON-indexed libraries | SFX (261), Music (16), Pexels b-roll |
-| AI Interface | MCP Server (Rust) | 41 tools for agent-directed editing |
+| AI Interface | MCP Server (Rust) | 43 tools for agent-directed editing |
 | TUI | ratatui + crossterm | Terminal-based timeline editor |
 | Scripts | Python | Pipeline orchestration and helpers |
 
@@ -95,19 +100,47 @@ cargo run -p openscript-mcp --bin mcp-server
 cargo run -p openscript-cli -- reelize input.mp4
 ```
 
-## MCP Tools (41)
+## MCP Tools (43)
 
 | Category | Tools |
 |----------|-------|
 | **Core Pipeline** | `transcribe`, `srt.read`, `srt.prepare`, `srt.apply_edit`, `edl.build`, `render`, `reelize`, `overlay.generate` |
+| **AI Director** | `reelize.brief`, `reelize.direct` — Analyze footage, then execute creative direction |
 | **Timeline Management** | `timeline.build`, `timeline.load`, `timeline.validate`, `timeline.upgrade`, `timeline.add_segment`, `timeline.add_track_event`, `timeline.diff`, `timeline.preview`, `timeline.render` |
 | **Voice / TTS** | `voice.profile.add`, `voice.profile.list`, `voice.profile.remove`, `tts.generate`, `tts.estimate_duration`, `tts.preview`, `tts.commentary` |
 | **SFX Library** | `sfx.index`, `sfx.search`, `sfx.assign` |
 | **Music Library** | `music.index`, `music.search`, `music.assign`, `music.ducking.plan` |
 | **B-Roll** | `broll.suggest`, `broll.fetch`, `broll.assign`, `broll.director`, `timeline.autofill_broll` |
 | **Voiceover** | `voiceover.generate` |
-| **Orchestration** | `reelize.timeline` |
-| **Verification** | `verify.audio`, `verify.captions`, `verify.render` |
+| **Orchestration** | `reelize.timeline` — Single-call end-to-end pipeline |
+| **Verification** | `verify.audio`, `verify.captions`, `verify.render` — Post-render QA |
+
+## Workflows
+
+### One-Call Pipeline
+
+```
+reelize.timeline(video_path)
+  ├── Transcribe (Apex)
+  ├── Build timeline with segments
+  ├── B-roll director (Pexels)
+  ├── Assign background music + ducking
+  ├── Assign SFX (hook, transitions, highlights)
+  ├── Generate captions (Bebas Neue, centered)
+  └── Render final video
+```
+
+### AI Director Mode
+
+```
+reelize.brief(video_path)
+  └── Returns: segments, timing, word counts, topic clusters, b-roll concepts
+
+# AI agent reviews brief, makes creative decisions
+
+reelize.direct(video_path, segments, broll, sfx, music, voiceover, captions)
+  └── Returns: rendered reel with full creative control
+```
 
 ## Project Structure
 
@@ -115,7 +148,11 @@ cargo run -p openscript-cli -- reelize input.mp4
 openscript/
 ├── crates/
 │   ├── openscript-core/      # Timeline schema, SRT parsing, core types
-│   ├── openscript-mcp/       # MCP server with 41 tools
+│   ├── openscript-mcp/       # MCP server (43 tools, stdio transport)
+│   │   └── src/bin/
+│   │       ├── mcp-server.rs # MCP server binary
+│   │       ├── audit_tools.rs
+│   │       └── generate_reel.rs
 │   ├── openscript-ffmpeg/    # FFmpeg filter graphs, rendering, subtitles
 │   ├── openscript-transcribe/# Whisper/Apex transcription
 │   ├── openscript-tts/       # TTS client, voice profiles
@@ -124,7 +161,9 @@ openscript/
 │   └── openscript-cli/       # CLI entry point
 ├── mcp/
 │   ├── scripts/              # Python pipeline helpers
-│   └── assets/               # Indexed SFX, music, voice configs
+│   ├── assets/               # Indexed SFX, music, voice configs
+│   ├── fonts/                # Bebas Neue for caption burning
+│   └── styles/               # PupCaps CSS presets
 ├── remotion/
 │   └── src/                  # TypeScript composition engine
 ├── third_party/              # faster-qwen3-tts (TTS sidecar)
@@ -135,10 +174,10 @@ openscript/
 
 | Component | Lines of Code |
 |-----------|--------------|
-| Rust (8 crates) | ~12,700 |
+| Rust (8 crates) | ~16,000 |
 | Python (project) | ~1,060 |
 | TypeScript (Remotion) | ~760 |
-| **Total (project)** | **~14,500** |
+| **Total (project)** | **~17,800** |
 
 ## Testing
 
@@ -148,24 +187,23 @@ openscript/
 
 # Or individual test targets
 cargo test --workspace
-python3 mcp/test_implementation.py
-python3 mcp/test_e2e_workflow.py
 ```
 
 Test coverage includes unit tests for core types, integration tests for the MCP server, E2E pipeline validation, and asset library verification.
 
 ## Development Status
 
-Active development. Core timeline system, MCP server, FFmpeg rendering, and TTS pipeline are production-ready. Remotion composition and TUI are functional with ongoing refinement.
+Core timeline system, MCP server, FFmpeg rendering, TTS pipeline, and asset libraries are production-ready. Remotion composition and TUI are functional with ongoing refinement.
 
 | Component | Status |
 |-----------|--------|
 | Core timeline (EDL v2) | Production |
-| MCP server (41 tools) | Production |
-| Transcription | Production |
+| MCP server (43 tools) | Production |
+| Transcription (Apex) | Production |
 | FFmpeg rendering | Production |
 | TTS voiceover | Production |
 | Asset libraries | Production |
+| Verification layer | Production |
 | Remotion composition | Beta |
 | Terminal TUI | Beta |
 
