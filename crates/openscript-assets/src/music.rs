@@ -64,7 +64,7 @@ pub struct MusicIndexWrapper {
 
 pub struct MusicIndex {
     assets: Vec<MusicAsset>,
-    index_path: Option<PathBuf>,
+    _index_path: Option<PathBuf>,
     music_paths: Vec<String>,
 }
 
@@ -82,13 +82,13 @@ impl MusicIndex {
                     };
                 Ok(Self {
                     assets,
-                    index_path: Some(PathBuf::from(p)),
+                    _index_path: Some(PathBuf::from(p)),
                     music_paths: paths,
                 })
             }
             None => Ok(Self {
                 assets: Vec::new(),
-                index_path: None,
+                _index_path: None,
                 music_paths: vec![],
             }),
         }
@@ -287,8 +287,14 @@ impl MusicIndex {
                                 || path_str.contains("start");
                             let cta_friendly = path_str.contains("cta")
                                 || path_str.contains("call")
-                                || path_str.contains("action")
-                                || path_str.contains("end")
+                                || (path_str.contains("action")
+                                    && (path_str.contains("action_")
+                                        || path_str.contains("-action")
+                                        || path_str.contains("_action")))
+                                || (path_str.contains("end")
+                                    && (path_str.contains("ending")
+                                        || path_str.contains("_end")
+                                        || path_str.contains("-end")))
                                 || path_str.contains("outro");
 
                             let asset = MusicAsset {
@@ -326,7 +332,7 @@ impl MusicIndex {
 
         Ok(Self {
             assets,
-            index_path: None,
+            _index_path: None,
             music_paths: roots.to_vec(),
         })
     }
@@ -336,7 +342,7 @@ impl Default for MusicIndex {
     fn default() -> Self {
         Self {
             assets: Vec::new(),
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         }
     }
@@ -376,7 +382,7 @@ mod tests {
                 make_music("1", "Calm Track", "neutral", "low"),
                 make_music("2", "Energetic Beat", "upbeat", "high"),
             ],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         let results = idx.search("", Some("neutral"), None, None, None, None, 10);
@@ -391,7 +397,7 @@ mod tests {
                 make_music("1", "Calm Track", "neutral", "low"),
                 make_music("2", "Energetic Beat", "upbeat", "high"),
             ],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         let results = idx.search("", None, Some("high"), None, None, None, 10);
@@ -404,7 +410,7 @@ mod tests {
         asset.intro_friendly = true;
         let idx = MusicIndex {
             assets: vec![asset, make_music("2", "Main Track", "neutral", "medium")],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         let results = idx.search("", None, None, Some(true), None, None, 10);
@@ -417,7 +423,7 @@ mod tests {
         asset.loopability = true;
         let idx = MusicIndex {
             assets: vec![asset, make_music("2", "One Shot", "ambient", "low")],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         let results = idx.search("", None, None, None, None, Some(true), 10);
@@ -431,7 +437,7 @@ mod tests {
                 make_music("1", "Summer Vibes", "happy", "medium"),
                 make_music("2", "Winter Chill", "calm", "low"),
             ],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         let results = idx.search("summer", None, None, None, None, None, 10);
@@ -446,7 +452,7 @@ mod tests {
                 make_music("2", "Track B", "neutral", "high"),
                 make_music("3", "Track C", "upbeat", "low"),
             ],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         let results = idx.search("", Some("neutral"), Some("low"), None, None, None, 10);
@@ -466,7 +472,7 @@ mod tests {
         let path = dir.join("test_music_index.json");
         let idx = MusicIndex {
             assets: vec![make_music("1", "Test", "neutral", "low")],
-            index_path: None,
+            _index_path: None,
             music_paths: vec![],
         };
         idx.save(path.to_str().unwrap()).unwrap();

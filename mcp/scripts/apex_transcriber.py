@@ -30,8 +30,10 @@ def _find_whisper_python() -> str:
     for c in candidates:
         if c and Path(c).exists():
             return c
-    _log("WARNING: whisper-hindi python not found, using system python")
-    return sys.executable
+    raise RuntimeError(
+        "whisper-hindi conda environment Python not found. "
+        "Set WHISPER_HINDI_PYTHON env var or ensure conda env 'whisper-hindi' exists."
+    )
 
 
 def extract_audio(video: str, wav_path: str) -> bool:
@@ -43,7 +45,9 @@ def extract_audio(video: str, wav_path: str) -> bool:
         + shlex.quote(os.path.abspath(wav_path))
     )
     _log("Extracting audio...")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd, shell=True, capture_output=True, text=True, timeout=300
+    )
     if result.returncode != 0:
         _log("Audio extraction failed: " + result.stderr[:300])
         return False
@@ -89,11 +93,11 @@ phrase_srt_out = """
 _log = lambda m: print("[apex:worker] " + str(m), file=sys.stderr, flush=True)
 
 def fmt_ts(s):
-    ms = int((s % 1) * 1000)
+    ms = round((s % 1) * 1000) % 1000
     s_int = int(s)
     return "%02d:%02d:%02d,%03d" % (s_int // 3600, (s_int % 3600) // 60, s_int % 60, ms)
 
-torch.set_num_threads(8)
+torch.set_num_threads(int(os.environ.get("TTS_THREADS", "8")))
 _log("Loading Whisper-Hindi2Hinglish-Apex model (CPU)...")
 model = whisper.load_model("Oriserve/Whisper-Hindi2Hinglish-Apex", device="cpu")
 _log("Model loaded. Transcribing...")
@@ -189,12 +193,19 @@ _log("Done.")
     )
 
     if result.returncode != 0:
-        _log("Apex transcription failed: " + result.stderr[-500:])
-        return {"error": result.stderr[-500:]}
+        _log("Apex transcription failed: " + result.stderr[-2000:])
+        return {"error": result.stderr[-2000:]}
 
     lines = result.stdout.strip().split("\n")
     text_preview = lines[0] if lines else ""
     word_count = int(lines[1]) if len(lines) > 1 and lines[1].isdigit() else 0
+
+    for out_file in [word_srt_out, phrase_srt_out, text_out]:
+        if not Path(out_file).exists() or Path(out_file).stat().st_size == 0:
+            return {
+                "error": f"Output file missing or empty: {out_file}",
+                "status": "error",
+            }
 
     _log("Apex transcription complete: %d words" % word_count)
     return {
@@ -208,10 +219,12 @@ _log("Done.")
 
 def run(
     video: str,
-    out_dir: str = None,
+    out_dir: str | None = None,
 ) -> dict:
     """Main Apex transcription pipeline."""
     out_dir = out_dir or str(Path(video).parent)
+    if Path(out_dir).resolve() == Path("/"):
+        out_dir = "."
     Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     stem = Path(video).stem
@@ -222,7 +235,10 @@ def run(
         return {"error": "Audio extraction failed", "status": "error"}
 
     # Step 2: Transcribe with Apex
-    whisper_python = _find_whisper_python()
+    try:
+        whisper_python = _find_whisper_python()
+    except RuntimeError as e:
+        return {"error": str(e), "status": "error"}
     result = run_apex_transcription(whisper_python, wav_path, out_dir, stem)
 
     if "error" in result:

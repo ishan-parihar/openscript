@@ -168,7 +168,10 @@ impl FilterGraphBuilder {
                         .broll
                         .get(&evt.id)
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
-                        .unwrap_or("placeholder")
+                        .unwrap_or_else(|| {
+                            eprintln!("[WARN] B-roll asset path not found for event: {}", evt.id);
+                            ""
+                        })
                         .to_string();
                     broll_events.push(BrollEvent {
                         path,

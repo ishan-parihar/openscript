@@ -26,7 +26,17 @@ impl VoiceProfileRegistry {
         let path = PathBuf::from(registry_path);
         let profiles = if path.exists() {
             let content = std::fs::read_to_string(&path)?;
-            serde_json::from_str(&content).unwrap_or_default()
+            match serde_json::from_str(&content) {
+                Ok(profiles) => profiles,
+                Err(e) => {
+                    eprintln!(
+                        "[WARN] Failed to parse voice profile registry at {}: {}",
+                        path.display(),
+                        e
+                    );
+                    HashMap::new()
+                }
+            }
         } else {
             HashMap::new()
         };

@@ -1,19 +1,35 @@
 use crate::profiles::VoiceProfile;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::Client;
+use reqwest::multipart::{Form, Part};
+use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-#[derive(Serialize)]
-struct TtsRequest<'a> {
-    model: &'a str,
-    input: &'a str,
-    voice: &'a str,
-    response_format: &'a str,
-    speed: f64,
-    reference_audio: &'a str,
-    reference_text: &'a str,
+#[derive(Deserialize)]
+struct GenerateResponse {
+    audio_b64: Option<String>,
+    duration_ms: Option<i64>,
+    error: Option<String>,
+}
+
+/// Qwen3-TTS /generate endpoint uses multipart form data.
+#[derive(Serialize, Clone, Default)]
+struct TtsGenerateForm {
+    #[serde(rename = "text")]
+    text: String,
+    #[serde(rename = "ref_text")]
+    ref_text: String,
+    #[serde(rename = "language")]
+    language: String,
+    #[serde(rename = "mode")]
+    mode: String,
+    #[serde(rename = "xvec_only")]
+    xvec_only: bool,
+    #[serde(rename = "non_streaming_mode")]
+    non_streaming_mode: bool,
 }
 
 pub struct TtsClient {
@@ -36,13 +52,14 @@ impl TtsClient {
 
     /// Check if the TTS sidecar server is reachable.
     pub async fn health_check(&self) -> Result<bool, TtsError> {
+        // Try /health endpoint first
         let url = format!("{}/health", self.base_url);
         match self.http.get(&url).send().await {
-            Ok(resp) => Ok(resp.status().is_success()),
-            Err(_) => {
+            Ok(resp) if resp.status().is_success() => Ok(true),
+            _ => {
                 // Fallback: try root endpoint
                 match self.http.get(&self.base_url).send().await {
-                    Ok(_) => Ok(true),
+                    Ok(resp) => Ok(resp.status().is_success()),
                     Err(_) => Ok(false),
                 }
             }
@@ -57,12 +74,12 @@ impl TtsClient {
         speed: f64,
         pitch: f64,
         volume: f64,
-        format: &str,
+        _format: &str,
         profile: &VoiceProfile,
     ) -> Result<TtsResult, TtsError> {
         let key = Self::cache_key(voice_profile_id, text, speed, pitch, volume);
 
-        if let Some(cached) = self.get_cached_path(&key, format) {
+        if let Some(cached) = self.get_cached_path(&key, "wav") {
             if cached.exists() {
                 std::fs::create_dir_all(Path::new(output_path).parent().unwrap_or(Path::new(".")))?;
                 std::fs::copy(&cached, output_path)?;
@@ -75,20 +92,37 @@ impl TtsClient {
             }
         }
 
-        let req = TtsRequest {
-            model: &profile.model,
-            input: text,
-            voice: voice_profile_id,
-            response_format: format,
-            speed,
-            reference_audio: &profile.ref_audio,
-            reference_text: &profile.ref_text,
+        let form = TtsGenerateForm {
+            text: text.to_string(),
+            ref_text: profile.ref_text.clone(),
+            language: profile.language.to_lowercase(),
+            mode: "voice_clone".to_string(),
+            xvec_only: true,
+            non_streaming_mode: true,
         };
+
+        let ref_bytes = std::fs::read(&profile.ref_audio).map_err(|e| {
+            TtsError::Sidecar(format!("Cannot read ref audio {}: {}", profile.ref_audio, e))
+        })?;
+
+        let multipart = Form::new()
+            .text("text", form.text)
+            .text("ref_text", form.ref_text)
+            .text("language", form.language)
+            .text("mode", form.mode)
+            .text("xvec_only", if form.xvec_only { "true" } else { "false" })
+            .text("non_streaming_mode", if form.non_streaming_mode { "true" } else { "false" })
+            .part(
+                "ref_audio",
+                Part::bytes(ref_bytes).file_name("ref.wav").mime_str("audio/wav").map_err(|e| {
+                    TtsError::Sidecar(format!("Failed to build ref part: {}", e))
+                })?,
+            );
 
         let response = self
             .http
-            .post(format!("{}/v1/audio/speech", self.base_url))
-            .json(&req)
+            .post(format!("{}/generate", self.base_url))
+            .multipart(multipart)
             .send()
             .await?;
 
@@ -101,7 +135,21 @@ impl TtsClient {
             )));
         }
 
-        let bytes = response.bytes().await?;
+        let json_resp: GenerateResponse = response.json().await.map_err(|e| {
+            TtsError::Sidecar(format!("Failed to parse TTS response: {}", e))
+        })?;
+
+        if let Some(err) = json_resp.error {
+            return Err(TtsError::Sidecar(err));
+        }
+
+        let audio_b64 = json_resp.audio_b64.ok_or_else(|| {
+            TtsError::Sidecar("TTS response missing audio_b64 field".to_string())
+        })?;
+
+        let bytes = STANDARD.decode(&audio_b64).map_err(|e| {
+            TtsError::Sidecar(format!("Failed to decode base64 audio: {}", e))
+        })?;
 
         let output = PathBuf::from(output_path);
         if let Some(parent) = output.parent() {
@@ -109,15 +157,15 @@ impl TtsClient {
         }
         std::fs::write(&output, &bytes)?;
 
-        // Cache the output
-        let cache_path = self.cache_dir.join(format!("{}.{}", key, format));
+        let cache_path = self.cache_dir.join(format!("{}.wav", key));
         if let Some(parent) = cache_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(&cache_path, &bytes)?;
 
-        // Extract duration from the written audio file
-        let duration_ms = Self::extract_audio_duration(&output).unwrap_or(0);
+        let duration_ms = json_resp.duration_ms.unwrap_or_else(|| {
+            Self::extract_audio_duration(&output).unwrap_or(0)
+        });
 
         Ok(TtsResult {
             output_path: output_path.to_string(),
@@ -141,7 +189,7 @@ impl TtsClient {
 
         if output.status.success() {
             let dur_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            dur_str.parse::<f64>().ok().map(|d| (d * 1000.0) as i64)
+            dur_str.parse::<f64>().ok().map(|d| (d * 1000.0).round() as i64)
         } else {
             None
         }

@@ -343,7 +343,7 @@ async fn transcribe_apex(
     let phrase_srt = out_dir.join(format!("{}.apex.phrase.srt", stem));
     if phrase_srt.exists() {
         if let Ok(content) = std::fs::read_to_string(&phrase_srt) {
-            let _ = std::fs::write(output_srt_path, content);
+            std::fs::write(output_srt_path, content).map_err(|e| TranscribeError::Io(e))?;
         }
     }
 

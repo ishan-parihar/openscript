@@ -116,17 +116,21 @@ impl Timeline {
         if self.segments.is_empty() {
             return 0;
         }
-        (self.segments.last().unwrap().end * 1000.0) as i64
+        (self.segments.last().expect("non-empty segments").end * 1000.0).round() as i64
     }
 
     /// Returns expected rendered duration accounting for crossfade overlaps
     /// between consecutive segments. Crossfades reduce total duration because
     /// overlapping segments share time rather than being additive.
+    ///
+    /// NOTE: This assumes segments are contiguous (no gaps between them).
+    /// If gaps exist, the actual rendered duration will be longer than this calculation.
     pub fn rendered_duration_ms(&self) -> i64 {
         if self.segments.is_empty() {
             return 0;
         }
-        let raw_ms = (self.segments.last().unwrap().end * 1000.0) as i64;
+        let raw_ms =
+            (self.segments.last().expect("non-empty segments").end * 1000.0).round() as i64;
         let crossfade_overlap_ms: i64 = self
             .segments
             .iter()
@@ -262,10 +266,9 @@ impl Timeline {
         let target: RenderTarget = serde_json::from_value(target)?;
         let segments: Vec<Segment> = v1
             .get("segments")
+            .and_then(|arr| arr.as_array())
             .map(|arr| {
-                arr.as_array()
-                    .unwrap()
-                    .iter()
+                arr.iter()
                     .map(|s| {
                         serde_json::from_value(s.clone()).unwrap_or(Segment {
                             id: format!("seg_{:03}", 0),
@@ -348,8 +351,8 @@ impl Timeline {
                 .next()
                 .unwrap_or("general")
                 .to_string();
-            let seg_start_ms = (segment.start * 1000.0) as i64;
-            let seg_duration_ms = ((segment.end - segment.start) * 1000.0) as i64;
+            let seg_start_ms = (segment.start * 1000.0).round() as i64;
+            let seg_duration_ms = ((segment.end - segment.start) * 1000.0).round() as i64;
 
             let mut offset_ms = 0i64;
             while offset_ms < seg_duration_ms && slots_created < max_slots {
@@ -449,8 +452,8 @@ impl Timeline {
                 semantic_role: None,
             });
 
-            let start_ms = (start * 1000.0) as i64;
-            let end_ms = (end * 1000.0) as i64;
+            let start_ms = (start * 1000.0).round() as i64;
+            let end_ms = (end * 1000.0).round() as i64;
             let caption_event = TimelineEvent {
                 id: format!("caption_{:03}", initial_caption_count + count + 1),
                 asset_id: String::new(),

@@ -6,12 +6,13 @@ use serde_json::json;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
+use tracing;
 
 use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (41 tools: 8 original + 20 timeline V2 + 5 agent UX + 3 voiceover + 1 orchestration + 3 verification + 1 externally added)
+// Tool definitions (43 tools: 8 original + 20 timeline V2 + 5 agent UX + 3 voiceover + 1 orchestration + 3 verification + 1 externally added + 1 brief + 1 direct)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -126,6 +127,44 @@ pub fn tool_definitions() -> serde_json::Value {
                     "burn_captions": {"type": "boolean", "default": true, "description": "Burn captions into output"}
                 },
                 "required": ["video_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "reelize.brief",
+            "description": "Analyze video footage and return a structured brief for AI-directed editorial decisions. Transcribes, segments, and provides context about ALL footage — transcripts, timing, word counts, suggested b-roll concepts per segment, topic clusters. Use as the FIRST step before directing a video edit. This tool provides CONTEXT only — it makes NO editorial decisions. The AI agent reads the brief and decides which segments to keep, what b-roll to add, etc. Returns: source_duration_s, total_segments, total_dialogue_s, segments (with id, start_s, end_s, duration_s, text, word_count, words_per_second, suggested_broll_concepts, topic_keywords), topic_summary.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "Source video file to analyze"},
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT file (skip transcription)"}
+                },
+                "required": ["video_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "reelize.direct",
+            "description": "Execute AI-directed video production. The AI agent provides structured creative instructions (which segments to use, b-roll placement, SFX timing, music, voiceover script, caption style) and this tool builds the timeline, fetches assets, and renders the final reel. This tool EXECUTES — it makes NO creative decisions. Use AFTER reelize.brief, once the AI agent has analyzed the footage and made editorial choices. Returns: output_path, duration, segment counts, asset counts, warnings.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "Source video file"},
+                    "brief_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Path to reelize.brief output JSON (optional, for reference)"},
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT file (skip transcription)"},
+                    "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"}, "caption": {"type": "string"}, "crossfade_ms": {"type": "integer"}}}, "description": "Segments to include in the edit, in order. Each has start/end times from source and caption text."},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Output aspect ratio"},
+                    "crossfade_ms": {"type": "integer", "default": 300, "description": "Audio crossfade between segments in ms"},
+                    "fps": {"type": "integer", "default": 30, "description": "Output framerate"},
+                    "broll": {"type": "array", "items": {"type": "object", "properties": {"concept": {"type": "string"}, "overlay_at_s": {"type": "number"}, "duration_s": {"type": "number"}, "style": {"type": "string"}}}, "description": "B-roll overlays: concept keyword, where to place it, how long, and style (full_cutaway or picture_in_picture)"},
+                    "sfx": {"type": "array", "items": {"type": "object", "properties": {"role": {"type": "string"}, "at_s": {"type": "number"}}}, "description": "Sound effects: editorial role (whoosh, pop, hit, riser) and placement time in seconds"},
+                    "music": {"anyOf": [{"type": "object", "properties": {"mood": {"type": "string"}, "energy": {"type": "string"}, "gain_db": {"type": "number"}, "duck_under_dialogue": {"type": "boolean"}}}, {"type": "null"}], "description": "Background music: mood, energy, volume level, and whether to duck under dialogue"},
+                    "voiceover": {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string"}, "position_s": {"type": "number"}, "voice_profile_id": {"type": "string"}, "speed": {"type": "number"}, "gain_db": {"type": "number"}}}, "description": "TTS voiceover events: script text, placement, and voice profile"},
+                    "captions": {"type": "object", "properties": {"enabled": {"type": "boolean", "default": true}, "style": {"type": "string", "enum": ["standard", "kinetic"], "default": "standard"}, "position": {"type": "string", "enum": ["center", "bottom"], "default": "center"}}, "description": "Caption style: standard (full-sentence ASS) or kinetic (word-by-word viral style)"},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output video path (auto-generated if omitted)"},
+                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28 range)"}
+                },
+                "required": ["video_path", "segments"],
                 "additionalProperties": false
             }
         },
@@ -670,6 +709,8 @@ pub fn route_tool(
         "edl.build" => Box::pin(handle_edl_build(args)),
         "render" => Box::pin(handle_render(args)),
         "reelize" => Box::pin(handle_reelize(args)),
+        "reelize.brief" => Box::pin(handle_reelize_brief(args)),
+        "reelize.direct" => Box::pin(handle_reelize_direct(args)),
         "overlay.generate" => Box::pin(handle_overlay_generate(args)),
         "timeline.build" => Box::pin(handle_timeline_build(args)),
         "timeline.load" => Box::pin(handle_timeline_load(args)),
@@ -720,7 +761,7 @@ fn extract_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, To
 
 fn extract_f64(args: &serde_json::Value, key: &str) -> Result<f64, ToolError> {
     args.get(key)
-        .and_then(|v| v.as_f64())
+        .and_then(|v| v.as_f64().or_else(|| v.as_i64().map(|n| n as f64)))
         .ok_or_else(|| ToolError::MissingArg(key.to_string()))
 }
 
@@ -728,18 +769,6 @@ fn extract_i64(args: &serde_json::Value, key: &str) -> Result<i64, ToolError> {
     args.get(key)
         .and_then(|v| v.as_i64())
         .ok_or_else(|| ToolError::MissingArg(key.to_string()))
-}
-
-#[allow(dead_code)]
-fn extract_u64(args: &serde_json::Value, key: &str) -> Result<u64, ToolError> {
-    args.get(key)
-        .and_then(|v| v.as_u64())
-        .ok_or_else(|| ToolError::MissingArg(key.to_string()))
-}
-
-#[allow(dead_code)]
-fn extract_u32(args: &serde_json::Value, key: &str) -> Result<u32, ToolError> {
-    extract_u64(args, key).map(|v| v as u32)
 }
 
 fn extract_arr(args: &serde_json::Value, key: &str) -> Result<Vec<String>, ToolError> {
@@ -798,6 +827,23 @@ fn track_count(timeline: &Timeline, track_type: &TrackType) -> usize {
     timeline.tracks.get(track_type).map(|v: &Vec<openscript_core::timeline::TimelineEvent>| v.len()).unwrap_or(0)
 }
 
+fn sanitize_input_path<P: AsRef<std::path::Path>>(path: P) -> Result<std::path::PathBuf, ToolError> {
+    let path = path.as_ref();
+    for component in path.components() {
+        if let std::path::Component::ParentDir = component {
+            return Err(ToolError::InvalidArg(format!(
+                "Path traversal not allowed: {}",
+                path.display()
+            )));
+        }
+    }
+    if path.exists() {
+        path.canonicalize().map_err(|e| ToolError::InvalidArg(format!("Cannot resolve path: {}", e)))
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
 fn default_opt_arr(args: &serde_json::Value, key: &str) -> Option<Vec<String>> {
     args.get(key).and_then(|v| v.as_array()).map(|arr| {
         arr.iter()
@@ -836,34 +882,27 @@ fn save_voice_profiles(profiles: &serde_json::Value) -> Result<(), ToolError> {
     Ok(())
 }
 
-#[allow(dead_code)]
-fn wrap_result(val: serde_json::Value) -> serde_json::Value {
-    json!({
-        "content": [{"type": "text", "text": serde_json::to_string(&val).unwrap_or_default()}]
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Handler: transcribe (native via openscript-transcribe)
 // ---------------------------------------------------------------------------
 
 async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let media_path = extract_str(&args, "media_path")?;
+    let media_path = sanitize_input_path(extract_str(&args, "media_path")?)?.to_string_lossy().to_string();
     let output_srt_path = default_opt_str(&args, "output_srt_path")
         .unwrap_or_else(|| {
-            let p = Path::new(media_path);
+            let p = Path::new(&media_path);
             let parent = p.parent().unwrap_or(Path::new("."));
             let stem = p.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
             parent.join(format!("{}.srt", stem)).to_string_lossy().to_string()
         });
 
-    if !Path::new(media_path).exists() {
+    if !Path::new(&media_path).exists() {
         return Err(ToolError::NotFound(format!("Media file not found: {}", media_path)));
     }
 
     report_progress(0.0, 100.0, "Starting transcription...").await.ok();
 
-    let result = transcribe(media_path, &output_srt_path)
+    let result = transcribe(&media_path, &output_srt_path)
         .await
         .map_err(|e| ToolError::Srt(e.to_string()))?;
 
@@ -884,8 +923,8 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
 // ---------------------------------------------------------------------------
 
 async fn handle_srt_read(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let srt_path = extract_str(&args, "srt_path")?;
-    let entries = parse_srt(srt_path)?;
+    let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?.to_string_lossy().to_string();
+    let entries = parse_srt(&srt_path)?;
     let result: Vec<serde_json::Value> = entries
         .iter()
         .map(|e| {
@@ -910,16 +949,16 @@ async fn handle_srt_read(args: serde_json::Value) -> Result<serde_json::Value, T
 // ---------------------------------------------------------------------------
 
 async fn handle_srt_prepare(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let srt_path = extract_str(&args, "srt_path")?;
+    let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?.to_string_lossy().to_string();
     let max_words = default_u32(&args, "max_words", 10) as usize;
     let max_chars = default_u32(&args, "max_chars", 64) as usize;
     let max_gap = default_f64(&args, "max_gap", 0.6);
 
-    let entries = parse_srt(srt_path)?;
+    let entries = parse_srt(&srt_path)?;
     let groups = group_entries(&entries, max_words, max_chars, max_gap);
 
     let out_srt_path = {
-        let p = Path::new(srt_path);
+        let p = Path::new(&srt_path);
         let parent = p.parent().unwrap_or(Path::new("."));
         let stem = p.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
         parent.join(format!("{}.grouped.srt", stem))
@@ -1061,14 +1100,14 @@ async fn handle_srt_apply_edit(args: serde_json::Value) -> Result<serde_json::Va
 // ---------------------------------------------------------------------------
 
 async fn handle_edl_build(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let srt_path = extract_str(&args, "srt_path")?;
+    let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?.to_string_lossy().to_string();
     let strategy = default_str(&args, "strategy", "keep");
     let max_duration = default_opt_f64(&args, "max_duration");
     let crossfade_ms = default_u32(&args, "crossfade_ms", 120);
     let analysis_path = default_opt_str(&args, "analysis_path");
     let aspect = default_str(&args, "aspect", "9:16");
 
-    let entries = parse_srt(srt_path).map_err(|e| ToolError::Srt(e.to_string()))?;
+    let entries = parse_srt(&srt_path).map_err(|e| ToolError::Srt(e.to_string()))?;
 
     let groups = group_entries(&entries, 10, 64, 0.6);
 
@@ -1092,7 +1131,7 @@ async fn handle_edl_build(args: serde_json::Value) -> Result<serde_json::Value, 
     });
 
     let output_path = {
-        let p = Path::new(srt_path);
+        let p = Path::new(&srt_path);
         let parent = p.parent().unwrap_or(Path::new("."));
         let stem = p.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
         parent.join(format!("{}.edl.json", stem))
@@ -1125,8 +1164,8 @@ async fn handle_render(args: serde_json::Value) -> Result<serde_json::Value, Too
     use openscript_ffmpeg::render::{render, RenderConfig};
     use openscript_ffmpeg::subtitles::srt_to_ass;
 
-    let video_path = extract_str(&args, "video_path")?;
-    let edl_path = extract_str(&args, "edl_path")?;
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
+    let edl_path = sanitize_input_path(extract_str(&args, "edl_path")?)?.to_string_lossy().to_string();
     let burn_captions = default_bool(&args, "burn_captions", true);
     let srt_path = default_opt_str(&args, "srt_path");
     let ass_path = default_opt_str(&args, "ass_path");
@@ -1189,14 +1228,14 @@ async fn handle_render(args: serde_json::Value) -> Result<serde_json::Value, Too
 // ---------------------------------------------------------------------------
 
 async fn handle_reelize(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let video_path = extract_str(&args, "video_path")?;
-    let srt_path = default_opt_str(&args, "srt_path");
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
+    let srt_path = default_opt_str(&args, "srt_path").map(|s| sanitize_input_path(&s).map(|p| p.to_string_lossy().to_string())).transpose()?;
     let preset = default_str(&args, "preset", "Balanced");
     let max_duration = default_opt_f64(&args, "max_duration");
     let aspect = default_str(&args, "aspect", "9:16");
     let burn_captions = default_bool(&args, "burn_captions", true);
 
-    if !Path::new(video_path).exists() {
+    if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!("Video not found: {}", video_path)));
     }
 
@@ -1300,7 +1339,7 @@ async fn handle_overlay_generate(
     let srt_path = extract_str(&args, "srt_path")?;
     let _edl_path = extract_str(&args, "edl_path")?;
     let out_path = default_opt_str(&args, "out_path").unwrap_or_else(|| {
-        let p = Path::new(srt_path);
+        let p = Path::new(&srt_path);
         let stem = p.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
         format!("{}.overlay.mov", stem)
     });
@@ -1398,8 +1437,8 @@ async fn handle_timeline_build(args: serde_json::Value) -> Result<serde_json::Va
 // ---------------------------------------------------------------------------
 
 async fn handle_timeline_load(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let timeline_path = extract_str(&args, "timeline_path")?;
-    let timeline = Timeline::load(timeline_path)?;
+    let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?.to_string_lossy().to_string();
+    let timeline = Timeline::load(&timeline_path)?;
 
     Ok(json!({
         "status": "loaded",
@@ -1418,8 +1457,8 @@ async fn handle_timeline_load(args: serde_json::Value) -> Result<serde_json::Val
 async fn handle_timeline_validate(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
-    let timeline_path = extract_str(&args, "timeline_path")?;
-    let timeline = Timeline::load(timeline_path)?;
+    let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?.to_string_lossy().to_string();
+    let timeline = Timeline::load(&timeline_path)?;
     let errors = timeline.validate();
     let valid = errors.is_empty();
 
@@ -1436,15 +1475,15 @@ async fn handle_timeline_validate(
 // ---------------------------------------------------------------------------
 
 async fn handle_timeline_upgrade(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let edl_v1_path = extract_str(&args, "edl_v1_path")?;
+    let edl_v1_path = sanitize_input_path(extract_str(&args, "edl_v1_path")?)?.to_string_lossy().to_string();
     let output_path = default_opt_str(&args, "output_path");
 
-    let data = std::fs::read_to_string(edl_v1_path)?;
+    let data = std::fs::read_to_string(&edl_v1_path)?;
     let v1: serde_json::Value = serde_json::from_str(&data)?;
     let timeline = Timeline::from_edl_v1(&v1)?;
 
     let out_path = output_path.unwrap_or_else(|| {
-        let p = Path::new(edl_v1_path);
+        let p = Path::new(&edl_v1_path);
         let stem = p.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
         format!("{}.timeline.json", stem)
     });
@@ -1565,10 +1604,13 @@ async fn handle_voice_profile_list(
     let profile_list = profiles
         .as_object()
         .map(|obj| {
-            obj.values()
-                .map(|v| {
+            obj.iter()
+                .map(|(key, v)| {
+                    let profile_id = v.get("id").and_then(|x| x.as_str())
+                        .or_else(|| v.get("profile_id").and_then(|x| x.as_str()))
+                        .unwrap_or(key);
                     json!({
-                        "profile_id": v.get("profile_id").and_then(|x| x.as_str()).unwrap_or(""),
+                        "profile_id": profile_id,
                         "provider": v.get("provider").and_then(|x| x.as_str()).unwrap_or(""),
                         "language": v.get("language").and_then(|x| x.as_str()).unwrap_or(""),
                     })
@@ -1709,7 +1751,8 @@ async fn handle_sfx_index(args: serde_json::Value) -> Result<serde_json::Value, 
 
     let sfx_path = default_opt_str(&args, "sfx_path")
         .or_else(|| std::env::var("OPENSCRIPT_SFX_PATH").ok())
-        .unwrap_or_else(|| "/home/ishanp/Videos/Assets/SFX".to_string());
+        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{}/Videos/Assets/SFX", h)))
+        .unwrap_or_else(|| "./mcp/assets/sfx".to_string());
     let output_path = default_opt_str(&args, "output_path")
         .unwrap_or_else(|| "mcp/assets/sfx_index.json".to_string());
 
@@ -1866,7 +1909,11 @@ async fn handle_music_index(args: serde_json::Value) -> Result<serde_json::Value
         std::fs::create_dir_all(parent).ok();
     }
 
-    let default_paths = vec!["/home/ishanp/Videos/Assets/Music".to_string()];
+    let default_paths = vec![
+        std::env::var("OPENSCRIPT_MUSIC_PATH").ok()
+            .or_else(|| std::env::var("HOME").ok().map(|h| format!("{}/Videos/Assets/Music", h)))
+            .unwrap_or_else(|| "./mcp/assets/music".to_string())
+    ];
     let paths = music_paths.as_deref().unwrap_or(&default_paths);
 
     report_progress(0.0, 100.0, "Scanning music directories...").await.ok();
@@ -2100,7 +2147,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                         cached_path = Some(path.clone());
                         downloaded.push((concept.clone(), path));
                     }
-                    Err(e) => eprintln!("[broll.fetch] Download failed for {}: {}", concept, e),
+                    Err(e) => tracing::warn!("[broll.fetch] Download failed for {}: {}", concept, e),
                 }
             }
         }
@@ -2236,6 +2283,8 @@ async fn handle_voiceover_generate(
     let position_ms = default_i64(&args, "position_ms", 0);
     let speed = default_f64(&args, "speed", 1.0);
     let gain_db = default_f64(&args, "gain_db", -6.0);
+    let pitch = default_f64(&args, "pitch", 1.0);
+    let volume = default_f64(&args, "volume", 1.0);
 
     let mut timeline = Timeline::load(timeline_path)?;
 
@@ -2249,7 +2298,7 @@ async fn handle_voiceover_generate(
         })?
         .clone();
 
-    let timeline_dir = Path::new(timeline_path)
+    let timeline_dir = Path::new(&timeline_path)
         .parent()
         .unwrap_or(Path::new("."))
         .to_path_buf();
@@ -2284,7 +2333,7 @@ async fn handle_voiceover_generate(
     report_progress(0.0, 100.0, "Generating voiceover...").await.ok();
 
     let result = client
-        .generate(voice_profile_id, text, &output_path, speed, 1.0, 1.0, "wav", &profile)
+        .generate(voice_profile_id, text, &output_path, speed, pitch, volume, "wav", &profile)
         .await
         .map_err(|e| ToolError::Tts(e.to_string()))?;
 
@@ -2367,7 +2416,7 @@ async fn handle_tts_commentary(
         .unwrap_or_else(|_| "http://localhost:8000".to_string());
     let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
         .unwrap_or_else(|_| "artifacts/tts".to_string());
-    let timeline_dir = Path::new(timeline_path)
+    let timeline_dir = Path::new(&timeline_path)
         .parent()
         .unwrap_or(Path::new("."))
         .to_path_buf();
@@ -2649,8 +2698,8 @@ async fn handle_timeline_diff(args: serde_json::Value) -> Result<serde_json::Val
 // ---------------------------------------------------------------------------
 
 async fn handle_timeline_preview(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let timeline_path = extract_str(&args, "timeline_path")?;
-    let timeline = Timeline::load(timeline_path)?;
+    let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?.to_string_lossy().to_string();
+    let timeline = Timeline::load(&timeline_path)?;
 
     let total_duration_ms = timeline.total_duration_ms();
     let segments_info: Vec<serde_json::Value> = timeline
@@ -2854,7 +2903,7 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
     let output_path = default_opt_str(&args, "output_path");
     let crf = default_opt_u32(&args, "crf");
 
-    if !Path::new(timeline_path).exists() {
+    if !Path::new(&timeline_path).exists() {
         return Err(ToolError::NotFound(format!(
             "Timeline not found: {}",
             timeline_path
@@ -2995,11 +3044,11 @@ async fn handle_broll_director(args: serde_json::Value) -> Result<serde_json::Va
                         }
                         cached_paths.push(json!({"concept": concept, "path": path}));
                     }
-                    Err(e) => eprintln!("[broll.director] Download failed for {}: {}", concept, e),
+                    Err(e) => tracing::warn!("[broll.director] Download failed for {}: {}", concept, e),
                 }
             }
-            Ok(None) => eprintln!("[broll.director] No video found for concept: {}", concept),
-            Err(e) => eprintln!("[broll.director] Search failed for {}: {}", concept, e),
+Ok(None) => tracing::warn!("[broll.director] No video found for concept: {}", concept),
+Err(e) => tracing::warn!("[broll.director] Search failed for {}: {}", concept, e),
         }
     }
 
@@ -3034,16 +3083,19 @@ async fn handle_reelize_timeline(
     let output_path = default_opt_str(&args, "output_path");
     let crf = default_u32(&args, "crf", 20);
 
-    if !Path::new(video_path).exists() {
+    if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!("Video not found: {}", video_path)));
     }
 
+    let mut warnings: Vec<String> = Vec::new();
+
     // Environment diagnostics — warn about missing capabilities early
     if std::env::var("PEXELS_API_KEY").is_err() {
-        eprintln!("[reelize.timeline] PEXELS_API_KEY not set — b-roll will be skipped");
+        warnings.push("PEXELS_API_KEY not set — b-roll will be skipped".into());
     }
-    if std::env::var("OPENAI_API_BASE").is_err() && std::env::var("OPENAI_API_KEY").is_err() {
-        eprintln!("[reelize.timeline] No TTS API configured — voiceover unavailable");
+    let tts_available = std::env::var("OPENSCRIPT_TTS_URL").is_ok();
+    if !tts_available {
+        warnings.push("No TTS server configured (OPENSCRIPT_TTS_URL) — voiceover unavailable".into());
     }
 
     // B-roll options
@@ -3129,10 +3181,10 @@ async fn handle_reelize_timeline(
                         json!({"path": ass_path.clone()}),
                     );
                 }
-                Err(e) => eprintln!("[reelize.timeline] ASS generation failed: {}", e),
+                Err(e) => tracing::warn!("[reelize.timeline] ASS generation failed: {}", e),
             }
         }
-        Err(e) => eprintln!("[reelize.timeline] SRT parse failed for ASS: {}", e),
+        Err(e) => tracing::warn!("[reelize.timeline] SRT parse failed for ASS: {}", e),
     }
 
     let validation_errors = timeline.validate();
@@ -3162,7 +3214,7 @@ async fn handle_reelize_timeline(
                 let filled = r.get("broll_slots_filled").and_then(|v| v.as_u64()).unwrap_or(0);
                 report_progress(55.0, 100.0, &format!("B-roll: {} slots filled", filled)).await.ok();
             }
-            Err(e) => eprintln!("[reelize.timeline] B-roll director skipped: {}", e),
+            Err(e) => warnings.push(format!("B-roll director skipped: {}", e)),
         }
     } else {
         report_progress(55.0, 100.0, "B-roll disabled, skipping").await.ok();
@@ -3188,14 +3240,20 @@ async fn handle_reelize_timeline(
                     report_progress(60.0, 100.0, &format!("Music assigned ({} track(s))", music_count)).await.ok();
                 }
             }
-            Err(e) => eprintln!("[reelize.timeline] Music assign skipped: {}", e),
+            Err(e) => warnings.push(format!("Music assign skipped: {}", e)),
         }
     }
 
     if sfx_enabled {
         let sfx_index_path = std::env::var("OPENSCRIPT_SFX_INDEX")
             .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
-        let sfx_index = openscript_assets::sfx::SfxIndex::load(Some(&sfx_index_path)).ok();
+        let sfx_index = match openscript_assets::sfx::SfxIndex::load(Some(&sfx_index_path)) {
+            Ok(idx) => Some(idx),
+            Err(e) => {
+                warnings.push(format!("SFX index failed to load: {}", e));
+                None
+            }
+        };
 
         if let Ok(mut timeline) = Timeline::load(&timeline_path) {
             let total_ms = timeline.total_duration_ms();
@@ -3261,6 +3319,7 @@ async fn handle_reelize_timeline(
                 all_transitions
             } else {
                 let step = all_transitions.len() / max_transitions;
+                let step = step.max(1);
                 all_transitions.into_iter().step_by(step).take(max_transitions).collect()
             };
 
@@ -3363,7 +3422,8 @@ async fn handle_reelize_timeline(
                 .to_string_lossy()
                 .to_string()
         };
-        let t = Timeline::load(&timeline_path).unwrap();
+        let t = Timeline::load(&timeline_path)
+            .map_err(|e| ToolError::Timeline(e.to_string()))?;
         let segments_json: Vec<serde_json::Value> = t
             .segments
             .iter()
@@ -3388,7 +3448,7 @@ async fn handle_reelize_timeline(
         });
         let overlay_result = handle_overlay_generate(overlay_args).await;
         if let Err(e) = overlay_result {
-            eprintln!("[reelize.timeline] Animated overlay skipped: {}", e);
+            warnings.push(format!("Animated overlay skipped: {}", e));
         }
         report_progress(85.0, 100.0, "Animated captions generated").await.ok();
     } else {
@@ -3408,6 +3468,9 @@ async fn handle_reelize_timeline(
         )));
     }
 
+    let broll_count = timeline.tracks.get(&TrackType::Broll).map(|v| v.len()).unwrap_or(0);
+    let music_count = timeline.tracks.get(&TrackType::Music).map(|v| v.len()).unwrap_or(0);
+    let sfx_count = timeline.tracks.get(&TrackType::Sfx).map(|v| v.len()).unwrap_or(0);
     let total_tracks = timeline.tracks.values().map(|v| v.len()).sum::<usize>();
     report_progress(
         90.0,
@@ -3436,6 +3499,11 @@ async fn handle_reelize_timeline(
                 "segments_count": timeline.segments.len(),
                 "tracks_rendered": total_tracks,
                 "preset": preset,
+                "tts_available": tts_available,
+                "broll_count": broll_count,
+                "music_count": music_count,
+                "sfx_count": sfx_count,
+                "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
             }))
         }
         Err(e) => Err(ToolError::Ffmpeg(e.to_string())),
@@ -3447,11 +3515,11 @@ async fn handle_reelize_timeline(
 // ---------------------------------------------------------------------------
 
 async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let video_path = extract_str(&args, "video_path")?;
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
     let expected_has_voice = default_bool(&args, "expected_has_voice", true);
     let max_silence_seconds = default_f64(&args, "max_silence_seconds", 3.0);
 
-    if !Path::new(video_path).exists() {
+    if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!("Video not found: {}", video_path)));
     }
 
@@ -3461,11 +3529,15 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
             "-select_streams", "a:0",
             "-show_entries", "stream=codec_name,sample_rate,channels,duration",
             "-of", "json",
-            video_path,
+            &video_path,
         ])
         .output()
         .await
         .map_err(|e| ToolError::Ffmpeg(format!("ffprobe failed: {}", e)))?;
+
+    if !output.status.success() {
+        return Err(ToolError::Ffmpeg(format!("ffprobe failed: {}", String::from_utf8_lossy(&output.stderr))));
+    }
 
     let probe: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| ToolError::Json(e))?;
@@ -3487,7 +3559,7 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
 
     let vol_output = tokio::process::Command::new("ffmpeg")
         .args([
-            "-i", video_path,
+            "-i", &video_path,
             "-af", "volumedetect",
             "-f", "null",
             "-",
@@ -3495,6 +3567,10 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
         .output()
         .await
         .map_err(|e| ToolError::Ffmpeg(format!("volumedetect failed: {}", e)))?;
+
+    if !vol_output.status.success() {
+        return Err(ToolError::Ffmpeg(format!("volumedetect failed: {}", String::from_utf8_lossy(&vol_output.stderr))));
+    }
 
     let stderr = String::from_utf8_lossy(&vol_output.stderr);
     let mean_volume = stderr.lines()
@@ -3508,7 +3584,7 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
 
     let silence_output = tokio::process::Command::new("ffmpeg")
         .args([
-            "-i", video_path,
+            "-i", &video_path,
             "-af", &format!("silencedetect=noise=-30dB:d={}", max_silence_seconds),
             "-f", "null",
             "-",
@@ -3516,6 +3592,10 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
         .output()
         .await
         .map_err(|e| ToolError::Ffmpeg(format!("silencedetect failed: {}", e)))?;
+
+    if !silence_output.status.success() {
+        return Err(ToolError::Ffmpeg(format!("silencedetect failed: {}", String::from_utf8_lossy(&silence_output.stderr))));
+    }
 
     let silence_stderr = String::from_utf8_lossy(&silence_output.stderr);
     let mut silence_segments: Vec<serde_json::Value> = Vec::new();
@@ -3582,15 +3662,15 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
 // ---------------------------------------------------------------------------
 
 async fn handle_verify_captions(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let video_path = extract_str(&args, "video_path")?;
-    let srt_path = extract_str(&args, "srt_path")?;
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
+    let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?.to_string_lossy().to_string();
     let min_caption_duration_ms = default_i64(&args, "min_caption_duration_ms", 300);
     let max_caption_duration_ms = default_i64(&args, "max_caption_duration_ms", 5000);
 
-    if !Path::new(video_path).exists() {
+    if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!("Video not found: {}", video_path)));
     }
-    if !Path::new(srt_path).exists() {
+    if !Path::new(&srt_path).exists() {
         return Err(ToolError::NotFound(format!("SRT not found: {}", srt_path)));
     }
 
@@ -3599,11 +3679,15 @@ async fn handle_verify_captions(args: serde_json::Value) -> Result<serde_json::V
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "json",
-            video_path,
+            &video_path,
         ])
         .output()
         .await
         .map_err(|e| ToolError::Ffmpeg(format!("ffprobe failed: {}", e)))?;
+
+    if !probe_output.status.success() {
+        return Err(ToolError::Ffmpeg(format!("ffprobe failed: {}", String::from_utf8_lossy(&probe_output.stderr))));
+    }
 
     let probe: serde_json::Value = serde_json::from_slice(&probe_output.stdout)
         .map_err(|e| ToolError::Json(e))?;
@@ -3703,15 +3787,15 @@ async fn handle_verify_captions(args: serde_json::Value) -> Result<serde_json::V
 // ---------------------------------------------------------------------------
 
 async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let video_path = extract_str(&args, "video_path")?;
-    let timeline_path = extract_str(&args, "timeline_path")?;
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
+    let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?.to_string_lossy().to_string();
     let expected_aspect = default_str(&args, "expected_aspect", "9:16");
     let duration_tolerance_ms = default_i64(&args, "duration_tolerance_ms", 2000);
 
-    if !Path::new(video_path).exists() {
+    if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!("Video not found: {}", video_path)));
     }
-    if !Path::new(timeline_path).exists() {
+    if !Path::new(&timeline_path).exists() {
         return Err(ToolError::NotFound(format!("Timeline not found: {}", timeline_path)));
     }
 
@@ -3722,11 +3806,15 @@ async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Val
             "-show_entries", "stream=width,height,r_frame_rate,duration",
             "-show_entries", "format=duration,size",
             "-of", "json",
-            video_path,
+            &video_path,
         ])
         .output()
         .await
         .map_err(|e| ToolError::Ffmpeg(format!("ffprobe failed: {}", e)))?;
+
+    if !probe_output.status.success() {
+        return Err(ToolError::Ffmpeg(format!("ffprobe failed: {}", String::from_utf8_lossy(&probe_output.stderr))));
+    }
 
     let probe: serde_json::Value = serde_json::from_slice(&probe_output.stdout)
         .map_err(|e| ToolError::Json(e))?;
@@ -3802,5 +3890,579 @@ async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Val
         "has_audio_stream": has_audio,
         "issues": issues,
         "overall_score": score,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: reelize.brief
+// ---------------------------------------------------------------------------
+
+async fn handle_reelize_brief(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
+    let srt_path_opt = default_opt_str(&args, "srt_path").map(|s| sanitize_input_path(&s).map(|p| p.to_string_lossy().to_string())).transpose()?;
+
+    if !Path::new(&video_path).exists() {
+        return Err(ToolError::NotFound(format!("Video not found: {}", video_path)));
+    }
+
+    let resolved_srt_path = if let Some(srt) = srt_path_opt {
+        report_progress(5.0, 100.0, "Using existing SRT...").await.ok();
+        srt
+    } else {
+        report_progress(0.0, 100.0, "Transcribing audio...").await.ok();
+        let transcribe_result = handle_transcribe(json!({"media_path": video_path})).await?;
+        report_progress(30.0, 100.0, "Transcription complete").await.ok();
+        transcribe_result
+            .get("output_srt_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::Srt("Transcription did not return output path".to_string()))?
+            .to_string()
+    };
+
+    report_progress(35.0, 100.0, "Grouping caption segments...").await.ok();
+    let prepare_result = handle_srt_prepare(json!({
+        "srt_path": &resolved_srt_path,
+        "max_words": 10,
+        "max_chars": 64,
+        "max_gap": 0.6,
+    })).await?;
+    let grouped_srt_path = prepare_result
+        .get("output_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::Srt("SRT prepare did not return output path".to_string()))?
+        .to_string();
+
+    report_progress(50.0, 100.0, "Analyzing segments...").await.ok();
+    let entries = parse_srt(&grouped_srt_path)?;
+
+    const STOPWORDS: &[&str] = &[
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "can", "shall", "to", "of", "in", "for",
+        "on", "with", "at", "by", "from", "as", "into", "like", "through",
+        "after", "over", "between", "out", "against", "during", "without",
+        "before", "under", "around", "among", "that", "this", "these",
+        "those", "it", "its", "i", "me", "my", "we", "our", "you", "your",
+        "he", "him", "his", "she", "her", "they", "them", "their", "what",
+        "which", "who", "whom", "whose", "where", "when", "why", "how",
+        "not", "no", "nor", "so", "but", "and", "or", "if", "then", "than",
+        "too", "very", "just", "about", "up", "some",
+    ];
+
+    let extract_keywords = |text: &str, limit: usize| -> Vec<String> {
+        text.split_whitespace()
+            .filter(|w| {
+                let lower = w.to_lowercase();
+                let cleaned: String = lower.chars().filter(|c| c.is_alphabetic()).collect();
+                !cleaned.is_empty() && !STOPWORDS.contains(&cleaned.as_str())
+            })
+            .map(|w| {
+                let lower = w.to_lowercase();
+                lower.chars().filter(|c| c.is_alphabetic()).collect()
+            })
+            .take(limit)
+            .collect()
+    };
+
+    let mut segments: Vec<serde_json::Value> = Vec::new();
+    let mut total_dialogue_s = 0.0;
+
+    for (i, entry) in entries.iter().enumerate() {
+        let duration_s = entry.end - entry.start;
+        let word_count = entry.text.split_whitespace().count();
+        let wps = if duration_s > 0.0 {
+            word_count as f64 / duration_s
+        } else {
+            0.0
+        };
+
+        let keywords = extract_keywords(&entry.text, 5);
+        let broll_concepts: Vec<String> = if entry.text.len() < 20 && !entry.text.trim().is_empty() {
+            let mut concepts = keywords.iter().take(3).cloned().collect::<Vec<_>>();
+            concepts.push(entry.text.trim().to_string());
+            concepts
+        } else {
+            keywords.iter().take(3).cloned().collect()
+        };
+
+        total_dialogue_s += duration_s;
+
+        segments.push(json!({
+            "id": format!("seg_{:03}", i + 1),
+            "start_s": entry.start,
+            "end_s": entry.end,
+            "duration_s": duration_s,
+            "text": entry.text,
+            "word_count": word_count,
+            "words_per_second": (wps * 100.0).round() / 100.0,
+            "suggested_broll_concepts": broll_concepts,
+            "topic_keywords": keywords,
+        }));
+    }
+
+    let mut topic_map: std::collections::HashMap<String, (usize, f64)> = std::collections::HashMap::new();
+    for seg in &segments {
+        if let Some(keywords) = seg.get("topic_keywords").and_then(|v| v.as_array()) {
+            if let Some(first) = keywords.first().and_then(|v| v.as_str()) {
+                let topic = first.to_string();
+                let entry = topic_map.entry(topic).or_insert((0, 0.0));
+                entry.0 += 1;
+                entry.1 += seg.get("duration_s").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            }
+        }
+    }
+
+    let topic_summary: Vec<serde_json::Value> = topic_map
+        .into_iter()
+        .map(|(topic, (count, total_s))| json!({
+            "topic": topic,
+            "segment_count": count,
+            "total_s": (total_s * 100.0).round() / 100.0,
+        }))
+        .collect();
+
+    let source_duration_s = match tokio::process::Command::new("ffprobe")
+        .args(["-v", "error", "-show_entries", "format=duration", "-of", "json"])
+        .arg(&video_path)
+        .output()
+        .await
+    {
+        Ok(output) => {
+            if let Ok(probe) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+                probe.get("format")
+                    .and_then(|f| f.get("duration"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(0.0)
+            } else {
+                0.0
+            }
+        }
+        Err(e) => {
+            tracing::warn!("ffprobe failed for source duration: {}", e);
+            0.0
+        }
+    };
+
+    report_progress(100.0, 100.0, "Brief complete").await.ok();
+
+    Ok(json!({
+        "source_path": video_path,
+        "source_duration_s": (source_duration_s * 100.0).round() / 100.0,
+        "total_segments": segments.len(),
+        "total_dialogue_s": (total_dialogue_s * 100.0).round() / 100.0,
+        "segments": segments,
+        "topic_summary": topic_summary,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: reelize.direct
+// ---------------------------------------------------------------------------
+
+async fn handle_reelize_direct(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    use openscript_ffmpeg::render::render_from_timeline;
+    use openscript_ffmpeg::subtitles;
+
+    let video_path = extract_str(&args, "video_path")?;
+    let segments_arr = args
+        .get("segments")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| ToolError::MissingArg("segments".to_string()))?;
+    let aspect = default_str(&args, "aspect", "9:16");
+    let crossfade_ms = default_u32(&args, "crossfade_ms", 300);
+    let fps = default_u32(&args, "fps", 30);
+    let crf = default_u32(&args, "crf", 20);
+    let output_path = default_opt_str(&args, "output_path");
+    let captions_obj = args.get("captions").cloned().unwrap_or(json!({}));
+    let caption_style = default_str(&captions_obj, "style", "standard");
+    let captions_enabled = default_bool(&captions_obj, "enabled", true);
+    let broll_arr = args
+        .get("broll")
+        .and_then(|v| v.as_array())
+        .map(|a| a.clone())
+        .unwrap_or_default();
+    let sfx_arr = args
+        .get("sfx")
+        .and_then(|v| v.as_array())
+        .map(|a| a.clone())
+        .unwrap_or_default();
+    let music_obj = args.get("music").cloned();
+    let voiceover_arr = args
+        .get("voiceover")
+        .and_then(|v| v.as_array())
+        .map(|a| a.clone())
+        .unwrap_or_default();
+    let srt_path_opt = default_opt_str(&args, "srt_path");
+
+    if !Path::new(&video_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Video not found: {}",
+            video_path
+        )));
+    }
+
+    let mut warnings: Vec<String> = Vec::new();
+
+    report_progress(0.0, 100.0, "Transcribing audio...").await.ok();
+    let resolved_srt_path = if let Some(srt) = srt_path_opt {
+        srt
+    } else {
+        let transcribe_result =
+            handle_transcribe(json!({"media_path": video_path})).await?;
+        transcribe_result
+            .get("output_srt_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                ToolError::Srt("Transcription did not return output path".to_string())
+            })?
+            .to_string()
+    };
+
+    report_progress(15.0, 100.0, "Preparing grouped SRT...").await.ok();
+    let prepare_result = handle_srt_prepare(json!({
+        "srt_path": &resolved_srt_path,
+        "max_words": 10,
+        "max_chars": 64,
+        "max_gap": 0.6,
+    }))
+    .await?;
+    let _grouped_srt_path = prepare_result
+        .get("output_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::Srt("SRT prepare did not return output path".to_string()))?
+        .to_string();
+
+    report_progress(25.0, 100.0, "Building timeline...").await.ok();
+    let timeline_path = default_timeline_path(video_path);
+    let mut timeline =
+        Timeline::new(video_path.into(), &aspect, fps, None);
+
+    for segment in segments_arr {
+        let start = segment
+            .get("start")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let end = segment
+            .get("end")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let caption = segment
+            .get("caption")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let seg_crossfade = segment
+            .get("crossfade_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(crossfade_ms as u64) as u32;
+        let semantic_role = segment
+            .get("id")
+            .and_then(|v| v.as_str());
+
+        timeline.add_segment(start, end, caption, seg_crossfade, semantic_role);
+    }
+
+    if captions_enabled {
+        use openscript_core::srt::parse_srt;
+
+        let word_srt_path = {
+            let p = Path::new(&resolved_srt_path);
+            let parent = p.parent().unwrap_or(Path::new("."));
+            let stem = p.file_stem().map(|s| s.to_string_lossy()).unwrap_or_default();
+            parent.join(format!("{}.apex.word.srt", stem))
+                .to_string_lossy()
+                .to_string()
+        };
+
+        let word_entries = parse_srt(&word_srt_path).ok();
+        let raw_srt_entries = parse_srt(&resolved_srt_path)
+            .map_err(|e| ToolError::Srt(format!("Failed to parse SRT: {}", e)))?;
+
+        let use_concat = segments_arr.len() > 10;
+        let mut timeline_segments: Vec<(f64, f64, String)> = Vec::new();
+        let mut output_cursor_s: f64 = 0.0;
+
+        for segment in segments_arr {
+            let seg_start = segment
+                .get("start")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let seg_end = segment
+                .get("end")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let caption = segment
+                .get("caption")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let seg_crossfade_s = segment
+                .get("crossfade_ms")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(crossfade_ms as f64) / 1000.0;
+            let seg_duration = seg_end - seg_start;
+
+            if let Some(ref words) = word_entries {
+                let words_in_range: Vec<_> = words.iter()
+                    .filter(|e| e.start >= seg_start && e.end <= seg_end + 0.05
+                        && !e.text.trim().is_empty())
+                    .collect();
+
+                let mut i = 0;
+                while i < words_in_range.len() {
+                    let chunk_size = if words_in_range.len() - i >= 5 {
+                        3
+                    } else if words_in_range.len() - i == 4 {
+                        2
+                    } else {
+                        words_in_range.len() - i
+                    };
+                    let chunk_start = output_cursor_s + (words_in_range[i].start - seg_start);
+                    let chunk_end = output_cursor_s + (words_in_range[i + chunk_size - 1].end - seg_start);
+                    let text: Vec<_> = words_in_range[i..i + chunk_size].iter()
+                        .map(|e| e.text.trim().to_string()).collect();
+                    timeline_segments.push((chunk_start, chunk_end, text.join(" ")));
+                    i += chunk_size;
+                }
+            } else {
+                let srt_in_range: Vec<_> = raw_srt_entries.iter()
+                    .filter(|e| e.start >= seg_start && e.end <= seg_end + 0.05
+                        && !e.text.trim().is_empty())
+                    .collect();
+
+                if !srt_in_range.is_empty() && !caption.is_empty() {
+                    let caption_words: Vec<&str> = caption.split_whitespace().collect();
+                    let n = srt_in_range.len();
+                    for (i, srt_entry) in srt_in_range.iter().enumerate() {
+                        let out_start = output_cursor_s + (srt_entry.start - seg_start);
+                        let out_end = output_cursor_s + (srt_entry.end - seg_start);
+                        let ws = (i * caption_words.len()) / n;
+                        let we = ((i + 1) * caption_words.len()) / n;
+                        let chunk = caption_words[ws..we].join(" ");
+                        if !chunk.is_empty() {
+                            timeline_segments.push((out_start, out_end, chunk));
+                        }
+                    }
+                } else if !caption.is_empty() {
+                    timeline_segments.push((output_cursor_s, output_cursor_s + seg_duration, caption.to_string()));
+                }
+            }
+
+            if use_concat {
+                output_cursor_s += seg_duration;
+            } else {
+                output_cursor_s += seg_duration - seg_crossfade_s;
+                if output_cursor_s < 0.0 {
+                    output_cursor_s = 0.0;
+                }
+            }
+        }
+
+        let caption_asset_dir = Path::new(&timeline_path)
+            .parent()
+            .unwrap_or(Path::new("."));
+        let style_name = if caption_style == "kinetic" {
+            "KineticViral"
+        } else {
+            "Standard"
+        };
+
+        let ass_path = caption_asset_dir
+            .join(format!("captions_{}.ass", style_name.to_lowercase()))
+            .to_string_lossy()
+            .to_string();
+
+        if caption_style == "kinetic" {
+            subtitles::generate_kinetic_captions(
+                &timeline_segments,
+                &ass_path,
+                style_name,
+                "&H00FFD700",
+            )
+            .map_err(|e| ToolError::Srt(e.to_string()))?;
+        } else {
+            subtitles::srt_to_ass(&timeline_segments, &ass_path, style_name)
+                .map_err(|e| ToolError::Srt(e.to_string()))?;
+        }
+
+        timeline.add_asset("captions", "ass".to_string(), json!({"path": ass_path}));
+    }
+
+    // Save timeline BEFORE calling sub-tools (they load from disk)
+    timeline.save(&timeline_path)?;
+
+    report_progress(40.0, 100.0, "Fetching b-roll...").await.ok();
+    for directive in &broll_arr {
+        let concept = directive
+            .get("concept")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let overlay_at_s = directive
+            .get("overlay_at_s")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let duration_s = directive
+            .get("duration_s")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(3.0);
+
+        let fetch_result = handle_broll_fetch(json!({
+            "concepts": [concept],
+            "orientation": "9:16",
+            "quality": "sd",
+            "download": true,
+        }))
+        .await;
+
+        match fetch_result {
+            Ok(result) => {
+                let cached_path = result
+                    .get("downloaded")
+                    .and_then(|d| d.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|v| v.get("path"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
+                if let Some(path) = cached_path {
+                    let assign_result = handle_broll_assign(json!({
+                        "timeline_path": &timeline_path,
+                        "concept": concept,
+                        "position_ms": (overlay_at_s * 1000.0) as i64,
+                        "duration_ms": (duration_s * 1000.0) as i64,
+                        "asset_path": path,
+                    }))
+                    .await;
+                    if let Err(e) = assign_result {
+                        warnings.push(format!("broll assign failed for '{}': {}", concept, e));
+                    }
+                } else {
+                    warnings.push(format!("broll fetch found no downloadable asset for '{}'", concept));
+                }
+            }
+            Err(e) => {
+                warnings.push(format!("broll fetch failed for '{}': {}", concept, e));
+            }
+        }
+    }
+
+    report_progress(55.0, 100.0, "Assigning SFX...").await.ok();
+
+    for directive in &sfx_arr {
+        let role = directive
+            .get("role")
+            .and_then(|v| v.as_str())
+            .unwrap_or("transition");
+        let at_s = directive
+            .get("at_s")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+
+        let assign_result = handle_sfx_assign(json!({
+            "timeline_path": &timeline_path,
+            "editorial_role": role,
+            "query": "",
+            "position_ms": (at_s * 1000.0) as i64,
+        }))
+        .await;
+        if let Err(e) = assign_result {
+            warnings.push(format!("sfx assign failed for role '{}': {}", role, e));
+        }
+    }
+
+    if let Some(ref music) = music_obj {
+        report_progress(65.0, 100.0, "Assigning music...").await.ok();
+        let mood = default_str(music, "mood", "neutral");
+        let energy = default_str(music, "energy", "medium");
+        let gain_db = default_f64(music, "gain_db", -12.0);
+        let ducking = default_bool(music, "duck_under_dialogue", true);
+
+        let music_result = handle_music_assign(json!({
+            "timeline_path": &timeline_path,
+            "mood": mood,
+            "energy": energy,
+            "gain_db": gain_db,
+            "ducking": ducking,
+        }))
+        .await;
+        if let Err(e) = music_result {
+            warnings.push(format!("music assign failed: {}", e));
+        }
+    }
+
+    if !voiceover_arr.is_empty() {
+        report_progress(75.0, 100.0, "Generating voiceovers...").await.ok();
+    }
+    for directive in &voiceover_arr {
+        let text = directive
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let position_s = directive
+            .get("position_s")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let profile_id = directive
+            .get("voice_profile_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("test_narrator");
+        let speed = directive
+            .get("speed")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1.0);
+        let gain_db = directive
+            .get("gain_db")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(-6.0);
+
+        let vo_result = handle_voiceover_generate(json!({
+            "timeline_path": &timeline_path,
+            "text": text,
+            "voice_profile_id": profile_id,
+            "position_ms": (position_s * 1000.0) as i64,
+            "speed": speed,
+            "gain_db": gain_db,
+        }))
+        .await;
+        if let Err(e) = vo_result {
+            warnings.push(format!("voiceover generate failed: {}", e));
+        }
+    }
+
+    report_progress(85.0, 100.0, "Validating timeline...").await.ok();
+    let timeline = Timeline::load(&timeline_path)?;
+    let validation_errors = timeline.validate();
+    if !validation_errors.is_empty() {
+        return Err(ToolError::Timeline(format!(
+            "Timeline validation failed: {}",
+            validation_errors.join("; ")
+        )));
+    }
+
+    report_progress(90.0, 100.0, "Rendering final video...").await.ok();
+    let output = render_from_timeline(&timeline, video_path, output_path.as_deref(), Some(crf))
+        .await
+        .map_err(|e| ToolError::Ffmpeg(e.to_string()))?;
+
+    let broll_count = track_count(&timeline, &TrackType::Broll);
+    let sfx_count = track_count(&timeline, &TrackType::Sfx);
+    let music_count = track_count(&timeline, &TrackType::Music);
+    let voiceover_count = track_count(&timeline, &TrackType::Voiceover);
+    let duration_s = timeline.rendered_duration_ms() as f64 / 1000.0;
+
+    report_progress(100.0, 100.0, "Direct complete").await.ok();
+
+    Ok(json!({
+        "status": "rendered",
+        "output_path": output,
+        "duration_s": (duration_s * 100.0).round() / 100.0,
+        "segments_count": timeline.segments.len(),
+        "broll_count": broll_count,
+        "sfx_count": sfx_count,
+        "music_count": music_count,
+        "voiceover_count": voiceover_count,
+        "timeline_path": timeline_path,
+        "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
     }))
 }

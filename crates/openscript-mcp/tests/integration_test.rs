@@ -90,9 +90,15 @@ fn send_request(
 }
 
 /// Helper: extract the parsed JSON payload from an MCP result response.
-/// MCP wraps results as: {"content": [{"type": "text", "text": "<json>"}]}
+/// Tool-call results are wrapped as: {"content": [{"type": "text", "text": "<json>"}]}
+/// Protocol results (initialize, tools/list) return raw objects directly.
 fn extract_result_payload(response: &serde_json::Value) -> serde_json::Value {
     let result = response.get("result").expect("Response should have result");
+    // Direct object (initialize, tools/list, etc.)
+    if result.get("content").is_none() {
+        return result.clone();
+    }
+    // Tool-call wrapper format
     let content = result.get("content").unwrap().as_array().unwrap();
     let text = content[0].get("text").unwrap().as_str().unwrap();
     serde_json::from_str(text).expect("Result text should be valid JSON")
@@ -170,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // Should have 41 tools (8 original + 20 timeline V2 + 5 agent UX + 3 voiceover + 1 orchestration + 3 verification + 1 externally added)
+    // Should have 43 tools (8 original + 20 timeline V2 + 5 agent UX + 3 voiceover + 1 orchestration + 3 verification + 1 externally added + 1 brief + 1 direct)
     assert_eq!(
         tools.len(),
-        41,
-        "Expected 41 MCP tools, got {}",
+        43,
+        "Expected 43 MCP tools, got {}",
         tools.len()
     );
 

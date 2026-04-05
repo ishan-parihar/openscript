@@ -52,7 +52,7 @@ async fn spawn_ffmpeg_with_progress(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let stderr = child.stderr.take().unwrap();
+    let stderr = child.stderr.take().expect("stderr was piped above");
     let mut reader = BufReader::new(stderr);
     let mut line = String::new();
     let mut last_progress: f64 = 0.0;

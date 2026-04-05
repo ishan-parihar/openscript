@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::io::{stdin, stdout};
 use tokio::sync::Mutex;
@@ -103,50 +104,43 @@ impl ProgressWriter {
     }
 }
 
-// Thread-local progress token for the current request
-thread_local! {
-    static CURRENT_PROGRESS_TOKEN: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
-}
+// Global progress writer — set once at startup
+static PROGRESS_WRITER: OnceLock<Arc<ProgressWriter>> = OnceLock::new();
+
+// Global progress token — updated per request (protected by Mutex)
+static CURRENT_PROGRESS_TOKEN: OnceLock<std::sync::Mutex<String>> = OnceLock::new();
 
 /// Set the progress token for the current tool call.
 pub fn set_progress_token(token: String) {
-    CURRENT_PROGRESS_TOKEN.with(|cell| {
-        *cell.borrow_mut() = Some(token);
-    });
+    CURRENT_PROGRESS_TOKEN
+        .get_or_init(|| std::sync::Mutex::new(String::new()))
+        .lock()
+        .unwrap()
+        .clone_from(&token);
 }
 
-/// Get the current progress token.
 pub fn get_progress_token() -> Option<String> {
-    CURRENT_PROGRESS_TOKEN.with(|cell| cell.borrow().clone())
+    CURRENT_PROGRESS_TOKEN.get().and_then(|m| {
+        let s = m.lock().unwrap();
+        if s.is_empty() { None } else { Some(s.clone()) }
+    })
 }
 
 /// Report progress for the current tool call.
 pub async fn report_progress(progress: f64, total: f64, message: &str) -> Result<(), std::io::Error> {
     if let Some(token) = get_progress_token() {
-        // We need access to the ProgressWriter — use a global
-        PROGRESS_WRITER.with(|pw| {
-            let pw = pw.borrow().clone();
-            async move {
-                if let Some(pw) = pw {
-                    pw.report_progress(&token, progress, Some(total), Some(message)).await
-                } else {
-                    Ok(())
-                }
-            }
-        }).await
+        if let Some(pw) = PROGRESS_WRITER.get() {
+            pw.report_progress(&token, progress, Some(total), Some(message)).await
+        } else {
+            Ok(())
+        }
     } else {
         Ok(())
     }
 }
 
-thread_local! {
-    static PROGRESS_WRITER: std::cell::RefCell<Option<Arc<ProgressWriter>>> = const { std::cell::RefCell::new(None) };
-}
-
 pub fn set_progress_writer(pw: Arc<ProgressWriter>) {
-    PROGRESS_WRITER.with(|cell| {
-        *cell.borrow_mut() = Some(pw);
-    });
+    PROGRESS_WRITER.get_or_init(|| pw);
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +317,7 @@ pub async fn run() -> Result<(), std::io::Error> {
 
     let mut stdin_reader = stdin_reader;
     let mut stdout_writer = stdout();
-    let mut use_content_length = true;
+    let _use_content_length = true;
 
     loop {
         let (message, msg_use_cl) = match read_message(&mut stdin_reader).await {
@@ -360,8 +354,6 @@ pub async fn run() -> Result<(), std::io::Error> {
                 params,
                 ..
             } => {
-                set_progress_token(String::new());
-
                 let result = match method.as_str() {
                     "initialize" => handle_initialize(),
                     "tools/list" => handle_tools_list(),

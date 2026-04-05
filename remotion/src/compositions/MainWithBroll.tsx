@@ -20,10 +20,10 @@ const CrossFadeVideo: React.FC<{
   
   const opacity = useMemo(() => {
     if (frame < from + transitionIn) {
-      return interpolate(frame, from, from + transitionIn, 0, 1, { extrapolateRight: 'clamp' });
+      return interpolate(frame, [from, from + transitionIn], [0, 1], { extrapolateRight: 'clamp' });
     }
     if (frame > to - transitionOut) {
-      return interpolate(frame, to - transitionOut, to, 1, 0, { extrapolateLeft: 'clamp' });
+      return interpolate(frame, [to - transitionOut, to], [1, 0], { extrapolateLeft: 'clamp' });
     }
     return 1;
   }, [frame, from, to, transitionIn, transitionOut]);
@@ -46,13 +46,13 @@ const CrossFadeVideo: React.FC<{
 };
 
 // Main video layer (shows when no b-roll)
-const MainVideoLayer: React.FC<{ src: string; events: TimelineEvent[] }> = ({ src, events }) => {
+const MainVideoLayer: React.FC<{ src: string; events: TimelineEvent[]; fps: number }> = ({ src, events, fps }) => {
   return (
     <AbsoluteFill>
       {events.map((event, i) => {
         if (event.type !== 'video') return null;
-        const from = msToFrames(event.startMs, 30);
-        const to = msToFrames(event.endMs, 30);
+        const from = msToFrames(event.startMs, fps);
+        const to = msToFrames(event.endMs, fps);
         return (
           <Sequence key={i} from={from} durationInFrames={to - from}>
             <Video
@@ -77,7 +77,8 @@ const MainVideoLayer: React.FC<{ src: string; events: TimelineEvent[] }> = ({ sr
 const BrollLayer: React.FC<{
   brolls: { id: string; src: string }[];
   events: TimelineEvent[];
-}> = ({ brolls, events }) => {
+  fps: number;
+}> = ({ brolls, events, fps }) => {
   const brollMap = useMemo(() => {
     const map = new Map<string, string>();
     brolls.forEach((b) => map.set(b.id, b.src));
@@ -90,9 +91,9 @@ const BrollLayer: React.FC<{
         if (event.type !== 'broll') return null;
         const src = brollMap.get(event.id);
         if (!src) return null;
-        
-        const from = msToFrames(event.startMs, 30);
-        const to = msToFrames(event.endMs, 30);
+
+        const from = msToFrames(event.startMs, fps);
+        const to = msToFrames(event.endMs, fps);
         const transition = event.transition || { in: 6, out: 6 };
 
         return (
@@ -130,11 +131,11 @@ export const MainWithBroll: React.FC<MainWithBrollProps> = ({ timeline }) => {
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/* Audio: always from main video */}
-      <Audio src={sources.main} />
-      
+      {sources.main && <Audio src={sources.main} />}
+
       {/* Video layers */}
-      <MainVideoLayer src={sources.main} events={videoEvents} />
-      <BrollLayer brolls={sources.brolls} events={brollEvents} />
+      <MainVideoLayer src={sources.main} events={videoEvents} fps={meta.fps} />
+      <BrollLayer brolls={sources.brolls} events={brollEvents} fps={meta.fps} />
     </AbsoluteFill>
   );
 };

@@ -9,9 +9,27 @@
  * - Rich visual compositions
  */
 
-import {CompositionProps, AbsoluteFill, Sequence, useVideoConfig, interpolate} from 'remotion';
-import {Zodiac} from 'remotion';
+import {AbsoluteFill, Sequence, useVideoConfig, interpolate, Video, Audio, useCurrentFrame} from 'remotion';
 import React from 'react';
+
+// Directive interfaces
+export interface DuckingDirective {
+  target_track: string;
+  reduce_db: number;
+  during: string;
+}
+
+export interface TransitionDirective {
+  type: string;
+  duration_ms: number;
+  between?: string[];
+}
+
+export interface MixConfig {
+  target_lufs: number;
+  true_peak_db: number;
+  ducking_depth_db?: number;
+}
 
 // Type definitions matching EDL v2 schema
 export interface Segment {
@@ -33,7 +51,7 @@ export interface TimelineEvent {
   fade_in_ms?: number;
   fade_out_ms?: number;
   tags?: string[];
-  provenance?: any;
+  provenance?: Record<string, unknown>;
 }
 
 export interface BrollEvent extends TimelineEvent {
@@ -63,7 +81,7 @@ export interface SFXEvent extends TimelineEvent {
 export interface CaptionEvent extends TimelineEvent {
   text: string;
   style?: string;
-  word_timings?: any[];
+  word_timings?: {start: number; end: number; text: string}[];
 }
 
 export interface EDL_v2 {
@@ -84,20 +102,20 @@ export interface EDL_v2 {
     sfx?: SFXEvent[];
   };
   directives: {
-    ducking?: any[];
-    transitions?: any[];
-    mix?: any;
+    ducking?: DuckingDirective[];
+    transitions?: TransitionDirective[];
+    mix?: MixConfig;
     render_backend?: string;
   };
   assets: {
-    voices?: any;
-    broll?: any;
-    music?: any;
-    sfx?: any;
+    voices?: Record<string, Record<string, unknown>>;
+    broll?: Record<string, Record<string, unknown>>;
+    music?: Record<string, Record<string, unknown>>;
+    sfx?: Record<string, Record<string, unknown>>;
   };
   effects: {
     burn_captions?: boolean;
-    audio?: any;
+    audio?: Record<string, unknown>;
   };
 }
 
@@ -281,10 +299,13 @@ const FadeTransition: React.FC<{
   durationFrames: number;
 }> = ({durationFrames}) => {
   const frame = useCurrentFrame();
-  
+
+  const fadeInDur = Math.min(10, Math.max(1, Math.floor(durationFrames / 4)));
+  const fadeOutStart = Math.max(fadeInDur + 1, durationFrames - fadeInDur);
+
   const opacity = interpolate(
     frame,
-    [0, 10, durationFrames - 10, durationFrames],
+    [0, fadeInDur, fadeOutStart, durationFrames],
     [0, 1, 1, 0],
     {extrapolateRight: 'clamp'}
   );
@@ -317,11 +338,12 @@ export const AudioMixer: React.FC<{
       {edl.tracks.voiceover?.map((event) => {
         const assetPath = assets[event.asset_id];
         if (!assetPath) return null;
-        
+
         const startFrame = Math.ceil((event.start_ms / 1000) * fps);
-        
+        const durationFrames = Math.ceil(((event.end_ms - event.start_ms) / 1000) * fps);
+
         return (
-          <Sequence key={event.id} from={startFrame}>
+          <Sequence key={event.id} from={startFrame} durationInFrames={Math.max(1, durationFrames)}>
             <Audio src={assetPath} volume={event.gain_db || 0} />
           </Sequence>
         );
@@ -351,11 +373,12 @@ export const AudioMixer: React.FC<{
       {edl.tracks.sfx?.map((event) => {
         const assetPath = assets[event.asset_id];
         if (!assetPath) return null;
-        
+
         const startFrame = Math.ceil((event.start_ms / 1000) * fps);
-        
+        const durationFrames = Math.ceil(((event.end_ms - event.start_ms) / 1000) * fps);
+
         return (
-          <Sequence key={event.id} from={startFrame}>
+          <Sequence key={event.id} from={startFrame} durationInFrames={Math.max(1, durationFrames)}>
             <Audio src={assetPath} volume={event.gain_db || -10} />
           </Sequence>
         );
@@ -395,7 +418,10 @@ export function compileEDLToRemotion(edl: EDL_v2): RemotionCompositionProps {
     if (typeof typeAssets === 'object') {
       for (const [assetId, assetData] of Object.entries(typeAssets)) {
         if (typeof assetData === 'object' && assetData !== null && 'path' in assetData) {
-          assets[assetId] = (assetData as any).path;
+          const record = assetData as Record<string, unknown>;
+          if (typeof record.path === 'string') {
+            assets[assetId] = record.path;
+          }
         }
       }
     }
@@ -420,9 +446,10 @@ export function registerEDL_v2_Composition(edl: EDL_v2) {
     : 30 * fps;
   
   // Parse aspect ratio
-  const [widthStr, heightStr] = edl.target.aspect.split(':');
-  const width = parseInt(widthStr) * 120; // Base width multiplier
-  const height = parseInt(heightStr) * 120;
+  const aspectMatch = edl.target.aspect.match(/^(\d+):(\d+)$/);
+  if (!aspectMatch) throw new Error(`Invalid aspect ratio: ${edl.target.aspect}`);
+  const width = parseInt(aspectMatch[1]) * 120;
+  const height = parseInt(aspectMatch[2]) * 120;
   
   return {
     id: `edl_v2_${Date.now()}`,
@@ -434,10 +461,5 @@ export function registerEDL_v2_Composition(edl: EDL_v2) {
     height,
   };
 }
-
-// Helper components (would be imported from remotion in real implementation)
-const Video: React.FC<any> = (props) => <video {...props} />;
-const Audio: React.FC<any> = (props) => <audio {...props} />;
-const useCurrentFrame = () => 0; // Placeholder
 
 export default EDL_v2_Composition;

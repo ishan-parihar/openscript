@@ -315,9 +315,8 @@ pub fn build_edl(
     analysis: &[SrtAnalysisEntry],
     strategy: &str,
     max_duration: Option<f64>,
-    crossfade_ms: u32,
+    _crossfade_ms: u32,
 ) -> Vec<(f64, f64, String)> {
-    let _ = crossfade_ms;
     let max_dur = max_duration.unwrap_or(f64::MAX);
     let mut total_duration = 0.0;
     let mut segments = Vec::new();
