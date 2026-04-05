@@ -4066,7 +4066,7 @@ async fn handle_reelize_direct(
     use openscript_ffmpeg::render::render_from_timeline;
     use openscript_ffmpeg::subtitles;
 
-    let video_path = extract_str(&args, "video_path")?;
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?.to_string_lossy().to_string();
     let segments_arr = args
         .get("segments")
         .and_then(|v| v.as_array())
@@ -4095,7 +4095,7 @@ async fn handle_reelize_direct(
         .and_then(|v| v.as_array())
         .map(|a| a.clone())
         .unwrap_or_default();
-    let srt_path_opt = default_opt_str(&args, "srt_path");
+    let srt_path_opt = default_opt_str(&args, "srt_path").map(|s| sanitize_input_path(&s).map(|p| p.to_string_lossy().to_string())).transpose()?;
 
     if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!(
@@ -4136,9 +4136,9 @@ async fn handle_reelize_direct(
         .to_string();
 
     report_progress(25.0, 100.0, "Building timeline...").await.ok();
-    let timeline_path = default_timeline_path(video_path);
+    let timeline_path = default_timeline_path(&video_path);
     let mut timeline =
-        Timeline::new(video_path.into(), &aspect, fps, None);
+        Timeline::new(std::path::Path::new(&video_path).to_path_buf(), &aspect, fps, None);
 
     for segment in segments_arr {
         let start = segment
@@ -4441,7 +4441,7 @@ async fn handle_reelize_direct(
     }
 
     report_progress(90.0, 100.0, "Rendering final video...").await.ok();
-    let output = render_from_timeline(&timeline, video_path, output_path.as_deref(), Some(crf))
+    let output = render_from_timeline(&timeline, &video_path, output_path.as_deref(), Some(crf))
         .await
         .map_err(|e| ToolError::Ffmpeg(e.to_string()))?;
 

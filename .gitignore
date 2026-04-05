@@ -5,3 +5,30 @@ third_party/
 .venv/
 __pycache__/
 artifacts/
+
+# Generated media outputs
+*.srt
+*.ass
+*.edl.json
+*.timeline.json
+*.wav
+*.mp4
+*.log
+
+# Python
+*.pyc
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI assistant working dirs
+.sisyphus/
+remotion/node_modules/
