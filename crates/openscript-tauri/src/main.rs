@@ -28,6 +28,11 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::system::system_capabilities,
+            // Project
+            commands::project::create_project,
+            commands::project::load_project,
+            commands::project::list_projects,
+            commands::project::save_project,
             // Timeline
             commands::timeline::split_segment,
             commands::timeline::get_timeline,

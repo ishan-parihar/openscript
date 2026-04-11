@@ -161,7 +161,7 @@ pub async fn redo(state: State<'_, AppState>) -> Result<Value, String> {
     Ok(json!({ "redone": desc }))
 }
 
-fn save_project_inner(state: &State<'_, AppState>) -> Result<(), String> {
+pub(crate) fn save_project_inner(state: &State<'_, AppState>) -> Result<(), String> {
     let timeline_path = state
         .with_active_project(|p| p.timeline_path.clone())
         .ok_or_else(|| "No active project".to_string())?;
