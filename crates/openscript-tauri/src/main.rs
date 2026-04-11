@@ -3,6 +3,7 @@
 mod commands;
 mod state;
 
+use state::AppState;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() {
@@ -14,15 +15,20 @@ fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let app_state = AppState::new();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(app_state)
         .setup(|_app| {
             tracing::info!("OpenScript Tauri app initialized");
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![
+            commands::system::system_capabilities,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
