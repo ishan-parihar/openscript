@@ -34,6 +34,13 @@ fn main() {
             commands::timeline::timeline_preview,
             commands::timeline::undo,
             commands::timeline::redo,
+            // Transcript
+            commands::transcript::transcribe_video,
+            commands::transcript::read_transcript,
+            commands::transcript::prepare_transcript,
+            commands::transcript::analyze_transcript,
+            commands::transcript::remove_filler_words_from_text,
+            commands::transcript::apply_transcript_edit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
