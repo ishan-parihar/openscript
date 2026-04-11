@@ -1,6 +1,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useProjectStore } from "./store/project";
-
+import { TranscriptEditor } from "./components/transcript/TranscriptEditor";
+import { TimelineEditor } from "./components/timeline/TimelineEditor";
 
 function TopBar() {
   const { projectName, sourceVideo, createProject } = useProjectStore();
@@ -66,8 +67,33 @@ function EmptyState() {
   );
 }
 
+function AssetsPanel() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b p-3">
+        <h3 className="text-sm font-medium">Assets</h3>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-4">
+        <div className="flex w-full gap-1">
+          {["B-Roll", "Music", "SFX"].map((tab) => (
+            <button
+              key={tab}
+              className="flex-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <p className="text-center text-xs text-muted-foreground">
+          Asset library coming soon
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function App() {
-  const { sourceVideo, error, segments } = useProjectStore();
+  const { sourceVideo, error } = useProjectStore();
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -82,31 +108,24 @@ function App() {
       {!sourceVideo ? (
         <EmptyState />
       ) : (
-        <div className="flex flex-1">
-          <div className="flex-1 flex items-center justify-center bg-black/5">
-            <p className="text-muted-foreground text-sm">
-              Video preview — {segments.length} segment(s)
-            </p>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="w-80 shrink-0 border-r overflow-y-auto">
+            <TranscriptEditor />
           </div>
 
-          <div className="w-80 border-l overflow-y-auto">
-            <div className="p-3 border-b">
-              <h3 className="text-sm font-medium">Segments</h3>
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex h-1/2 items-center justify-center border-b bg-black/5">
+              <p className="text-muted-foreground text-sm">
+                Video preview
+              </p>
             </div>
-            {segments.map((seg) => (
-              <div
-                key={seg.id}
-                className="px-3 py-2 border-b text-xs"
-              >
-                <div className="font-mono text-muted-foreground">{seg.id}</div>
-                <div className="mt-1 truncate">{seg.caption}</div>
-              </div>
-            ))}
-            {segments.length === 0 && (
-              <div className="p-4 text-xs text-muted-foreground text-center">
-                No segments yet. Add segments from the transcript or timeline.
-              </div>
-            )}
+            <div className="h-1/2 overflow-hidden">
+              <TimelineEditor />
+            </div>
+          </div>
+
+          <div className="w-64 shrink-0 border-l overflow-y-auto">
+            <AssetsPanel />
           </div>
         </div>
       )}

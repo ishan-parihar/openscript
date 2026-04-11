@@ -56,3 +56,53 @@ export async function undoAction() {
 export async function redoAction() {
   return invoke<{ redone: string }>("redo");
 }
+
+// Transcript commands
+export interface TranscriptEntry {
+  index: number;
+  start: number;
+  end: number;
+  text: string;
+}
+
+export async function transcribeVideo(videoPath: string) {
+  return invoke<{ srt_path: string; phrase_srt_path: string; word_srt_path: string; entry_count: number }>(
+    "transcribe_video",
+    { videoPath }
+  );
+}
+
+export async function readTranscript(srtPath: string) {
+  return invoke<{ count: number; entries: TranscriptEntry[] }>(
+    "read_transcript",
+    { srtPath }
+  );
+}
+
+export async function prepareTranscript(wordSrtPath: string, maxWords?: number, maxChars?: number) {
+  return invoke<{ output_path: string; count: number }>(
+    "prepare_transcript",
+    { wordSrtPath, maxWords: maxWords ?? 10, maxChars: maxChars ?? 64 }
+  );
+}
+
+export async function analyzeTranscript(srtPath: string) {
+  return invoke<{ filler_word_count: number; total_words: number; filler_percentage: number; filler_words: string[] }>(
+    "analyze_transcript",
+    { srtPath }
+  );
+}
+
+export async function removeFillerWordsFromText(text: string) {
+  return invoke<{ cleaned_text: string; removed_count: number }>(
+    "remove_filler_words_from_text",
+    { text }
+  );
+}
+
+export async function applyTranscriptEdit(videoPath: string, segments: unknown[]) {
+  return invoke<{ output_path: string; segments_count: number; total_duration_s: number }>(
+    "apply_transcript_edit",
+    { videoPath, segments }
+  );
+}
