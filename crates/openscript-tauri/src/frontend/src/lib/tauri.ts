@@ -131,3 +131,11 @@ export async function sfxSearch(query?: string, role?: string) {
 export async function sfxAssign(role: string, positionMs: number) {
   return invoke("sfx_assign", { role, positionMs });
 }
+
+// Reelize pipeline
+export async function reelizeTimeline(videoPath: string) {
+  return invoke<{ output_path: string; file_size_bytes: number; timeline_path: string; segments_count: number; tracks_rendered: number }>(
+    "reelize_timeline",
+    { videoPath }
+  );
+}
