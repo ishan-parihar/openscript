@@ -35,6 +35,7 @@ fn main() {
             commands::project::save_project,
             // Timeline
             commands::timeline::split_segment,
+            commands::timeline::add_segment,
             commands::timeline::get_timeline,
             commands::timeline::timeline_preview,
             commands::timeline::undo,
@@ -46,6 +47,15 @@ fn main() {
             commands::transcript::analyze_transcript,
             commands::transcript::remove_filler_words_from_text,
             commands::transcript::apply_transcript_edit,
+            // Assets
+            commands::assets::broll_fetch,
+            commands::assets::broll_assign,
+            commands::assets::music_search,
+            commands::assets::music_assign,
+            commands::assets::sfx_search,
+            commands::assets::sfx_assign,
+            // Render / Pipeline
+            commands::render::reelize_timeline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

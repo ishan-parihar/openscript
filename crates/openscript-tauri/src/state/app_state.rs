@@ -14,6 +14,7 @@ pub struct Project {
     pub timeline_path: String,
     pub transcript_path: Option<String>,
     pub timeline: Timeline,
+    #[allow(dead_code)]
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub modified_at: chrono::DateTime<chrono::Utc>,
 }

@@ -60,23 +60,28 @@ impl UndoManager {
         })
     }
 
+    #[allow(dead_code)]
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.undo_stack.clear();
         self.redo_stack.clear();
     }
 
+    #[allow(dead_code)]
     pub fn undo_count(&self) -> usize {
         self.undo_stack.len()
     }
 
+    #[allow(dead_code)]
     pub fn redo_count(&self) -> usize {
         self.redo_stack.len()
     }

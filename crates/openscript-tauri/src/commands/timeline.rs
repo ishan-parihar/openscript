@@ -1,8 +1,72 @@
 use openscript_core::timeline::Segment;
+use openscript_core::types::EditorialRole;
 use serde_json::{json, Value};
 use tauri::State;
 
 use crate::state::AppState;
+
+fn parse_editorial_role(role: &str) -> Option<EditorialRole> {
+    match role {
+        "hook" => Some(EditorialRole::Hook),
+        "setup" => Some(EditorialRole::Setup),
+        "proof" => Some(EditorialRole::Proof),
+        "contrast" => Some(EditorialRole::Contrast),
+        "payoff" => Some(EditorialRole::Payoff),
+        "cta" => Some(EditorialRole::Cta),
+        "intro" => Some(EditorialRole::Intro),
+        "transition" => Some(EditorialRole::Transition),
+        "highlight" => Some(EditorialRole::Highlight),
+        "outro" => Some(EditorialRole::Outro),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub async fn add_segment(
+    state: State<'_, AppState>,
+    start: f64,
+    end: f64,
+    caption: String,
+    semantic_role: Option<String>,
+) -> Result<Value, String> {
+    let snapshot_before = state
+        .timeline_snapshot()
+        .ok_or_else(|| "No active project".to_string())?;
+
+    let new_id = state
+        .with_active_project_mut(|project| {
+            let timeline = &mut project.timeline;
+            let new_id = format!("seg_{:03}", timeline.segments.len() + 1);
+            timeline.segments.push(Segment {
+                id: new_id.clone(),
+                start,
+                end,
+                caption,
+                crossfade_ms: 0,
+                semantic_role: semantic_role.as_deref().and_then(parse_editorial_role),
+            });
+            Ok::<_, String>(new_id)
+        })
+        .ok_or_else(|| "No active project".to_string())??;
+
+    let snapshot_after = state
+        .timeline_snapshot()
+        .ok_or_else(|| "No active project".to_string())?;
+
+    state
+        .undo_manager
+        .write()
+        .map_err(|_| "Lock poisoned")?
+        .record(
+            format!("Add segment: {}", new_id),
+            snapshot_before,
+            snapshot_after,
+        );
+
+    let _ = save_project_inner(&state);
+
+    Ok(json!({ "segment_id": new_id }))
+}
 
 /// Split a segment at a given timestamp (relative to source video, in seconds).
 /// Creates two segments: original start → split point, split point → original end.
