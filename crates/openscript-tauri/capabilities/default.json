@@ -1,0 +1,15 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for OpenScript",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
+    "fs:scope-appconfig-recursive",
+    "shell:default"
+  ]
+}

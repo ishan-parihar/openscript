@@ -1,0 +1,37 @@
+{
+  "productName": "OpenScript",
+  "version": "0.1.0",
+  "identifier": "com.openscript.editor",
+  "build": {
+    "beforeDevCommand": "cd src/frontend && npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../src/frontend/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "OpenScript",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file:; media-src 'self' file: blob:; connect-src 'self' http://localhost:* http://127.0.0.1:*"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

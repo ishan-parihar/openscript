@@ -8,6 +8,7 @@ members = [
     "crates/openscript-assets",
     "crates/openscript-ui",
     "crates/openscript-cli",
+    "crates/openscript-tauri",
 ]
 resolver = "2"
 
