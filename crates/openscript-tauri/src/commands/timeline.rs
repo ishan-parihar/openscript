@@ -125,9 +125,12 @@ pub async fn undo(state: State<'_, AppState>) -> Result<Value, String> {
         .undo()
         .ok_or_else(|| "Nothing to undo".to_string())?;
 
+    let timeline: openscript_core::timeline::Timeline =
+        serde_json::from_value(snapshot)
+            .map_err(|e| format!("Failed to restore timeline from undo: {}", e))?;
+
     state.with_active_project_mut(|project| {
-        project.timeline = serde_json::from_value(snapshot.clone())
-            .unwrap_or_else(|_| project.timeline.clone());
+        project.timeline = timeline;
     });
 
     let _ = save_project_inner(&state);
@@ -145,9 +148,12 @@ pub async fn redo(state: State<'_, AppState>) -> Result<Value, String> {
         .redo()
         .ok_or_else(|| "Nothing to redo".to_string())?;
 
+    let timeline: openscript_core::timeline::Timeline =
+        serde_json::from_value(snapshot)
+            .map_err(|e| format!("Failed to restore timeline from redo: {}", e))?;
+
     state.with_active_project_mut(|project| {
-        project.timeline = serde_json::from_value(snapshot.clone())
-            .unwrap_or_else(|_| project.timeline.clone());
+        project.timeline = timeline;
     });
 
     let _ = save_project_inner(&state);
