@@ -2655,11 +2655,13 @@ dependencies = [
 name = "openscript-tauri"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "openscript-assets",
  "openscript-core",
  "openscript-ffmpeg",
  "openscript-transcribe",
  "openscript-tts",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tauri",
@@ -2671,6 +2673,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

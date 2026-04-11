@@ -68,6 +68,18 @@ impl AppState {
         }
     }
 
+    pub fn with_active_project<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&Project) -> R,
+    {
+        let guard = self.active_project.read().ok()?;
+        let id = guard.as_ref()?.clone();
+        drop(guard);
+        let projects = self.projects.read().ok()?;
+        let project = projects.get(&id)?;
+        Some(f(project))
+    }
+
     pub fn with_active_project_mut<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut Project) -> R,

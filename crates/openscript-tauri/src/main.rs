@@ -28,6 +28,12 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::system::system_capabilities,
+            // Timeline
+            commands::timeline::split_segment,
+            commands::timeline::get_timeline,
+            commands::timeline::timeline_preview,
+            commands::timeline::undo,
+            commands::timeline::redo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
