@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 /// Common filler words/phrases to detect in transcripts.
+/// Single-word entries are matched per-token; multi-word entries are matched
+/// via phrase-level `contains` checks on the full segment text.
 const FILLER_WORDS: &[&str] = &[
     "um",
     "uh",
@@ -22,6 +24,7 @@ const FILLER_WORDS: &[&str] = &[
 
 /// A detected filler word in the transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct FillerWord {
     pub text: String,
     pub start_ms: u64,
@@ -31,13 +34,11 @@ pub struct FillerWord {
 
 /// Analysis result for a transcript.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct TranscriptAnalysis {
     pub filler_words: Vec<FillerWord>,
-    pub filler_word_count: usize,
     pub total_words: usize,
     pub filler_percentage: f64,
-    pub word_count: u64,
-    pub estimated_duration_s: f64,
     pub segments_analyzed: usize,
 }
 
@@ -52,6 +53,7 @@ pub fn detect_filler_words(
         let words: Vec<&str> = text.split_whitespace().collect();
         total_words += words.len();
 
+        // Word-level detection
         for word in &words {
             let lowered = word.to_lowercase();
             let lower = lowered.trim_matches(|c: char| !c.is_alphabetic());
@@ -59,7 +61,20 @@ pub fn detect_filler_words(
                 filler_words.push(FillerWord {
                     text: word.to_string(),
                     start_ms: *start_ms,
-                    end_ms: *start_ms + 500, // Approximate
+                    end_ms: *start_ms + 500,
+                    segment_id: segment_id.clone(),
+                });
+            }
+        }
+
+        // Phrase-level detection for multi-word fillers
+        let text_lower = text.to_lowercase();
+        for phrase in FILLER_WORDS {
+            if phrase.contains(' ') && text_lower.contains(phrase) {
+                filler_words.push(FillerWord {
+                    text: phrase.to_string(),
+                    start_ms: *start_ms,
+                    end_ms: *start_ms + 500,
                     segment_id: segment_id.clone(),
                 });
             }
@@ -73,12 +88,9 @@ pub fn detect_filler_words(
     };
 
     TranscriptAnalysis {
-        filler_word_count: filler_words.len(),
         filler_words,
         total_words,
         filler_percentage,
-        word_count: total_words as u64,
-        estimated_duration_s: 0.0,
         segments_analyzed: segments.len(),
     }
 }
@@ -136,7 +148,7 @@ mod tests {
         ];
 
         let analysis = detect_filler_words(&segments);
-        assert_eq!(analysis.filler_word_count, 6); // um, well, like, basically, actually, well
+        assert_eq!(analysis.filler_words.len(), 6); // um, well, like, basically, actually, well
         assert!(analysis.filler_percentage > 0.0);
     }
 
