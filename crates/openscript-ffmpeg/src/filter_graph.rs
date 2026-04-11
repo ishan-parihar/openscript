@@ -168,16 +168,15 @@ impl FilterGraphBuilder {
                         .broll
                         .get(&evt.id)
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
-                        .unwrap_or_else(|| {
-                            eprintln!("[WARN] B-roll asset path not found for event: {}", evt.id);
-                            ""
-                        })
+                        .unwrap_or("")
                         .to_string();
-                    broll_events.push(BrollEvent {
-                        path,
-                        start_ms: evt.start_ms,
-                        end_ms: evt.end_ms,
-                    });
+                    if !path.is_empty() && path != "placeholder" {
+                        broll_events.push(BrollEvent {
+                            path,
+                            start_ms: evt.start_ms,
+                            end_ms: evt.end_ms,
+                        });
+                    }
                 }
             }
         }
