@@ -87,6 +87,7 @@ pub async fn get_timeline(state: State<'_, AppState>) -> Result<Value, String> {
                 "project_id": project.id,
                 "name": project.name,
                 "source_video": project.source_video_path,
+                "timeline": project.timeline,
                 "segment_count": project.timeline.segments.len(),
             })
         })
