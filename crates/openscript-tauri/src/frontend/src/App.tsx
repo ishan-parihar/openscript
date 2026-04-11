@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useProjectStore } from "./store/project";
 import { TranscriptEditor } from "./components/transcript/TranscriptEditor";
 import { TimelineEditor } from "./components/timeline/TimelineEditor";
+import { AssetBrowser } from "./components/assets/AssetBrowser";
 
 function TopBar() {
   const { projectName, sourceVideo, createProject } = useProjectStore();
@@ -67,31 +68,6 @@ function EmptyState() {
   );
 }
 
-function AssetsPanel() {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="border-b p-3">
-        <h3 className="text-sm font-medium">Assets</h3>
-      </div>
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-4">
-        <div className="flex w-full gap-1">
-          {["B-Roll", "Music", "SFX"].map((tab) => (
-            <button
-              key={tab}
-              className="flex-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-        <p className="text-center text-xs text-muted-foreground">
-          Asset library coming soon
-        </p>
-      </div>
-    </div>
-  );
-}
-
 function App() {
   const { sourceVideo, error } = useProjectStore();
 
@@ -125,7 +101,7 @@ function App() {
           </div>
 
           <div className="w-64 shrink-0 border-l overflow-y-auto">
-            <AssetsPanel />
+            <AssetBrowser />
           </div>
         </div>
       )}

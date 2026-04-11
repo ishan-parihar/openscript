@@ -106,3 +106,28 @@ export async function applyTranscriptEdit(videoPath: string, segments: unknown[]
     { videoPath, segments }
   );
 }
+
+// Asset commands
+export async function brollFetch(concepts: string[], download?: boolean) {
+  return invoke("broll_fetch", { concepts, download: download ?? false });
+}
+
+export async function brollAssign(concept: string, positionMs: number, durationMs: number) {
+  return invoke("broll_assign", { concept, positionMs, durationMs });
+}
+
+export async function musicSearch(mood?: string, energy?: string) {
+  return invoke("music_search", { mood, energy });
+}
+
+export async function musicAssign(mood: string, energy: string) {
+  return invoke("music_assign", { mood, energy });
+}
+
+export async function sfxSearch(query?: string, role?: string) {
+  return invoke("sfx_search", { query, role });
+}
+
+export async function sfxAssign(role: string, positionMs: number) {
+  return invoke("sfx_assign", { role, positionMs });
+}
