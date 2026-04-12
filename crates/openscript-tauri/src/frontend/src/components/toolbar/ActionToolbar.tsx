@@ -1,6 +1,7 @@
 import { Mic, Wand2, Music, Film, MonitorPlay, Sparkles } from "lucide-react";
 import { useProjectStore } from "../../store/project";
 import { useTranscriptStore } from "../../store/transcript";
+import { useEditorStore } from "../../store/editor";
 
 const ACTIONS = [
   {
@@ -17,43 +18,70 @@ const ACTIONS = [
   },
   {
     id: "tts",
-    label: "Generate TTS",
+    label: "Voice",
     icon: Wand2,
-    tooltip: "Generate voiceover from text",
+    tooltip: "Open voice panel for TTS generation",
   },
   {
     id: "music",
-    label: "Add Music",
+    label: "Assets",
     icon: Music,
-    tooltip: "Search and assign background music",
+    tooltip: "Browse assets (music, b-roll, SFX)",
   },
   {
     id: "broll",
-    label: "Add B-Roll",
+    label: "Assets",
     icon: Film,
-    tooltip: "Fetch and assign b-roll footage",
+    tooltip: "Browse assets (music, b-roll, SFX)",
   },
   {
     id: "render",
     label: "Render",
     icon: MonitorPlay,
-    tooltip: "Render final video",
+    tooltip: "Open render panel",
   },
 ];
 
 export function ActionToolbar() {
   const { sourceVideo } = useProjectStore();
-  const { isTranscribing } = useTranscriptStore();
+  const { isTranscribing, transcribe, analyzeFillerWords, phraseSrtPath } = useTranscriptStore();
+  const { setActivePanel } = useEditorStore();
+
+  const handleClick = async (actionId: string) => {
+    switch (actionId) {
+      case "transcribe":
+        if (sourceVideo) {
+          await transcribe(sourceVideo);
+        }
+        break;
+      case "analyze":
+        if (phraseSrtPath) {
+          await analyzeFillerWords(phraseSrtPath);
+        }
+        break;
+      case "tts":
+        setActivePanel("voice");
+        break;
+      case "music":
+      case "broll":
+        setActivePanel("assets");
+        break;
+      case "render":
+        setActivePanel("render");
+        break;
+    }
+  };
 
   return (
     <div className="flex items-center gap-2 border-b bg-background px-4 py-2 shrink-0">
       {ACTIONS.map((action) => {
         const Icon = action.icon;
-        const disabled = !sourceVideo || isTranscribing;
+        const isTranscribingDisabled = action.id === "transcribe" && isTranscribing;
         return (
           <button
             key={action.id}
-            disabled={disabled}
+            disabled={!sourceVideo || isTranscribingDisabled}
+            onClick={() => handleClick(action.id)}
             className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-secondary hover:border-primary/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title={action.tooltip}
           >

@@ -54,7 +54,7 @@ export function BrollGrid() {
               <div
                 className="flex aspect-[9/16] items-center justify-center bg-muted text-xs text-muted-foreground"
               >
-                {result.cached_path ? "Preview" : "No download"}
+                {result.videos.some((v) => v.cached_path) ? "Preview" : "No download"}
               </div>
               <div className="p-2">
                 <p className="text-xs font-medium capitalize">{result.concept}</p>

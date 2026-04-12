@@ -6,14 +6,14 @@ interface EditorState {
   zoom: number;
   selectedSegmentId: string | null;
   selectedTrack: string | null;
-  activePanel: "transcript" | "timeline" | "assets" | "ai";
+  activePanel: "transcript" | "timeline" | "assets" | "ai" | "voice" | "render";
 
   setPlaybackPosition: (position: number) => void;
   setIsPlaying: (playing: boolean) => void;
   setZoom: (zoom: number) => void;
   setSelectedSegmentId: (id: string | null) => void;
   setSelectedTrack: (track: string | null) => void;
-  setActivePanel: (panel: "transcript" | "timeline" | "assets" | "ai") => void;
+  setActivePanel: (panel: "transcript" | "timeline" | "assets" | "ai" | "voice" | "render") => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({

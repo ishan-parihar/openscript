@@ -1,26 +1,27 @@
 import { create } from "zustand";
 import * as api from "../lib/tauri";
 
-export interface BrollVideo {
-  id: string;
-  width: number;
-  height: number;
-  url: string;
-}
-
 export interface BrollResult {
   concept: string;
-  videos: BrollVideo[];
-  cached_path?: string;
+  matched_concept: string | null;
+  videos: api.BrollVideoItem[];
 }
 
 export interface MusicResult {
+  id: string;
   title: string;
   artist: string;
   path: string;
   duration_ms: number;
   mood: string;
   energy: string;
+  bpm?: number;
+  loopability?: boolean;
+  intro_friendly?: boolean;
+  cta_friendly?: boolean;
+  loudness_target_lufs?: number;
+  tags?: string[];
+  genre?: string;
 }
 
 export interface SFXResult {
@@ -28,8 +29,16 @@ export interface SFXResult {
   filename: string;
   path: string;
   category: string;
+  subcategory: string;
   editorial_role: string;
   duration_ms: number;
+  sample_rate?: number;
+  peak_db?: number;
+  loudness_lufs?: number;
+  recommended_gain_db?: number;
+  recommended_use?: string;
+  safe_overlay?: boolean;
+  tags?: string[];
 }
 
 export interface AssetState {
@@ -56,7 +65,8 @@ export const useAssetStore = create<AssetState>((set) => ({
     set({ isSearching: true });
     try {
       const results = await api.brollFetch(concepts, download);
-      set({ brollResults: results as any, isSearching: false });
+      // broll_fetch returns raw array: [{ concept, matched_concept, videos: [...] }]
+      set({ brollResults: results as BrollResult[], isSearching: false });
     } catch {
       set({ isSearching: false });
     }
@@ -65,8 +75,9 @@ export const useAssetStore = create<AssetState>((set) => ({
   searchMusic: async (mood?: string, energy?: string) => {
     set({ isSearching: true });
     try {
-      const results = await api.musicSearch(mood, energy);
-      set({ musicResults: results as any, isSearching: false });
+      const response = await api.musicSearch(mood, energy);
+      // music_search returns { total, tracks: [...] } — extract tracks
+      set({ musicResults: response.tracks as MusicResult[], isSearching: false });
     } catch {
       set({ isSearching: false });
     }
@@ -75,34 +86,23 @@ export const useAssetStore = create<AssetState>((set) => ({
   searchSFX: async (query?: string, role?: string) => {
     set({ isSearching: true });
     try {
-      const results = await api.sfxSearch(query, role);
-      set({ sfxResults: results as any, isSearching: false });
+      const response = await api.sfxSearch(query, role);
+      // sfx_search returns { total, sfx: [...] } — extract sfx
+      set({ sfxResults: response.sfx as SFXResult[], isSearching: false });
     } catch {
       set({ isSearching: false });
     }
   },
 
   assignBroll: async (concept: string, positionMs: number, durationMs: number) => {
-    try {
-      await api.brollAssign(concept, positionMs, durationMs);
-    } catch {
-      // Assignment errors are handled by the calling component
-    }
+    await api.brollAssign(concept, positionMs, durationMs).catch(() => {});
   },
 
   assignMusic: async (mood: string, energy: string) => {
-    try {
-      await api.musicAssign(mood, energy);
-    } catch {
-      // Assignment errors are handled by the calling component
-    }
+    await api.musicAssign(mood, energy).catch(() => {});
   },
 
   assignSFX: async (role: string, positionMs: number) => {
-    try {
-      await api.sfxAssign(role, positionMs);
-    } catch {
-      // Assignment errors are handled by the calling component
-    }
+    await api.sfxAssign(role, positionMs).catch(() => {});
   },
 }));

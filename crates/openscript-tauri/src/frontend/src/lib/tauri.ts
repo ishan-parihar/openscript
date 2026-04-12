@@ -108,7 +108,66 @@ export async function applyTranscriptEdit(videoPath: string, segments: unknown[]
 }
 
 // Asset commands
-export async function brollFetch(concepts: string[], download?: boolean) {
+export interface BrollVideoItem {
+  id: string;
+  width: number;
+  height: number;
+  url: string;
+  image: string;
+  cached_path?: string;
+}
+
+export interface BrollConceptResult {
+  concept: string;
+  matched_concept: string | null;
+  videos: BrollVideoItem[];
+}
+
+export interface MusicTrackItem {
+  id: string;
+  title: string;
+  artist: string;
+  path: string;
+  duration_ms: number;
+  mood: string;
+  energy: string;
+  bpm?: number;
+  loopability?: boolean;
+  intro_friendly?: boolean;
+  cta_friendly?: boolean;
+  loudness_target_lufs?: number;
+  tags?: string[];
+  genre?: string;
+}
+
+export interface MusicSearchResponse {
+  total: number;
+  tracks: MusicTrackItem[];
+}
+
+export interface SFXItem {
+  id: string;
+  filename: string;
+  path: string;
+  category: string;
+  subcategory: string;
+  editorial_role: string;
+  duration_ms: number;
+  sample_rate?: number;
+  peak_db?: number;
+  loudness_lufs?: number;
+  recommended_gain_db?: number;
+  recommended_use?: string;
+  safe_overlay?: boolean;
+  tags?: string[];
+}
+
+export interface SFXSearchResponse {
+  total: number;
+  sfx: SFXItem[];
+}
+
+export async function brollFetch(concepts: string[], download?: boolean): Promise<BrollConceptResult[]> {
   return invoke("broll_fetch", { concepts, download: download ?? false });
 }
 
@@ -116,7 +175,7 @@ export async function brollAssign(concept: string, positionMs: number, durationM
   return invoke("broll_assign", { concept, positionMs, durationMs });
 }
 
-export async function musicSearch(mood?: string, energy?: string) {
+export async function musicSearch(mood?: string, energy?: string): Promise<MusicSearchResponse> {
   return invoke("music_search", { mood, energy });
 }
 
@@ -124,7 +183,7 @@ export async function musicAssign(mood: string, energy: string) {
   return invoke("music_assign", { mood, energy });
 }
 
-export async function sfxSearch(query?: string, role?: string) {
+export async function sfxSearch(query?: string, role?: string): Promise<SFXSearchResponse> {
   return invoke("sfx_search", { query, role });
 }
 

@@ -12,10 +12,15 @@ import { AssetBrowser } from "./components/assets/AssetBrowser";
 import { AIAssistant } from "./components/ai/AIAssistant";
 import { Toast, useToastStore } from "./components/shared/Toast";
 
-const PANELS: { key: "transcript" | "timeline" | "assets" | "ai"; label: string }[] = [
+import { VoicePanel } from "./components/voice/VoicePanel";
+import { RenderPanel } from "./components/render/RenderPanel";
+
+const PANELS: { key: "transcript" | "timeline" | "assets" | "ai" | "voice" | "render"; label: string }[] = [
   { key: "transcript", label: "Transcript" },
   { key: "timeline", label: "Timeline" },
   { key: "assets", label: "Assets" },
+  { key: "voice", label: "Voice" },
+  { key: "render", label: "Render" },
   { key: "ai", label: "AI" },
 ];
 
@@ -173,6 +178,8 @@ function App() {
                 {activePanel === "transcript" && <TranscriptEditor />}
                 {activePanel === "timeline" && <TimelineEditor />}
                 {activePanel === "assets" && <AssetBrowser />}
+                {activePanel === "voice" && <VoicePanel />}
+                {activePanel === "render" && <RenderPanel />}
                 {activePanel === "ai" && <AIAssistant />}
               </div>
             </div>
