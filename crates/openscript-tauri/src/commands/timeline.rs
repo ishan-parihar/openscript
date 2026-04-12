@@ -235,3 +235,152 @@ pub(crate) fn save_project_inner(state: &State<'_, AppState>) -> Result<(), Stri
         .map_err(|e| format!("Failed to serialize: {}", e))?;
     std::fs::write(&timeline_path, &timeline_json).map_err(|e| format!("Failed to save: {}", e))
 }
+
+#[tauri::command]
+pub async fn remove_segment(state: State<'_, AppState>, segment_id: String) -> Result<Value, String> {
+    let snapshot_before = state
+        .timeline_snapshot()
+        .ok_or_else(|| "No active project".to_string())?;
+
+    let _removed = state
+        .with_active_project_mut(|project| {
+            let timeline = &mut project.timeline;
+            let initial_len = timeline.segments.len();
+            timeline.segments.retain(|s| s.id != segment_id);
+            if timeline.segments.len() == initial_len {
+                Err(format!("Segment not found: {}", segment_id))
+            } else {
+                Ok(())
+            }
+        })
+        .ok_or_else(|| "No active project".to_string())??;
+
+    let snapshot_after = state
+        .timeline_snapshot()
+        .ok_or_else(|| "No active project".to_string())?;
+
+    state
+        .undo_manager
+        .write()
+        .map_err(|_| "Lock poisoned")?
+        .record(
+            format!("Remove segment: {}", segment_id),
+            snapshot_before,
+            snapshot_after,
+        );
+
+    let _ = save_project_inner(&state);
+
+    Ok(json!({ "removed": true, "segment_id": segment_id }))
+}
+
+#[tauri::command]
+pub async fn update_segment(
+    state: State<'_, AppState>,
+    segment_id: String,
+    start: Option<f64>,
+    end: Option<f64>,
+    caption: Option<String>,
+) -> Result<Value, String> {
+    let snapshot_before = state
+        .timeline_snapshot()
+        .ok_or_else(|| "No active project".to_string())?;
+
+    let _updated = state
+        .with_active_project_mut(|project| {
+            let timeline = &mut project.timeline;
+            match timeline.segments.iter_mut().find(|s| s.id == segment_id) {
+                Some(seg) => {
+                    if let Some(s) = start {
+                        seg.start = s;
+                    }
+                    if let Some(e) = end {
+                        seg.end = e;
+                    }
+                    if let Some(c) = caption {
+                        seg.caption = c;
+                    }
+                    Ok(())
+                }
+                None => Err(format!("Segment not found: {}", segment_id)),
+            }
+        })
+        .ok_or_else(|| "No active project".to_string())??;
+
+    let snapshot_after = state
+        .timeline_snapshot()
+        .ok_or_else(|| "No active project".to_string())?;
+
+    state
+        .undo_manager
+        .write()
+        .map_err(|_| "Lock poisoned")?
+        .record(
+            format!("Update segment: {}", segment_id),
+            snapshot_before,
+            snapshot_after,
+        );
+
+    let _ = save_project_inner(&state);
+
+    Ok(json!({ "updated": true, "segment_id": segment_id }))
+}
+
+#[tauri::command]
+pub async fn validate_timeline(state: State<'_, AppState>) -> Result<Value, String> {
+    let validation = state
+        .with_active_project(|project| {
+            let timeline = &project.timeline;
+            let mut issues: Vec<Value> = Vec::new();
+
+            if timeline.segments.is_empty() {
+                issues.push(json!({
+                    "type": "error",
+                    "message": "Timeline has no segments",
+                }));
+            }
+
+            for seg in &timeline.segments {
+                if seg.start >= seg.end {
+                    issues.push(json!({
+                        "type": "error",
+                        "segment_id": seg.id,
+                        "message": format!("Invalid timing: start ({:.2}) >= end ({:.2})", seg.start, seg.end),
+                    }));
+                }
+
+                if seg.caption.trim().is_empty() {
+                    issues.push(json!({
+                        "type": "warning",
+                        "segment_id": seg.id,
+                        "message": "Empty caption",
+                    }));
+                }
+            }
+
+            for i in 1..timeline.segments.len() {
+                let prev = &timeline.segments[i - 1];
+                let curr = &timeline.segments[i];
+                if prev.end > curr.start {
+                    issues.push(json!({
+                        "type": "error",
+                        "message": format!(
+                            "Overlap between {} (ends {:.2}) and {} (starts {:.2})",
+                            prev.id, prev.end, curr.id, curr.start
+                        ),
+                    }));
+                }
+            }
+
+            let valid = issues.iter().all(|i| i["type"] != "error");
+
+            json!({
+                "valid": valid,
+                "issue_count": issues.len(),
+                "issues": issues,
+            })
+        })
+        .ok_or_else(|| "No active project".to_string())?;
+
+    Ok(validation)
+}

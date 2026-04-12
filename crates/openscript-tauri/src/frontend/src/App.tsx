@@ -1,12 +1,16 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { Undo2, Redo2, Play, Pause, Save } from "lucide-react";
+import { Undo2, Redo2, Save } from "lucide-react";
 import { useProjectStore } from "./store/project";
 import { useEditorStore } from "./store/editor";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { VideoViewport } from "./components/video/VideoViewport";
+import { PlaybackControls } from "./components/video/PlaybackControls";
+import { ActionToolbar } from "./components/toolbar/ActionToolbar";
 import { TranscriptEditor } from "./components/transcript/TranscriptEditor";
 import { TimelineEditor } from "./components/timeline/TimelineEditor";
 import { AssetBrowser } from "./components/assets/AssetBrowser";
 import { AIAssistant } from "./components/ai/AIAssistant";
+import { Toast, useToastStore } from "./components/shared/Toast";
 
 const PANELS: { key: "transcript" | "timeline" | "assets" | "ai"; label: string }[] = [
   { key: "transcript", label: "Transcript" },
@@ -17,7 +21,7 @@ const PANELS: { key: "transcript" | "timeline" | "assets" | "ai"; label: string 
 
 function TopBar() {
   const { projectName, sourceVideo, createProject, undo, redo, save } = useProjectStore();
-  const { isPlaying, setIsPlaying } = useEditorStore();
+  const { toasts, dismissToast } = useToastStore();
 
   const handleOpenVideo = async () => {
     const selected = await open({
@@ -30,60 +34,55 @@ function TopBar() {
   };
 
   return (
-    <header className="flex h-12 items-center justify-between border-b bg-background px-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-sm font-semibold">OpenScript</h1>
-        {sourceVideo ? (
-          <span className="text-xs text-muted-foreground truncate max-w-[300px]">
-            {projectName}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">No project open</span>
-        )}
-      </div>
+    <>
+      <header className="flex h-10 items-center justify-between border-b bg-background px-4 shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold">OpenScript</h1>
+          {sourceVideo ? (
+            <span className="text-xs text-muted-foreground truncate max-w-[300px]">
+              {projectName}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">No project open</span>
+          )}
+        </div>
 
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => undo()}
-          disabled={!sourceVideo}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
-          title="Undo"
-        >
-          <Undo2 className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => redo()}
-          disabled={!sourceVideo}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
-          title="Redo"
-        >
-          <Redo2 className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => sourceVideo && setIsPlaying(!isPlaying)}
-          disabled={!sourceVideo}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
-          title={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-        </button>
-        <button
-          onClick={() => save()}
-          disabled={!sourceVideo}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
-          title="Save"
-        >
-          <Save className="h-4 w-4" />
-        </button>
-      </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => undo()}
+            disabled={!sourceVideo}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
+            title="Undo"
+          >
+            <Undo2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => redo()}
+            disabled={!sourceVideo}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
+            title="Redo"
+          >
+            <Redo2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => save()}
+            disabled={!sourceVideo}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary disabled:opacity-30"
+            title="Save"
+          >
+            <Save className="h-4 w-4" />
+          </button>
+        </div>
 
-      <button
-        onClick={handleOpenVideo}
-        className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-      >
-        {sourceVideo ? "Open Another" : "Open Video"}
-      </button>
-    </header>
+        <button
+          onClick={handleOpenVideo}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          {sourceVideo ? "Open Another" : "Open Video"}
+        </button>
+      </header>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
+    </>
   );
 }
 
@@ -120,13 +119,13 @@ function PanelSwitcher() {
   const { activePanel, setActivePanel } = useEditorStore();
 
   return (
-    <div className="flex items-center justify-center border-b bg-background px-4">
+    <div className="flex items-center justify-center border-b bg-background px-4 shrink-0">
       <div className="flex gap-1">
         {PANELS.map((panel) => (
           <button
             key={panel.key}
             onClick={() => setActivePanel(panel.key)}
-            className={`rounded-md px-4 py-2 text-xs font-medium transition-colors ${
+            className={`rounded-md px-4 py-1.5 text-xs font-medium transition-colors ${
               activePanel === panel.key
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -159,12 +158,24 @@ function App() {
         <EmptyState />
       ) : (
         <>
-          <PanelSwitcher />
-          <div className="flex-1 overflow-hidden">
-            {activePanel === "transcript" && <TranscriptEditor />}
-            {activePanel === "timeline" && <TimelineEditor />}
-            {activePanel === "assets" && <AssetBrowser />}
-            {activePanel === "ai" && <AIAssistant />}
+          <ActionToolbar />
+          <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-col w-1/2 min-w-[400px] border-r">
+              <div className="flex-1 overflow-hidden">
+                <VideoViewport />
+              </div>
+              <PlaybackControls />
+            </div>
+
+            <div className="flex flex-col w-1/2 min-w-[400px]">
+              <PanelSwitcher />
+              <div className="flex-1 overflow-hidden">
+                {activePanel === "transcript" && <TranscriptEditor />}
+                {activePanel === "timeline" && <TimelineEditor />}
+                {activePanel === "assets" && <AssetBrowser />}
+                {activePanel === "ai" && <AIAssistant />}
+              </div>
+            </div>
           </div>
         </>
       )}

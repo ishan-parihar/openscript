@@ -21,6 +21,8 @@ interface TranscriptState {
   transcriptionProgress: number;
   fillerAnalysis: FillerAnalysis | null;
   isEditing: boolean;
+  wordSrtPath: string | null;
+  phraseSrtPath: string | null;
 
   transcribe: (videoPath: string) => Promise<void>;
   loadTranscript: (srtPath: string) => Promise<void>;
@@ -36,12 +38,20 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
   transcriptionProgress: 0,
   fillerAnalysis: null,
   isEditing: false,
+  wordSrtPath: null,
+  phraseSrtPath: null,
 
   transcribe: async (videoPath: string) => {
     set({ isTranscribing: true, transcriptionProgress: 0 });
     try {
-      await api.transcribeVideo(videoPath);
-      set({ isTranscribing: false, transcriptionProgress: 100 });
+      const result = await api.transcribeVideo(videoPath);
+      const data = result as { srt_path: string; word_srt_path: string; phrase_srt_path: string; entry_count: number };
+      set({
+        isTranscribing: false,
+        transcriptionProgress: 100,
+        wordSrtPath: data.word_srt_path ?? null,
+        phraseSrtPath: data.phrase_srt_path ?? null,
+      });
     } catch (e) {
       set({ isTranscribing: false, transcriptionProgress: 0 });
       throw e;
@@ -50,8 +60,8 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
 
   loadTranscript: async (srtPath: string) => {
     const result = await api.readTranscript(srtPath);
-    const data = result as { count: number; entries: TranscriptEntry[] };
-    set({ entries: data.entries ?? [] });
+    const data = result as { count: number; entries?: TranscriptEntry[]; segments?: TranscriptEntry[] };
+    set({ entries: data.segments ?? data.entries ?? [] });
   },
 
   prepareTranscript: async (wordSrtPath: string, maxWords?: number, maxChars?: number) => {

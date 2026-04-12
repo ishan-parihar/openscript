@@ -40,6 +40,9 @@ fn main() {
             commands::timeline::timeline_preview,
             commands::timeline::undo,
             commands::timeline::redo,
+            commands::timeline::remove_segment,
+            commands::timeline::update_segment,
+            commands::timeline::validate_timeline,
             // Transcript
             commands::transcript::transcribe_video,
             commands::transcript::read_transcript,
@@ -54,8 +57,20 @@ fn main() {
             commands::assets::music_assign,
             commands::assets::sfx_search,
             commands::assets::sfx_assign,
-            // Render / Pipeline
+            // Render
             commands::render::reelize_timeline,
+            commands::render::render_timeline,
+            commands::render::get_render_progress,
+            commands::render::cancel_render,
+            // TTS
+            commands::tts::voice_profile_list,
+            commands::tts::voice_profile_add,
+            commands::tts::voice_profile_remove,
+            commands::tts::tts_generate,
+            commands::tts::tts_estimate_duration,
+            // Verification
+            commands::verify::verify_audio,
+            commands::verify::verify_captions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -7,3 +7,5 @@ pub mod assets;
 pub mod voice;
 pub mod motion;
 pub mod system;
+pub mod tts;
+pub mod verify;
