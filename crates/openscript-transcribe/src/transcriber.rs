@@ -221,6 +221,15 @@ fn find_apex_script() -> Option<PathBuf> {
             return Some(p.to_path_buf());
         }
     }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let p = Path::new(&manifest_dir)
+            .join("../../mcp/scripts/apex_transcriber.py");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
     if let Ok(path) = std::env::var("OPENSCRIPT_APEX_WRAPPER") {
         let p = Path::new(&path);
         if p.exists() {

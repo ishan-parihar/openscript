@@ -1687,7 +1687,7 @@ async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Valu
         .clone();
 
     let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
-        .unwrap_or_else(|_| "http://localhost:8000".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
     let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
         .unwrap_or_else(|_| "artifacts/tts".to_string());
 
@@ -2316,7 +2316,7 @@ async fn handle_voiceover_generate(
     }
 
     let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
-        .unwrap_or_else(|_| "http://localhost:8000".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
     let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
         .unwrap_or_else(|_| "artifacts/tts".to_string());
 
@@ -2413,7 +2413,7 @@ async fn handle_tts_commentary(
         .clone();
 
     let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
-        .unwrap_or_else(|_| "http://localhost:8000".to_string());
+        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
     let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
         .unwrap_or_else(|_| "artifacts/tts".to_string());
     let timeline_dir = Path::new(&timeline_path)

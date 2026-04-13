@@ -78,7 +78,7 @@ Two editing modes:
 - Rust 1.80+
 - Python 3.12+
 - FFmpeg installed
-- Node.js 18+ (for Remotion rendering, optional)
+- Node.js 20+ (for Remotion rendering and Tauri frontend, optional)
 
 ### Build
 
