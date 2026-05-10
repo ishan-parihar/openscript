@@ -33,3 +33,6 @@ Thumbs.db
 .sisyphus/
 remotion/node_modules/
 .worktrees/
+.contexty
+.memsearch
+.hive
