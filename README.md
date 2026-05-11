@@ -218,3 +218,5 @@ Built as a demonstration of what's possible when AI agents have **real tools** i
 ---
 
 Built by [Ishan Parihar](https://github.com/ishan-parihar)
+
+If you find this project useful, [consider supporting its development](https://rzp.io/rzp/ishan-parihar) ☕
