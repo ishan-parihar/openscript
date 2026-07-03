@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en"
+  data-composition-id="remotion-interop"
+  data-start="0"
+  data-duration="30"
+  data-fps="30"
+  data-width="1080"
+  data-height="1920"
+>
+<head>
+  <meta charset="utf-8" />
+  <title>Remotion Interop — PR #214 Escape Hatch</title>
+  <!--
+    PR #214 Runtime Interop Pattern
+    ===============================
+    This composition mounts a Remotion <Player> inside a HyperFrames HTML
+    composition and lets HF drive it frame-by-frame via seekTo().
+
+    Use this when a Remotion composition uses patterns that HyperFrames
+    can't translate cleanly (per the remotion-to-hyperframes lint):
+      - useState / useReducer driving animation
+      - useEffect with non-empty deps (side effects)
+      - async calculateMetadata
+      - third-party React UI libraries (MUI, Chakra, shadcn, Radix, etc.)
+
+    The Remotion React reconciler does the rendering — so all React
+    patterns work. HF's runtime just seeks the player to the right frame
+    on each tick.
+
+    See: https://github.com/heygen-com/hyperframes/pull/214
+  -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; background: #000; }
+    #stage {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      background: #000;
+      overflow: hidden;
+    }
+    #remotion-player-host {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #loading-indicator {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-family: system-ui, sans-serif;
+      font-size: 24px;
+      opacity: 1;
+      transition: opacity 0.3s;
+    }
+    #loading-indicator.hidden { opacity: 0; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="remotion-player-host"></div>
+    <div id="loading-indicator">Loading Remotion player…</div>
+  </div>
+
+  <!--
+    The Remotion bundle is produced by esbuild:
+      npx esbuild entry.tsx --bundle --outfile=dist/bundle.js --format=iife --jsx=automatic
+
+    The bundle must:
+      1. Import @remotion/player and the composition component
+      2. Mount a <Player> into #remotion-player-host
+      3. Register seekTo/pause/durationInFrames/fps on window.__hfRemotion
+
+    See interop/entry-template.tsx for the bundle entry point.
+  -->
+  <script src="dist/bundle.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script>
+    // HF's runtime calls window.__hfRemotionSeek(frame) on each tick.
+    // The bundle registers the actual seekTo implementation; this is the
+    // fallback that does nothing until the player is ready.
+    window.__hfRemotion = window.__hfRemotion || [];
+    window.__hfRemotionSeek = window.__hfRemotionSeek || function(frame) {
+      console.warn('[hf-interop] __hfRemotionSeek called before player ready:', frame);
+    };
+
+    // Minimal HF timeline — the Remotion player does the actual rendering.
+    // This timeline exists only so HF's runtime has something to seek.
+    const tl = gsap.timeline({ paused: true });
+    // No visual tweens needed — the Player fills the stage.
+
+    window.__timelines = window.__timelines || {};
+    window.__timelines["remotion-interop"] = tl;
+
+    // Hide loading indicator once the player registers
+    const checkReady = setInterval(() => {
+      if (window.__hfRemotion && window.__hfRemotion.length > 0) {
+        document.getElementById('loading-indicator')?.classList.add('hidden');
+        clearInterval(checkReady);
+      }
+    }, 100);
+  </script>
+</body>
+</html>

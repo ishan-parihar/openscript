@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // Should have 47 tools (43 original + 4 HyperFrames hf.* tools)
+    // Should have 48 tools (43 original + 5 HyperFrames hf.* tools including hf.classify)
     assert_eq!(
         tools.len(),
-        47,
-        "Expected 47 MCP tools, got {}",
+        48,
+        "Expected 48 MCP tools, got {}",
         tools.len()
     );
 

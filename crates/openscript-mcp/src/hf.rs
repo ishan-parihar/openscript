@@ -240,6 +240,171 @@ impl serde::Serialize for HfError {
 }
 
 // ---------------------------------------------------------------------------
+// Tool: hf.classify — Remotion source classifier (PR #214 interop gate)
+// ---------------------------------------------------------------------------
+
+/// Blocker patterns from the remotion-to-hyperframes lint rules.
+/// If any of these are found, the composition should use the PR #214 interop
+/// escape hatch instead of a native HF translation.
+const BLOCKER_PATTERNS: &[(&str, &str, &str)] = &[
+    ("useState", "r2hf/use-state", "useState drives animation — not deterministic in HF's seek-driven model"),
+    ("useReducer", "r2hf/use-reducer", "useReducer drives animation — not deterministic in HF's seek-driven model"),
+    ("useEffect", "r2hf/use-effect-deps", "useEffect with deps — side effects break seek-driven determinism"),
+    ("useLayoutEffect", "r2hf/use-effect-deps", "useLayoutEffect with deps — side effects break seek-driven determinism"),
+    ("calculateMetadata", "r2hf/async-metadata", "calculateMetadata may be async — HF can't resolve at seek time"),
+];
+
+/// Third-party React UI libraries that are blockers for HF translation.
+const BLOCKER_IMPORTS: &[(&str, &str)] = &[
+    ("@mui/material", "r2hf/third-party-react-ui"),
+    ("@mui/icons-material", "r2hf/third-party-react-ui"),
+    ("@chakra-ui/react", "r2hf/third-party-react-ui"),
+    ("@mantine/core", "r2hf/third-party-react-ui"),
+    ("antd", "r2hf/third-party-react-ui"),
+    ("@shadcn/ui", "r2hf/third-party-react-ui"),
+    ("@radix-ui", "r2hf/third-party-react-ui"),
+    ("@nextui-org/react", "r2hf/third-party-react-ui"),
+];
+
+/// Warning patterns — translate after dropping the construct.
+const WARNING_PATTERNS: &[(&str, &str, &str)] = &[
+    ("@remotion/lambda", "r2hf/lambda-import", "Lambda config — drop, HF is single-machine"),
+    ("delayRender", "r2hf/delay-render", "delayRender — HF handles asset loading differently"),
+    ("useCallback", "r2hf/use-callback", "useCallback — decorative, drop and inline"),
+    ("useMemo", "r2hf/use-memo", "useMemo — decorative, drop and inline"),
+];
+
+/// A lint finding.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Finding {
+    pub severity: String,
+    pub rule: String,
+    pub message: String,
+    pub line: usize,
+    pub recommendation: String,
+}
+
+/// Lint a Remotion source file for HF translation blockers.
+/// Returns a vector of findings (severity, rule, message, line number).
+pub fn lint_remotion_source(src: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for (line_num, line) in src.lines().enumerate() {
+        let trimmed = line.trim();
+
+        // Skip comments
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with("*") {
+            continue;
+        }
+
+        // Check blocker patterns
+        for (pattern, rule, message) in BLOCKER_PATTERNS {
+            if line.contains(pattern) {
+                // Special case: useEffect/useLayoutEffect — only flag as blocker
+                // if we can see a NON-EMPTY deps array on the same line.
+                // If the deps array is on a different line (multi-line useEffect),
+                // we can't reliably determine if it's empty — skip (conservative).
+                if *pattern == "useEffect" || *pattern == "useLayoutEffect" {
+                    if let Some(deps_start) = line.find('[') {
+                        let after_bracket = &line[deps_start..];
+                        // Empty deps [] on same line — not a blocker
+                        if after_bracket.starts_with("[]") {
+                            continue;
+                        }
+                        // Non-empty deps [x] on same line — blocker
+                        // (the push below will fire)
+                    } else {
+                        // No bracket on this line — deps are on a different line.
+                        // Skip (can't reliably determine if empty).
+                        continue;
+                    }
+                }
+                findings.push(Finding {
+                    severity: "blocker".to_string(),
+                    rule: rule.to_string(),
+                    message: message.to_string(),
+                    line: line_num + 1,
+                    recommendation: "Use the PR #214 interop escape hatch (see hyperframes/interop/)".to_string(),
+                });
+            }
+        }
+
+        // Check blocker imports
+        for (import, rule) in BLOCKER_IMPORTS {
+            if line.contains(import) && (line.contains("import") || line.contains("require")) {
+                findings.push(Finding {
+                    severity: "blocker".to_string(),
+                    rule: rule.to_string(),
+                    message: format!("Third-party React UI library: {}", import),
+                    line: line_num + 1,
+                    recommendation: "Use the PR #214 interop escape hatch".to_string(),
+                });
+            }
+        }
+
+        // Check warning patterns
+        for (pattern, rule, message) in WARNING_PATTERNS {
+            if line.contains(pattern) {
+                findings.push(Finding {
+                    severity: "warning".to_string(),
+                    rule: rule.to_string(),
+                    message: message.to_string(),
+                    line: line_num + 1,
+                    recommendation: "Drop the construct, translate the rest".to_string(),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+/// Classify a Remotion source file: should it use HF native or the interop escape hatch?
+pub async fn handle_hf_classify(args: Value) -> Result<Value, HfError> {
+    let source_path = args
+        .get("source_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| HfError::Spawn("source_path is required".to_string()))?;
+
+    let src = std::fs::read_to_string(source_path)
+        .map_err(|e| HfError::Spawn(format!("Cannot read {}: {}", source_path, e)))?;
+
+    let findings = lint_remotion_source(&src);
+    let has_blockers = findings.iter().any(|f| f.severity == "blocker");
+    let has_warnings = findings.iter().any(|f| f.severity == "warning");
+
+    let recommendation = if has_blockers { "interop" } else { "hf-native" };
+
+    let recommendation_message = if has_blockers {
+        format!(
+            "Source has {} blocker(s). Use the PR #214 interop escape hatch: \
+             copy hyperframes/interop/index.html and interop/entry-template.tsx, \
+             import your composition component, bundle with esbuild, and render via hf.render.",
+            findings.iter().filter(|f| f.severity == "blocker").count()
+        )
+    } else if has_warnings {
+        format!(
+            "Source is clean (no blockers). Translate to HF native HTML+GSAP. \
+             {} warning(s) to address: drop the flagged constructs and inline.",
+            findings.iter().filter(|f| f.severity == "warning").count()
+        )
+    } else {
+        "Source is clean. Translate to HF native HTML+GSAP.".to_string()
+    };
+
+    Ok(json!({
+        "source_path": source_path,
+        "recommendation": recommendation,
+        "recommendation_message": recommendation_message,
+        "has_blockers": has_blockers,
+        "has_warnings": has_warnings,
+        "blocker_count": findings.iter().filter(|f| f.severity == "blocker").count(),
+        "warning_count": findings.iter().filter(|f| f.severity == "warning").count(),
+        "findings": findings,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Tool definitions (for the MCP tool list)
 // ---------------------------------------------------------------------------
 
@@ -335,6 +500,21 @@ pub fn tool_definitions() -> Vec<Value> {
                 "additionalProperties": false
             }
         }),
+        json!({
+            "name": "hf.classify",
+            "description": "Classify a Remotion (React) source file to determine whether it should be translated to native HyperFrames HTML+GSAP or use the PR #214 runtime interop escape hatch. Checks for blocker patterns: useState, useReducer, useEffect with deps, async calculateMetadata, third-party React UI libraries (MUI, Chakra, shadcn, Radix, etc.). Returns recommendation ('hf-native' or 'interop'), findings array with severity/rule/line, and actionable guidance. Use BEFORE attempting a Remotion→HF port.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_path": {
+                        "type": "string",
+                        "description": "Path to the Remotion .tsx/.ts source file to classify"
+                    }
+                },
+                "required": ["source_path"],
+                "additionalProperties": false
+            }
+        }),
     ]
 }
 
@@ -357,14 +537,75 @@ mod tests {
     #[test]
     fn test_tool_definitions_count() {
         let defs = tool_definitions();
-        assert_eq!(defs.len(), 4);
-        let names: Vec<&str> = defs
-            .iter()
-            .map(|d| d["name"].as_str().unwrap())
-            .collect();
+        assert_eq!(defs.len(), 5);
+        let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"hf.lint"));
         assert!(names.contains(&"hf.validate"));
         assert!(names.contains(&"hf.snapshot"));
         assert!(names.contains(&"hf.render"));
+        assert!(names.contains(&"hf.classify"));
+    }
+
+    #[test]
+    fn test_lint_clean_source() {
+        let src = r#"
+            import { useCurrentFrame, interpolate } from "remotion";
+            export const Comp = () => {
+                const frame = useCurrentFrame();
+                const opacity = interpolate(frame, [0, 30], [0, 1]);
+                return <div style={{ opacity }}>Hello</div>;
+            };
+        "#;
+        let findings = lint_remotion_source(src);
+        assert!(findings.is_empty(), "Expected no findings for clean source");
+    }
+
+    #[test]
+    fn test_lint_detects_use_state() {
+        let src = r#"
+            import { useState } from "react";
+            const [count, setCount] = useState(0);
+        "#;
+        let findings = lint_remotion_source(src);
+        assert!(findings.iter().any(|f| f.rule == "r2hf/use-state" && f.severity == "blocker"));
+    }
+
+    #[test]
+    fn test_lint_detects_use_effect_with_deps() {
+        // Single-line useEffect with non-empty deps — detectable by line-by-line lint
+        let src = r#"
+            useEffect(() => fetchData(), [id]);
+        "#;
+        let findings = lint_remotion_source(src);
+        assert!(findings.iter().any(|f| f.rule == "r2hf/use-effect-deps" && f.severity == "blocker"));
+    }
+
+    #[test]
+    fn test_lint_allows_use_effect_empty_deps() {
+        let src = r#"
+            useEffect(() => {
+                console.log("mount");
+            }, []);
+        "#;
+        let findings = lint_remotion_source(src);
+        assert!(!findings.iter().any(|f| f.rule == "r2hf/use-effect-deps"));
+    }
+
+    #[test]
+    fn test_lint_detects_third_party_ui() {
+        let src = r#"
+            import { Button } from "@mui/material";
+        "#;
+        let findings = lint_remotion_source(src);
+        assert!(findings.iter().any(|f| f.rule == "r2hf/third-party-react-ui" && f.severity == "blocker"));
+    }
+
+    #[test]
+    fn test_lint_detects_use_memo_warning() {
+        let src = r#"
+            const value = useMemo(() => compute(), [deps]);
+        "#;
+        let findings = lint_remotion_source(src);
+        assert!(findings.iter().any(|f| f.rule == "r2hf/use-memo" && f.severity == "warning"));
     }
 }

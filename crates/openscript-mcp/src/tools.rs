@@ -12,7 +12,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (47 tools: 43 original + 4 HyperFrames hf.* tools)
+// Tool definitions (48 tools: 43 original + 5 HyperFrames hf.* tools)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -770,6 +770,11 @@ pub fn route_tool(
         }),
         "hf.render" => Box::pin(async move {
             crate::hf::handle_hf_render(args)
+                .await
+                .map_err(|e| ToolError::Hf(e.to_string()))
+        }),
+        "hf.classify" => Box::pin(async move {
+            crate::hf::handle_hf_classify(args)
                 .await
                 .map_err(|e| ToolError::Hf(e.to_string()))
         }),
