@@ -1,4 +1,5 @@
 use openscript_core::captions::{estimate_word_timings, generate_ass, CaptionSegment};
+use openscript_core::background::{assign_backgrounds, BackgroundClip};
 use openscript_core::script::{parse_script, validate_script};
 use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, write_srt};
 use openscript_core::timeline::Timeline;
@@ -13,7 +14,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (52 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.*)
+// Tool definitions (54 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -730,6 +731,37 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["script", "voiceover_manifest"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "background.fetch",
+            "description": "Fetch a background video clip from YouTube via yt-dlp. Searches for copyright-free gameplay footage (Minecraft, Subway Surfers, etc.), downloads, extracts a random clip of the desired duration, and crops to the target aspect ratio. Caches downloaded videos for reuse. Falls back to procedural FFmpeg background if yt-dlp is unavailable. Returns: clip_path, source_duration_s, cached.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "YouTube search query (e.g. 'minecraft parkour no copyright')"},
+                    "duration_s": {"type": "number", "default": 30.0, "description": "Desired clip duration in seconds"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
+                    "cache_dir": {"type": "string", "default": "mcp/assets/background_cache", "description": "Cache directory for downloaded videos"},
+                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local fallback clips if YouTube download fails"}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "background.assign",
+            "description": "Assign background clips to script scenes based on change_cadence (scene/speaker/fixed). Takes a voiceover manifest (from script.generate_voices) and a background pool, returns assignments. Use AFTER script.generate_voices and background.fetch.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "The script JSON string or path to .json file"},
+                    "voiceover_manifest": {"type": "string", "description": "Path to manifest JSON from script.generate_voices"},
+                    "background_pool": {"type": "array", "items": {"type": "string"}, "description": "List of background video file paths to assign"},
+                    "output_path": {"type": "string", "default": "artifacts/background_assignments.json", "description": "Output assignments JSON path"}
+                },
+                "required": ["script", "voiceover_manifest", "background_pool"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -828,6 +860,8 @@ pub fn route_tool(
         "script.parse" => Box::pin(handle_script_parse(args)),
         "script.generate_voices" => Box::pin(handle_script_generate_voices(args)),
         "script.build_captions" => Box::pin(handle_script_build_captions(args)),
+        "background.fetch" => Box::pin(handle_background_fetch(args)),
+        "background.assign" => Box::pin(handle_background_assign(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -5025,4 +5059,296 @@ fn read_script_input(script_input: &str) -> Result<String, ToolError> {
         }
         Ok(std::fs::read_to_string(&path)?)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Handler: background.fetch — YouTube auto-download via yt-dlp
+// ---------------------------------------------------------------------------
+
+async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let duration_s = default_f64(&args, "duration_s", 30.0);
+    let aspect = default_str(&args, "aspect", "9:16");
+    let cache_dir = default_str(&args, "cache_dir", "mcp/assets/background_cache");
+    let fallback_pool: Vec<String> = args
+        .get("fallback_pool")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    std::fs::create_dir_all(&cache_dir)?;
+
+    report_progress(0.0, 100.0, "Searching YouTube...").await.ok();
+
+    // Try yt-dlp
+    let cache_key = format!("{:x}", md5_hash(query.as_bytes()));
+    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
+    let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
+
+    // Check if we already have the full video cached
+    let full_cached = Path::new(&full_video_path).exists();
+
+    if !full_cached {
+        // Download via yt-dlp
+        let yt_dlp_result = tokio::process::Command::new("yt-dlp")
+            .arg("--format").arg("best[height<=720]")
+            .arg("--output").arg(&full_video_path)
+            .arg("--no-playlist")
+            .arg("--quiet")
+            .arg(format!("ytsearch1:{}", query))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await;
+
+        match yt_dlp_result {
+            Ok(output) if output.status.success() => {
+                report_progress(50.0, 100.0, "Downloaded, extracting clip...").await.ok();
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("[background.fetch] yt-dlp failed: {}", stderr);
+                // Try fallback pool
+                if let Some(fallback) = fallback_pool.first() {
+                    if Path::new(fallback).exists() {
+                        return Ok(json!({
+                            "status": "fallback",
+                            "clip_path": fallback,
+                            "source_duration_s": duration_s,
+                            "cached": false,
+                            "warning": "yt-dlp failed, using fallback pool"
+                        }));
+                    }
+                }
+                // No fallback — generate procedural background
+                return generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect).await;
+            }
+            Err(e) => {
+                tracing::warn!("[background.fetch] yt-dlp not available: {}", e);
+                if let Some(fallback) = fallback_pool.first() {
+                    if Path::new(fallback).exists() {
+                        return Ok(json!({
+                            "status": "fallback",
+                            "clip_path": fallback,
+                            "source_duration_s": duration_s,
+                            "cached": false,
+                            "warning": "yt-dlp not available, using fallback pool"
+                        }));
+                    }
+                }
+                return generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect).await;
+            }
+        }
+    } else {
+        report_progress(50.0, 100.0, "Using cached video, extracting clip...").await.ok();
+    }
+
+    // Get video duration via ffprobe
+    let probe_output = tokio::process::Command::new("ffprobe")
+        .arg("-v").arg("error")
+        .arg("-show_entries").arg("format=duration")
+        .arg("-of").arg("default=noprint_wrappers=1:nokey=1")
+        .arg(&full_video_path)
+        .output()
+        .await;
+
+    let source_duration_s: f64 = match probe_output {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout).trim().parse().unwrap_or(duration_s)
+        }
+        _ => duration_s,
+    };
+
+    // Pick a random start time (leave room for clip duration)
+    let max_start = (source_duration_s - duration_s).max(0.0);
+    let start_s = if max_start > 0.0 {
+        // Use a simple hash of query + timestamp for deterministic randomness
+        let seed = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0) as u64)
+            .wrapping_add(md5_hash(query.as_bytes()) as u64);
+        (seed as f64 / u64::MAX as f64) * max_start
+    } else {
+        0.0
+    };
+
+    // Crop dimensions based on aspect
+    let (crop_w, crop_h) = match aspect.as_str() {
+        "9:16" => (720, 1280),   // vertical
+        "16:9" => (1280, 720),   // horizontal
+        "1:1" => (1080, 1080),   // square
+        _ => (720, 1280),
+    };
+
+    // Extract clip with crop
+    let crop_filter = format!("crop={}:{}", crop_w, crop_h);
+    let extract_result = tokio::process::Command::new("ffmpeg")
+        .arg("-y")
+        .arg("-ss").arg(start_s.to_string())
+        .arg("-i").arg(&full_video_path)
+        .arg("-t").arg(duration_s.to_string())
+        .arg("-vf").arg(&crop_filter)
+        .arg("-c:v").arg("libx264")
+        .arg("-preset").arg("fast")
+        .arg("-crf").arg("23")
+        .arg("-an") // no audio (we'll add our own)
+        .arg(&clip_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await;
+
+    match extract_result {
+        Ok(o) if o.status.success() => {
+            report_progress(100.0, 100.0, "Clip extracted").await.ok();
+            Ok(json!({
+                "status": "fetched",
+                "clip_path": clip_path,
+                "source_duration_s": source_duration_s,
+                "start_s": start_s,
+                "duration_s": duration_s,
+                "cached": full_cached,
+            }))
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            Err(ToolError::Ffmpeg(format!("FFmpeg clip extraction failed: {}", stderr)))
+        }
+        Err(e) => Err(ToolError::Ffmpeg(format!("FFmpeg spawn failed: {}", e))),
+    }
+}
+
+/// Generate a procedural background via FFmpeg filters (fallback when yt-dlp unavailable).
+async fn generate_procedural_background(
+    cache_dir: &str,
+    cache_key: &str,
+    duration_s: f64,
+    aspect: &str,
+) -> Result<serde_json::Value, ToolError> {
+    let (w, h) = match aspect {
+        "9:16" => (1080, 1920),
+        "16:9" => (1920, 1080),
+        "1:1" => (1080, 1080),
+        _ => (1080, 1920),
+    };
+    let clip_path = format!("{}/{}_procedural.mp4", cache_dir, cache_key);
+
+    let filter = format!(
+        "color=c=0x0a0a1a:s={}x{}:d={}:r=30[bg];\
+         color=c=0x1a1a3a:s={}x{}:d={}:r=30[bg2];\
+         [bg][bg2]blend=all_mode=overlay:all_opacity=0.5[bg3];\
+         [bg3]geq=r='128+80*sin(2*PI*X/W+0.1*T)':g='128+80*sin(2*PI*Y/H+0.15*T)':b='128+80*sin(2*PI*(X+Y)/(W+H)+0.2*T)'[v]",
+        w, h, duration_s, w, h, duration_s
+    );
+
+    let result = tokio::process::Command::new("ffmpeg")
+        .arg("-y")
+        .arg("-filter_complex").arg(&filter)
+        .arg("-map").arg("[v]")
+        .arg("-c:v").arg("libx264")
+        .arg("-preset").arg("fast")
+        .arg("-crf").arg("23")
+        .arg("-an")
+        .arg(&clip_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(ToolError::Ffmpeg(format!("Procedural background failed: {}", stderr)));
+    }
+
+    Ok(json!({
+        "status": "procedural",
+        "clip_path": clip_path,
+        "duration_s": duration_s,
+        "cached": false,
+        "warning": "yt-dlp unavailable, generated procedural background"
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: background.assign — assign clips to scenes
+// ---------------------------------------------------------------------------
+
+async fn handle_background_assign(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script_input = extract_str(&args, "script")?;
+    let manifest_path = extract_str(&args, "voiceover_manifest")?;
+    let background_pool: Vec<String> = args
+        .get("background_pool")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| ToolError::MissingArg("background_pool is required".into()))?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    let output_path = default_str(&args, "output_path", "artifacts/background_assignments.json");
+
+    // Parse script
+    let json_str = read_script_input(script_input)?;
+    let spec = parse_script(&json_str).map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
+
+    // Load voiceover manifest
+    let manifest_str = std::fs::read_to_string(sanitize_input_path(manifest_path)?)?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_str)?;
+
+    // Extract scene IDs, speakers, and durations from manifest
+    let mut scene_ids = Vec::new();
+    let mut scene_speakers = Vec::new();
+    let mut scene_durations = Vec::new();
+
+    if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
+        for seg in segments {
+            scene_ids.push(seg.get("scene_id").and_then(|v| v.as_str()).unwrap_or("").to_string());
+            scene_speakers.push(seg.get("speaker").and_then(|v| v.as_str()).unwrap_or("").to_string());
+            let dur_ms = seg.get("duration_ms").and_then(|v| v.as_i64()).unwrap_or(3000);
+            scene_durations.push(dur_ms as f64 / 1000.0);
+        }
+    }
+
+    // Assign backgrounds
+    let clips = assign_backgrounds(
+        &scene_ids,
+        &scene_speakers,
+        &background_pool,
+        &spec.background.change_cadence,
+        &scene_durations,
+    );
+
+    // Write assignments
+    if let Some(parent) = Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let assignments = json!({
+        "clips": clips,
+        "cadence": spec.background.change_cadence,
+        "pool_size": background_pool.len(),
+    });
+    std::fs::write(&output_path, serde_json::to_string_pretty(&assignments)?)?;
+
+    Ok(json!({
+        "status": "assigned",
+        "output_path": output_path,
+        "clip_count": clips.len(),
+        "cadence": spec.background.change_cadence,
+    }))
+}
+
+/// Simple MD5 hash for cache keys (no external dep needed for this use case).
+fn md5_hash(data: &[u8]) -> u128 {
+    // Simple FNV-1a hash as a lightweight cache key (not cryptographic)
+    let mut hash: u128 = 0x6c62272e07bb014262b821756295c58d;
+    for &byte in data {
+        hash ^= byte as u128;
+        hash = hash.wrapping_mul(0x0000000001000000000000000000013b);
+    }
+    hash
 }
