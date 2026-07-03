@@ -163,7 +163,8 @@ pub async fn check_apex_health() -> ApexHealth {
     cmd.arg("-c")
         .arg("import whisper_timestamped; print('ok')");
     cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
 
     let output = match cmd.output().await {
         Ok(o) => o,
@@ -189,7 +190,8 @@ pub async fn check_apex_health() -> ApexHealth {
     cmd2.arg("-c")
         .arg("import whisper_timestamped as w; m = w.load_model('Oriserve/Whisper-Hindi2Hinglish-Apex', device='cpu'); print('model_ok')");
     cmd2.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
 
     match cmd2.output().await {
         Ok(o) if o.status.success() => ApexHealth::Healthy,
@@ -336,7 +338,8 @@ async fn transcribe_apex(
         .arg("--video")
         .arg(media_path)
         .arg("--out-dir")
-        .arg(out_dir);
+        .arg(out_dir)
+        .kill_on_drop(true);
 
     let output = cmd.output().await.map_err(|e| TranscribeError::Io(e))?;
 

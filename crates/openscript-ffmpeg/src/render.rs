@@ -50,6 +50,7 @@ async fn spawn_ffmpeg_with_progress(
     let mut child = cmd
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
+        .kill_on_drop(true)  // Prevent orphaned ffmpeg on MCP client disconnect
         .spawn()?;
 
     let stderr = child.stderr.take().expect("stderr was piped above");

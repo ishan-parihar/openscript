@@ -14,13 +14,47 @@ fn audio_format_ext(path: &str) -> &'static str {
     }
 }
 
+/// Escape a file path for use inside ffmpeg filter single-quoted strings.
+///
+/// ffmpeg filter syntax uses single quotes to delimit paths. A single quote
+/// inside the path must be escaped as `'\''` (close quote, escaped quote,
+/// reopen quote). Backslashes are converted to forward slashes for
+/// cross-platform consistency. Filter metacharacters (;, :, [, ], ,) are
+/// rejected to prevent filter graph injection.
+fn escape_filter_path(path: &str) -> Result<String, String> {
+    // Reject paths containing filter metacharacters that could inject
+    // arbitrary filter graph nodes.
+    let dangerous_chars = [';', '[', ']', ','];
+    for ch in dangerous_chars {
+        if path.contains(ch) {
+            return Err(format!(
+                "Path contains forbidden filter metacharacter '{}': {}",
+                ch, path
+            ));
+        }
+    }
+    // Convert backslashes to forward slashes (Windows path compat)
+    let forward = path.replace('\\', "/");
+    // Escape single quotes: ' → '\''
+    let escaped = forward.replace('\'', "'\\''");
+    Ok(escaped)
+}
+
 fn amovie_filter(path: &str, stream: &str) -> String {
-    let escaped = path.replace('\\', "/");
-    let fmt = audio_format_ext(path);
-    if fmt.is_empty() {
-        format!("amovie='{}':s={}", escaped, stream)
-    } else {
-        format!("amovie='{}':f={}:s={}", escaped, fmt, stream)
+    match escape_filter_path(path) {
+        Ok(escaped) => {
+            let fmt = audio_format_ext(path);
+            if fmt.is_empty() {
+                format!("amovie='{}':s={}", escaped, stream)
+            } else {
+                format!("amovie='{}':f={}:s={}", escaped, fmt, stream)
+            }
+        }
+        Err(e) => {
+            // Log the error and return a placeholder that won't crash ffmpeg
+            tracing::warn!("[filter_graph] {}", e);
+            format!("amovie='placeholder':s={}", stream)
+        }
     }
 }
 
@@ -433,7 +467,10 @@ impl FilterGraphBuilder {
 
         // Subtitle burn-in (ASS or SRT) — always burn in, overlay MOV goes on top
         if let Some(ass) = &self.ass_path {
-            let escaped = ass.replace('\\', "/");
+            let escaped = escape_filter_path(ass).unwrap_or_else(|e| {
+                tracing::warn!("[filter_graph] {}", e);
+                "placeholder".to_string()
+            });
             let filter = if let Some(fonts_dir) = &self.fonts_dir {
                 format!(
                     "[{}]subtitles='{}':fontsdir='{}'[vsub]",
@@ -451,7 +488,10 @@ impl FilterGraphBuilder {
             parts.push(filter);
             vout = "[vsub]".into();
         } else if let Some(srt) = &self.srt_path {
-            let escaped = srt.replace('\\', "/");
+            let escaped = escape_filter_path(srt).unwrap_or_else(|e| {
+                tracing::warn!("[filter_graph] {}", e);
+                "placeholder".to_string()
+            });
             let filter = if let Some(fonts_dir) = &self.fonts_dir {
                 format!(
                     "[{}]subtitles='{}':fontsdir='{}'[vsub]",
@@ -476,7 +516,10 @@ impl FilterGraphBuilder {
             for (i, broll) in self.broll_events.iter().enumerate() {
                 let start_s = broll.start_ms as f64 / 1000.0;
                 let out_label = format!("vbroll_{}", i);
-                let escaped_path = broll.path.replace('\\', "/");
+                let escaped_path = escape_filter_path(&broll.path).unwrap_or_else(|e| {
+                    tracing::warn!("[filter_graph] {}", e);
+                    "placeholder".to_string()
+                });
 
                 parts.push(format!(
                     "[{}]movie='{}':f=mp4:si=v[broll_src_{}]",
@@ -503,10 +546,14 @@ impl FilterGraphBuilder {
 
         // Overlay MOV (PupCaps captions) — composites the MOV on top of the video
         if let Some(_mov) = &self.overlay_mov {
+            let escaped_mov = escape_filter_path(_mov).unwrap_or_else(|e| {
+                tracing::warn!("[filter_graph] {}", e);
+                "placeholder".to_string()
+            });
             parts.push(format!(
                 "[{}]movie='{}':f=mov[ovr]",
                 &vout[1..vout.len() - 1],
-                _mov
+                escaped_mov
             ));
             parts.push(format!(
                 "[{}][ovr]overlay=0:0:shortest=1[vovl]",

@@ -1405,7 +1405,8 @@ async fn handle_overlay_generate(
         .arg("--fps")
         .arg(fps.to_string())
         .arg("--style")
-        .arg(format!("mcp/styles/{}.css", style));
+        .arg(format!("mcp/styles/{}.css", style))
+        .kill_on_drop(true);
 
     if animate {
         cmd.arg("--animate");
