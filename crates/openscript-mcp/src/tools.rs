@@ -1,3 +1,4 @@
+use openscript_core::captions::{estimate_word_timings, generate_ass, CaptionSegment};
 use openscript_core::script::{parse_script, validate_script};
 use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, write_srt};
 use openscript_core::timeline::Timeline;
@@ -12,7 +13,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (50 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 1 script.parse)
+// Tool definitions (52 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -702,6 +703,33 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["script"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "script.generate_voices",
+            "description": "Generate TTS voice audio for each scene in a script. Calls the TTS backend (Kokoro default, sidecar fallback) per scene, producing a WAV file per scene. Returns voiceover paths + durations + estimated word timings for caption sync. Use AFTER script.parse and BEFORE script.build_captions. Progress reported per scene.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "The script JSON string or path to .json file"},
+                    "output_dir": {"type": "string", "default": "artifacts/voices", "description": "Directory for generated WAV files"}
+                },
+                "required": ["script"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "script.build_captions",
+            "description": "Generate an ASS subtitle file from voiceover segments with word timings. Supports 4 caption styles: word_highlight (TikTok-style), sentence_fade, karaoke_fill, subtitle_rail. Uses the caption style from the script spec. Returns the ASS file path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "The script JSON string or path to .json file"},
+                    "voiceover_manifest": {"type": "string", "description": "Path to the manifest JSON from script.generate_voices (contains segments with word timings)"},
+                    "output_path": {"type": "string", "default": "artifacts/captions.ass", "description": "Output ASS file path"}
+                },
+                "required": ["script", "voiceover_manifest"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -798,6 +826,8 @@ pub fn route_tool(
                 .map_err(|e| ToolError::Hf(e.to_string()))
         }),
         "script.parse" => Box::pin(handle_script_parse(args)),
+        "script.generate_voices" => Box::pin(handle_script_generate_voices(args)),
+        "script.build_captions" => Box::pin(handle_script_build_captions(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -4802,4 +4832,197 @@ async fn handle_script_parse(args: serde_json::Value) -> Result<serde_json::Valu
             "lip_sync_mode": spec.stickers.lip_sync,
         },
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: script.generate_voices — TTS per scene
+// ---------------------------------------------------------------------------
+
+async fn handle_script_generate_voices(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script_input = extract_str(&args, "script")?;
+    let output_dir = default_str(&args, "output_dir", "artifacts/voices");
+
+    // Parse script
+    let json_str = read_script_input(script_input)?;
+    let spec = parse_script(&json_str).map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
+    let errors = validate_script(&spec);
+    if !errors.is_empty() {
+        return Err(ToolError::InvalidArg(format!("Script validation failed: {} errors", errors.len())));
+    }
+
+    // Create output directory
+    std::fs::create_dir_all(&output_dir)?;
+
+    report_progress(0.0, 100.0, "Generating voices...").await.ok();
+
+    let total_scenes = spec.scenes.len();
+    let mut segments = Vec::new();
+    let mut current_ms = 0i64;
+
+    for (i, scene) in spec.scenes.iter().enumerate() {
+        report_progress(
+            (i as f64 / total_scenes as f64) * 100.0,
+            100.0,
+            &format!("Voice {}/{}: {}", i + 1, total_scenes, scene.speaker),
+        ).await.ok();
+
+        // Get speaker's voice profile
+        let speaker = spec.speakers.get(&scene.speaker)
+            .ok_or_else(|| ToolError::NotFound(format!("Speaker not found: {}", scene.speaker)))?;
+
+        // Load voice profile from registry
+        let profiles_path = ".openscript/voice_profiles.json";
+        let registry = openscript_tts::profiles::VoiceProfileRegistry::new(profiles_path)
+            .map_err(|e| ToolError::Tts(e.to_string()))?;
+
+        // Try to find the voice profile by ID or by voice field
+        let profile = registry.get(&speaker.voice)
+            .or_else(|| {
+                // If voice is "kokoro:af_heart", try to find a profile with that model
+                registry.list().iter().find(|p| p.model == speaker.voice).cloned()
+            })
+            .map(|p| p.clone())
+            .ok_or_else(|| {
+                ToolError::NotFound(format!(
+                    "Voice profile '{}' not found in registry. Add it via voice.profile.add.",
+                    speaker.voice
+                ))
+            })?;
+
+        // Generate TTS for this scene
+        let wav_path = format!("{}/{}_{}.wav", output_dir, scene.id, scene.speaker);
+        if let Some(parent) = Path::new(&wav_path).parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+
+        let result = tts_generate_routed(
+            &speaker.voice,
+            &scene.text,
+            &wav_path,
+            spec.tts.default_speed,
+            spec.tts.default_pitch,
+            1.0, // volume
+            "wav",
+            &profile,
+        ).await?;
+
+        // Calculate word timings for this scene
+        let scene_end_ms = current_ms + result.duration_ms;
+        let words = estimate_word_timings(&scene.text, current_ms, scene_end_ms);
+
+        segments.push(serde_json::json!({
+            "scene_id": scene.id,
+            "speaker": scene.speaker,
+            "text": scene.text,
+            "start_ms": current_ms,
+            "end_ms": scene_end_ms,
+            "duration_ms": result.duration_ms,
+            "wav_path": result.output_path,
+            "cached": result.cached,
+            "backend": result.backend,
+            "words": words,
+        }));
+
+        current_ms = scene_end_ms;
+    }
+
+    // Write manifest
+    let manifest_path = format!("{}/manifest.json", output_dir);
+    let manifest = json!({
+        "segments": segments,
+        "total_duration_ms": current_ms,
+        "total_scenes": total_scenes,
+    });
+    std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
+
+    report_progress(100.0, 100.0, "Voices generated").await.ok();
+
+    Ok(json!({
+        "status": "generated",
+        "manifest_path": manifest_path,
+        "total_duration_ms": current_ms,
+        "total_scenes": total_scenes,
+        "segments": segments,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: script.build_captions — ASS generation from word timings
+// ---------------------------------------------------------------------------
+
+async fn handle_script_build_captions(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script_input = extract_str(&args, "script")?;
+    let manifest_path = extract_str(&args, "voiceover_manifest")?;
+    let output_path = default_str(&args, "output_path", "artifacts/captions.ass");
+
+    // Parse script
+    let json_str = read_script_input(script_input)?;
+    let spec = parse_script(&json_str).map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
+
+    // Load voiceover manifest
+    let manifest_str = std::fs::read_to_string(sanitize_input_path(manifest_path)?)?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_str)?;
+
+    // Build CaptionSegments from manifest
+    let mut segments = Vec::new();
+    if let Some(segs) = manifest.get("segments").and_then(|v| v.as_array()) {
+        for seg in segs {
+            let text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let start_ms = seg.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+            let end_ms = seg.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+
+            // Convert word timings from manifest
+            let words: Vec<openscript_core::captions::WordTiming> = seg
+                .get("words")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|w| {
+                            Some(openscript_core::captions::WordTiming {
+                                word: w.get("word")?.as_str()?.to_string(),
+                                start_ms: w.get("start_ms")?.as_i64()?,
+                                end_ms: w.get("end_ms")?.as_i64()?,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| estimate_word_timings(&text, start_ms, end_ms));
+
+            segments.push(CaptionSegment {
+                text,
+                start_ms,
+                end_ms,
+                words,
+            });
+        }
+    }
+
+    // Generate ASS
+    let ass_content = generate_ass(&segments, &spec.captions, spec.meta.width, spec.meta.height);
+
+    // Write output
+    if let Some(parent) = Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&output_path, ass_content)?;
+
+    Ok(json!({
+        "status": "generated",
+        "output_path": output_path,
+        "caption_style": spec.captions.style,
+        "segment_count": segments.len(),
+    }))
+}
+
+/// Helper: read script from inline JSON or file path.
+fn read_script_input(script_input: &str) -> Result<String, ToolError> {
+    if script_input.trim_start().starts_with('{') {
+        Ok(script_input.to_string())
+    } else {
+        let path = sanitize_input_path(script_input)?;
+        if !path.exists() {
+            return Err(ToolError::NotFound(format!("Script file not found: {}", path.display())));
+        }
+        Ok(std::fs::read_to_string(&path)?)
+    }
 }

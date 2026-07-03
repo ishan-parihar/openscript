@@ -1,3 +1,4 @@
+pub mod captions;
 pub mod error;
 pub mod script;
 pub mod srt;
