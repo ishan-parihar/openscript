@@ -35,6 +35,83 @@ enum Commands {
         #[arg(short, long)]
         source: Option<String>,
     },
+    /// Parse and validate a from-scratch video creation script (mirrors script.parse MCP tool)
+    ScriptParse {
+        /// Path to script JSON file
+        #[arg(short, long)]
+        script: String,
+    },
+    /// Generate TTS voices for each scene in a script (mirrors script.generate_voices)
+    ScriptGenerateVoices {
+        #[arg(short, long)]
+        script: String,
+        #[arg(long, default_value = "artifacts/voices")]
+        output_dir: String,
+    },
+    /// Build captions from voiceover manifest (mirrors script.build_captions)
+    ScriptBuildCaptions {
+        #[arg(short, long)]
+        script: String,
+        #[arg(long)]
+        voiceover_manifest: String,
+        #[arg(long, default_value = "artifacts/captions.ass")]
+        output_path: String,
+    },
+    /// Fetch a background video clip (mirrors background.fetch)
+    BackgroundFetch {
+        #[arg(long)]
+        query: String,
+        #[arg(long, default_value = "30")]
+        duration_s: f64,
+        #[arg(long, default_value = "9:16")]
+        aspect: String,
+    },
+    /// Load an SVG sticker preset (mirrors sticker.load_preset)
+    StickerLoadPreset {
+        #[arg(long)]
+        preset_name: String,
+    },
+    /// Render an animated sticker overlay (mirrors sticker.render)
+    StickerRender {
+        #[arg(long)]
+        wav_path: String,
+        #[arg(long)]
+        preset_name: String,
+        #[arg(long, default_value = "top-left")]
+        position: String,
+        #[arg(long, default_value = "0.25")]
+        scale: f64,
+        #[arg(long, default_value = "artifacts/sticker.html")]
+        output_path: String,
+    },
+    /// Build a timeline from a script (mirrors script.to_timeline)
+    ScriptToTimeline {
+        #[arg(short, long)]
+        script: String,
+        #[arg(long, default_value = "artifacts")]
+        output_dir: String,
+        #[arg(long)]
+        skip_background: bool,
+        #[arg(long)]
+        skip_stickers: bool,
+    },
+    /// One-call from-scratch video creation (mirrors script.to_video)
+    ScriptToVideo {
+        #[arg(short, long)]
+        script: String,
+        #[arg(long, default_value = "output.mp4")]
+        output_path: String,
+        #[arg(long, default_value = "artifacts")]
+        output_dir: String,
+        #[arg(long)]
+        skip_background: bool,
+        #[arg(long)]
+        skip_stickers: bool,
+        #[arg(long)]
+        preview_mode: bool,
+    },
+    /// List all available MCP tools (for discovery)
+    ListTools,
 }
 
 #[tokio::main]
@@ -59,9 +136,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::RunTui { timeline, source } => {
             run_tui(timeline, source).await?;
         }
+        Commands::ScriptParse { script } => {
+            let args = serde_json::json!({"script": script});
+            let result = openscript_mcp::tools::route_tool("script.parse", args).await;
+            print_cli_result("script.parse", result);
+        }
+        Commands::ScriptGenerateVoices { script, output_dir } => {
+            let args = serde_json::json!({"script": script, "output_dir": output_dir});
+            let result = openscript_mcp::tools::route_tool("script.generate_voices", args).await;
+            print_cli_result("script.generate_voices", result);
+        }
+        Commands::ScriptBuildCaptions { script, voiceover_manifest, output_path } => {
+            let args = serde_json::json!({
+                "script": script,
+                "voiceover_manifest": voiceover_manifest,
+                "output_path": output_path,
+            });
+            let result = openscript_mcp::tools::route_tool("script.build_captions", args).await;
+            print_cli_result("script.build_captions", result);
+        }
+        Commands::BackgroundFetch { query, duration_s, aspect } => {
+            let args = serde_json::json!({
+                "query": query,
+                "duration_s": duration_s,
+                "aspect": aspect,
+            });
+            let result = openscript_mcp::tools::route_tool("background.fetch", args).await;
+            print_cli_result("background.fetch", result);
+        }
+        Commands::StickerLoadPreset { preset_name } => {
+            let args = serde_json::json!({"preset_name": preset_name});
+            let result = openscript_mcp::tools::route_tool("sticker.load_preset", args).await;
+            print_cli_result("sticker.load_preset", result);
+        }
+        Commands::StickerRender { wav_path, preset_name, position, scale, output_path } => {
+            let args = serde_json::json!({
+                "wav_path": wav_path,
+                "preset_name": preset_name,
+                "position": position,
+                "scale": scale,
+                "output_path": output_path,
+            });
+            let result = openscript_mcp::tools::route_tool("sticker.render", args).await;
+            print_cli_result("sticker.render", result);
+        }
+        Commands::ScriptToTimeline { script, output_dir, skip_background, skip_stickers } => {
+            let args = serde_json::json!({
+                "script": script,
+                "output_dir": output_dir,
+                "skip_background": skip_background,
+                "skip_stickers": skip_stickers,
+            });
+            let result = openscript_mcp::tools::route_tool("script.to_timeline", args).await;
+            print_cli_result("script.to_timeline", result);
+        }
+        Commands::ScriptToVideo { script, output_path, output_dir, skip_background, skip_stickers, preview_mode } => {
+            let args = serde_json::json!({
+                "script": script,
+                "output_path": output_path,
+                "output_dir": output_dir,
+                "skip_background": skip_background,
+                "skip_stickers": skip_stickers,
+                "preview_mode": preview_mode,
+            });
+            let result = openscript_mcp::tools::route_tool("script.to_video", args).await;
+            print_cli_result("script.to_video", result);
+        }
+        Commands::ListTools => {
+            let tools = openscript_mcp::tools::tool_definitions();
+            println!("{}", serde_json::to_string_pretty(&tools)?);
+        }
     }
 
     Ok(())
+}
+
+/// Print a CLI tool result as JSON, or the error message.
+fn print_cli_result(tool_name: &str, result: Result<serde_json::Value, openscript_mcp::error::ToolError>) {
+    match result {
+        Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string())),
+        Err(e) => {
+            eprintln!("Error ({}): {}", tool_name, e);
+            std::process::exit(1);
+        }
+    }
 }
 
 async fn run_tui(
