@@ -124,22 +124,24 @@ pub async fn handle_hf_snapshot(args: Value) -> Result<Value, HfError> {
         .and_then(|v| v.as_str())
         .unwrap_or(DEFAULT_HF_PROJECT_DIR);
 
-    let mut extra_args = vec!["--json"];
+    // Build owned String args to avoid Box::leak memory leak
+    let mut extra_args: Vec<String> = vec!["--json".to_string()];
 
     // Either --frames N or --at t1,t2,t3
     if let Some(frames) = args.get("frames").and_then(|v| v.as_u64()) {
-        extra_args.push("--frames");
-        extra_args.push(Box::leak(frames.to_string().into_boxed_str()));
+        extra_args.push("--frames".to_string());
+        extra_args.push(frames.to_string());
     } else if let Some(at) = args.get("at").and_then(|v| v.as_str()) {
-        extra_args.push("--at");
-        extra_args.push(at);
+        extra_args.push("--at".to_string());
+        extra_args.push(at.to_string());
     } else {
         // Default: 9 evenly-spaced frames
-        extra_args.push("--frames");
-        extra_args.push("9");
+        extra_args.push("--frames".to_string());
+        extra_args.push("9".to_string());
     }
 
-    let output = run_hf_cli("snapshot", project_dir, &extra_args, CLI_TIMEOUT_SECS).await?;
+    let extra_args_ref: Vec<&str> = extra_args.iter().map(|s| s.as_str()).collect();
+    let output = run_hf_cli("snapshot", project_dir, &extra_args_ref, CLI_TIMEOUT_SECS).await?;
 
     let mut result = parse_json_output(&output.stdout);
     if let Some(obj) = result.as_object_mut() {
@@ -514,8 +516,14 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
         "remotion-interop" => {
             // The interop path: the project_dir should contain an index.html
             // that loads dist/bundle.js (the esbuild-bundled Remotion Player).
-            // We render via hf.render — HF's runtime drives the Player via
-            // window.__hfRemotionSeek(frame).
+            // Check that the bundle exists before rendering.
+            let bundle_path = std::path::Path::new(project_dir).join("dist").join("bundle.js");
+            if !bundle_path.exists() {
+                return Err(HfError::InvalidArg(format!(
+                    "Interop bundle not found at {}. Run: npx esbuild <entry>.tsx --bundle --format=iife --outfile=dist/bundle.js --jsx=automatic",
+                    bundle_path.display()
+                )));
+            }
             let extra_args = vec!["--quality", quality, "--output", output_path];
             let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
             let success = output.exit_code == 0;

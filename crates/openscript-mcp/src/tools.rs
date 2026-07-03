@@ -1693,6 +1693,103 @@ async fn handle_voice_profile_remove(
 }
 
 // ---------------------------------------------------------------------------
+// Shared TTS routing helper — used by tts.generate, voiceover.generate, tts.commentary
+// Routes to Kokoro (if profile.provider == "kokoro" and feature enabled) or sidecar.
+// ---------------------------------------------------------------------------
+
+struct TtsGenResult {
+    output_path: String,
+    duration_ms: i64,
+    cached: bool,
+    backend: String,
+}
+
+/// Generate speech via the appropriate TTS backend (Kokoro or sidecar).
+/// `output_path` must be pre-validated (parent dir created).
+async fn tts_generate_routed(
+    voice_profile_id: &str,
+    text: &str,
+    output_path: &str,
+    speed: f64,
+    pitch: f64,
+    volume: f64,
+    format: &str,
+    profile: &openscript_tts::profiles::VoiceProfile,
+) -> Result<TtsGenResult, ToolError> {
+    let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
+        .unwrap_or_else(|_| "artifacts/tts".to_string());
+
+    // Route to Kokoro backend if the profile's provider is "kokoro" and the
+    // feature is enabled. Otherwise fall through to the sidecar.
+    #[cfg(feature = "kokoro")]
+    if profile.provider == "kokoro" {
+        use openscript_tts::kokoro::{KokoroClient, KokoroConfig};
+
+        let model_dir = std::env::var("KOKORO_MODEL_DIR")
+            .unwrap_or_else(|_| "mcp/assets/kokoro".to_string());
+        let model_variant = std::env::var("KOKORO_MODEL_VARIANT")
+            .unwrap_or_else(|_| "model_q8f16.onnx".to_string());
+        let default_voice = std::env::var("KOKORO_DEFAULT_VOICE")
+            .unwrap_or_else(|_| "af_heart".to_string());
+
+        let cfg = KokoroConfig {
+            model_dir: std::path::PathBuf::from(&model_dir),
+            model_variant,
+            default_voice,
+            cache_dir: std::path::PathBuf::from(&cache_dir),
+        };
+        let kokoro_client = KokoroClient::new(cfg);
+
+        let result = kokoro_client
+            .generate(voice_profile_id, text, output_path, speed, pitch, volume, format, profile)
+            .await
+            .map_err(|e| ToolError::Tts(e.to_string()))?;
+
+        return Ok(TtsGenResult {
+            output_path: result.output_path,
+            duration_ms: result.duration_ms,
+            cached: result.cached,
+            backend: "kokoro".to_string(),
+        });
+    }
+
+    #[cfg(not(feature = "kokoro"))]
+    if profile.provider == "kokoro" {
+        return Err(ToolError::Tts(
+            "Voice profile uses Kokoro backend but the kokoro feature is not enabled. \
+             Rebuild openscript-mcp with --features kokoro."
+                .to_string(),
+        ));
+    }
+
+    // Sidecar path (faster-qwen3-tts)
+    use openscript_tts::client::TtsClient;
+    let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
+    let client = TtsClient::new(&tts_url, &cache_dir);
+
+    if !client.health_check().await.map_err(|e| ToolError::Tts(e.to_string()))? {
+        return Err(ToolError::Tts(format!(
+            "TTS sidecar server is not reachable at {}. \
+             Start the faster-qwen3-tts server or set OPENSCRIPT_TTS_URL.",
+            tts_url
+        )));
+    }
+
+    let result = client
+        .generate(voice_profile_id, text, output_path, speed, pitch, volume, format, profile)
+        .await
+        .map_err(|e| ToolError::Tts(e.to_string()))?;
+
+    Ok(TtsGenResult {
+        output_path: result.output_path,
+        duration_ms: result.duration_ms,
+        cached: result.cached,
+        backend: "sidecar".to_string(),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Handler: tts.generate (native via openscript-tts)
 // ---------------------------------------------------------------------------
 
@@ -2377,7 +2474,6 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
 async fn handle_voiceover_generate(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
-    use openscript_tts::client::TtsClient;
     use openscript_tts::profiles::VoiceProfileRegistry;
     use std::path::Path;
 
@@ -2419,27 +2515,11 @@ async fn handle_voiceover_generate(
         std::fs::create_dir_all(parent).ok();
     }
 
-    let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
-    let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
-        .unwrap_or_else(|_| "artifacts/tts".to_string());
-
-    let client = TtsClient::new(&tts_url, &cache_dir);
-
-    if !client.health_check().await.map_err(|e| ToolError::Tts(e.to_string()))? {
-        return Err(ToolError::Tts(format!(
-            "TTS sidecar server is not reachable at {}. \
-             Start the faster-qwen3-tts server or set OPENSCRIPT_TTS_URL.",
-            tts_url
-        )));
-    }
-
     report_progress(0.0, 100.0, "Generating voiceover...").await.ok();
 
-    let result = client
-        .generate(voice_profile_id, text, &output_path, speed, pitch, volume, "wav", &profile)
-        .await
-        .map_err(|e| ToolError::Tts(e.to_string()))?;
+    let result = tts_generate_routed(
+        voice_profile_id, text, &output_path, speed, pitch, volume, "wav", &profile
+    ).await?;
 
     let duration_ms = result.duration_ms;
 
@@ -2492,7 +2572,6 @@ async fn handle_voiceover_generate(
 async fn handle_tts_commentary(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
-    use openscript_tts::client::TtsClient;
     use openscript_tts::profiles::VoiceProfileRegistry;
     use std::path::Path;
 
@@ -2516,24 +2595,10 @@ async fn handle_tts_commentary(
         })?
         .clone();
 
-    let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
-    let cache_dir = std::env::var("OPENSCRIPT_TTS_CACHE")
-        .unwrap_or_else(|_| "artifacts/tts".to_string());
     let timeline_dir = Path::new(&timeline_path)
         .parent()
         .unwrap_or(Path::new("."))
         .to_path_buf();
-
-    let client = TtsClient::new(&tts_url, &cache_dir);
-
-    if !client.health_check().await.map_err(|e| ToolError::Tts(e.to_string()))? {
-        return Err(ToolError::Tts(format!(
-            "TTS sidecar server is not reachable at {}. \
-             Start the faster-qwen3-tts server or set OPENSCRIPT_TTS_URL.",
-            tts_url
-        )));
-    }
 
     let do_intro = commentary_type == "intro" || commentary_type == "all";
     let do_outro = commentary_type == "outro" || commentary_type == "all";
@@ -2557,10 +2622,9 @@ async fn handle_tts_commentary(
             std::fs::create_dir_all(parent).ok();
         }
 
-        let result = client
-            .generate(voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile)
-            .await
-            .map_err(|e| ToolError::Tts(e.to_string()))?;
+        let result = tts_generate_routed(
+            voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile
+        ).await?;
 
         let duration_ms = result.duration_ms;
 
@@ -2619,10 +2683,9 @@ async fn handle_tts_commentary(
                 std::fs::create_dir_all(parent).ok();
             }
 
-            let result = client
-                .generate(voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile)
-                .await
-                .map_err(|e| ToolError::Tts(e.to_string()))?;
+            let result = tts_generate_routed(
+                voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile
+            ).await?;
 
             let duration_ms = result.duration_ms;
 
@@ -2675,10 +2738,9 @@ async fn handle_tts_commentary(
             std::fs::create_dir_all(parent).ok();
         }
 
-        let result = client
-            .generate(voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile)
-            .await
-            .map_err(|e| ToolError::Tts(e.to_string()))?;
+        let result = tts_generate_routed(
+            voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile
+        ).await?;
 
         let duration_ms = result.duration_ms;
 

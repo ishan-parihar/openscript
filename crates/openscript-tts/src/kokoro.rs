@@ -123,10 +123,24 @@ const MAX_TOKENS_PER_CHUNK: usize = 400;
 /// Splits on sentence boundaries (`.`, `!`, `?`, `。`, `！`, `？`) first, then
 /// on commas / semicolons if a single sentence exceeds the limit, then on
 /// word boundaries as a last resort.
+///
+/// For CJK text (no spaces between words), uses a character budget instead
+/// of a word budget — each CJK character is approximately 1 token.
 pub fn chunk_text(text: &str, max_words: usize) -> Vec<String> {
     let text = text.trim();
     if text.is_empty() {
         return Vec::new();
+    }
+
+    // Detect CJK-heavy text: if >30% of characters are CJK, use char-based chunking
+    let cjk_count = text.chars().filter(|&c| is_cjk(c)).count();
+    let total_chars = text.chars().count();
+    let is_cjk_heavy = total_chars > 0 && cjk_count as f64 / total_chars as f64 > 0.3;
+
+    if is_cjk_heavy {
+        // Use character budget: ~1.5 chars per token, so max_chars = max_words * 1.5
+        let max_chars = (max_words as f64 * 1.5) as usize;
+        return chunk_by_chars(text, max_chars);
     }
 
     let sentences = split_sentences(text);
@@ -160,6 +174,62 @@ pub fn chunk_text(text: &str, max_words: usize) -> Vec<String> {
         }
         current.push_str(&sentence);
         current_words += sentence_words;
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    chunks
+}
+
+/// Returns true if the character is CJK (Chinese/Japanese/Korean).
+fn is_cjk(c: char) -> bool {
+    matches!(c as u32,
+        0x4E00..=0x9FFF |   // CJK Unified Ideographs
+        0x3400..=0x4DBF |   // CJK Extension A
+        0x3040..=0x309F |   // Hiragana
+        0x30A0..=0x30FF |   // Katakana
+        0xAC00..=0xD7AF |   // Hangul Syllables
+        0xFF00..=0xFFEF     // Halfwidth/Fullwidth Forms
+    )
+}
+
+/// Chunk text by character count (for CJK text).
+/// Splits on sentence boundaries first, then hard-splits on character count.
+fn chunk_by_chars(text: &str, max_chars: usize) -> Vec<String> {
+    let sentences = split_sentences(text);
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+
+    for sentence in sentences {
+        let sentence_chars = sentence.chars().count();
+
+        if sentence_chars > max_chars {
+            // Flush current chunk
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+            }
+            // Hard-split the long sentence by character count
+            let mut chars: Vec<char> = sentence.chars().collect();
+            for chunk in chars.chunks(max_chars) {
+                let s: String = chunk.iter().collect();
+                let s = s.trim();
+                if !s.is_empty() {
+                    chunks.push(s.to_string());
+                }
+            }
+            continue;
+        }
+
+        if current.chars().count() + sentence_chars > max_chars && !current.is_empty() {
+            chunks.push(std::mem::take(&mut current));
+        }
+
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(&sentence);
     }
 
     if !current.is_empty() {
@@ -304,6 +374,38 @@ mod tests {
         let dur = wav_duration_ms(&tmp).unwrap();
         assert_eq!(dur, 1000);
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_chunk_cjk_text() {
+        // CJK text without spaces — must use character-based chunking
+        // 100 CJK characters, max_words=10 → max_chars=15 → ~7 chunks
+        let text: String = "你好世界。".repeat(20);
+        let chunks = chunk_text(&text, 10);
+        assert!(chunks.len() > 1, "CJK text should be split into multiple chunks");
+        for chunk in &chunks {
+            // Each chunk should be under the char budget (with some tolerance)
+            assert!(chunk.chars().count() <= 20, "Chunk too long: {} chars", chunk.chars().count());
+        }
+    }
+
+    #[test]
+    fn test_chunk_mixed_cjk_latin() {
+        // Mixed CJK + Latin text
+        let text = "Hello world. 你好世界. This is a test. 这是测试.";
+        let chunks = chunk_text(text, 400);
+        // Should produce at least one chunk without panicking
+        assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn test_is_cjk() {
+        assert!(is_cjk('中'));
+        assert!(is_cjk('日'));
+        assert!(is_cjk('한'));
+        assert!(!is_cjk('a'));
+        assert!(!is_cjk(' '));
+        assert!(!is_cjk('1'));
     }
 }
 

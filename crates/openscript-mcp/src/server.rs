@@ -179,14 +179,28 @@ async fn handle_tools_call(
         .cloned()
         .unwrap_or(serde_json::json!({}));
 
-    // Extract progress token if present (from _meta.progressToken)
+    // Extract progress token if present (from _meta.progressToken).
+    // Accept both string and integer tokens per MCP spec.
     if let Some(meta) = params.get("_meta") {
-        if let Some(token) = meta.get("progressToken").and_then(|v| v.as_str()) {
-            set_progress_token(token.to_string());
+        if let Some(token_val) = meta.get("progressToken") {
+            let token_str = match token_val {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            };
+            if let Some(token) = token_str {
+                set_progress_token(token);
+            }
         }
     }
 
-    route_tool(name, args).await
+    let result = route_tool(name, args).await;
+
+    // Clear the progress token after the tool call so subsequent requests
+    // don't accidentally use the previous request's token.
+    set_progress_token(String::new());
+
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -209,8 +223,10 @@ async fn read_message(reader: &mut BufReader<tokio::io::Stdin>) -> Option<Result
 
         let trimmed = line.trim().to_string();
 
-        if trimmed.starts_with("Content-Length: ") {
-            if let Some(rest) = trimmed.strip_prefix("Content-Length: ") {
+        // Content-Length matching is case-insensitive per HTTP/RPC spec
+        let lower = trimmed.to_lowercase();
+        if lower.starts_with("content-length: ") {
+            if let Some(rest) = lower.strip_prefix("content-length: ") {
                 if let Ok(len) = rest.parse::<usize>() {
                     loop {
                         let mut header = String::new();
@@ -290,6 +306,22 @@ fn make_tool_call_response(id: serde_json::Value, val: serde_json::Value) -> Jso
     }
 }
 
+/// Build a tool-call error response per MCP spec: result.content[0].text + isError:true.
+/// Used for tool EXECUTION failures (sidecar down, file not found, ffmpeg crash).
+fn make_tool_call_error_response(id: serde_json::Value, err: &ToolError) -> JsonRpcResponse {
+    JsonRpcResponse::Result {
+        jsonrpc: "2.0".into(),
+        id,
+        result: serde_json::json!({
+            "content": [{"type": "text", "text": serde_json::to_string(&serde_json::json!({
+                "error": err.to_string(),
+                "error_type": format!("{:?}", err).split('(').next().unwrap_or("Unknown"),
+            })).unwrap_or_default()}],
+            "isError": true
+        }),
+    }
+}
+
 fn make_error_response(id: serde_json::Value, err: &ToolError) -> JsonRpcResponse {
     JsonRpcResponse::Error {
         jsonrpc: "2.0".into(),
@@ -299,6 +331,19 @@ fn make_error_response(id: serde_json::Value, err: &ToolError) -> JsonRpcRespons
             message: err.to_string(),
         },
     }
+}
+
+/// Returns true if the error is a protocol-level error (should be JSON-RPC error)
+/// vs an execution-level error (should be result.isError:true per MCP spec).
+fn is_protocol_error(err: &ToolError) -> bool {
+    matches!(
+        err,
+        ToolError::UnknownTool(_)
+            | ToolError::MethodNotFound(_)
+            | ToolError::MissingArg(_)
+            | ToolError::InvalidArg(_)
+            | ToolError::Json(_)
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +410,15 @@ pub async fn run() -> Result<(), std::io::Error> {
                             make_result_response(id, val)
                         }
                     }
-                    Err(e) => make_error_response(id, &e),
+                    Err(e) => {
+                        // Tool execution errors → result.isError:true (MCP spec)
+                        // Protocol errors → JSON-RPC error response
+                        if method == "tools/call" && !is_protocol_error(&e) {
+                            make_tool_call_error_response(id, &e)
+                        } else {
+                            make_error_response(id, &e)
+                        }
+                    }
                 };
 
                 write_response(&mut stdout_writer, &response, use_content_length).await?;

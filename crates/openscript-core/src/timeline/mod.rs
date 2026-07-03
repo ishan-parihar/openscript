@@ -222,7 +222,14 @@ impl Timeline {
         let total_ms = self.total_duration_ms();
         for (track_name, events) in &self.tracks {
             for event in events {
-                if event.end_ms > total_ms {
+                // Voiceover and Music events are allowed to extend beyond the
+                // last segment end — they are additive (outro narration, music
+                // tail). Only flag Dialogue/Broll/Caption/Sfx events.
+                let is_additive = matches!(
+                    event.kind,
+                    EventKind::Voiceover { .. } | EventKind::Music { .. }
+                );
+                if !is_additive && event.end_ms > total_ms {
                     errors.push(format!(
                         "Track {:?} event {}: extends beyond timeline duration",
                         track_name, event.id

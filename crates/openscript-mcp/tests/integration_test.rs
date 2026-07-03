@@ -323,9 +323,16 @@ fn test_mcp_timeline_build_missing_video_returns_error() {
         2,
     );
 
+    // File-not-found is an execution error → result.isError:true per MCP spec
+    let has_error = response.get("error").is_some()
+        || response
+            .get("result")
+            .and_then(|r| r.get("isError"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
     assert!(
-        response.get("error").is_some(),
-        "timeline.build with missing video should return an error"
+        has_error,
+        "timeline.build with missing video should return an error (JSON-RPC error or isError:true result)"
     );
 
     cleanup(child);
@@ -392,9 +399,16 @@ fn test_mcp_srt_read_missing_file_returns_error() {
         2,
     );
 
+    // File-not-found is an execution error → result.isError:true per MCP spec
+    let has_error = response.get("error").is_some()
+        || response
+            .get("result")
+            .and_then(|r| r.get("isError"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
     assert!(
-        response.get("error").is_some(),
-        "srt.read with missing file should return an error"
+        has_error,
+        "srt.read with missing file should return an error (JSON-RPC error or isError:true result)"
     );
 
     cleanup(child);
@@ -468,10 +482,27 @@ fn test_mcp_sfx_search() {
     // SFX search should either return results or a graceful error if no library is configured.
     // The important thing is the server doesn't crash.
     if response.get("result").is_some() {
-        let payload = extract_result_payload(&response);
-        assert!(payload.get("results").is_some() || payload.get("status").is_some());
+        let result = response.get("result").unwrap();
+        // Check if it's an error result (isError: true) per MCP spec
+        if result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+            // Execution error returned as result.isError:true — acceptable
+            let content = result.get("content").unwrap().as_array().unwrap();
+            let text = content[0].get("text").unwrap().as_str().unwrap();
+            assert!(
+                text.contains("No such file")
+                    || text.contains("not found")
+                    || text.contains("Asset error")
+                    || text.contains("error"),
+                "Unexpected error content: {}",
+                text
+            );
+        } else {
+            // Success result — check payload
+            let payload = extract_result_payload(&response);
+            assert!(payload.get("results").is_some() || payload.get("status").is_some());
+        }
     } else if response.get("error").is_some() {
-        // Graceful error is acceptable when SFX library isn't configured
+        // Protocol-level error (JSON-RPC error) — acceptable for missing arg etc.
         let error = response.get("error").unwrap();
         let msg = error.get("message").unwrap().as_str().unwrap();
         assert!(
