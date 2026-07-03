@@ -150,9 +150,7 @@ openscript/
 │   ├── openscript-core/      # Timeline schema, SRT parsing, core types
 │   ├── openscript-mcp/       # MCP server (43 tools, stdio transport)
 │   │   └── src/bin/
-│   │       ├── mcp-server.rs # MCP server binary
-│   │       ├── audit_tools.rs
-│   │       └── generate_reel.rs
+│   │       └── mcp-server.rs # MCP server binary
 │   ├── openscript-ffmpeg/    # FFmpeg filter graphs, rendering, subtitles
 │   ├── openscript-transcribe/# Whisper/Apex transcription
 │   ├── openscript-tts/       # TTS client, voice profiles
@@ -183,9 +181,6 @@ openscript/
 
 ```bash
 # Run the full test suite
-./RUN_TESTS.sh
-
-# Or individual test targets
 cargo test --workspace
 ```
 
