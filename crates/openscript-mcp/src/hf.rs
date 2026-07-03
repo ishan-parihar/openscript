@@ -405,6 +405,193 @@ pub async fn handle_hf_classify(args: Value) -> Result<Value, HfError> {
 }
 
 // ---------------------------------------------------------------------------
+// Tool: composition.render — unified dispatcher
+// ---------------------------------------------------------------------------
+
+/// The unified composition renderer. Takes a composition specification and
+/// dispatches to the appropriate engine:
+///
+/// 1. If `render_hint` is "hf" or "auto" (default) and the source is clean →
+///    HF native render via `npx hyperframes render`
+/// 2. If `render_hint` is "remotion" or the source has blockers →
+///    Remotion interop via the PR #214 escape hatch
+/// 3. If `render_hint` is "legacy" →
+///    Existing Remotion render via `npx remotion render` (backward compat)
+///
+/// This is the single entry point agents should use for rendering video.
+/// Individual `hf.render` / `timeline.render` tools remain available for
+/// advanced/manual control.
+pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
+    let project_dir = args
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .unwrap_or(DEFAULT_HF_PROJECT_DIR);
+
+    let output_path = args
+        .get("output_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("output.mp4");
+
+    let quality = args
+        .get("quality")
+        .and_then(|v| v.as_str())
+        .unwrap_or("standard");
+
+    let render_hint = args
+        .get("render_hint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto");
+
+    // Optional: classify a Remotion source file to determine routing
+    let source_path = args.get("source_path").and_then(|v| v.as_str());
+
+    // Determine the engine
+    let (engine, classification) = if render_hint == "legacy" {
+        ("legacy-remotion".to_string(), None)
+    } else if render_hint == "remotion" {
+        ("remotion-interop".to_string(), None)
+    } else if render_hint == "hf" {
+        ("hf-native".to_string(), None)
+    } else {
+        // auto — classify if source_path is provided
+        if let Some(sp) = source_path {
+            let src = std::fs::read_to_string(sp)
+                .map_err(|e| HfError::Spawn(format!("Cannot read {}: {}", sp, e)))?;
+            let findings = lint_remotion_source(&src);
+            let has_blockers = findings.iter().any(|f| f.severity == "blocker");
+            let recommendation = if has_blockers { "remotion-interop" } else { "hf-native" };
+            (
+                recommendation.to_string(),
+                Some(json!({
+                    "source_path": sp,
+                    "findings": findings,
+                    "has_blockers": has_blockers,
+                    "recommendation": recommendation,
+                })),
+            )
+        } else {
+            // auto with no source_path — default to hf-native
+            ("hf-native".to_string(), None)
+        }
+    };
+
+    // Dispatch
+    match engine.as_str() {
+        "hf-native" => {
+            let mut extra_args = vec!["--quality", quality, "--output", output_path];
+            if args.get("strict").and_then(|v| v.as_bool()).unwrap_or(false) {
+                extra_args.push("--strict");
+            }
+            let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
+            let success = output.exit_code == 0;
+            let (file_exists, file_size) = if success {
+                match std::fs::metadata(output_path) {
+                    Ok(meta) => (true, meta.len()),
+                    Err(_) => (false, 0),
+                }
+            } else {
+                (false, 0)
+            };
+            Ok(json!({
+                "status": if success && file_exists { "rendered" } else { "failed" },
+                "engine": "hf-native",
+                "exit_code": output.exit_code,
+                "output_path": output_path,
+                "file_exists": file_exists,
+                "file_size_bytes": file_size,
+                "project_dir": project_dir,
+                "classification": classification,
+                "stdout": output.stdout,
+                "stderr": output.stderr,
+            }))
+        }
+        "remotion-interop" => {
+            // The interop path: the project_dir should contain an index.html
+            // that loads dist/bundle.js (the esbuild-bundled Remotion Player).
+            // We render via hf.render — HF's runtime drives the Player via
+            // window.__hfRemotionSeek(frame).
+            let mut extra_args = vec!["--quality", quality, "--output", output_path];
+            let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
+            let success = output.exit_code == 0;
+            let (file_exists, file_size) = if success {
+                match std::fs::metadata(output_path) {
+                    Ok(meta) => (true, meta.len()),
+                    Err(_) => (false, 0),
+                }
+            } else {
+                (false, 0)
+            };
+            Ok(json!({
+                "status": if success && file_exists { "rendered" } else { "failed" },
+                "engine": "remotion-interop",
+                "exit_code": output.exit_code,
+                "output_path": output_path,
+                "file_exists": file_exists,
+                "file_size_bytes": file_size,
+                "project_dir": project_dir,
+                "classification": classification,
+                "note": "Rendered via PR #214 interop — Remotion Player mounted in HF, driven frame-by-frame",
+                "stdout": output.stdout,
+                "stderr": output.stderr,
+            }))
+        }
+        "legacy-remotion" => {
+            // Legacy path: shell out to `npx remotion render` directly.
+            // This is the backward-compatible path for existing Remotion projects.
+            let composition_id = args
+                .get("composition_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("MainWithBroll");
+
+            let mut cmd = tokio::process::Command::new("npx");
+            cmd.arg("remotion")
+                .arg("render")
+                .arg(composition_id)
+                .arg(output_path)
+                .current_dir(project_dir)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true);
+
+            let child = cmd.spawn().map_err(|e| HfError::Spawn(e.to_string()))?;
+            let output = tokio::time::timeout(
+                std::time::Duration::from_secs(RENDER_TIMEOUT_SECS),
+                child.wait_with_output(),
+            )
+            .await
+            .map_err(|_| HfError::Timeout(RENDER_TIMEOUT_SECS))?
+            .map_err(|e| HfError::Wait(e.to_string()))?;
+
+            let success = output.status.success();
+            let (file_exists, file_size) = if success {
+                match std::fs::metadata(output_path) {
+                    Ok(meta) => (true, meta.len()),
+                    Err(_) => (false, 0),
+                }
+            } else {
+                (false, 0)
+            };
+
+            Ok(json!({
+                "status": if success && file_exists { "rendered" } else { "failed" },
+                "engine": "legacy-remotion",
+                "exit_code": output.status.code().unwrap_or(-1),
+                "output_path": output_path,
+                "file_exists": file_exists,
+                "file_size_bytes": file_size,
+                "project_dir": project_dir,
+                "composition_id": composition_id,
+                "classification": classification,
+                "stdout": String::from_utf8_lossy(&output.stdout),
+                "stderr": String::from_utf8_lossy(&output.stderr),
+            }))
+        }
+        _ => Err(HfError::Spawn(format!("Unknown engine: {}", engine))),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tool definitions (for the MCP tool list)
 // ---------------------------------------------------------------------------
 
@@ -515,6 +702,52 @@ pub fn tool_definitions() -> Vec<Value> {
                 "additionalProperties": false
             }
         }),
+        json!({
+            "name": "composition.render",
+            "description": "Unified video composition renderer — the single entry point for rendering video. Automatically classifies the composition (if source_path provided) and dispatches to the right engine: (1) hf-native — HyperFrames HTML+GSAP render via 'npx hyperframes render' (DEFAULT for clean sources), (2) remotion-interop — PR #214 escape hatch for stateful Remotion comps (useState/useEffect/3rd-party UI), mounts @remotion/player inside HF and drives frame-by-frame, (3) legacy-remotion — backward-compatible 'npx remotion render' for existing Remotion projects. Use render_hint='auto' (default) to let the classifier decide, or force with 'hf'/'remotion'/'legacy'. Returns: status, engine used, output_path, file_size_bytes, classification details.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project_dir": {
+                        "type": "string",
+                        "default": "hyperframes",
+                        "description": "Path to the composition project directory"
+                    },
+                    "output_path": {
+                        "type": "string",
+                        "default": "output.mp4",
+                        "description": "Output MP4 path"
+                    },
+                    "quality": {
+                        "type": "string",
+                        "enum": ["draft", "standard", "high"],
+                        "default": "standard",
+                        "description": "Render quality"
+                    },
+                    "render_hint": {
+                        "type": "string",
+                        "enum": ["auto", "hf", "remotion", "legacy"],
+                        "default": "auto",
+                        "description": "Engine selection: auto (classify), hf (force HyperFrames native), remotion (force PR #214 interop), legacy (force npx remotion render)"
+                    },
+                    "source_path": {
+                        "type": "string",
+                        "description": "Path to Remotion .tsx source (used by 'auto' to classify). Optional — omit to default to hf-native."
+                    },
+                    "composition_id": {
+                        "type": "string",
+                        "default": "MainWithBroll",
+                        "description": "Remotion composition ID (legacy mode only)"
+                    },
+                    "strict": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Fail on lint errors (hf-native mode only)"
+                    }
+                },
+                "additionalProperties": false
+            }
+        }),
     ]
 }
 
@@ -537,13 +770,14 @@ mod tests {
     #[test]
     fn test_tool_definitions_count() {
         let defs = tool_definitions();
-        assert_eq!(defs.len(), 5);
+        assert_eq!(defs.len(), 6);
         let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"hf.lint"));
         assert!(names.contains(&"hf.validate"));
         assert!(names.contains(&"hf.snapshot"));
         assert!(names.contains(&"hf.render"));
         assert!(names.contains(&"hf.classify"));
+        assert!(names.contains(&"composition.render"));
     }
 
     #[test]
