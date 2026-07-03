@@ -281,6 +281,13 @@ impl PexelsClient {
         page: i64,
         _quality: &str,
     ) -> Result<Vec<PexelsVideo>, PexelsError> {
+        // Map aspect-ratio notation to Pexels API orientation values
+        let orientation = match orientation {
+            "9:16" | "portrait" | "vertical" => "portrait",
+            "16:9" | "landscape" | "horizontal" => "landscape",
+            "1:1" | "square" => "square",
+            _ => "portrait", // default to portrait for vertical video
+        };
         let url = format!(
             "https://api.pexels.com/videos/search?query={}&per_page=15&orientation={}&page={}",
             urlencoding::encode(query),

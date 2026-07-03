@@ -343,6 +343,12 @@ pub fn build_edl(
                 segments.push((entry.start, entry.end, entry.text.clone()));
                 total_duration += entry.duration;
             }
+            // Re-sort selected segments by start time so the output is
+            // chronological, not in score order. Without this, the rendered
+            // video jumps around chronologically.
+            segments.sort_by(|a, b| {
+                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         "remove" => {
             for entry in analysis {
@@ -492,6 +498,57 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].2, "keep this");
         assert_eq!(segments[1].2, "also keep");
+    }
+
+    #[test]
+    fn test_build_edl_keep_strategy_chronological_order() {
+        // Segments with different scores and out-of-order start times.
+        // The "keep" strategy selects by score, but the output must be
+        // chronological (by start time) so the rendered video doesn't jump.
+        let analysis = vec![
+            SrtAnalysisEntry {
+                text: "low score early".to_string(),
+                start: 0.0,
+                end: 2.0,
+                duration: 2.0,
+                word_count: 3,
+                filler_count: 0,
+                filler_ratio: 0.0,
+                keywords_found: vec![],
+                keywords_score: 0,
+                keep: true,
+            },
+            SrtAnalysisEntry {
+                text: "high score late".to_string(),
+                start: 10.0,
+                end: 12.0,
+                duration: 2.0,
+                word_count: 3,
+                filler_count: 0,
+                filler_ratio: 0.0,
+                keywords_found: vec!["ai".to_string()],
+                keywords_score: 5,
+                keep: true,
+            },
+            SrtAnalysisEntry {
+                text: "medium score mid".to_string(),
+                start: 5.0,
+                end: 7.0,
+                duration: 2.0,
+                word_count: 3,
+                filler_count: 0,
+                filler_ratio: 0.0,
+                keywords_found: vec!["ai".to_string()],
+                keywords_score: 2,
+                keep: true,
+            },
+        ];
+        let segments = build_edl(&analysis, "keep", Some(10.0), 120);
+        assert_eq!(segments.len(), 3);
+        // Output must be sorted by start time, not by score
+        assert_eq!(segments[0].0, 0.0);  // start=0
+        assert_eq!(segments[1].0, 5.0);  // start=5
+        assert_eq!(segments[2].0, 10.0); // start=10
     }
 
     #[test]

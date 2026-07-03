@@ -4,16 +4,43 @@ use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct VoiceProfile {
+    /// Profile ID. Accepts "id" or legacy "profile_id" key.
+    #[serde(default, alias = "profile_id")]
     pub id: String,
+    #[serde(default = "default_provider")]
     pub provider: String,
+    #[serde(default = "default_mode")]
     pub mode: String,
+    #[serde(default)]
     pub model: String,
+    #[serde(default)]
     pub ref_audio: String,
+    #[serde(default)]
     pub ref_text: String,
+    #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default)]
     pub description: Option<String>,
+    #[serde(default = "default_sample_rate")]
     pub sample_rate: u32,
+    #[serde(default = "default_created_at")]
     pub created_at: String,
+}
+
+fn default_provider() -> String {
+    "faster-qwen3-tts".to_string()
+}
+fn default_mode() -> String {
+    "clone".to_string()
+}
+fn default_language() -> String {
+    "English".to_string()
+}
+fn default_sample_rate() -> u32 {
+    24000
+}
+fn default_created_at() -> String {
+    chrono::Utc::now().to_rfc3339()
 }
 
 pub struct VoiceProfileRegistry {

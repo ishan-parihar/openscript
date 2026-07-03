@@ -404,11 +404,12 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "music.assign",
-            "description": "Assign background music to the timeline's music track. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Returns: event_id, start_ms, end_ms.",
+            "description": "Assign background music to the timeline's music track. Requires a music file path — use music.search first to find tracks, then pass the path here. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Returns: event_id, start_ms, end_ms, asset_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "timeline_path": {"type": "string", "description": "Path to timeline JSON"},
+                    "path": {"type": "string", "description": "Path to the music audio file (MP3/WAV). Use music.search to find tracks and get their path."},
                     "mood": {"type": "string", "default": "neutral", "description": "Emotional mood matching content tone"},
                     "energy": {"type": "string", "default": "medium", "description": "Intensity level"},
                     "start_ms": {"type": "integer", "default": 0, "description": "Music start position on timeline"},
@@ -416,7 +417,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "gain_db": {"type": "number", "default": -12.0, "description": "Background music volume in dB (lower = quieter behind voice)"},
                     "ducking": {"type": "boolean", "default": true, "description": "Automatically lower music during dialogue/voiceover sections"}
                 },
-                "required": ["timeline_path"],
+                "required": ["timeline_path", "path"],
                 "additionalProperties": false
             }
         },
@@ -2082,12 +2083,21 @@ async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Valu
 
 async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path = extract_str(&args, "timeline_path")?;
+    let music_path = extract_str(&args, "path")?;
     let mood = default_str(&args, "mood", "neutral");
     let energy = default_str(&args, "energy", "medium");
     let start_ms = default_i64(&args, "start_ms", 0);
     let end_ms = default_opt_i64(&args, "end_ms");
     let gain_db = default_f64(&args, "gain_db", -12.0);
     let ducking = default_bool(&args, "ducking", true);
+
+    // Validate the music file exists
+    if !Path::new(music_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Music file not found: {}. Use music.search to find tracks and get their path.",
+            music_path
+        )));
+    }
 
     let mut timeline = Timeline::load(timeline_path)?;
 
@@ -2101,7 +2111,7 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
 
     let event = openscript_core::timeline::TimelineEvent {
         id: event_id.clone(),
-        asset_id: "music_bg".to_string(),
+        asset_id: event_id.clone(),
         start_ms: start_ms,
         end_ms: end,
         offset_ms: 0,
@@ -2127,12 +2137,16 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
         },
     };
 
+    // Register the music asset path so render_from_timeline can find it
+    timeline.add_asset("music", event_id.clone(), json!({"path": music_path}));
+
     timeline.add_track_event(TrackType::Music, event);
     timeline.save(timeline_path)?;
 
     Ok(json!({
         "status": "assigned",
         "event_id": event_id,
+        "asset_path": music_path,
         "start_ms": start_ms,
         "end_ms": end,
         "timeline_path": timeline_path,
@@ -2292,7 +2306,6 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
 
     let resolved_path = asset_path.unwrap_or_else(|| {
         let cache_dir = "mcp/assets/broll_cache";
-        let candidate = format!("{}/{}_*.mp4", cache_dir, concept.replace(' ', "_"));
         if let Ok(entries) = std::fs::read_dir(cache_dir) {
             for entry in entries.filter_map(|e| e.ok()) {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -2301,13 +2314,20 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
                 }
             }
         }
-        candidate
+        // No match found — return empty string so the existence check below catches it
+        String::new()
     });
 
-    let asset_id = if resolved_path.contains("placeholder") || !std::path::Path::new(&resolved_path).exists() {
-        "placeholder".to_string()
+    // If the resolved path doesn't exist on disk, use "placeholder" so the
+    // render pipeline skips this event instead of crashing ffmpeg with a
+    // glob pattern or non-existent path.
+    let (asset_id, asset_registry_path) = if resolved_path.is_empty()
+        || resolved_path.contains("placeholder")
+        || !std::path::Path::new(&resolved_path).exists()
+    {
+        ("placeholder".to_string(), "placeholder".to_string())
     } else {
-        resolved_path.clone()
+        (resolved_path.clone(), resolved_path.clone())
     };
 
     let event = openscript_core::timeline::TimelineEvent {
@@ -2327,7 +2347,7 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
         }),
         kind: openscript_core::timeline::EventKind::Broll {
             concept: concept.to_string(),
-            source_provider: resolved_path.clone(),
+            source_provider: asset_id.clone(),
             transition_style,
             crop_mode,
             orientation: "9:16".into(),
@@ -2336,14 +2356,14 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
     };
 
     timeline.add_track_event(TrackType::Broll, event);
-    timeline.add_asset("broll", event_id.clone(), json!({"path": resolved_path}));
+    timeline.add_asset("broll", event_id.clone(), json!({"path": asset_registry_path}));
     timeline.save(timeline_path)?;
 
     Ok(json!({
         "status": "assigned",
         "event_id": event_id,
         "asset_id": asset_id,
-        "asset_path": resolved_path,
+        "asset_path": asset_registry_path,
         "position_ms": position_ms,
         "duration_ms": duration_ms,
         "timeline_path": timeline_path,
@@ -3308,23 +3328,47 @@ async fn handle_reelize_timeline(
     report_progress(55.0, 100.0, "Step 5/7: Assigning music and SFX...").await.ok();
 
     if music_enabled {
-        let music_args = json!({
-            "timeline_path": &timeline_path,
+        // Search for a matching music track first, then pass its path to music.assign
+        let music_search_args = json!({
             "mood": music_mood,
             "energy": music_energy,
-            "gain_db": music_gain_db,
-            "ducking": true,
+            "limit": 1,
         });
-        let music_result = handle_music_assign(music_args).await;
-        match music_result {
-            Ok(_r) => {
-                if let Ok(t) = Timeline::load(&timeline_path) {
-                    let music_count = t.tracks.get(&TrackType::Music)
-                        .map(|v| v.len()).unwrap_or(0);
-                    report_progress(60.0, 100.0, &format!("Music assigned ({} track(s))", music_count)).await.ok();
-                }
+        let music_path = match handle_music_search(music_search_args).await {
+            Ok(r) => r.get("results")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|first| first.get("path"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string()),
+            Err(e) => {
+                warnings.push(format!("Music search failed: {}", e));
+                None
             }
-            Err(e) => warnings.push(format!("Music assign skipped: {}", e)),
+        };
+
+        if let Some(path) = music_path {
+            let music_args = json!({
+                "timeline_path": &timeline_path,
+                "path": path,
+                "mood": music_mood,
+                "energy": music_energy,
+                "gain_db": music_gain_db,
+                "ducking": true,
+            });
+            let music_result = handle_music_assign(music_args).await;
+            match music_result {
+                Ok(_r) => {
+                    if let Ok(t) = Timeline::load(&timeline_path) {
+                        let music_count = t.tracks.get(&TrackType::Music)
+                            .map(|v| v.len()).unwrap_or(0);
+                        report_progress(60.0, 100.0, &format!("Music assigned ({} track(s))", music_count)).await.ok();
+                    }
+                }
+                Err(e) => warnings.push(format!("Music assign skipped: {}", e)),
+            }
+        } else {
+            warnings.push("No music track found in index — skipping music assignment".to_string());
         }
     }
 
@@ -4462,16 +4506,36 @@ async fn handle_reelize_direct(
         let gain_db = default_f64(music, "gain_db", -12.0);
         let ducking = default_bool(music, "duck_under_dialogue", true);
 
-        let music_result = handle_music_assign(json!({
-            "timeline_path": &timeline_path,
+        // Search for a matching music track, then pass its path
+        let music_path = match handle_music_search(json!({
             "mood": mood,
             "energy": energy,
-            "gain_db": gain_db,
-            "ducking": ducking,
-        }))
-        .await;
-        if let Err(e) = music_result {
-            warnings.push(format!("music assign failed: {}", e));
+            "limit": 1,
+        })).await {
+            Ok(r) => r.get("results")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|first| first.get("path"))
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string()),
+            Err(_) => None,
+        };
+
+        if let Some(path) = music_path {
+            let music_result = handle_music_assign(json!({
+                "timeline_path": &timeline_path,
+                "path": path,
+                "mood": mood,
+                "energy": energy,
+                "gain_db": gain_db,
+                "ducking": ducking,
+            }))
+            .await;
+            if let Err(e) = music_result {
+                warnings.push(format!("music assign failed: {}", e));
+            }
+        } else {
+            warnings.push("No music track found in index — skipping music assignment".to_string());
         }
     }
 

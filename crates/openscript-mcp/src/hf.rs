@@ -231,6 +231,12 @@ pub enum HfError {
     Timeout(u64),
     #[error("Failed to wait for CLI process: {0}")]
     Wait(String),
+    #[error("Invalid argument: {0}")]
+    InvalidArg(String),
+    #[error("IO error: {0}")]
+    Io(String),
+    #[error("Project directory not found: {0}")]
+    ProjectNotFound(String),
 }
 
 impl serde::Serialize for HfError {
@@ -364,10 +370,10 @@ pub async fn handle_hf_classify(args: Value) -> Result<Value, HfError> {
     let source_path = args
         .get("source_path")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| HfError::Spawn("source_path is required".to_string()))?;
+        .ok_or_else(|| HfError::InvalidArg("source_path is required".to_string()))?;
 
     let src = std::fs::read_to_string(source_path)
-        .map_err(|e| HfError::Spawn(format!("Cannot read {}: {}", source_path, e)))?;
+        .map_err(|e| HfError::Io(format!("Cannot read {}: {}", source_path, e)))?;
 
     let findings = lint_remotion_source(&src);
     let has_blockers = findings.iter().any(|f| f.severity == "blocker");
@@ -456,7 +462,7 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
         // auto — classify if source_path is provided
         if let Some(sp) = source_path {
             let src = std::fs::read_to_string(sp)
-                .map_err(|e| HfError::Spawn(format!("Cannot read {}: {}", sp, e)))?;
+                .map_err(|e| HfError::Io(format!("Cannot read {}: {}", sp, e)))?;
             let findings = lint_remotion_source(&src);
             let has_blockers = findings.iter().any(|f| f.severity == "blocker");
             let recommendation = if has_blockers { "remotion-interop" } else { "hf-native" };
@@ -587,7 +593,7 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
                 "stderr": String::from_utf8_lossy(&output.stderr),
             }))
         }
-        _ => Err(HfError::Spawn(format!("Unknown engine: {}", engine))),
+        _ => Err(HfError::InvalidArg(format!("Unknown engine: {}", engine))),
     }
 }
 
