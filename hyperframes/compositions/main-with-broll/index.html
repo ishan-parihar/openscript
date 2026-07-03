@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en"
+  data-composition-id="main-with-broll"
+  data-start="0"
+  data-duration="30"
+  data-fps="30"
+  data-width="1080"
+  data-height="1920"
+>
+<head>
+  <meta charset="utf-8" />
+  <title>MainWithBroll — HyperFrames port of remotion/src/compositions/MainWithBroll.tsx</title>
+  <!--
+    Ported from remotion/src/compositions/MainWithBroll.tsx via the
+    remotion-to-hyperframes skill. See hyperframes/TRANSLATION_NOTES.md
+    for the translation gaps (none blocking — the source is clean:
+    no useState, no useEffect, no third-party React UI).
+  -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; background: #000; }
+    #stage {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      background: #000;
+      overflow: hidden;
+    }
+    .video-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0; /* GSAP sets the 'from' state; CSS keeps it hidden until the timeline runs */
+    }
+    .broll-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <!--
+      Main video layer — shows during non-broll segments.
+      The src is set by the EDL v2 compiler (edl_v2_to_html.ts) or
+      overridden here for the standalone example.
+    -->
+    <video
+      class="video-layer"
+      id="main-video"
+      data-start="0"
+      data-duration="30"
+      data-track-index="0"
+      src="../assets/main.mp4"
+      muted
+      playsinline
+    ></video>
+
+    <!--
+      B-roll layer — crossfades in/out over the main video.
+      The example shows a single b-roll clip from 10s–15s with a 6-frame
+      (0.2s) crossfade in and out, matching the Remotion defaults.
+    -->
+    <video
+      class="broll-layer"
+      id="broll-0"
+      data-start="10"
+      data-duration="5"
+      data-track-index="1"
+      src="../assets/broll-0.mp4"
+      muted
+      playsinline
+    ></video>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script>
+    // Single paused GSAP timeline — HF's seek-driven runtime scrubs this.
+    // Every Remotion useCurrentFrame() derivation becomes a tween here.
+    const tl = gsap.timeline({ paused: true });
+
+    // Main video: visible from 0s, stays visible throughout (opacity 1).
+    // In the Remotion source, MainVideoLayer uses <Sequence> to show/hide
+    // segments. In HF we use opacity tweens on a single element.
+    tl.to("#main-video", { opacity: 1, duration: 0.001, ease: "none" }, 0);
+
+    // B-roll crossfade: opacity 0 → 1 over 0.2s (6 frames @ 30fps), hold, then 1 → 0.
+    // Matches CrossFadeVideo in MainWithBroll.tsx with transitionIn=6, transitionOut=6.
+    tl.to("#broll-0", { opacity: 1, duration: 0.2, ease: "power2.inOut" }, 10)
+      .to("#broll-0", { opacity: 1, duration: 4.6, ease: "none" }, 10.2)
+      .to("#broll-0", { opacity: 0, duration: 0.2, ease: "power2.inOut" }, 14.8);
+
+    // Register with HF's runtime
+    window.__timelines = window.__timelines || {};
+    window.__timelines["main-with-broll"] = tl;
+  </script>
+</body>
+</html>
