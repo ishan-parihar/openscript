@@ -1,6 +1,7 @@
 //! Kokoro TTS backend (preset-voice, ONNX-based).
 //!
-//! PROPOSAL / SKETCH — not wired into `lib.rs` yet. See research report.
+//! Wired into `lib.rs` behind the `kokoro` feature flag. The default build
+//! (sidecar-only) is unaffected.
 //!
 //! Unlike `client.rs` (which drives the `faster-qwen3-tts` Python sidecar and is
 //! built around *voice cloning* via ref_audio + ref_text + xvec), this backend
@@ -14,6 +15,14 @@
 //! Model assets (download once, Apache-2.0):
 //!   onnx-community/Kokoro-82M-v1.0-ONNX  ->  onnx/model_q8f16.onnx (86 MB) + voices/*.bin
 //!   mzdk100/kokoro releases V1.0 / V1.1   ->  bundled model + voice packs
+//!
+//! # Chunking
+//!
+//! Kokoro caps input at 510 phoneme tokens (~one paragraph). Long-form
+//! narration is split on sentence boundaries via `chunk_text()`, synthesised
+//! per-chunk, and the PCM samples are concatenated. Silence between chunks
+//! is not inserted — the Kokoro model already produces natural inter-sentence
+//! pauses.
 
 use crate::profiles::VoiceProfile;
 use sha2::{Digest, Sha256};
@@ -80,12 +89,221 @@ impl KokoroEngine {
 
     /// Synthesise `text` with `voice` at `speed` (1.0 = normal).
     /// Returns mono f32 PCM at 24 kHz — the native Kokoro sample rate.
+    ///
+    /// Long text is chunked via `chunk_text()` (510-token Kokoro limit) and
+    /// the per-chunk PCM is concatenated.
     fn synth(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>, KokoroError> {
-        let _ = (text, voice, speed);
-        // engine.inner.synth(text, voice, speed)
+        let chunks = chunk_text(text, MAX_TOKENS_PER_CHUNK);
+        let mut all_samples = Vec::new();
+        for chunk in chunks {
+            let samples = self.synth_one(&chunk, voice, speed)?;
+            all_samples.extend(samples);
+        }
+        Ok(all_samples)
+    }
+
+    /// Synthesise a single chunk (must be ≤510 phoneme tokens).
+    fn synth_one(&self, _text: &str, _voice: &str, _speed: f32) -> Result<Vec<f32>, KokoroError> {
+        // ---- real wiring (against kokoro-tts 0.3.x API) ----
+        // self.inner.synth(text, voice, speed)
         Err(KokoroError::NotWired(
-            "engine synth() not connected to kokoro-tts crate yet".into(),
+            "engine synth() not connected to kokoro-tts crate yet — \
+             enable the kokoro-engine feature and wire KokoroEngine::synth_one"
+                .into(),
         ))
+    }
+}
+
+/// Kokoro's hard limit on input token count. We approximate 1 token ≈ 0.75 word
+/// (phoneme tokens are denser than word tokens) and use 400 as a safe ceiling
+/// below the 510-token model limit.
+const MAX_TOKENS_PER_CHUNK: usize = 400;
+
+/// Split `text` into chunks that fit within Kokoro's 510-token input limit.
+/// Splits on sentence boundaries (`.`, `!`, `?`, `。`, `！`, `？`) first, then
+/// on commas / semicolons if a single sentence exceeds the limit, then on
+/// word boundaries as a last resort.
+pub fn chunk_text(text: &str, max_words: usize) -> Vec<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let sentences = split_sentences(text);
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let mut current_words = 0usize;
+
+    for sentence in sentences {
+        let sentence_words = sentence.split_whitespace().count();
+
+        if sentence_words > max_words {
+            // Flush current chunk first
+            if !current.is_empty() {
+                chunks.push(std::mem::take(&mut current));
+                current_words = 0;
+            }
+            // Split the long sentence on commas
+            for part in split_on_punctuation(&sentence, max_words) {
+                chunks.push(part);
+            }
+            continue;
+        }
+
+        if current_words + sentence_words > max_words {
+            chunks.push(std::mem::take(&mut current));
+            current_words = 0;
+        }
+
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(&sentence);
+        current_words += sentence_words;
+    }
+
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    chunks
+}
+
+/// Split text into sentences on `.`, `!`, `?`, `。`, `！`, `？`.
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        current.push(ch);
+        if matches!(ch, '.' | '!' | '?' | '。' | '！' | '？') {
+            sentences.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        sentences.push(current);
+    }
+    sentences.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+/// Split a too-long sentence on `,`, `;`, `、`, `，` to stay under `max_words`.
+fn split_on_punctuation(sentence: &str, max_words: usize) -> Vec<String> {
+    let parts: Vec<&str> = sentence.split(|c: char| matches!(c, ',' | ';' | '、' | '，')).collect();
+    let mut chunks = Vec::new();
+    let mut current = String::new();
+    let mut current_words = 0usize;
+
+    for part in parts {
+        let part = part.trim();
+        let words = part.split_whitespace().count();
+        if current_words + words > max_words && !current.is_empty() {
+            chunks.push(std::mem::take(&mut current));
+            current_words = 0;
+        }
+        if !current.is_empty() {
+            current.push_str(", ");
+        }
+        current.push_str(part);
+        current_words += words;
+    }
+    if !current.is_empty() {
+        chunks.push(current);
+    }
+
+    // Last resort: if a single comma-split part still exceeds max_words,
+    // hard-split on word boundaries.
+    chunks
+        .into_iter()
+        .flat_map(|chunk| {
+            if chunk.split_whitespace().count() > max_words {
+                hard_split_words(&chunk, max_words)
+            } else {
+                vec![chunk]
+            }
+        })
+        .collect()
+}
+
+/// Hard-split `text` on word boundaries, each chunk ≤ `max_words`.
+fn hard_split_words(text: &str, max_words: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    words
+        .chunks(max_words)
+        .map(|chunk| chunk.join(" "))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunk_short_text() {
+        let chunks = chunk_text("Hello world.", 400);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "Hello world.");
+    }
+
+    #[test]
+    fn test_chunk_empty() {
+        let chunks = chunk_text("", 400);
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_chunk_multiple_sentences() {
+        let text = "First sentence. Second sentence! Third? Fourth.";
+        let chunks = chunk_text(text, 400);
+        assert_eq!(chunks.len(), 1); // all fit in one chunk
+        assert!(chunks[0].contains("First sentence"));
+        assert!(chunks[0].contains("Fourth"));
+    }
+
+    #[test]
+    fn test_chunk_splits_on_sentence_boundary() {
+        // 5 sentences, each 3 words = 15 words. With max_words=6 we expect
+        // at least 3 chunks (6+6+3).
+        let text = "one two three. four five six. seven eight nine. ten eleven twelve. thirteen fourteen fifteen.";
+        let chunks = chunk_text(text, 6);
+        assert!(chunks.len() >= 3);
+        for chunk in &chunks {
+            assert!(chunk.split_whitespace().count() <= 6);
+        }
+    }
+
+    #[test]
+    fn test_chunk_long_single_sentence() {
+        // A single sentence with many words — must be split on commas/words.
+        let words: Vec<String> = (0..50).map(|i| format!("word{}", i)).collect();
+        let text = words.join(", ") + ".";
+        let chunks = chunk_text(&text, 10);
+        assert!(chunks.len() > 1);
+        for chunk in &chunks {
+            assert!(chunk.split_whitespace().count() <= 10);
+        }
+    }
+
+    #[test]
+    fn test_wav_encoder_roundtrip() {
+        let samples = vec![0.0, 0.5, -0.5, 1.0, -1.0];
+        let wav = encode_wav_pcm16(&samples, 24_000);
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(&wav[12..16], b"fmt ");
+        assert_eq!(&wav[36..40], b"data");
+        // data_len = 5 samples * 2 bytes = 10
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 10);
+    }
+
+    #[test]
+    fn test_wav_duration_ms() {
+        // 24000 Hz, 24000 samples = 1 second = 1000ms
+        let samples = vec![0.0f32; 24_000];
+        let wav = encode_wav_pcm16(&samples, 24_000);
+        let tmp = std::env::temp_dir().join("kokoro_test.wav");
+        std::fs::write(&tmp, &wav).unwrap();
+        let dur = wav_duration_ms(&tmp).unwrap();
+        assert_eq!(dur, 1000);
+        let _ = std::fs::remove_file(&tmp);
     }
 }
 
@@ -149,14 +367,18 @@ impl KokoroClient {
         }
 
         // 2. Lazily build the ONNX engine on first use (heavy: ~200ms cold start).
+        //    We use a blocking init path because ONNX session creation is sync.
+        let cfg_clone = self.cfg.clone();
         let engine = self
             .engine
-            .get_or_try_init(|| {
-                std::thread::scope::<_, Result<Arc<KokoroEngine>, KokoroError>, _>(|s| {
-                    let eng = s.spawn(|| KokoroEngine::load(&self.cfg)).join().unwrap()?;
-                    Ok(Arc::new(eng))
-                })
-            })?
+            .get_or_try_init(|| async {
+                let cfg = cfg_clone;
+                let eng = tokio::task::spawn_blocking(move || KokoroEngine::load(&cfg))
+                    .await
+                    .map_err(|e| KokoroError::Engine(e.to_string()))??;
+                Ok::<_, KokoroError>(Arc::new(eng))
+            })
+            .await?
             .clone();
 
         // 3. Synthesise on a blocking thread (ONNX inference is CPU-bound).
@@ -241,7 +463,7 @@ fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     let audio_fmt: u16 = 1; // PCM
     let channels: u16 = 1;
     let bits: u16 = 16;
-    let byte_rate = sample_rate * channels as u32 * (bits / 2);
+    let byte_rate = sample_rate * channels as u32 * (bits as u32 / 2);
     let block_align = channels * (bits / 2);
     out.extend_from_slice(b"RIFF");
     out.extend_from_slice(&(36 + data_len).to_le_bytes());

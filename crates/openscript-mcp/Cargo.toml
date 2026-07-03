@@ -7,6 +7,13 @@ edition = "2021"
 name = "mcp-server"
 path = "src/bin/mcp-server.rs"
 
+[features]
+default = ["sidecar"]
+sidecar = []
+# Enables native Kokoro TTS backend (preset-voice, ONNX-based). When enabled,
+# the TTS tool layer routes requests to Kokoro for profiles with provider="kokoro".
+kokoro = ["openscript-tts/kokoro"]
+
 [dependencies]
 openscript-core = { path = "../openscript-core" }
 openscript-ffmpeg = { path = "../openscript-ffmpeg" }

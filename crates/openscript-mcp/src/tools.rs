@@ -1695,6 +1695,52 @@ async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Valu
         std::fs::create_dir_all(parent).ok();
     }
 
+    // Route to Kokoro backend if the profile's provider is "kokoro" and the
+    // feature is enabled. Otherwise fall through to the sidecar (faster-qwen3-tts).
+    #[cfg(feature = "kokoro")]
+    if profile.provider == "kokoro" {
+        use openscript_tts::kokoro::{KokoroClient, KokoroConfig};
+
+        let model_dir = std::env::var("KOKORO_MODEL_DIR")
+            .unwrap_or_else(|_| "mcp/assets/kokoro".to_string());
+        let model_variant = std::env::var("KOKORO_MODEL_VARIANT")
+            .unwrap_or_else(|_| "model_q8f16.onnx".to_string());
+        let default_voice = std::env::var("KOKORO_DEFAULT_VOICE")
+            .unwrap_or_else(|_| "af_heart".to_string());
+
+        let cfg = KokoroConfig {
+            model_dir: std::path::PathBuf::from(&model_dir),
+            model_variant,
+            default_voice,
+            cache_dir: std::path::PathBuf::from(&cache_dir),
+        };
+        let kokoro_client = KokoroClient::new(cfg);
+
+        let result = kokoro_client
+            .generate(voice_profile_id, text, output_path, speed, pitch, volume, &format, &profile)
+            .await
+            .map_err(|e| ToolError::Tts(e.to_string()))?;
+
+        report_progress(100.0, 100.0, "Speech generated (Kokoro)").await.ok();
+
+        return Ok(json!({
+            "status": "generated",
+            "backend": "kokoro",
+            "output_path": result.output_path,
+            "duration_ms": result.duration_ms,
+            "cached": result.cached,
+        }));
+    }
+
+    #[cfg(not(feature = "kokoro"))]
+    if profile.provider == "kokoro" {
+        return Err(ToolError::Tts(
+            "Voice profile uses Kokoro backend but the kokoro feature is not enabled. \
+             Rebuild openscript-mcp with --features kokoro."
+                .to_string(),
+        ));
+    }
+
     let client = TtsClient::new(&tts_url, &cache_dir);
 
     // Health check — fail fast if TTS sidecar is not running
@@ -1715,6 +1761,7 @@ async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Valu
 
     Ok(json!({
         "status": "generated",
+        "backend": "sidecar",
         "output_path": result.output_path,
         "duration_ms": result.duration_ms,
         "cached": result.cached,

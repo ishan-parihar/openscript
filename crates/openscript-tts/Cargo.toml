@@ -3,6 +3,16 @@ name = "openscript-tts"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["sidecar"]
+sidecar = []
+# Native Kokoro TTS backend (preset-voice, ONNX-based). When enabled, the
+# `kokoro` module is compiled in and the MCP TTS layer can route requests to
+# Kokoro for supported languages (en, zh, ja, etc.). The actual ONNX engine
+# crate (`kokoro-tts`) is NOT wired yet — see `kokoro.rs::KokoroEngine::synth_one`.
+# This feature flag makes the module available; the engine wiring is a follow-up.
+kokoro = []
+
 [dependencies]
 openscript-core = { path = "../openscript-core" }
 reqwest = { workspace = true }
