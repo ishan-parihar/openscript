@@ -98,10 +98,6 @@ impl ProgressWriter {
         out.flush().await?;
         Ok(())
     }
-
-    pub fn stdout(&self) -> Arc<Mutex<tokio::io::Stdout>> {
-        self.stdout.clone()
-    }
 }
 
 // Global progress writer — set once at startup
@@ -317,7 +313,6 @@ pub async fn run() -> Result<(), std::io::Error> {
 
     let mut stdin_reader = stdin_reader;
     let mut stdout_writer = stdout();
-    let _use_content_length = true;
 
     loop {
         let (message, msg_use_cl) = match read_message(&mut stdin_reader).await {

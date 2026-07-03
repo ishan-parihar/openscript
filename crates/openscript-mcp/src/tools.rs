@@ -6,7 +6,6 @@ use serde_json::json;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
-use tracing;
 
 use crate::error::ToolError;
 use crate::server::report_progress;

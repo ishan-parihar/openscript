@@ -95,23 +95,6 @@ pub fn detect_filler_words(
     }
 }
 
-/// Detect potential speaker changes based on text patterns.
-/// This is a heuristic — true speaker detection requires audio analysis.
-pub fn detect_speaker_changes(segments: &[(String, String)]) -> Vec<(String, String)> {
-    segments
-        .iter()
-        .map(|(id, text)| {
-            let trimmed = text.trim();
-            if trimmed.starts_with('?') || trimmed.starts_with("Wait") || trimmed.starts_with("Hmm")
-            {
-                (id.clone(), "Speaker B".to_string())
-            } else {
-                (id.clone(), "Speaker A".to_string())
-            }
-        })
-        .collect()
-}
-
 /// Remove filler words from text, returning cleaned text.
 pub fn remove_filler_words(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
@@ -157,16 +140,5 @@ mod tests {
         let text = "um well I think like basically yes";
         let cleaned = remove_filler_words(text);
         assert_eq!(cleaned, "I think yes");
-    }
-
-    #[test]
-    fn test_detect_speaker_changes() {
-        let segments = vec![
-            ("seg_001".to_string(), "Hello world".to_string()),
-            ("seg_002".to_string(), "?What do you think".to_string()),
-        ];
-        let speakers = detect_speaker_changes(&segments);
-        assert_eq!(speakers[0].1, "Speaker A");
-        assert_eq!(speakers[1].1, "Speaker B");
     }
 }

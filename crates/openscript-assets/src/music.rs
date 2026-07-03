@@ -1,27 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
-
-fn probe_duration_ms(path: &str) -> Option<i64> {
-    let output = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-            path,
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let dur_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let dur_secs: f64 = dur_str.parse().ok()?;
-    Some((dur_secs * 1000.0).round() as i64)
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MusicAsset {
@@ -227,7 +205,7 @@ impl MusicIndex {
 
                             let path_str = path.to_string_lossy().to_lowercase();
                             let duration_ms =
-                                probe_duration_ms(&path.to_string_lossy()).unwrap_or(0);
+                                crate::probe_duration_ms(&path.to_string_lossy()).unwrap_or(0);
 
                             let mood = if path_str.contains("happy")
                                 || path_str.contains("joy")

@@ -14,7 +14,6 @@ sidecar = []
 kokoro = []
 
 [dependencies]
-openscript-core = { path = "../openscript-core" }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -22,5 +21,4 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
 hex = "0.4"
-chrono = { workspace = true }
 base64 = "0.22"
