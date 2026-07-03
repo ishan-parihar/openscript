@@ -8,9 +8,8 @@ default = ["sidecar"]
 sidecar = []
 # Native Kokoro TTS backend (preset-voice, ONNX-based). When enabled, the
 # `kokoro` module is compiled in and the MCP TTS layer can route requests to
-# Kokoro for supported languages (en, zh, ja, etc.). The actual ONNX engine
-# crate (`kokoro-tts`) is NOT wired yet — see `kokoro.rs::KokoroEngine::synth_one`.
-# This feature flag makes the module available; the engine wiring is a follow-up.
+# Kokoro for supported languages (en, zh, ja, etc.). Uses the kokoro-onnx
+# Python sidecar (mcp/scripts/kokoro_tts_sidecar.py) for ONNX inference.
 kokoro = []
 
 [dependencies]

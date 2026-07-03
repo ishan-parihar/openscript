@@ -58,11 +58,11 @@ pub struct KokoroClient {
     engine: tokio::sync::OnceCell<Arc<KokoroEngine>>,
 }
 
-// In the real implementation this wraps `kokoro_tts::Kokoro` (or an `ort::Session`
-// + phonemizer). Kept opaque here so the sketch compiles without the engine dep.
+// The engine shells out to the Python `kokoro-onnx` sidecar
+// (mcp/scripts/kokoro_tts_sidecar.py) for ONNX inference. This avoids
+// the need for a native Rust ONNX runtime dependency.
 struct KokoroEngine {
-    // e.g. kokoro_tts::Kokoro  — loaded model + voice registry
-    _inner: (),
+    cfg: KokoroConfig,
 }
 
 impl KokoroEngine {
@@ -75,16 +75,14 @@ impl KokoroEngine {
                 model_path.display()
             )));
         }
-        // ---- real wiring (illustrative, against kokoro-tts 0.3.x API) ----
-        // use kokoro_tts::{Kokoro, Config};
-        // let config = Config::builder()
-        //     .model_path(&model_path)
-        //     .voices_dir(cfg.model_dir.join("voices"))
-        //     .sample_rate(24_000)
-        //     .build()?;
-        // let engine = Kokoro::new(config)?;
-        // Ok(Self { inner: engine })
-        Ok(Self { _inner: () })
+        let voices_dir = cfg.model_dir.join("voices");
+        if !voices_dir.exists() {
+            return Err(KokoroError::AssetMissing(format!(
+                "Kokoro voices directory not found at {}",
+                voices_dir.display()
+            )));
+        }
+        Ok(Self { cfg: cfg.clone() })
     }
 
     /// Synthesise `text` with `voice` at `speed` (1.0 = normal).
@@ -103,15 +101,74 @@ impl KokoroEngine {
     }
 
     /// Synthesise a single chunk (must be ≤510 phoneme tokens).
-    fn synth_one(&self, _text: &str, _voice: &str, _speed: f32) -> Result<Vec<f32>, KokoroError> {
-        // ---- real wiring (against kokoro-tts 0.3.x API) ----
-        // self.inner.synth(text, voice, speed)
-        Err(KokoroError::NotWired(
-            "engine synth() not connected to kokoro-tts crate yet — \
-             enable the kokoro-engine feature and wire KokoroEngine::synth_one"
-                .into(),
-        ))
+    /// Shells out to the Python kokoro-onnx sidecar.
+    fn synth_one(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>, KokoroError> {
+        let model_path = self.cfg.model_dir.join("onnx").join("kokoro-v1.0.onnx");
+        let voices_file = self.cfg.model_dir.join("voices").join("voices-v1.0.bin");
+
+        // Use a temp file for the WAV output
+        let tmp = std::env::temp_dir().join(format!(
+            "kokoro_{}_{}.wav",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+
+        let sidecar_script = std::env::var("KOKORO_SIDECAR")
+            .unwrap_or_else(|_| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
+
+        let output = std::process::Command::new("python3")
+            .arg(&sidecar_script)
+            .arg("--text").arg(text)
+            .arg("--voice").arg(voice)
+            .arg("--speed").arg(speed.to_string())
+            .arg("--model").arg(&model_path)
+            .arg("--voices").arg(&voices_file)
+            .arg("--output").arg(&tmp)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .map_err(|e| KokoroError::Engine(format!("Failed to spawn kokoro sidecar: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let _ = std::fs::remove_file(&tmp);
+            return Err(KokoroError::Engine(format!(
+                "Kokoro sidecar failed: {}",
+                stderr
+            )));
+        }
+
+        // Read the WAV file and convert to f32 samples
+        let wav_bytes = std::fs::read(&tmp).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            KokoroError::Engine(format!("Failed to read sidecar output: {}", e))
+        })?;
+        let _ = std::fs::remove_file(&tmp);
+
+        // Parse WAV and extract f32 samples
+        let samples = wav_to_f32_samples(&wav_bytes)?;
+        Ok(samples)
     }
+}
+
+/// Parse a 16-bit PCM WAV file and return f32 samples in range [-1.0, 1.0].
+fn wav_to_f32_samples(wav: &[u8]) -> Result<Vec<f32>, KokoroError> {
+    if wav.len() < 44 || &wav[..4] != b"RIFF" {
+        return Err(KokoroError::Engine("Invalid WAV format".into()));
+    }
+    let data = &wav[44..];
+    let samples: Vec<f32> = data
+        .chunks_exact(2)
+        .map(|chunk| {
+            let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
+            sample as f32 / 32768.0
+        })
+        .collect();
+    Ok(samples)
 }
 
 /// Kokoro's hard limit on input token count. We approximate 1 token ≈ 0.75 word

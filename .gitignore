@@ -1,38 +1,21 @@
+# Existing
 target/
-third_party/
-*.onnx
-*.bin
-.venv/
-__pycache__/
+node_modules/
+third_party/faster-qwen3-tts/
+
+# Large model assets (download separately, don't commit)
+mcp/assets/kokoro/onnx/*.onnx
+mcp/assets/kokoro/voices/*.bin
+mcp/assets/background_cache/
+mcp/assets/broll_cache/
 artifacts/
 
-# Generated media outputs
-*.srt
-*.ass
-*.edl.json
-*.timeline.json
-*.wav
-*.mp4
-*.log
-
 # Python
+__pycache__/
 *.pyc
-.pytest_cache/
+.venv/
 
 # IDE
-.idea/
 .vscode/
+.idea/
 *.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# AI assistant working dirs
-.sisyphus/
-remotion/node_modules/
-.worktrees/
-.contexty
-.memsearch
-.hive
