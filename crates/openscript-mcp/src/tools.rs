@@ -5847,6 +5847,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let skip_stickers = default_bool(&args, "skip_stickers", false);
     let preview_mode = default_bool(&args, "preview_mode", false);
 
+    // Parse script for render config
+    let json_str = read_script_input(script_input)?;
+    let spec = parse_script(&json_str).map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
+
     report_progress(0.0, 100.0, "Phase 1/2: Building timeline...").await.ok();
 
     // Step 1: Build the timeline
@@ -5865,28 +5869,96 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
     report_progress(50.0, 100.0, "Phase 2/2: Rendering video...").await.ok();
 
-    // Step 2: Render the timeline
-    let render_result = handle_timeline_render(json!({
-        "timeline_path": timeline_path,
-        "output_path": output_path,
-        "preset": if preview_mode { "ultrafast" } else { "medium" },
-    })).await?;
+    // Step 2: Render using the from-scratch renderer (not the NLE timeline.render)
+    let manifest_path = timeline_result.get("voiceover_manifest")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let captions_path = timeline_result.get("captions_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let total_duration_ms = timeline_result.get("total_duration_ms")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
 
-    let status = render_result.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let file_size = render_result.get("file_size_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+    // Load manifest to get voiceover paths
+    let manifest: serde_json::Value = if !manifest_path.is_empty() {
+        serde_json::from_str(&std::fs::read_to_string(manifest_path)?)?
+    } else {
+        json!({"segments": []})
+    };
 
-    report_progress(100.0, 100.0, "Video created").await.ok();
+    let mut voiceover_paths: Vec<String> = Vec::new();
+    if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
+        for seg in segments {
+            if let Some(path) = seg.get("wav_path").and_then(|v| v.as_str()) {
+                voiceover_paths.push(path.to_string());
+            }
+        }
+    }
 
-    Ok(json!({
-        "status": status,
-        "output_path": output_path,
-        "file_size_bytes": file_size,
-        "timeline_path": timeline_path,
-        "voiceover_manifest": timeline_result.get("voiceover_manifest"),
-        "captions_path": timeline_result.get("captions_path"),
-        "total_duration_ms": timeline_result.get("total_duration_ms"),
-        "scene_count": timeline_result.get("scene_count"),
-        "speaker_count": timeline_result.get("speaker_count"),
-        "warnings": warnings,
-    }))
+    // Get background path from timeline
+    let timeline_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&timeline_path)?)?;
+    let bg_path = timeline_json
+        .get("assets")
+        .and_then(|a| a.get("broll"))
+        .and_then(|b| b.get("broll_bg"))
+        .and_then(|p| p.get("path"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("mcp/assets/backgrounds/procedural_01.mp4");
+
+    // Get music path
+    let music_path = timeline_json
+        .get("assets")
+        .and_then(|a| a.get("music"))
+        .and_then(|m| m.get("music_bg"))
+        .and_then(|p| p.get("path"))
+        .and_then(|p| p.as_str())
+        .map(|s| s.to_string());
+
+    // Build render spec
+    use openscript_ffmpeg::script_render::{render_from_script, ScriptRenderSpec};
+    let render_spec = ScriptRenderSpec {
+        background_path: bg_path.to_string(),
+        voiceover_paths,
+        music_path: music_path.filter(|p| std::path::Path::new(p).exists()),
+        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-18.0) / 20.0),
+        ducking: spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
+        ducking_depth_db: spec.music.as_ref().map(|m| m.ducking_depth_db).unwrap_or(12.0),
+        captions_path: if std::path::Path::new(captions_path).exists() {
+            Some(captions_path.to_string())
+        } else {
+            None
+        },
+        width: spec.meta.width,
+        height: spec.meta.height,
+        fps: spec.meta.fps,
+        output_path: output_path.to_string(),
+        crf: if preview_mode { 28 } else { spec.output.crf },
+        preset: if preview_mode { "ultrafast".to_string() } else { "fast".to_string() },
+        total_duration_s: total_duration_ms as f64 / 1000.0,
+    };
+
+    let render_result = render_from_script(&render_spec).await;
+
+    match render_result {
+        Ok(out_path) => {
+            let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
+            report_progress(100.0, 100.0, "Video created").await.ok();
+            Ok(json!({
+                "status": "rendered",
+                "output_path": out_path,
+                "file_size_bytes": file_size,
+                "timeline_path": timeline_path,
+                "voiceover_manifest": manifest_path,
+                "captions_path": captions_path,
+                "total_duration_ms": total_duration_ms,
+                "scene_count": timeline_result.get("scene_count"),
+                "speaker_count": timeline_result.get("speaker_count"),
+                "warnings": warnings,
+            }))
+        }
+        Err(e) => {
+            Err(ToolError::Ffmpeg(format!("Render failed: {}", e)))
+        }
+    }
 }

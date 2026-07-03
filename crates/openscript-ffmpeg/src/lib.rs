@@ -1,6 +1,7 @@
 pub mod filter_graph;
 pub mod probe;
 pub mod render;
+pub mod script_render;
 pub mod subtitles;
 
 #[derive(Debug, thiserror::Error)]
