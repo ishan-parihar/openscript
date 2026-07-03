@@ -1698,6 +1698,7 @@ async fn handle_voice_profile_remove(
 // Routes to Kokoro (if profile.provider == "kokoro" and feature enabled) or sidecar.
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 struct TtsGenResult {
     output_path: String,
     duration_ms: i64,
