@@ -26,7 +26,6 @@ enum JsonRpcMessage {
         #[allow(dead_code)]
         jsonrpc: String,
         method: String,
-        #[allow(dead_code)]
         params: Option<serde_json::Value>,
     },
 }
@@ -150,12 +149,21 @@ fn handle_initialize() -> Result<serde_json::Value, ToolError> {
             "tools": {
                 "listChanged": false
             },
-            "logging": {}
+            "logging": {},
+            "prompts": {
+                "listChanged": false
+            },
+            "resources": {
+                "listChanged": false,
+                "subscribe": false
+            },
+            "experimental": {}
         },
         "serverInfo": {
             "name": "openscript-rs",
-            "version": "0.2.0"
-        }
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "instructions": "OpenScript MCP server — 49 tools for AI-directed video editing. Use realize.timeline for one-call pipeline (raw video -> reel), or realize.brief + realize.direct for two-step control. HyperFrames (hf.*) tools for HTML+GSAP compositions; composition.render as the unified dispatcher. TTS routing: profiles with provider='kokoro' use native Kokoro, others use the faster-qwen3-tts sidecar."
     }))
 }
 
@@ -347,8 +355,12 @@ fn is_protocol_error(err: &ToolError) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Main server loop
+// Main server loop — concurrent with cancellation support
 // ---------------------------------------------------------------------------
+
+/// Track in-flight tool call tasks for cancellation.
+/// Maps request ID → AbortHandle.
+type TaskMap = Arc<Mutex<std::collections::HashMap<serde_json::Value, tokio::task::AbortHandle>>>;
 
 pub async fn run() -> Result<(), std::io::Error> {
     let stdin_reader = BufReader::new(stdin());
@@ -357,7 +369,22 @@ pub async fn run() -> Result<(), std::io::Error> {
     set_progress_writer(progress_writer.clone());
 
     let mut stdin_reader = stdin_reader;
-    let mut stdout_writer = stdout();
+
+    // mpsc channel for responses — single writer task drains this and writes to stdout
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(JsonRpcResponse, bool)>(128);
+
+    // Spawn the stdout writer task
+    let writer_task = tokio::spawn(async move {
+        let mut stdout_writer = stdout();
+        while let Some((response, use_content_length)) = rx.recv().await {
+            if write_response(&mut stdout_writer, &response, use_content_length).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Track in-flight tool calls for cancellation
+    let in_flight: TaskMap = Arc::new(Mutex::new(std::collections::HashMap::new()));
 
     loop {
         let (message, msg_use_cl) = match read_message(&mut stdin_reader).await {
@@ -382,7 +409,7 @@ pub async fn run() -> Result<(), std::io::Error> {
                         message: format!("Parse error: {}", e),
                     },
                 };
-                write_response(&mut stdout_writer, &err_resp, use_content_length).await?;
+                let _ = tx.send((err_resp, use_content_length)).await;
                 continue;
             }
         };
@@ -394,42 +421,77 @@ pub async fn run() -> Result<(), std::io::Error> {
                 params,
                 ..
             } => {
-                let result = match method.as_str() {
-                    "initialize" => handle_initialize(),
-                    "tools/list" => handle_tools_list(),
-                    "tools/call" => handle_tools_call(params).await,
-                    "ping" => Ok(serde_json::json!({})),
-                    _ => Err(ToolError::MethodNotFound(method.clone())),
-                };
+                // Fast-path: initialize, tools/list, ping are synchronous (no spawn)
+                let is_fast = matches!(method.as_str(), "initialize" | "tools/list" | "ping");
 
-                let response = match result {
-                    Ok(val) => {
-                        if method == "tools/call" {
-                            make_tool_call_response(id, val)
-                        } else {
-                            make_result_response(id, val)
-                        }
-                    }
-                    Err(e) => {
-                        // Tool execution errors → result.isError:true (MCP spec)
-                        // Protocol errors → JSON-RPC error response
-                        if method == "tools/call" && !is_protocol_error(&e) {
-                            make_tool_call_error_response(id, &e)
-                        } else {
-                            make_error_response(id, &e)
-                        }
-                    }
-                };
+                if is_fast {
+                    let result = match method.as_str() {
+                        "initialize" => handle_initialize(),
+                        "tools/list" => handle_tools_list(),
+                        "ping" => Ok(serde_json::json!({})),
+                        _ => unreachable!(),
+                    };
+                    let response = match result {
+                        Ok(val) => make_result_response(id, val),
+                        Err(e) => make_error_response(id, &e),
+                    };
+                    let _ = tx.send((response, use_content_length)).await;
+                } else if method == "tools/call" {
+                    // Spawn tool call as a concurrent task
+                    let tx_clone = tx.clone();
+                    let ucl = use_content_length;
+                    let in_flight_clone = in_flight.clone();
+                    let id_for_task = id.clone();
 
-                write_response(&mut stdout_writer, &response, use_content_length).await?;
+                    let task = tokio::spawn(async move {
+                        let result = handle_tools_call(params).await;
+
+                        // Remove from in-flight map
+                        in_flight_clone.lock().await.remove(&id_for_task);
+
+                        let response = match result {
+                            Ok(val) => make_tool_call_response(id_for_task, val),
+                            Err(e) => {
+                                if !is_protocol_error(&e) {
+                                    make_tool_call_error_response(id_for_task, &e)
+                                } else {
+                                    make_error_response(id_for_task, &e)
+                                }
+                            }
+                        };
+                        let _ = tx_clone.send((response, ucl)).await;
+                    });
+
+                    // Track for cancellation
+                    in_flight.lock().await.insert(id.clone(), task.abort_handle());
+                } else {
+                    let response = make_error_response(id, &ToolError::MethodNotFound(method.clone()));
+                    let _ = tx.send((response, use_content_length)).await;
+                }
             }
-            JsonRpcMessage::Notification { method, .. } => {
+            JsonRpcMessage::Notification { method, params, .. } => {
                 if method == "notifications/initialized" || method == "initialized" {
                     tracing::info!("client initialized");
+                } else if method == "notifications/cancelled" {
+                    // Cancel the in-flight task for the given request ID
+                    if let Some(id) = params
+                        .as_ref()
+                        .and_then(|p| p.get("requestId"))
+                        .cloned()
+                    {
+                        if let Some(handle) = in_flight.lock().await.remove(&id) {
+                            handle.abort();
+                            tracing::info!("Cancelled request {:?}", id);
+                        }
+                    }
                 }
             }
         }
     }
+
+    // Close the channel and wait for the writer task to finish
+    drop(tx);
+    let _ = writer_task.await;
 
     Ok(())
 }
