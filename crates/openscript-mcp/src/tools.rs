@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (57 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline)
+// Tool definitions (58 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline + 1 script.to_video)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -811,6 +811,23 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["script"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "script.to_video",
+            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. Calls script.to_timeline (which orchestrates TTS, captions, backgrounds, stickers) then timeline.render (FFmpeg render). This is the simplest entry point for AI agents — provide a script, get a video. Returns output_path + file_size + timeline_path + warnings. Use script.parse first to validate the script.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "The script JSON string or path to .json file"},
+                    "output_path": {"type": "string", "default": "output.mp4", "description": "Output MP4 path"},
+                    "output_dir": {"type": "string", "default": "artifacts", "description": "Directory for intermediate assets"},
+                    "skip_background": {"type": "boolean", "default": false, "description": "Skip background fetching"},
+                    "skip_stickers": {"type": "boolean", "default": false, "description": "Skip sticker rendering"},
+                    "preview_mode": {"type": "boolean", "default": false, "description": "If true, use draft quality for faster iteration"}
+                },
+                "required": ["script"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -914,6 +931,7 @@ pub fn route_tool(
         "sticker.load_preset" => Box::pin(handle_sticker_load_preset(args)),
         "sticker.render" => Box::pin(handle_sticker_render(args)),
         "script.to_timeline" => Box::pin(handle_script_to_timeline(args)),
+        "script.to_video" => Box::pin(handle_script_to_video(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -5763,5 +5781,61 @@ async fn handle_script_to_timeline(args: serde_json::Value) -> Result<serde_json
         "background_pool_size": background_pool.len(),
         "sticker_count": sticker_paths.len(),
         "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: script.to_video — one-call from-scratch video creation
+// ---------------------------------------------------------------------------
+
+async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script_input = extract_str(&args, "script")?;
+    let output_path = default_str(&args, "output_path", "output.mp4");
+    let output_dir = default_str(&args, "output_dir", "artifacts");
+    let skip_background = default_bool(&args, "skip_background", false);
+    let skip_stickers = default_bool(&args, "skip_stickers", false);
+    let preview_mode = default_bool(&args, "preview_mode", false);
+
+    report_progress(0.0, 100.0, "Phase 1/2: Building timeline...").await.ok();
+
+    // Step 1: Build the timeline
+    let timeline_result = handle_script_to_timeline(json!({
+        "script": script_input,
+        "output_dir": output_dir,
+        "skip_background": skip_background,
+        "skip_stickers": skip_stickers,
+    })).await?;
+
+    let timeline_path = timeline_result.get("timeline_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArg("No timeline_path in result".into()))?
+        .to_string();
+    let warnings = timeline_result.get("warnings").cloned().unwrap_or(serde_json::Value::Null);
+
+    report_progress(50.0, 100.0, "Phase 2/2: Rendering video...").await.ok();
+
+    // Step 2: Render the timeline
+    let render_result = handle_timeline_render(json!({
+        "timeline_path": timeline_path,
+        "output_path": output_path,
+        "preset": if preview_mode { "ultrafast" } else { "medium" },
+    })).await?;
+
+    let status = render_result.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let file_size = render_result.get("file_size_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    report_progress(100.0, 100.0, "Video created").await.ok();
+
+    Ok(json!({
+        "status": status,
+        "output_path": output_path,
+        "file_size_bytes": file_size,
+        "timeline_path": timeline_path,
+        "voiceover_manifest": timeline_result.get("voiceover_manifest"),
+        "captions_path": timeline_result.get("captions_path"),
+        "total_duration_ms": timeline_result.get("total_duration_ms"),
+        "scene_count": timeline_result.get("scene_count"),
+        "speaker_count": timeline_result.get("speaker_count"),
+        "warnings": warnings,
     }))
 }
