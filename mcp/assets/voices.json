@@ -1,15 +1,50 @@
 {
-  "test_narrator": {
-    "id": "test_narrator",
-    "provider": "faster-qwen3-tts",
-    "mode": "clone",
-    "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    "ref_audio": "/home/ishanp/Documents/GitHub/openscript/mcp/assets/test_narrator_ref.wav",
-    "ref_text": "\u0906\u092a \u091c\u093c \u092d\u093e\u0908 \u0924\u094b \u0906\u092a \u092f\u0939 \u0938\u093e\u092c \u0924\u094b \u0924\u094b \u092c\u0917\u093c\u094d\u0926 \u0932\u094b\u0917 \u091c\u093c\u093e \u092f\u0939 \u092f\u0939 \u0906\u092a \u0917\u093c\u094d\u092a\u091a\u0930\u0930 \u0906\u0917\u093c, \u0905\u0935\u093e\u091c \u0924\u094b \u0926\u0935\u093e\u0908 \u0906\u092a \u092a\u0928\u093e \u0915\u0930\u091d\u0947\u0902 \u091a\u093e\u0932\u0942 \u0930\u0916\u093e, \u0932\u0947\u0915\u093f\u0928 \u0906\u092a \u091c\u093f\u0938\u0940 \u0938\u093e\u092c \u0938\u0947 \u0924\u094b \u092e \u0926\u0947\u0916 \u0930\u0947\u0917 \u0932\u0947\u0917 \u0932\u0947\u090f, \u092a\u0947\u0932 \u092a\u094b\u0937\u094d\u0924\u0940 \u090f \u092c\u0928 \u0915\u0930\u0928 \u0932\u094b\u0917 \u092f\u0939, \u0915\u093e\u0932\u0902\u091f \u092c\u0928 \u0915\u0930\u0928 \u0932\u0947\u090f, \u0905\u0935\u091a\u094d",
-    "language": "auto",
-    "xvec_only": false,
-    "description": "Test narrator - extracted from source video",
+  "kokoro_af_heart": {
+    "id": "kokoro_af_heart",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:af_heart",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro af_heart — warm American female",
     "sample_rate": 24000,
-    "created_at": "2026-04-04T22:00:00Z"
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  "kokoro_am_michael": {
+    "id": "kokoro_am_michael",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:am_michael",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro am_michael — American male",
+    "sample_rate": 24000,
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  "kokoro_af_bella": {
+    "id": "kokoro_af_bella",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:af_bella",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro af_bella — soft American female",
+    "sample_rate": 24000,
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  "kokoro_bf_emma": {
+    "id": "kokoro_bf_emma",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:bf_emma",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro bf_emma — British female",
+    "sample_rate": 24000,
+    "created_at": "2026-07-04T00:00:00Z"
   }
 }

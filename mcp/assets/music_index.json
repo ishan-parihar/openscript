@@ -1,444 +1,52 @@
 {
-  "version": "1.0",
-  "created_at": "2026-04-03T04:26:57+05:30",
-  "music_paths": [
-    "/home/ishanp/Videos/Assets/Music"
-  ],
-  "total_assets": 16,
-  "moods": {
-    "neutral": 16
-  },
-  "energy_levels": {
-    "low": 13,
-    "medium": 3
-  },
   "assets": [
     {
-      "id": "bgm_0000",
-      "path": "/home/ishanp/Videos/Assets/Music/Arrival On The Nature of Daylight.mp3",
-      "title": "Arrival On The Nature of Daylight",
-      "artist": "Unknown",
-      "duration_ms": 371705,
-      "sample_rate": 44100,
-      "channels": 2,
+      "id": "music_0000",
+      "path": "mcp/assets/music/lofi_chill.mp3",
+      "title": "Lo-Fi Chill",
+      "artist": "OpenScript Stock",
+      "duration_ms": 30000,
       "mood": "neutral",
       "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0001",
-      "path": "/home/ishanp/Videos/Assets/Music/Hand Covers Bruise HD From the Soundtrack to The Social Network.mp3",
-      "title": "Hand Covers Bruise HD From the Soundtrack to The Social Network",
-      "artist": "Unknown",
-      "duration_ms": 263875,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0002",
-      "path": "/home/ishanp/Videos/Assets/Music/Hania Rani Eden Official Video Gondwana Records.mp3",
-      "title": "Hania Rani Eden Official Video Gondwana Records",
-      "artist": "Unknown",
-      "duration_ms": 295288,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0003",
-      "path": "/home/ishanp/Videos/Assets/Music/Hans Zimmer Dream Is Collapsing Official Audio.mp3",
-      "title": "Hans Zimmer Dream Is Collapsing Official Audio",
-      "artist": "Unknown",
-      "duration_ms": 143801,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "medium",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "medium_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0004",
-      "path": "/home/ishanp/Videos/Assets/Music/Hans Zimmer Time Official Audio.mp3",
-      "title": "Hans Zimmer Time Official Audio",
-      "artist": "Unknown",
-      "duration_ms": 275604,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0005",
-      "path": "/home/ishanp/Videos/Assets/Music/Interstellar Main Theme Hans Zimmer.mp3",
-      "title": "Interstellar Main Theme Hans Zimmer",
-      "artist": "Unknown",
-      "duration_ms": 244022,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0006",
-      "path": "/home/ishanp/Videos/Assets/Music/Interstellar Official Soundtrack S.T.A.Y.\u2013 Hans Zimmer WaterTower.mp3",
-      "title": "Interstellar Official Soundtrack S.T.A.Y.\u2013 Hans Zimmer WaterTower",
-      "artist": "Unknown",
-      "duration_ms": 383516,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0007",
-      "path": "/home/ishanp/Videos/Assets/Music/Joy Division Atmosphere Original Instrumental.mp3",
-      "title": "Joy Division Atmosphere Original Instrumental",
-      "artist": "Unknown",
-      "duration_ms": 249521,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0008",
-      "path": "/home/ishanp/Videos/Assets/Music/Ludovico Einaudi Experience Official Visualizer.mp3",
-      "title": "Ludovico Einaudi Experience Official Visualizer",
-      "artist": "Unknown",
-      "duration_ms": 315546,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0009",
-      "path": "/home/ishanp/Videos/Assets/Music/Marz Leon - Levitation (That's Nice Remix) (1).mp3",
-      "title": "Levitation (That's Nice Remix) (1)",
-      "artist": "Marz Leon",
-      "duration_ms": 261410,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0010",
-      "path": "/home/ishanp/Videos/Assets/Music/Marz Leon - Levitation (That's Nice Remix).mp3",
-      "title": "Levitation (That's Nice Remix)",
-      "artist": "Marz Leon",
-      "duration_ms": 261410,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0011",
-      "path": "/home/ishanp/Videos/Assets/Music/Max Richter On the Nature of Daylight.mp3",
-      "title": "Max Richter On the Nature of Daylight",
-      "artist": "Unknown",
-      "duration_ms": 374844,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0012",
-      "path": "/home/ishanp/Videos/Assets/Music/My Name Is Lincoln.mp3",
-      "title": "My Name Is Lincoln",
-      "artist": "Unknown",
-      "duration_ms": 222447,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
-    },
-    {
-      "id": "bgm_0013",
-      "path": "/home/ishanp/Videos/Assets/Music/Richter The Blue Notebooks.mp3",
-      "title": "Richter The Blue Notebooks",
-      "artist": "Unknown",
-      "duration_ms": 79830,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "medium",
-      "bpm": null,
       "loopability": true,
       "intro_friendly": true,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "medium_energy"
-      ],
-      "genre": ""
+      "cta_friendly": false
     },
     {
-      "id": "bgm_0014",
-      "path": "/home/ishanp/Videos/Assets/Music/Squid Game OST Pink Soldiers Extended Ver.mp3",
-      "title": "Squid Game OST Pink Soldiers Extended Ver",
-      "artist": "Unknown",
-      "duration_ms": 108390,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
+      "id": "music_0001",
+      "path": "mcp/assets/music/upbeat_pop.mp3",
+      "title": "Upbeat Pop",
+      "artist": "OpenScript Stock",
+      "duration_ms": 30000,
+      "mood": "happy",
+      "energy": "high",
+      "loopability": true,
+      "intro_friendly": true,
+      "cta_friendly": true
+    },
+    {
+      "id": "music_0002",
+      "path": "mcp/assets/music/cinematic_epic.mp3",
+      "title": "Cinematic Epic",
+      "artist": "OpenScript Stock",
+      "duration_ms": 30000,
+      "mood": "dramatic",
       "energy": "medium",
-      "bpm": null,
       "loopability": true,
       "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "medium_energy"
-      ],
-      "genre": ""
+      "cta_friendly": false
     },
     {
-      "id": "bgm_0015",
-      "path": "/home/ishanp/Videos/Assets/Music/Two Steps From Hell Victory.mp3",
-      "title": "Two Steps From Hell Victory",
-      "artist": "Unknown",
-      "duration_ms": 328633,
-      "sample_rate": 44100,
-      "channels": 2,
-      "mood": "neutral",
-      "energy": "low",
-      "bpm": null,
-      "loopability": false,
-      "intro_friendly": false,
-      "cta_friendly": false,
-      "loudness_target_lufs": -14.0,
-      "loudness_lufs": 0.0,
-      "peak_db": 0.0,
-      "tags": [
-        "low_energy"
-      ],
-      "genre": ""
+      "id": "music_0003",
+      "path": "mcp/assets/music/happy_energetic.mp3",
+      "title": "Happy Energetic",
+      "artist": "OpenScript Stock",
+      "duration_ms": 30000,
+      "mood": "happy",
+      "energy": "high",
+      "loopability": true,
+      "intro_friendly": true,
+      "cta_friendly": true
     }
-  ],
-  "search_aliases": {
-    "energetic music": [],
-    "energetic bgm": [],
-    "calm music": [],
-    "calm bgm": [],
-    "dramatic music": [],
-    "dramatic bgm": [],
-    "playful music": [],
-    "playful bgm": [],
-    "serious music": [],
-    "serious bgm": [],
-    "uplifting music": [],
-    "uplifting bgm": [],
-    "melancholic music": [],
-    "melancholic bgm": [],
-    "tense music": [],
-    "tense bgm": [],
-    "relaxed music": [],
-    "relaxed bgm": [],
-    "epic music": [],
-    "epic bgm": [],
-    "corporate music": [],
-    "corporate bgm": [],
-    "electronic music": [],
-    "electronic bgm": [],
-    "acoustic music": [],
-    "acoustic bgm": [],
-    "ambient music": [],
-    "ambient bgm": [],
-    "cinematic music": [],
-    "cinematic bgm": [],
-    "low energy": [
-      "bgm_0000",
-      "bgm_0001",
-      "bgm_0002",
-      "bgm_0004",
-      "bgm_0005",
-      "bgm_0006",
-      "bgm_0007",
-      "bgm_0008",
-      "bgm_0009",
-      "bgm_0010"
-    ],
-    "medium energy": [
-      "bgm_0003",
-      "bgm_0013",
-      "bgm_0014"
-    ],
-    "high energy": [],
-    "low_energy": [
-      "bgm_0000",
-      "bgm_0001",
-      "bgm_0002",
-      "bgm_0004",
-      "bgm_0005",
-      "bgm_0006",
-      "bgm_0007",
-      "bgm_0008",
-      "bgm_0009",
-      "bgm_0010"
-    ],
-    "medium_energy": [
-      "bgm_0003",
-      "bgm_0013",
-      "bgm_0014"
-    ],
-    "intro music": [
-      "bgm_0013"
-    ],
-    "cta music": [],
-    "loopable music": [
-      "bgm_0013",
-      "bgm_0014"
-    ]
-  }
+  ]
 }

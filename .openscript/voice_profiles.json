@@ -1,15 +1,50 @@
 {
-  "test_narrator": {
-    "created_at": "2026-04-04T22:00:00Z",
-    "description": "Test narrator - extracted from source video",
-    "id": "test_narrator",
-    "language": "auto",
-    "mode": "clone",
-    "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    "provider": "faster-qwen3-tts",
-    "ref_audio": "/home/ishanp/Documents/GitHub/openscript/mcp/assets/test_narrator_ref.wav",
-    "ref_text": "आप ज़ भाई तो आप यह साब तो तो बग़्द लोग ज़ा यह यह आप ग़्पचरर आग़, अवाज तो दवाई आप पना करझें चालू रखा, लेकिन आप जिसी साब से तो म देख रेग लेग लेए, पेल पोष्ती ए बन करन लोग यह, कालंट बन करन लेए, अवच्",
+  "kokoro_af_heart": {
+    "id": "kokoro_af_heart",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:af_heart",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro af_heart — warm American female",
     "sample_rate": 24000,
-    "xvec_only": false
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  "kokoro_am_michael": {
+    "id": "kokoro_am_michael",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:am_michael",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro am_michael — American male",
+    "sample_rate": 24000,
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  "kokoro_af_bella": {
+    "id": "kokoro_af_bella",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:af_bella",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro af_bella — soft American female",
+    "sample_rate": 24000,
+    "created_at": "2026-07-04T00:00:00Z"
+  },
+  "kokoro_bf_emma": {
+    "id": "kokoro_bf_emma",
+    "provider": "kokoro",
+    "mode": "preset",
+    "model": "kokoro:bf_emma",
+    "ref_audio": "",
+    "ref_text": "",
+    "language": "en",
+    "description": "Kokoro bf_emma — British female",
+    "sample_rate": 24000,
+    "created_at": "2026-07-04T00:00:00Z"
   }
 }
