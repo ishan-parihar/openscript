@@ -510,7 +510,7 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
             // that loads dist/bundle.js (the esbuild-bundled Remotion Player).
             // We render via hf.render — HF's runtime drives the Player via
             // window.__hfRemotionSeek(frame).
-            let mut extra_args = vec!["--quality", quality, "--output", output_path];
+            let extra_args = vec!["--quality", quality, "--output", output_path];
             let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
             let success = output.exit_code == 0;
             let (file_exists, file_size) = if success {
