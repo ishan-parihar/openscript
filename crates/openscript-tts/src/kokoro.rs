@@ -67,19 +67,20 @@ struct KokoroEngine {
 
 impl KokoroEngine {
     fn load(cfg: &KokoroConfig) -> Result<Self, KokoroError> {
-        let model_path = cfg.model_dir.join("onnx").join(&cfg.model_variant);
+        let model_path = cfg.model_dir.join("onnx").join("kokoro-v1.0.onnx");
         if !model_path.exists() {
             return Err(KokoroError::AssetMissing(format!(
                 "Kokoro model not found at {}. Download from \
-                 https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX",
+                 https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
                 model_path.display()
             )));
         }
-        let voices_dir = cfg.model_dir.join("voices");
-        if !voices_dir.exists() {
+        let voices_file = cfg.model_dir.join("voices").join("voices-v1.0.bin");
+        if !voices_file.exists() {
             return Err(KokoroError::AssetMissing(format!(
-                "Kokoro voices directory not found at {}",
-                voices_dir.display()
+                "Kokoro voices file not found at {}. Download from \
+                 https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+                voices_file.display()
             )));
         }
         Ok(Self { cfg: cfg.clone() })
@@ -474,15 +475,11 @@ impl KokoroClient {
         }
     }
 
-    /// Cheap liveness check — confirms the model dir + at least the default
-    /// voice pack are present. Does NOT load the ONNX session.
+    /// Cheap liveness check — confirms the model file + voices file are present.
     pub fn health_check(&self) -> Result<bool, KokoroError> {
-        let model = self.cfg.model_dir.join("onnx").join(&self.cfg.model_variant);
-        let voice = self.cfg.model_dir.join("voices").join(format!(
-            "{}.bin",
-            self.cfg.default_voice.split('_').next().unwrap_or("af")
-        ));
-        Ok(model.exists() && voice.exists())
+        let model = self.cfg.model_dir.join("onnx").join("kokoro-v1.0.onnx");
+        let voices = self.cfg.model_dir.join("voices").join("voices-v1.0.bin");
+        Ok(model.exists() && voices.exists())
     }
 
     /// Generate speech into `output_path`. Mirrors `TtsClient::generate` so the

@@ -1898,7 +1898,7 @@ async fn tts_generate_routed(
         let model_dir = std::env::var("KOKORO_MODEL_DIR")
             .unwrap_or_else(|_| "mcp/assets/kokoro".to_string());
         let model_variant = std::env::var("KOKORO_MODEL_VARIANT")
-            .unwrap_or_else(|_| "model_q8f16.onnx".to_string());
+            .unwrap_or_else(|_| "kokoro-v1.0.onnx".to_string());
         let default_voice = std::env::var("KOKORO_DEFAULT_VOICE")
             .unwrap_or_else(|_| "af_heart".to_string());
 
@@ -5667,105 +5667,156 @@ async fn handle_script_to_timeline(args: serde_json::Value) -> Result<serde_json
         }
     }
 
-    // Step 5: Assemble timeline JSON
+    // Step 5: Assemble timeline using the proper Timeline struct
     report_progress(80.0, 100.0, "Step 5/5: Assembling timeline...").await.ok();
     let timeline_path = format!("{}/timeline.json", output_dir);
 
-    let timeline_json = json!({
-        "version": "2.0",
-        "created_at": chrono::Utc::now().to_rfc3339(),
-        "source": format!("script://{}", spec.title),
-        "target": {
-            "aspect": spec.meta.aspect,
-            "fps": spec.meta.fps,
-            "max_duration": None::<u32>,
-        },
-        "segments": spec.scenes.iter().enumerate().map(|(i, scene)| {
-            json!({
-                "id": scene.id,
-                "start": 0.0,
-                "end": 0.0,
-                "caption": scene.text,
-                "crossfade_ms": 0,
-                "semantic_role": "body",
-            })
-        }).collect::<Vec<_>>(),
-        "tracks": {
-            "voiceover": spec.scenes.iter().enumerate().map(|(i, _)| {
-                json!({
-                    "id": format!("voiceover_{:03}", i + 1),
-                    "asset_id": format!("voiceover_{:03}", i + 1),
-                    "start_ms": 0,
-                    "end_ms": 0,
-                    "offset_ms": 0,
-                    "gain_db": -6.0,
-                    "fade_in_ms": 50,
-                    "fade_out_ms": 50,
-                    "tags": [],
-                    "provenance": {"tool": "script.to_timeline"},
-                    "event_type": "voiceover",
-                })
-            }).collect::<Vec<_>>(),
-            "captions": spec.scenes.iter().map(|scene| {
-                json!({
-                    "id": format!("caption_{}", scene.id),
-                    "asset_id": "captions.ass",
-                    "start_ms": 0,
-                    "end_ms": 0,
-                    "offset_ms": 0,
-                    "gain_db": 0.0,
-                    "fade_in_ms": 0,
-                    "fade_out_ms": 0,
-                    "tags": [],
-                    "event_type": "caption",
-                    "text": scene.text,
-                    "style": spec.captions.style,
-                })
-            }).collect::<Vec<_>>(),
-            "broll": background_pool.iter().enumerate().map(|(i, path)| {
-                json!({
-                    "id": format!("broll_{:03}", i + 1),
-                    "asset_id": format!("broll_{:03}", i + 1),
-                    "start_ms": 0,
-                    "end_ms": total_duration_ms,
-                    "offset_ms": 0,
-                    "gain_db": spec.background.volume_db,
-                    "fade_in_ms": 0,
-                    "fade_out_ms": 0,
-                    "tags": [],
-                    "event_type": "broll",
-                    "concept": "background",
-                    "source_provider": "youtube",
-                    "transition_style": "cut",
-                    "crop_mode": spec.background.crop_mode,
-                })
-            }).collect::<Vec<_>>(),
-        },
-        "assets": {
-            "voiceover": spec.scenes.iter().enumerate().map(|(i, _)| {
-                json!({"path": format!("{}/voices/scene_{:03}.wav", output_dir, i + 1)})
-            }).collect::<Vec<_>>(),
-            "captions": {"ass": {"path": captions_path}},
-            "broll": background_pool.iter().enumerate().map(|(i, path)| {
-                json!({"path": path})
-            }).collect::<Vec<_>>(),
-            "stickers": sticker_paths,
-        },
-        "directives": {
-            "ducking": if spec.music.as_ref().map(|m| m.ducking).unwrap_or(false) {
-                vec![json!({
-                    "target_track": "broll",
-                    "reduce_db": spec.music.as_ref().map(|m| m.ducking_depth_db).unwrap_or(12.0),
-                    "during": "voiceover",
-                })]
-            } else {
-                vec![]
-            },
-        },
-        "effects": {},
-    });
+    // Build a proper Timeline struct — use the first background as the "source" video
+    // (for from-scratch videos, the background IS the source)
+    let bg_source = background_pool.first().cloned()
+        .or_else(|| spec.background.fallback_pool.first().cloned())
+        .unwrap_or_else(|| "mcp/assets/backgrounds/procedural_01.mp4".to_string());
 
-    std::fs::write(&timeline_path, serde_json::to_string_pretty(&timeline_json)?)?;
+    // If background pool is empty, use the procedural fallback
+    let mut background_pool = background_pool;
+    if background_pool.is_empty() {
+        background_pool.push(bg_source.clone());
+    }
+
+    let mut timeline = Timeline::new(
+        std::path::PathBuf::from(&bg_source),
+        &spec.meta.aspect,
+        spec.meta.fps,
+        None,
+    );
+
+    // Add segments from the voiceover manifest
+    let manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&manifest_path)?)?;
+    let mut current_ms = 0i64;
+    if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
+        for seg in segments {
+            let scene_id = seg.get("scene_id").and_then(|v| v.as_str()).unwrap_or("");
+            let text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let dur_ms = seg.get("duration_ms").and_then(|v| v.as_i64()).unwrap_or(3000);
+            let wav_path = seg.get("wav_path").and_then(|v| v.as_str()).unwrap_or("");
+
+            // Add segment
+            let segment = openscript_core::timeline::Segment {
+                id: scene_id.to_string(),
+                start: current_ms as f64 / 1000.0,
+                end: (current_ms + dur_ms) as f64 / 1000.0,
+                caption: text.to_string(),
+                crossfade_ms: 0,
+                semantic_role: None,
+            };
+            timeline.segments.push(segment);
+
+            // Add voiceover event
+            let vo_event = openscript_core::timeline::TimelineEvent {
+                id: format!("vo_{}", scene_id),
+                asset_id: scene_id.to_string(),
+                start_ms: current_ms,
+                end_ms: current_ms + dur_ms,
+                offset_ms: 0,
+                gain_db: -6.0,
+                fade_in_ms: 50,
+                fade_out_ms: 50,
+                tags: vec![],
+                provenance: Some(openscript_core::timeline::Provenance {
+                    tool: "script.to_timeline".into(),
+                    editorial_role: None,
+                    concept: None,
+                }),
+                kind: openscript_core::timeline::EventKind::Voiceover {
+                    voice_profile_id: seg.get("speaker").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    text: text.to_string(),
+                    estimated_duration_ms: dur_ms,
+                },
+            };
+            timeline.add_track_event(TrackType::Voiceover, vo_event);
+
+            // Register voiceover asset
+            timeline.add_asset("voices", scene_id.to_string(), json!({"path": wav_path}));
+
+            current_ms += dur_ms;
+        }
+    }
+
+    // Add background as broll
+    if let Some(bg_path) = background_pool.first() {
+        let broll_event = openscript_core::timeline::TimelineEvent {
+            id: "broll_bg".to_string(),
+            asset_id: "broll_bg".to_string(),
+            start_ms: 0,
+            end_ms: total_duration_ms,
+            offset_ms: 0,
+            gain_db: spec.background.volume_db,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+            tags: vec![],
+            provenance: Some(openscript_core::timeline::Provenance {
+                tool: "script.to_timeline".into(),
+                editorial_role: None,
+                concept: Some("background".to_string()),
+            }),
+            kind: openscript_core::timeline::EventKind::Broll {
+                concept: "background".to_string(),
+                source_provider: "youtube".to_string(),
+                transition_style: "cut".to_string(),
+                crop_mode: spec.background.crop_mode.clone(),
+                orientation: spec.meta.aspect.clone(),
+                motion_intensity: "medium".to_string(),
+            },
+        };
+        timeline.add_track_event(TrackType::Broll, broll_event);
+        timeline.add_asset("broll", "broll_bg".to_string(), json!({"path": bg_path}));
+    }
+
+    // Add captions asset
+    timeline.add_asset("captions", "ass".to_string(), json!({"path": captions_path}));
+
+    // Add music if specified
+    if let Some(ref music) = spec.music {
+        if !music.path.is_empty() {
+            let music_event = openscript_core::timeline::TimelineEvent {
+                id: "music_bg".to_string(),
+                asset_id: "music_bg".to_string(),
+                start_ms: 0,
+                end_ms: total_duration_ms,
+                offset_ms: 0,
+                gain_db: music.gain_db,
+                fade_in_ms: 500,
+                fade_out_ms: 500,
+                tags: vec![],
+                provenance: Some(openscript_core::timeline::Provenance {
+                    tool: "script.to_timeline".into(),
+                    editorial_role: None,
+                    concept: None,
+                }),
+                kind: openscript_core::timeline::EventKind::Music {
+                    mood: "neutral".to_string(),
+                    energy: "medium".to_string(),
+                    bpm: None,
+                    loopability: true,
+                    intro_friendly: true,
+                    cta_friendly: false,
+                    loudness_target_lufs: -14.0,
+                    loop_mode: "loop".to_string(),
+                    ducking_policy: if music.ducking { "auto".to_string() } else { "none".to_string() },
+                },
+            };
+            timeline.add_track_event(TrackType::Music, music_event);
+            timeline.add_asset("music", "music_bg".to_string(), json!({"path": music.path}));
+
+            // Add ducking directive
+            if music.ducking {
+                timeline.add_ducking_directive("voiceover", "music", music.ducking_depth_db, 50, 200);
+            }
+        }
+    }
+
+    // Save timeline
+    timeline.save(&timeline_path)?;
 
     report_progress(100.0, 100.0, "Timeline assembled").await.ok();
 
