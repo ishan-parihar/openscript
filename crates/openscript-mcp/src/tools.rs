@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (56 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.*)
+// Tool definitions (57 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -796,6 +796,21 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["wav_path", "preset_name"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "script.to_timeline",
+            "description": "Orchestrate the full from-scratch video creation pipeline into an EDL v2 timeline. Calls script.generate_voices (TTS per scene), script.build_captions (ASS from word timings), background.fetch + background.assign (YouTube gameplay), sticker.render (animated SVG per scene), and assembles everything into a timeline JSON ready for timeline.render. This is the orchestrator — use script.to_video for the one-call pipeline. Returns timeline_path + manifest paths + asset summary.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "The script JSON string or path to .json file"},
+                    "output_dir": {"type": "string", "default": "artifacts", "description": "Directory for generated assets (voices, captions, stickers, timeline)"},
+                    "skip_background": {"type": "boolean", "default": false, "description": "Skip background fetching (use fallback pool only)"},
+                    "skip_stickers": {"type": "boolean", "default": false, "description": "Skip sticker rendering (no animated overlays)"}
+                },
+                "required": ["script"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -898,6 +913,7 @@ pub fn route_tool(
         "background.assign" => Box::pin(handle_background_assign(args)),
         "sticker.load_preset" => Box::pin(handle_sticker_load_preset(args)),
         "sticker.render" => Box::pin(handle_sticker_render(args)),
+        "script.to_timeline" => Box::pin(handle_script_to_timeline(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -5492,5 +5508,260 @@ async fn handle_sticker_render(args: serde_json::Value) -> Result<serde_json::Va
         "scale": scale,
         "frame_count": amplitude.frames.len(),
         "duration_ms": amplitude.duration_ms,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: script.to_timeline — orchestrator for from-scratch video creation
+// ---------------------------------------------------------------------------
+
+async fn handle_script_to_timeline(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script_input = extract_str(&args, "script")?;
+    let output_dir = default_str(&args, "output_dir", "artifacts");
+    let skip_background = default_bool(&args, "skip_background", false);
+    let skip_stickers = default_bool(&args, "skip_stickers", false);
+
+    // Parse script
+    let json_str = read_script_input(script_input)?;
+    let spec = parse_script(&json_str).map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
+    let errors = validate_script(&spec);
+    if !errors.is_empty() {
+        return Err(ToolError::InvalidArg(format!("Script validation failed: {} errors", errors.len())));
+    }
+
+    let voices_dir = format!("{}/voices", output_dir);
+    let stickers_dir = format!("{}/stickers", output_dir);
+    std::fs::create_dir_all(&voices_dir)?;
+    std::fs::create_dir_all(&stickers_dir)?;
+
+    let mut warnings = Vec::new();
+
+    // Step 1: Generate voices
+    report_progress(0.0, 100.0, "Step 1/5: Generating voices...").await.ok();
+    let voices_result = handle_script_generate_voices(json!({
+        "script": script_input,
+        "output_dir": voices_dir,
+    })).await?;
+
+    let manifest_path = voices_result.get("manifest_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArg("No manifest_path in voices result".into()))?
+        .to_string();
+    let total_duration_ms = voices_result.get("total_duration_ms")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+
+    // Step 2: Build captions
+    report_progress(20.0, 100.0, "Step 2/5: Building captions...").await.ok();
+    let captions_path = format!("{}/captions.ass", output_dir);
+    let _captions_result = handle_script_build_captions(json!({
+        "script": script_input,
+        "voiceover_manifest": manifest_path,
+        "output_path": captions_path,
+    })).await?;
+
+    // Step 3: Fetch + assign backgrounds
+    report_progress(40.0, 100.0, "Step 3/5: Fetching backgrounds...").await.ok();
+    let mut background_pool: Vec<String> = spec.background.fallback_pool.clone();
+
+    if !skip_background && spec.background.r#type == "gameplay" && !spec.background.query.is_empty() {
+        // Fetch a background clip
+        let fetch_result = handle_background_fetch(json!({
+            "query": spec.background.query,
+            "duration_s": total_duration_ms as f64 / 1000.0,
+            "aspect": spec.meta.aspect,
+            "fallback_pool": spec.background.fallback_pool,
+        })).await;
+
+        match fetch_result {
+            Ok(r) => {
+                if let Some(path) = r.get("clip_path").and_then(|v| v.as_str()) {
+                    background_pool.insert(0, path.to_string());
+                }
+            }
+            Err(e) => {
+                warnings.push(format!("Background fetch failed: {}", e));
+            }
+        }
+    }
+
+    // Assign backgrounds
+    let bg_assignments_path = format!("{}/background_assignments.json", output_dir);
+    if !background_pool.is_empty() {
+        let _bg_result = handle_background_assign(json!({
+            "script": script_input,
+            "voiceover_manifest": manifest_path,
+            "background_pool": background_pool,
+            "output_path": bg_assignments_path,
+        })).await?;
+    }
+
+    // Step 4: Render stickers (if enabled)
+    report_progress(60.0, 100.0, "Step 4/5: Rendering stickers...").await.ok();
+    let mut sticker_paths: Vec<serde_json::Value> = Vec::new();
+
+    if !skip_stickers && spec.stickers.enabled {
+        let manifest: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&manifest_path)?)?;
+
+        if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
+            for seg in segments {
+                let speaker = seg.get("speaker").and_then(|v| v.as_str()).unwrap_or("");
+                let wav_path = seg.get("wav_path").and_then(|v| v.as_str()).unwrap_or("");
+                let start_ms = seg.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                if wav_path.is_empty() {
+                    continue;
+                }
+
+                // Get speaker's preset and position
+                let speaker_spec = spec.speakers.get(speaker);
+                let preset_name = speaker_spec.map(|s| s.preset.clone()).unwrap_or_else(|| "default_person".to_string());
+                let position = speaker_spec.map(|s| s.position.clone()).unwrap_or_else(|| "top-left".to_string());
+                let scale = speaker_spec.map(|s| s.scale).unwrap_or(0.25);
+
+                let sticker_output = format!("{}/sticker_{}.html", stickers_dir, speaker);
+
+                let sticker_result = handle_sticker_render(json!({
+                    "wav_path": wav_path,
+                    "preset_name": preset_name,
+                    "position": position,
+                    "scale": scale,
+                    "canvas_width": spec.meta.width,
+                    "canvas_height": spec.meta.height,
+                    "fps": spec.meta.fps,
+                    "output_path": sticker_output,
+                })).await;
+
+                match sticker_result {
+                    Ok(r) => {
+                        sticker_paths.push(json!({
+                            "speaker": speaker,
+                            "start_ms": start_ms,
+                            "html_path": r.get("output_path").and_then(|v| v.as_str()).unwrap_or(""),
+                            "frame_count": r.get("frame_count").and_then(|v| v.as_u64()).unwrap_or(0),
+                        }));
+                    }
+                    Err(e) => {
+                        warnings.push(format!("Sticker render failed for {}: {}", speaker, e));
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 5: Assemble timeline JSON
+    report_progress(80.0, 100.0, "Step 5/5: Assembling timeline...").await.ok();
+    let timeline_path = format!("{}/timeline.json", output_dir);
+
+    let timeline_json = json!({
+        "version": "2.0",
+        "created_at": chrono::Utc::now().to_rfc3339(),
+        "source": format!("script://{}", spec.title),
+        "target": {
+            "aspect": spec.meta.aspect,
+            "fps": spec.meta.fps,
+            "max_duration": None::<u32>,
+        },
+        "segments": spec.scenes.iter().enumerate().map(|(i, scene)| {
+            json!({
+                "id": scene.id,
+                "start": 0.0,
+                "end": 0.0,
+                "caption": scene.text,
+                "crossfade_ms": 0,
+                "semantic_role": "body",
+            })
+        }).collect::<Vec<_>>(),
+        "tracks": {
+            "voiceover": spec.scenes.iter().enumerate().map(|(i, _)| {
+                json!({
+                    "id": format!("voiceover_{:03}", i + 1),
+                    "asset_id": format!("voiceover_{:03}", i + 1),
+                    "start_ms": 0,
+                    "end_ms": 0,
+                    "offset_ms": 0,
+                    "gain_db": -6.0,
+                    "fade_in_ms": 50,
+                    "fade_out_ms": 50,
+                    "tags": [],
+                    "provenance": {"tool": "script.to_timeline"},
+                    "event_type": "voiceover",
+                })
+            }).collect::<Vec<_>>(),
+            "captions": spec.scenes.iter().map(|scene| {
+                json!({
+                    "id": format!("caption_{}", scene.id),
+                    "asset_id": "captions.ass",
+                    "start_ms": 0,
+                    "end_ms": 0,
+                    "offset_ms": 0,
+                    "gain_db": 0.0,
+                    "fade_in_ms": 0,
+                    "fade_out_ms": 0,
+                    "tags": [],
+                    "event_type": "caption",
+                    "text": scene.text,
+                    "style": spec.captions.style,
+                })
+            }).collect::<Vec<_>>(),
+            "broll": background_pool.iter().enumerate().map(|(i, path)| {
+                json!({
+                    "id": format!("broll_{:03}", i + 1),
+                    "asset_id": format!("broll_{:03}", i + 1),
+                    "start_ms": 0,
+                    "end_ms": total_duration_ms,
+                    "offset_ms": 0,
+                    "gain_db": spec.background.volume_db,
+                    "fade_in_ms": 0,
+                    "fade_out_ms": 0,
+                    "tags": [],
+                    "event_type": "broll",
+                    "concept": "background",
+                    "source_provider": "youtube",
+                    "transition_style": "cut",
+                    "crop_mode": spec.background.crop_mode,
+                })
+            }).collect::<Vec<_>>(),
+        },
+        "assets": {
+            "voiceover": spec.scenes.iter().enumerate().map(|(i, _)| {
+                json!({"path": format!("{}/voices/scene_{:03}.wav", output_dir, i + 1)})
+            }).collect::<Vec<_>>(),
+            "captions": {"ass": {"path": captions_path}},
+            "broll": background_pool.iter().enumerate().map(|(i, path)| {
+                json!({"path": path})
+            }).collect::<Vec<_>>(),
+            "stickers": sticker_paths,
+        },
+        "directives": {
+            "ducking": if spec.music.as_ref().map(|m| m.ducking).unwrap_or(false) {
+                vec![json!({
+                    "target_track": "broll",
+                    "reduce_db": spec.music.as_ref().map(|m| m.ducking_depth_db).unwrap_or(12.0),
+                    "during": "voiceover",
+                })]
+            } else {
+                vec![]
+            },
+        },
+        "effects": {},
+    });
+
+    std::fs::write(&timeline_path, serde_json::to_string_pretty(&timeline_json)?)?;
+
+    report_progress(100.0, 100.0, "Timeline assembled").await.ok();
+
+    Ok(json!({
+        "status": "assembled",
+        "timeline_path": timeline_path,
+        "voiceover_manifest": manifest_path,
+        "captions_path": captions_path,
+        "background_assignments": bg_assignments_path,
+        "total_duration_ms": total_duration_ms,
+        "scene_count": spec.scenes.len(),
+        "speaker_count": spec.speakers.len(),
+        "background_pool_size": background_pool.len(),
+        "sticker_count": sticker_paths.len(),
+        "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
     }))
 }

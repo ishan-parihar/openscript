@@ -2653,6 +2653,7 @@ dependencies = [
 name = "openscript-mcp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "openscript-assets",
  "openscript-core",
  "openscript-ffmpeg",
