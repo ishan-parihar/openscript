@@ -1,3 +1,4 @@
+use openscript_core::script::{parse_script, validate_script};
 use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, write_srt};
 use openscript_core::timeline::Timeline;
 use openscript_core::types::TrackType;
@@ -11,7 +12,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (49 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render)
+// Tool definitions (50 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 1 script.parse)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -688,6 +689,19 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["video_path", "timeline_path"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "script.parse",
+            "description": "Parse and validate a from-scratch video creation script (JSON). The script is the single source of truth for AI-agent-driven video creation — it describes speakers, scenes, backgrounds, captions, music, and output. Returns the parsed ScriptSpec with defaults applied, plus validation errors (if any). Use BEFORE script.to_timeline / script.to_video to catch schema issues early. See openscript-core/src/script.rs for the full schema. Kokoro is the default TTS backend.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "The script JSON string (or path to a .json file). If it starts with '{', parsed as inline JSON; otherwise treated as a file path."},
+                    "validate_only": {"type": "boolean", "default": false, "description": "If true, only validate without returning the full parsed spec (lighter response)"}
+                },
+                "required": ["script"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -783,6 +797,7 @@ pub fn route_tool(
                 .await
                 .map_err(|e| ToolError::Hf(e.to_string()))
         }),
+        "script.parse" => Box::pin(handle_script_parse(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -4723,5 +4738,68 @@ async fn handle_reelize_direct(
         "voiceover_count": voiceover_count,
         "timeline_path": timeline_path,
         "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: script.parse — from-scratch video creation script parser
+// ---------------------------------------------------------------------------
+
+async fn handle_script_parse(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script_input = extract_str(&args, "script")?;
+    let validate_only = default_bool(&args, "validate_only", false);
+
+    // Determine if input is inline JSON or a file path
+    let json_str: String = if script_input.trim_start().starts_with('{') {
+        // Inline JSON
+        script_input.to_string()
+    } else {
+        // File path
+        let path = sanitize_input_path(&script_input)?;
+        if !path.exists() {
+            return Err(ToolError::NotFound(format!(
+                "Script file not found: {}",
+                path.display()
+            )));
+        }
+        std::fs::read_to_string(&path)?
+    };
+
+    // Parse the script
+    let spec = parse_script(&json_str).map_err(|e| {
+        ToolError::InvalidArg(format!("Failed to parse script JSON: {}", e))
+    })?;
+
+    // Validate
+    let errors = validate_script(&spec);
+
+    if !errors.is_empty() {
+        // Return validation errors
+        return Ok(json!({
+            "status": "invalid",
+            "error_count": errors.len(),
+            "errors": errors,
+            "spec": if validate_only { serde_json::Value::Null } else { json!(spec) },
+        }));
+    }
+
+    // Valid
+    Ok(json!({
+        "status": "valid",
+        "error_count": 0,
+        "spec": if validate_only { serde_json::Value::Null } else { json!(spec) },
+        "summary": {
+            "title": spec.title,
+            "scene_count": spec.scenes.len(),
+            "speaker_count": spec.speakers.len(),
+            "aspect": spec.meta.aspect,
+            "fps": spec.meta.fps,
+            "tts_backend": spec.tts.backend,
+            "caption_style": spec.captions.style,
+            "speaker_layout": format!("{:?}", spec.speaker_layout).to_lowercase(),
+            "background_type": spec.background.r#type,
+            "stickers_enabled": spec.stickers.enabled,
+            "lip_sync_mode": spec.stickers.lip_sync,
+        },
     }))
 }

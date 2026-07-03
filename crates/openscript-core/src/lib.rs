@@ -1,4 +1,5 @@
 pub mod error;
+pub mod script;
 pub mod srt;
 pub mod timeline;
 pub mod transcript;
