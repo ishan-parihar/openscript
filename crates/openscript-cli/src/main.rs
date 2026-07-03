@@ -18,12 +18,13 @@ use tokio::sync::RwLock;
 #[command(about = "OpenScript Rust Video Editor - MCP Server & TUI")]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the MCP server on stdio
+    /// Start the MCP server on stdio (default — also used as 'serve' alias)
+    #[command(alias = "serve")]
     RunMcp,
     /// Start the TUI with a timeline file
     RunTui {
@@ -48,7 +49,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
-    match cli.command {
+    // Default to RunMcp when no subcommand is given — MCP clients can invoke
+    // the binary directly without specifying a subcommand.
+    match cli.command.unwrap_or(Commands::RunMcp) {
         Commands::RunMcp => {
             tracing::info!("Starting OpenScript MCP server");
             openscript_mcp::server::run().await?;

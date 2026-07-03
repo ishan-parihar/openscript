@@ -29,6 +29,12 @@ async fn run_hf_cli(
     extra_args: &[&str],
     timeout_secs: u64,
 ) -> Result<HfCliOutput, HfError> {
+    // Verify project_dir exists before spawning — gives a clearer error than
+    // the generic spawn failure message.
+    if !std::path::Path::new(project_dir).exists() {
+        return Err(HfError::ProjectNotFound(project_dir.to_string()));
+    }
+
     let mut cmd = Command::new("npx");
     cmd.arg("hyperframes")
         .arg(subcommand)

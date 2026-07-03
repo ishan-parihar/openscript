@@ -2663,7 +2663,15 @@ async fn handle_tts_commentary(
 
     if do_transitions {
         let segments = timeline.segments.clone();
-        for seg in &segments {
+        let total_segs = segments.len();
+        for (i, seg) in segments.iter().enumerate() {
+            // Report progress per voiceover to prevent client timeouts
+            report_progress(
+                (i as f64 / total_segs.max(1) as f64) * 100.0,
+                100.0,
+                &format!("Voiceover {}/{}", i + 1, total_segs),
+            ).await.ok();
+
             let seg_start_ms = (seg.start * 1000.0) as i64;
             if seg_start_ms <= 0 {
                 continue;
@@ -3379,6 +3387,26 @@ async fn handle_reelize_timeline(
             Ok(r) => {
                 let filled = r.get("broll_slots_filled").and_then(|v| v.as_u64()).unwrap_or(0);
                 report_progress(55.0, 100.0, &format!("B-roll: {} slots filled", filled)).await.ok();
+
+                // Clean up placeholder b-roll events that failed to download.
+                // These have asset_id="placeholder" and would crash the render
+                // pipeline or be silently skipped. Remove them so the timeline
+                // is clean for subsequent validate/render calls.
+                if let Ok(mut timeline) = Timeline::load(&timeline_path) {
+                    if let Some(broll_events) = timeline.tracks.get_mut(&TrackType::Broll) {
+                        let before = broll_events.len();
+                        broll_events.retain(|e| e.asset_id != "placeholder");
+                        let removed = before - broll_events.len();
+                        if removed > 0 {
+                            warnings.push(format!(
+                                "Removed {} placeholder b-roll events (no asset downloaded)",
+                                removed
+                            ));
+                        }
+                        // Save the cleaned timeline
+                        let _ = timeline.save(&timeline_path);
+                    }
+                }
             }
             Err(e) => warnings.push(format!("B-roll director skipped: {}", e)),
         }
