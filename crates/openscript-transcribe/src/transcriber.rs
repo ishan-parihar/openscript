@@ -209,7 +209,7 @@ pub async fn check_apex_health() -> ApexHealth {
 
 /// Find the Apex transcription wrapper script.
 fn find_apex_script() -> Option<PathBuf> {
-    let home = std::env::var("HOME").ok().map(PathBuf::from)?;
+    let home = home_dir()?;
     let candidates = [
         home.join("Documents/GitHub/openscript/mcp/scripts/apex_transcriber.py"),
         home.join("projects/openscript/mcp/scripts/apex_transcriber.py"),
@@ -241,6 +241,15 @@ fn find_apex_script() -> Option<PathBuf> {
     None
 }
 
+/// Cross-platform home directory resolution.
+/// Uses HOME on Unix, USERPROFILE on Windows, falls back to None.
+fn home_dir() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(PathBuf::from)
+}
+
 /// Find the conda environment python that has Whisper-Hindi2Hinglish-Apex installed.
 ///
 /// APEX PYTHON — This is the ONLY Python interpreter used for transcription.
@@ -256,8 +265,9 @@ fn find_conda_python() -> Option<PathBuf> {
     }
 
     // Priority 2: common conda/venv paths for the whisper-hindi env
-    let home = std::env::var("HOME").ok().map(PathBuf::from)?;
+    let home = home_dir()?;
     let candidates = [
+        // Unix paths
         home.join("miniconda3/envs/whisper-hindi/bin/python3.11"),
         home.join("miniconda3/envs/whisper-hindi/bin/python3"),
         home.join("miniconda3/envs/whisper-hindi/bin/python"),
@@ -265,6 +275,13 @@ fn find_conda_python() -> Option<PathBuf> {
         home.join("anaconda3/envs/whisper-hindi/bin/python3"),
         home.join(".conda/envs/whisper-hindi/bin/python3.11"),
         home.join(".local/share/conda/envs/whisper-hindi/bin/python3.11"),
+        // Windows paths (conda uses Scripts/python.exe on Windows)
+        home.join("miniconda3/envs/whisper-hindi/python.exe"),
+        home.join("miniconda3/envs/whisper-hindi/Scripts/python.exe"),
+        home.join("anaconda3/envs/whisper-hindi/python.exe"),
+        home.join("anaconda3/envs/whisper-hindi/Scripts/python.exe"),
+        home.join("AppData/Local/miniconda3/envs/whisper-hindi/python.exe"),
+        home.join("AppData/Local/anaconda3/envs/whisper-hindi/python.exe"),
     ];
     for c in &candidates {
         if c.exists() {

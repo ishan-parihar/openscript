@@ -507,6 +507,9 @@ impl KokoroClient {
         }
         std::fs::write(&cache, &wav_bytes)?;
 
+        // Best-effort cache eviction — prevents unbounded growth
+        crate::evict_cache_if_needed(&self.cfg.cache_dir);
+
         Ok(KokoroResult {
             output_path: output_path.to_string(),
             duration_ms: ((samples.len() as f64 / 24_000.0) * 1000.0).round() as i64,

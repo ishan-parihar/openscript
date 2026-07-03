@@ -163,6 +163,9 @@ impl TtsClient {
         }
         std::fs::write(&cache_path, &bytes)?;
 
+        // Best-effort cache eviction — prevents unbounded growth
+        crate::evict_cache_if_needed(&self.cache_dir);
+
         let duration_ms = json_resp.duration_ms.unwrap_or_else(|| {
             Self::extract_audio_duration(&output).unwrap_or(0)
         });

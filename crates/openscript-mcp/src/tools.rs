@@ -875,11 +875,30 @@ fn sanitize_input_path<P: AsRef<std::path::Path>>(path: P) -> Result<std::path::
             )));
         }
     }
-    if path.exists() {
-        path.canonicalize().map_err(|e| ToolError::InvalidArg(format!("Cannot resolve path: {}", e)))
+
+    let resolved = if path.exists() {
+        path.canonicalize().map_err(|e| ToolError::InvalidArg(format!("Cannot resolve path: {}", e)))?
     } else {
-        Ok(path.to_path_buf())
+        path.to_path_buf()
+    };
+
+    // If OPENSCRIPT_WORKSPACE_ROOT is set, reject paths that resolve outside it.
+    // This is a defense-in-depth measure — the MCP server trusts the agent by default,
+    // but operators can opt into workspace confinement via this env var.
+    if let Ok(workspace_root) = std::env::var("OPENSCRIPT_WORKSPACE_ROOT") {
+        let root = std::path::Path::new(&workspace_root)
+            .canonicalize()
+            .map_err(|e| ToolError::InvalidArg(format!("Invalid OPENSCRIPT_WORKSPACE_ROOT: {}", e)))?;
+        if !resolved.starts_with(&root) {
+            return Err(ToolError::Permission(format!(
+                "Path '{}' resolves outside workspace root '{}'. Set OPENSCRIPT_WORKSPACE_ROOT to allow this path, or remove the env var to disable workspace confinement.",
+                resolved.display(),
+                root.display()
+            )));
+        }
     }
+
+    Ok(resolved)
 }
 
 fn default_opt_arr(args: &serde_json::Value, key: &str) -> Option<Vec<String>> {
