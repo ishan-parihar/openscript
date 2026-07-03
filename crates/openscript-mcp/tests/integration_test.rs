@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // Should have 43 tools (8 original + 20 timeline V2 + 5 agent UX + 3 voiceover + 1 orchestration + 3 verification + 1 externally added + 1 brief + 1 direct)
+    // Should have 47 tools (43 original + 4 HyperFrames hf.* tools)
     assert_eq!(
         tools.len(),
-        43,
-        "Expected 43 MCP tools, got {}",
+        47,
+        "Expected 47 MCP tools, got {}",
         tools.len()
     );
 

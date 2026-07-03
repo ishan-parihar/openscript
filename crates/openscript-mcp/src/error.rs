@@ -20,6 +20,8 @@ pub enum ToolError {
     Tts(String),
     #[error("Transcription error: {0}")]
     Transcribe(String),
+    #[error("HyperFrames error: {0}")]
+    Hf(String),
     #[error("File not found: {0}")]
     NotFound(String),
     #[error("Invalid argument: {0}")]

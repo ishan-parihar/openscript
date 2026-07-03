@@ -12,11 +12,11 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (43 tools: 8 original + 20 timeline V2 + 5 agent UX + 3 voiceover + 1 orchestration + 3 verification + 1 externally added + 1 brief + 1 direct)
+// Tool definitions (47 tools: 43 original + 4 HyperFrames hf.* tools)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
-    json!([
+    let mut tools = json!([
         // ===================================================================
         // GROUP 1: CORE PIPELINE — Transcribe, caption, and render
         // ===================================================================
@@ -689,7 +689,14 @@ pub fn tool_definitions() -> serde_json::Value {
                 "additionalProperties": false
             }
         }
-    ])
+    ]);
+
+    // Append HyperFrames tools (hf.*) — wrappers around `npx hyperframes` CLI
+    if let Some(arr) = tools.as_array_mut() {
+        arr.extend(crate::hf::tool_definitions());
+    }
+
+    tools
 }
 
 // ---------------------------------------------------------------------------
@@ -745,6 +752,27 @@ pub fn route_tool(
         "verify.audio" => Box::pin(handle_verify_audio(args)),
         "verify.captions" => Box::pin(handle_verify_captions(args)),
         "verify.render" => Box::pin(handle_verify_render(args)),
+        // HyperFrames tools
+        "hf.lint" => Box::pin(async move {
+            crate::hf::handle_hf_lint(args)
+                .await
+                .map_err(|e| ToolError::Hf(e.to_string()))
+        }),
+        "hf.validate" => Box::pin(async move {
+            crate::hf::handle_hf_validate(args)
+                .await
+                .map_err(|e| ToolError::Hf(e.to_string()))
+        }),
+        "hf.snapshot" => Box::pin(async move {
+            crate::hf::handle_hf_snapshot(args)
+                .await
+                .map_err(|e| ToolError::Hf(e.to_string()))
+        }),
+        "hf.render" => Box::pin(async move {
+            crate::hf::handle_hf_render(args)
+                .await
+                .map_err(|e| ToolError::Hf(e.to_string()))
+        }),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
