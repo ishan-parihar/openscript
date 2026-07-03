@@ -1,0 +1,5 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Thinking eyebrows (one raised, one lowered) -->
+  <ellipse cx="160" cy="115" rx="25" ry="3" fill="#5a3a2a"/>
+  <path d="M 220 125 Q 240 130, 260 125" stroke="#5a3a2a" stroke-width="4" fill="none"/>
+</svg>

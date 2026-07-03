@@ -1,0 +1,22 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" id="puppet">
+  <!-- Body -->
+  <rect id="body" x="140" y="290" width="120" height="80" rx="10" fill="#3b82f6"/>
+  <!-- Neck -->
+  <rect x="185" y="280" width="30" height="20" fill="#fdbcb4"/>
+  <!-- Head -->
+  <circle id="head" cx="200" cy="180" r="120" fill="#fdbcb4" stroke="#e0a090" stroke-width="2"/>
+  <!-- Left eye -->
+  <ellipse id="left-eye" cx="160" cy="150" rx="12" ry="15" fill="#1a1a2e"/>
+  <!-- Right eye -->
+  <ellipse id="right-eye" cx="240" cy="150" rx="12" ry="15" fill="#1a1a2e"/>
+  <!-- Eye highlights -->
+  <circle cx="164" cy="146" r="4" fill="#ffffff"/>
+  <circle cx="244" cy="146" r="4" fill="#ffffff"/>
+  <!-- Eyebrows -->
+  <rect x="140" y="120" width="40" height="4" rx="2" fill="#5a3a2a"/>
+  <rect x="220" y="120" width="40" height="4" rx="2" fill="#5a3a2a"/>
+  <!-- Mouth (animated via scaleY) -->
+  <ellipse id="mouth" cx="200" cy="230" rx="30" ry="8" fill="#c0392b" style="transform-origin: 200px 230px; transform: scaleY(0.1)"/>
+  <!-- Nose -->
+  <ellipse cx="200" cy="195" rx="8" ry="6" fill="#e0a090"/>
+</svg>

@@ -1,6 +1,8 @@
+use openscript_core::amplitude::extract_amplitude;
 use openscript_core::captions::{estimate_word_timings, generate_ass, CaptionSegment};
 use openscript_core::background::{assign_backgrounds, BackgroundClip};
 use openscript_core::script::{parse_script, validate_script};
+use openscript_core::sticker::{generate_sticker_composition, StickerPreset};
 use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, write_srt};
 use openscript_core::timeline::Timeline;
 use openscript_core::types::TrackType;
@@ -14,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (54 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.*)
+// Tool definitions (56 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -762,6 +764,38 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["script", "voiceover_manifest", "background_pool"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "sticker.load_preset",
+            "description": "Load an SVG sticker preset by name. Presets are directories in mcp/assets/svg_presets/ containing puppet.svg, preset.json, mouth shapes, and emotes. Built-in presets: default_person, robot, cat. Returns the preset config + puppet SVG content.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "preset_name": {"type": "string", "description": "Preset name (e.g. 'default_person', 'robot', 'cat')"},
+                    "presets_dir": {"type": "string", "default": "mcp/assets/svg_presets", "description": "Directory containing preset folders"}
+                },
+                "required": ["preset_name"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "sticker.render",
+            "description": "Render an animated sticker overlay (HyperFrames HTML composition) for a speaker's voiceover. Extracts per-frame amplitude from the WAV, generates GSAP timeline that animates the SVG puppet's mouth scaleY in sync with audio. Produces an HTML file that can be rendered via hf.render to a transparent WebM. Use AFTER script.generate_voices and sticker.load_preset.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "wav_path": {"type": "string", "description": "Path to the speaker's voiceover WAV file"},
+                    "preset_name": {"type": "string", "description": "SVG preset name (e.g. 'default_person')"},
+                    "position": {"type": "string", "default": "top-left", "description": "On-screen position: top-left, top-right, bottom-left, bottom-right, top-center, bottom-center, center"},
+                    "scale": {"type": "number", "default": 0.25, "description": "Sticker scale relative to canvas width (0.0-1.0)"},
+                    "canvas_width": {"type": "integer", "default": 1080},
+                    "canvas_height": {"type": "integer", "default": 1920},
+                    "fps": {"type": "integer", "default": 30},
+                    "output_path": {"type": "string", "default": "artifacts/sticker.html", "description": "Output HTML composition path"}
+                },
+                "required": ["wav_path", "preset_name"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -862,6 +896,8 @@ pub fn route_tool(
         "script.build_captions" => Box::pin(handle_script_build_captions(args)),
         "background.fetch" => Box::pin(handle_background_fetch(args)),
         "background.assign" => Box::pin(handle_background_assign(args)),
+        "sticker.load_preset" => Box::pin(handle_sticker_load_preset(args)),
+        "sticker.render" => Box::pin(handle_sticker_render(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -5351,4 +5387,110 @@ fn md5_hash(data: &[u8]) -> u128 {
         hash = hash.wrapping_mul(0x0000000001000000000000000000013b);
     }
     hash
+}
+
+// ---------------------------------------------------------------------------
+// Handler: sticker.load_preset — load SVG preset config
+// ---------------------------------------------------------------------------
+
+async fn handle_sticker_load_preset(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let preset_name = extract_str(&args, "preset_name")?;
+    let presets_dir = default_str(&args, "presets_dir", "mcp/assets/svg_presets");
+
+    let preset_dir = format!("{}/{}", presets_dir, preset_name);
+    if !Path::new(&preset_dir).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Preset not found: {} (looked in {})",
+            preset_name, preset_dir
+        )));
+    }
+
+    // Load preset.json
+    let preset_json_path = format!("{}/preset.json", preset_dir);
+    let preset_json = std::fs::read_to_string(&preset_json_path)?;
+    let preset: StickerPreset = serde_json::from_str(&preset_json).map_err(|e| {
+        ToolError::InvalidArg(format!("Failed to parse preset.json: {}", e))
+    })?;
+
+    // Load puppet.svg
+    let puppet_svg_path = format!("{}/puppet.svg", preset_dir);
+    let puppet_svg = std::fs::read_to_string(&puppet_svg_path)?;
+
+    Ok(json!({
+        "status": "loaded",
+        "preset_name": preset_name,
+        "preset": preset,
+        "puppet_svg": puppet_svg,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: sticker.render — generate animated sticker HTML composition
+// ---------------------------------------------------------------------------
+
+async fn handle_sticker_render(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let wav_path = extract_str(&args, "wav_path")?;
+    let preset_name = extract_str(&args, "preset_name")?;
+    let position = default_str(&args, "position", "top-left");
+    let scale = default_f64(&args, "scale", 0.25);
+    let canvas_width = default_u32(&args, "canvas_width", 1080);
+    let canvas_height = default_u32(&args, "canvas_height", 1920);
+    let fps = default_u32(&args, "fps", 30);
+    let output_path = default_str(&args, "output_path", "artifacts/sticker.html");
+
+    report_progress(0.0, 100.0, "Loading preset...").await.ok();
+
+    // Load preset
+    let presets_dir = "mcp/assets/svg_presets";
+    let preset_dir = format!("{}/{}", presets_dir, preset_name);
+    if !Path::new(&preset_dir).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Preset not found: {} (looked in {})",
+            preset_name, preset_dir
+        )));
+    }
+
+    let preset_json = std::fs::read_to_string(format!("{}/preset.json", preset_dir))?;
+    let preset: StickerPreset = serde_json::from_str(&preset_json)
+        .map_err(|e| ToolError::InvalidArg(format!("Preset parse error: {}", e)))?;
+
+    let puppet_svg = std::fs::read_to_string(format!("{}/puppet.svg", preset_dir))?;
+
+    report_progress(30.0, 100.0, "Extracting amplitude...").await.ok();
+
+    // Extract amplitude from WAV
+    let amplitude = extract_amplitude(wav_path, fps).map_err(|e| {
+        ToolError::InvalidArg(format!("Amplitude extraction failed: {}", e))
+    })?;
+
+    report_progress(60.0, 100.0, "Generating composition...").await.ok();
+
+    // Generate sticker HTML composition
+    let html = generate_sticker_composition(
+        &puppet_svg,
+        &preset,
+        &amplitude,
+        &position,
+        scale,
+        canvas_width,
+        canvas_height,
+    );
+
+    // Write output
+    if let Some(parent) = Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&output_path, html)?;
+
+    report_progress(100.0, 100.0, "Sticker composition generated").await.ok();
+
+    Ok(json!({
+        "status": "generated",
+        "output_path": output_path,
+        "preset_name": preset_name,
+        "position": position,
+        "scale": scale,
+        "frame_count": amplitude.frames.len(),
+        "duration_ms": amplitude.duration_ms,
+    }))
 }

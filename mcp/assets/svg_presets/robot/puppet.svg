@@ -1,0 +1,20 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" id="puppet">
+  <!-- Body -->
+  <rect id="body" x="130" y="280" width="140" height="90" rx="5" fill="#455a64"/>
+  <!-- Antenna -->
+  <line x1="200" y1="50" x2="200" y2="80" stroke="#78909c" stroke-width="3"/>
+  <circle cx="200" cy="48" r="6" fill="#ff5252"/>
+  <!-- Head (rectangular) -->
+  <rect id="head" x="90" y="80" width="220" height="180" rx="10" fill="#607d8b" stroke="#455a64" stroke-width="2"/>
+  <!-- Left eye (LED) -->
+  <rect id="left-eye" x="130" y="130" width="40" height="30" rx="3" fill="#00e676"/>
+  <!-- Right eye (LED) -->
+  <rect id="right-eye" x="230" y="130" width="40" height="30" rx="3" fill="#00e676"/>
+  <!-- Mouth (speaker grille, animated via scaleY) -->
+  <rect id="mouth" x="160" y="200" width="80" height="20" rx="2" fill="#1a1a2e" style="transform-origin: 200px 210px; transform: scaleY(0.1)"/>
+  <!-- Rivets -->
+  <circle cx="100" cy="90" r="3" fill="#90a4ae"/>
+  <circle cx="300" cy="90" r="3" fill="#90a4ae"/>
+  <circle cx="100" cy="250" r="3" fill="#90a4ae"/>
+  <circle cx="300" cy="250" r="3" fill="#90a4ae"/>
+</svg>

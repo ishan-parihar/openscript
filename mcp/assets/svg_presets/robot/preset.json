@@ -1,0 +1,32 @@
+{
+  "name": "robot",
+  "description": "A blocky robot with LED eyes and speaker-grille mouth",
+  "mouth_element_id": "mouth",
+  "left_eye_id": "left-eye",
+  "right_eye_id": "right-eye",
+  "head_id": "head",
+  "body_id": "body",
+  "mouth_shapes": {
+    "closed": "mouths/closed.svg",
+    "small_o": "mouths/small_o.svg",
+    "wide": "mouths/wide.svg",
+    "open": "mouths/open.svg"
+  },
+  "emotes": {
+    "neutral": "emotes/neutral.svg",
+    "happy": "emotes/happy.svg",
+    "surprised": "emotes/surprised.svg",
+    "thinking": "emotes/thinking.svg"
+  },
+  "blink_rate_ms": 6000,
+  "blink_duration_ms": 100,
+  "idle_bob_amplitude_px": 3,
+  "idle_bob_period_ms": 3000,
+  "mouth_scale_range": [0.1, 1.0],
+  "default_colors": {
+    "head": "#607d8b",
+    "body": "#455a64",
+    "eyes": "#00e676",
+    "mouth": "#1a1a2e"
+  }
+}

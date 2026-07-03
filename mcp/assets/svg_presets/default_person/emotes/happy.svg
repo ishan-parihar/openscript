@@ -1,0 +1,5 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Happy eyebrows (raised) -->
+  <path d="M 140 125 Q 160 115, 180 125" stroke="#5a3a2a" stroke-width="4" fill="none"/>
+  <path d="M 220 125 Q 240 115, 260 125" stroke="#5a3a2a" stroke-width="4" fill="none"/>
+</svg>

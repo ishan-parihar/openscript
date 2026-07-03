@@ -1,0 +1,32 @@
+{
+  "name": "cat",
+  "description": "A cartoon cat with pointy ears and whiskers",
+  "mouth_element_id": "mouth",
+  "left_eye_id": "left-eye",
+  "right_eye_id": "right-eye",
+  "head_id": "head",
+  "body_id": "body",
+  "mouth_shapes": {
+    "closed": "mouths/closed.svg",
+    "small_o": "mouths/small_o.svg",
+    "wide": "mouths/wide.svg",
+    "open": "mouths/open.svg"
+  },
+  "emotes": {
+    "neutral": "emotes/neutral.svg",
+    "happy": "emotes/happy.svg",
+    "surprised": "emotes/surprised.svg",
+    "thinking": "emotes/thinking.svg"
+  },
+  "blink_rate_ms": 3000,
+  "blink_duration_ms": 120,
+  "idle_bob_amplitude_px": 4,
+  "idle_bob_period_ms": 1500,
+  "mouth_scale_range": [0.1, 1.0],
+  "default_colors": {
+    "head": "#f4a460",
+    "body": "#d2691e",
+    "eyes": "#2ecc71",
+    "mouth": "#c0392b"
+  }
+}
