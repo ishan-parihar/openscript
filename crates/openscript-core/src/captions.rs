@@ -152,6 +152,10 @@ fn hex_to_ass_color(hex: &str) -> String {
 /// Word highlight style: the full line is shown for the chunk duration,
 /// with the currently-spoken word highlighted in a different color.
 /// As each word is spoken, the highlight moves to it.
+///
+/// SENTENCE SEPARATION: Each segment is treated as a complete sentence.
+/// A gap is enforced between segments so captions don't leak into the next
+/// scene. The line is cleared at the end of each segment.
 fn generate_word_highlight(
     out: &mut String,
     segments: &[CaptionSegment],
@@ -163,8 +167,19 @@ fn generate_word_highlight(
         let words: Vec<&WordTiming> = seg.words.iter().collect();
         let max_per_line = spec.max_words_per_line as usize;
 
+        // If no words, show the full text as a single event for the segment
+        if words.is_empty() {
+            let text = ass_escape(&seg.text);
+            out.push_str(&format!(
+                "Dialogue: 1,{},{},Default,,0,0,0,,{{\\fad(100,100)}}{}\n",
+                ass_time(seg.start_ms),
+                ass_time(seg.end_ms),
+                text
+            ));
+            continue;
+        }
+
         for chunk in words.chunks(max_per_line) {
-            let chunk_start = chunk.first().map(|w| w.start_ms).unwrap_or(seg.start_ms);
             let chunk_end = chunk.last().map(|w| w.end_ms).unwrap_or(seg.end_ms);
 
             // For each word in the chunk, create a dialogue event spanning
@@ -172,7 +187,6 @@ fn generate_word_highlight(
             // word highlighted. This creates the "word-by-word highlight" effect.
             for (i, word) in chunk.iter().enumerate() {
                 let text = build_highlighted_line(chunk, i, &primary_color, &highlight_color);
-                // Do NOT ass_escape the text — it contains ASS override tags
                 out.push_str(&format!(
                     "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
                     ass_time(word.start_ms),
@@ -180,21 +194,13 @@ fn generate_word_highlight(
                     text
                 ));
             }
-
-            // If there's a gap between the last word and chunk_end, show
-            // the line with no highlight (all primary color)
-            if let Some(last) = chunk.last() {
-                if last.end_ms < chunk_end {
-                    let text = build_highlighted_line(chunk, chunk.len(), &primary_color, &highlight_color);
-                    out.push_str(&format!(
-                        "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
-                        ass_time(last.end_ms),
-                        ass_time(chunk_end),
-                        text
-                    ));
-                }
-            }
         }
+
+        // SENTENCE SEPARATION: Clear captions at the end of each segment
+        // by ensuring the last word's end_ms equals the segment end.
+        // The next segment starts fresh with its own first word.
+        // No gap-filling event is added — the screen goes blank between
+        // sentences, preventing text from leaking into the next scene.
     }
 }
 

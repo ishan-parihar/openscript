@@ -6,5 +6,6 @@ pub mod script;
 pub mod srt;
 pub mod sticker;
 pub mod timeline;
+pub mod timeline_preview;
 pub mod transcript;
 pub mod types;

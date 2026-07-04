@@ -5990,7 +5990,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let json_str = read_script_input(script_input)?;
     let spec = parse_script(&json_str).map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
 
-    report_progress(0.0, 100.0, "Phase 1/2: Building timeline...").await.ok();
+    report_progress(0.0, 100.0, "Phase 1/3: Building timeline...").await.ok();
 
     // Step 1: Build the timeline
     let timeline_result = handle_script_to_timeline(json!({
@@ -6006,9 +6006,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .to_string();
     let warnings = timeline_result.get("warnings").cloned().unwrap_or(serde_json::Value::Null);
 
-    report_progress(50.0, 100.0, "Phase 2/2: Rendering video...").await.ok();
+    report_progress(40.0, 100.0, "Phase 2/3: Building layered composition...").await.ok();
 
-    // Step 2: Render using the from-scratch renderer (not the NLE timeline.render)
+    // Load manifest
     let manifest_path = timeline_result.get("voiceover_manifest")
         .and_then(|v| v.as_str())
         .unwrap_or("");
@@ -6018,48 +6018,178 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let total_duration_ms = timeline_result.get("total_duration_ms")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
+    let total_duration_s = total_duration_ms as f64 / 1000.0;
 
-    // Load manifest to get voiceover paths
     let manifest: serde_json::Value = if !manifest_path.is_empty() {
         serde_json::from_str(&std::fs::read_to_string(manifest_path)?)?
     } else {
         json!({"segments": []})
     };
 
+    // Extract voiceover paths and per-scene durations
     let mut voiceover_paths: Vec<String> = Vec::new();
+    let mut scene_durations: Vec<f64> = Vec::new();
     if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
         for seg in segments {
             if let Some(path) = seg.get("wav_path").and_then(|v| v.as_str()) {
                 voiceover_paths.push(path.to_string());
             }
+            let dur_ms = seg.get("duration_ms").and_then(|v| v.as_i64()).unwrap_or(3000);
+            scene_durations.push(dur_ms as f64 / 1000.0);
         }
     }
 
-    // Get background path from timeline
-    let timeline_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&timeline_path)?)?;
-    let bg_path = timeline_json
-        .get("assets")
-        .and_then(|a| a.get("broll"))
-        .and_then(|b| b.get("broll_bg"))
-        .and_then(|p| p.get("path"))
-        .and_then(|p| p.as_str())
-        .unwrap_or("mcp/assets/backgrounds/procedural_01.mp4");
+    // Build per-scene background clips using change_cadence
+    let fallback_pool = if !spec.background.fallback_pool.is_empty() {
+        spec.background.fallback_pool.clone()
+    } else {
+        // Scan the backgrounds directory for available clips
+        let mut pool = Vec::new();
+        if let Ok(entries) = std::fs::read_dir("mcp/assets/backgrounds") {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.ends_with(".mp4") {
+                    pool.push(format!("mcp/assets/backgrounds/{}", name));
+                }
+            }
+        }
+        if pool.is_empty() {
+            pool.push("mcp/assets/backgrounds/procedural_01.mp4".to_string());
+        }
+        pool
+    };
+
+    // Assign backgrounds per scene based on cadence
+    let mut backgrounds: Vec<openscript_ffmpeg::multilayer_render::BackgroundClip> = Vec::new();
+    let mut pool_idx = 0usize;
+    let mut last_speaker = String::new();
+
+    for (i, &dur) in scene_durations.iter().enumerate() {
+        let speaker = manifest.get("segments")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.get(i))
+            .and_then(|s| s.get("speaker"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let should_change = match spec.background.change_cadence.as_str() {
+            "speaker" => speaker != last_speaker,
+            "fixed" => i == 0,
+            _ => true, // "scene"
+        };
+
+        if should_change || backgrounds.is_empty() {
+            if !backgrounds.is_empty() {
+                pool_idx = (pool_idx + 1) % fallback_pool.len();
+            }
+            last_speaker = speaker.to_string();
+        }
+
+        let bg_path = if spec.background.change_cadence == "fixed" {
+            fallback_pool[0].clone()
+        } else {
+            fallback_pool[pool_idx].clone()
+        };
+
+        backgrounds.push(openscript_ffmpeg::multilayer_render::BackgroundClip {
+            path: bg_path,
+            duration_s: dur,
+            looped: true,
+        });
+    }
+
+    // Build sticker overlays (from script spec speakers)
+    let mut stickers: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
+    if !skip_stickers {
+        let mut current_ms = 0i64;
+        if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
+            for seg in segments {
+                let speaker_name = seg.get("speaker").and_then(|v| v.as_str()).unwrap_or("");
+                let end_ms = seg.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(current_ms + 3000);
+
+                if let Some(speaker_spec) = spec.speakers.get(speaker_name) {
+                    // Look for sticker PNG: mcp/assets/stickers/speaker_{name}_{position}.png
+                    let position_parts: Vec<&str> = speaker_spec.position.split('-').collect();
+                    let facing = position_parts.last().unwrap_or(&"left");
+                    let sticker_path = format!("mcp/assets/stickers/speaker_{}_{}.png", speaker_name, facing);
+
+                    if std::path::Path::new(&sticker_path).exists() {
+                        stickers.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
+                            path: sticker_path,
+                            start_s: current_ms as f64 / 1000.0,
+                            end_s: end_ms as f64 / 1000.0,
+                            position: speaker_spec.position.clone(),
+                            scale: speaker_spec.scale,
+                        });
+                    }
+                }
+
+                current_ms = end_ms;
+            }
+        }
+    }
 
     // Get music path
-    let music_path = timeline_json
-        .get("assets")
-        .and_then(|a| a.get("music"))
-        .and_then(|m| m.get("music_bg"))
-        .and_then(|p| p.get("path"))
-        .and_then(|p| p.as_str())
-        .map(|s| s.to_string());
+    let timeline_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&timeline_path)?)?;
+    let music_path = spec.music.as_ref()
+        .map(|m| m.path.clone())
+        .filter(|p| std::path::Path::new(p).exists());
 
-    // Build render spec
-    use openscript_ffmpeg::script_render::{render_from_script, ScriptRenderSpec};
-    let render_spec = ScriptRenderSpec {
-        background_path: bg_path.to_string(),
+    // Build timeline preview for agent inspection
+    let bg_assignments: Vec<openscript_core::timeline_preview::BackgroundClipAssignment> = backgrounds.iter()
+        .enumerate()
+        .map(|(i, bg)| {
+            let start_ms: i64 = scene_durations[..i].iter().sum::<f64>() as i64 * 1000;
+            let end_ms = start_ms + (bg.duration_s * 1000.0) as i64;
+            openscript_core::timeline_preview::BackgroundClipAssignment {
+                start_ms,
+                end_ms,
+                path: bg.path.clone(),
+                looped: bg.looped,
+            }
+        })
+        .collect();
+
+    let sticker_assignments: Vec<openscript_core::timeline_preview::StickerAssignment> = stickers.iter()
+        .map(|s| openscript_core::timeline_preview::StickerAssignment {
+            start_ms: (s.start_s * 1000.0) as i64,
+            end_ms: (s.end_s * 1000.0) as i64,
+            path: s.path.clone(),
+            position: s.position.clone(),
+            scale: s.scale,
+            speaker: String::new(),
+        })
+        .collect();
+
+    let layered_timeline = openscript_core::timeline_preview::build_layered_timeline(
+        &manifest,
+        &bg_assignments,
+        music_path.as_deref(),
+        spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
+        &sticker_assignments,
+        Some(captions_path),
+        spec.meta.width,
+        spec.meta.height,
+        spec.meta.fps,
+    );
+
+    let timeline_preview = layered_timeline.preview();
+    let timeline_issues = layered_timeline.validate();
+    let timeline_summary = layered_timeline.summary();
+
+    // Write timeline preview to file
+    let preview_path = format!("{}/timeline_preview.txt", output_dir);
+    std::fs::write(&preview_path, &timeline_preview)?;
+
+    report_progress(60.0, 100.0, "Phase 3/3: Rendering multi-layer video...").await.ok();
+
+    // Build multi-layer render spec
+    use openscript_ffmpeg::multilayer_render::{render_multilayer, MultiLayerRenderSpec};
+    let render_spec = MultiLayerRenderSpec {
+        backgrounds,
         voiceover_paths,
-        music_path: music_path.filter(|p| std::path::Path::new(p).exists()),
+        stickers,
+        music_path,
         music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-18.0) / 20.0),
         ducking: spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
         ducking_depth_db: spec.music.as_ref().map(|m| m.ducking_depth_db).unwrap_or(12.0),
@@ -6074,25 +6204,33 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         output_path: output_path.to_string(),
         crf: if preview_mode { 28 } else { spec.output.crf },
         preset: if preview_mode { "ultrafast".to_string() } else { "fast".to_string() },
-        total_duration_s: total_duration_ms as f64 / 1000.0,
+        total_duration_s,
     };
 
-    let render_result = render_from_script(&render_spec).await;
+    let render_result = render_multilayer(&render_spec).await;
 
     match render_result {
         Ok(out_path) => {
             let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
             report_progress(100.0, 100.0, "Video created").await.ok();
+
+            // Include timeline preview in the response for agent inspection
             Ok(json!({
                 "status": "rendered",
                 "output_path": out_path,
                 "file_size_bytes": file_size,
                 "timeline_path": timeline_path,
+                "timeline_preview_path": preview_path,
+                "timeline_preview": timeline_preview,
+                "timeline_summary": timeline_summary,
+                "timeline_issues": if timeline_issues.is_empty() { serde_json::Value::Null } else { json!(timeline_issues) },
                 "voiceover_manifest": manifest_path,
                 "captions_path": captions_path,
                 "total_duration_ms": total_duration_ms,
                 "scene_count": timeline_result.get("scene_count"),
                 "speaker_count": timeline_result.get("speaker_count"),
+                "background_count": render_spec.backgrounds.len(),
+                "sticker_count": render_spec.stickers.len(),
                 "warnings": warnings,
             }))
         }
