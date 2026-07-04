@@ -1,0 +1,551 @@
+{
+  "version": "2.0",
+  "created_at": "2026-07-04T11:41:44.898458611Z",
+  "updated_at": "2026-07-04T11:41:44.898562270Z",
+  "source": "mcp/assets/backgrounds/procedural_waves_purple.mp4",
+  "target": {
+    "aspect": "9:16",
+    "fps": 30,
+    "max_duration": null
+  },
+  "segments": [
+    {
+      "id": "scene_001",
+      "start": 0.0,
+      "end": 5.056,
+      "caption": "Every system has a purpose. But what happens when the system itself becomes the problem?",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_002",
+      "start": 5.056,
+      "end": 12.373,
+      "caption": "This is the Pathological Orange stage from Spiral Dynamics. It is when efficiency turns into exploitation.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_003",
+      "start": 12.373,
+      "end": 18.048,
+      "caption": "The economic system was designed to create wealth. But it now creates inequality instead.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_004",
+      "start": 18.048,
+      "end": 22.059,
+      "caption": "The rich get richer. The poor stay poor. The middle class disappears.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_005",
+      "start": 22.059,
+      "end": 26.688,
+      "caption": "Wealth concentrates at the top. Resources flow upward, never trickling down.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_006",
+      "start": 26.688,
+      "end": 31.595,
+      "caption": "The political system was designed to represent the people. But it represents the money.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_007",
+      "start": 31.595,
+      "end": 37.504,
+      "caption": "Lobbyists write the laws. Corporations fund the campaigns. The people get the illusion of choice.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_008",
+      "start": 37.504,
+      "end": 42.027,
+      "caption": "Privileges are distributed unequally. Justice depends on your bank account.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_009",
+      "start": 42.027,
+      "end": 46.678,
+      "caption": "The wealthy get bailouts. The poor get sentences. The system protects itself.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_010",
+      "start": 46.678,
+      "end": 52.374,
+      "caption": "Corruption is not a bug. It is a feature of a system designed by the powerful, for the powerful.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_011",
+      "start": 52.374,
+      "end": 57.089,
+      "caption": "The justice system degrades. Laws become tools of oppression, not protection.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_012",
+      "start": 57.089,
+      "end": 62.998,
+      "caption": "Regulatory capture means the regulators work for the regulated. The fox guards the henhouse.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_013",
+      "start": 62.998,
+      "end": 68.31,
+      "caption": "Media consolidation means a few corporations control what you see, hear, and think.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_014",
+      "start": 68.31,
+      "end": 73.942,
+      "caption": "Education becomes a commodity. Healthcare becomes a luxury. Housing becomes an investment.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    }
+  ],
+  "tracks": {
+    "voiceover": [
+      {
+        "id": "vo_scene_001",
+        "asset_id": "scene_001",
+        "start_ms": 0,
+        "end_ms": 5056,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Every system has a purpose. But what happens when the system itself becomes the problem?",
+        "estimated_duration_ms": 5056
+      },
+      {
+        "id": "vo_scene_002",
+        "asset_id": "scene_002",
+        "start_ms": 5056,
+        "end_ms": 12373,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "This is the Pathological Orange stage from Spiral Dynamics. It is when efficiency turns into exploitation.",
+        "estimated_duration_ms": 7317
+      },
+      {
+        "id": "vo_scene_003",
+        "asset_id": "scene_003",
+        "start_ms": 12373,
+        "end_ms": 18048,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "The economic system was designed to create wealth. But it now creates inequality instead.",
+        "estimated_duration_ms": 5675
+      },
+      {
+        "id": "vo_scene_004",
+        "asset_id": "scene_004",
+        "start_ms": 18048,
+        "end_ms": 22059,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "The rich get richer. The poor stay poor. The middle class disappears.",
+        "estimated_duration_ms": 4011
+      },
+      {
+        "id": "vo_scene_005",
+        "asset_id": "scene_005",
+        "start_ms": 22059,
+        "end_ms": 26688,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Wealth concentrates at the top. Resources flow upward, never trickling down.",
+        "estimated_duration_ms": 4629
+      },
+      {
+        "id": "vo_scene_006",
+        "asset_id": "scene_006",
+        "start_ms": 26688,
+        "end_ms": 31595,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "The political system was designed to represent the people. But it represents the money.",
+        "estimated_duration_ms": 4907
+      },
+      {
+        "id": "vo_scene_007",
+        "asset_id": "scene_007",
+        "start_ms": 31595,
+        "end_ms": 37504,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Lobbyists write the laws. Corporations fund the campaigns. The people get the illusion of choice.",
+        "estimated_duration_ms": 5909
+      },
+      {
+        "id": "vo_scene_008",
+        "asset_id": "scene_008",
+        "start_ms": 37504,
+        "end_ms": 42027,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Privileges are distributed unequally. Justice depends on your bank account.",
+        "estimated_duration_ms": 4523
+      },
+      {
+        "id": "vo_scene_009",
+        "asset_id": "scene_009",
+        "start_ms": 42027,
+        "end_ms": 46678,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "The wealthy get bailouts. The poor get sentences. The system protects itself.",
+        "estimated_duration_ms": 4651
+      },
+      {
+        "id": "vo_scene_010",
+        "asset_id": "scene_010",
+        "start_ms": 46678,
+        "end_ms": 52374,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Corruption is not a bug. It is a feature of a system designed by the powerful, for the powerful.",
+        "estimated_duration_ms": 5696
+      },
+      {
+        "id": "vo_scene_011",
+        "asset_id": "scene_011",
+        "start_ms": 52374,
+        "end_ms": 57089,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "The justice system degrades. Laws become tools of oppression, not protection.",
+        "estimated_duration_ms": 4715
+      },
+      {
+        "id": "vo_scene_012",
+        "asset_id": "scene_012",
+        "start_ms": 57089,
+        "end_ms": 62998,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Regulatory capture means the regulators work for the regulated. The fox guards the henhouse.",
+        "estimated_duration_ms": 5909
+      },
+      {
+        "id": "vo_scene_013",
+        "asset_id": "scene_013",
+        "start_ms": 62998,
+        "end_ms": 68310,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Media consolidation means a few corporations control what you see, hear, and think.",
+        "estimated_duration_ms": 5312
+      },
+      {
+        "id": "vo_scene_014",
+        "asset_id": "scene_014",
+        "start_ms": 68310,
+        "end_ms": 73942,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "narrator",
+        "text": "Education becomes a commodity. Healthcare becomes a luxury. Housing becomes an investment.",
+        "estimated_duration_ms": 5632
+      }
+    ],
+    "music": [
+      {
+        "id": "music_bg",
+        "asset_id": "music_bg",
+        "start_ms": 0,
+        "end_ms": 73942,
+        "offset_ms": 0,
+        "gain_db": -22.0,
+        "fade_in_ms": 500,
+        "fade_out_ms": 500,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "music",
+        "mood": "neutral",
+        "energy": "medium",
+        "bpm": null,
+        "loopability": true,
+        "intro_friendly": true,
+        "cta_friendly": false,
+        "loudness_target_lufs": -14.0,
+        "loop_mode": "loop",
+        "ducking_policy": "auto"
+      }
+    ],
+    "sfx": [],
+    "broll": [
+      {
+        "id": "broll_bg",
+        "asset_id": "broll_bg",
+        "start_ms": 0,
+        "end_ms": 73942,
+        "offset_ms": 0,
+        "gain_db": -30.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": "background"
+        },
+        "event_type": "broll",
+        "concept": "background",
+        "source_provider": "youtube",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      }
+    ],
+    "dialogue": [],
+    "captions": []
+  },
+  "directives": {
+    "ducking": [
+      {
+        "when": "voiceover",
+        "target_track": "music",
+        "reduction_db": 15.0,
+        "attack_ms": 50,
+        "release_ms": 200
+      }
+    ],
+    "transitions": [],
+    "mix": {
+      "master_gain_db": 0.0,
+      "limiter_threshold_db": -1.0,
+      "normalize_to_lufs": -14.0
+    },
+    "render_backend": "auto"
+  },
+  "assets": {
+    "voices": {
+      "scene_008": {
+        "path": "artifacts_ed/voices/scene_008_narrator.wav"
+      },
+      "scene_003": {
+        "path": "artifacts_ed/voices/scene_003_narrator.wav"
+      },
+      "scene_009": {
+        "path": "artifacts_ed/voices/scene_009_narrator.wav"
+      },
+      "scene_001": {
+        "path": "artifacts_ed/voices/scene_001_narrator.wav"
+      },
+      "scene_014": {
+        "path": "artifacts_ed/voices/scene_014_narrator.wav"
+      },
+      "scene_004": {
+        "path": "artifacts_ed/voices/scene_004_narrator.wav"
+      },
+      "scene_002": {
+        "path": "artifacts_ed/voices/scene_002_narrator.wav"
+      },
+      "scene_006": {
+        "path": "artifacts_ed/voices/scene_006_narrator.wav"
+      },
+      "scene_005": {
+        "path": "artifacts_ed/voices/scene_005_narrator.wav"
+      },
+      "scene_011": {
+        "path": "artifacts_ed/voices/scene_011_narrator.wav"
+      },
+      "scene_012": {
+        "path": "artifacts_ed/voices/scene_012_narrator.wav"
+      },
+      "scene_010": {
+        "path": "artifacts_ed/voices/scene_010_narrator.wav"
+      },
+      "scene_013": {
+        "path": "artifacts_ed/voices/scene_013_narrator.wav"
+      },
+      "scene_007": {
+        "path": "artifacts_ed/voices/scene_007_narrator.wav"
+      }
+    },
+    "broll": {
+      "broll_bg": {
+        "path": "mcp/assets/backgrounds/procedural_waves_purple.mp4"
+      }
+    },
+    "music": {
+      "music_bg": {
+        "path": "mcp/assets/music/cinematic_epic.mp3"
+      }
+    },
+    "sfx": {},
+    "captions": {
+      "ass": {
+        "path": "artifacts_ed/captions.ass"
+      }
+    }
+  },
+  "effects": {
+    "burn_captions": true,
+    "audio": {
+      "loudnorm": true
+    }
+  }
+}

@@ -1,0 +1,675 @@
+{
+  "version": "2.0",
+  "created_at": "2026-07-04T11:33:39.926271122Z",
+  "updated_at": "2026-07-04T11:33:39.926377267Z",
+  "source": "mcp/assets/backgrounds/procedural_waves_purple.mp4",
+  "target": {
+    "aspect": "9:16",
+    "fps": 30,
+    "max_duration": null
+  },
+  "segments": [
+    {
+      "id": "scene_001",
+      "start": 0.0,
+      "end": 3.861,
+      "caption": "Welcome back to the show. Today we are diving into something serious.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_002",
+      "start": 3.861,
+      "end": 7.658,
+      "caption": "The gender wars. It is not just internet drama anymore.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_003",
+      "start": 7.658,
+      "end": 11.199,
+      "caption": "Right. It is actually changing how people form relationships.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_004",
+      "start": 11.199,
+      "end": 14.25,
+      "caption": "And the data is alarming. Look at South Korea.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_005",
+      "start": 14.25,
+      "end": 18.773,
+      "caption": "Their birth rate dropped to zero point seven two. That is the lowest in the world.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_006",
+      "start": 18.773,
+      "end": 23.53,
+      "caption": "Japan is not far behind at one point two. Both countries are shrinking.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_007",
+      "start": 23.53,
+      "end": 27.434,
+      "caption": "Young men and women are literally not dating anymore. They have given up.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_008",
+      "start": 27.434,
+      "end": 30.975,
+      "caption": "In Korea, there is a movement called the four B movement.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_009",
+      "start": 30.975,
+      "end": 35.86,
+      "caption": "No dating, no sex, no marriage, no childbirth. Women are opting out entirely.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_010",
+      "start": 35.86,
+      "end": 40.169,
+      "caption": "And men are responding with their own movements. The divide is growing.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_011",
+      "start": 40.169,
+      "end": 43.753,
+      "caption": "Social media amplifies the extreme voices on both sides.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_012",
+      "start": 43.753,
+      "end": 48.788,
+      "caption": "Every disagreement becomes a battle. Every relationship becomes a power struggle.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_013",
+      "start": 48.788,
+      "end": 51.732,
+      "caption": "The result? Loneliness epidemics in both genders.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_014",
+      "start": 51.732,
+      "end": 56.553,
+      "caption": "Marriage rates have cratered. Birth rates are collapsing across developed nations.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_015",
+      "start": 56.553,
+      "end": 59.817,
+      "caption": "This is not a left or right issue. It is a human issue.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_016",
+      "start": 59.817,
+      "end": 64.02,
+      "caption": "When men and women see each other as enemies, society breaks down.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_017",
+      "start": 64.02,
+      "end": 67.945,
+      "caption": "The population decline in Korea and Japan is just the beginning.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_018",
+      "start": 67.945,
+      "end": 72.681,
+      "caption": "We need to find a way back to mutual understanding. Before it is too late.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    }
+  ],
+  "tracks": {
+    "voiceover": [
+      {
+        "id": "vo_scene_001",
+        "asset_id": "scene_001",
+        "start_ms": 0,
+        "end_ms": 3861,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "Welcome back to the show. Today we are diving into something serious.",
+        "estimated_duration_ms": 3861
+      },
+      {
+        "id": "vo_scene_002",
+        "asset_id": "scene_002",
+        "start_ms": 3861,
+        "end_ms": 7658,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "The gender wars. It is not just internet drama anymore.",
+        "estimated_duration_ms": 3797
+      },
+      {
+        "id": "vo_scene_003",
+        "asset_id": "scene_003",
+        "start_ms": 7658,
+        "end_ms": 11199,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "Right. It is actually changing how people form relationships.",
+        "estimated_duration_ms": 3541
+      },
+      {
+        "id": "vo_scene_004",
+        "asset_id": "scene_004",
+        "start_ms": 11199,
+        "end_ms": 14250,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "And the data is alarming. Look at South Korea.",
+        "estimated_duration_ms": 3051
+      },
+      {
+        "id": "vo_scene_005",
+        "asset_id": "scene_005",
+        "start_ms": 14250,
+        "end_ms": 18773,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "Their birth rate dropped to zero point seven two. That is the lowest in the world.",
+        "estimated_duration_ms": 4523
+      },
+      {
+        "id": "vo_scene_006",
+        "asset_id": "scene_006",
+        "start_ms": 18773,
+        "end_ms": 23530,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "Japan is not far behind at one point two. Both countries are shrinking.",
+        "estimated_duration_ms": 4757
+      },
+      {
+        "id": "vo_scene_007",
+        "asset_id": "scene_007",
+        "start_ms": 23530,
+        "end_ms": 27434,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "Young men and women are literally not dating anymore. They have given up.",
+        "estimated_duration_ms": 3904
+      },
+      {
+        "id": "vo_scene_008",
+        "asset_id": "scene_008",
+        "start_ms": 27434,
+        "end_ms": 30975,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "In Korea, there is a movement called the four B movement.",
+        "estimated_duration_ms": 3541
+      },
+      {
+        "id": "vo_scene_009",
+        "asset_id": "scene_009",
+        "start_ms": 30975,
+        "end_ms": 35860,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "No dating, no sex, no marriage, no childbirth. Women are opting out entirely.",
+        "estimated_duration_ms": 4885
+      },
+      {
+        "id": "vo_scene_010",
+        "asset_id": "scene_010",
+        "start_ms": 35860,
+        "end_ms": 40169,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "And men are responding with their own movements. The divide is growing.",
+        "estimated_duration_ms": 4309
+      },
+      {
+        "id": "vo_scene_011",
+        "asset_id": "scene_011",
+        "start_ms": 40169,
+        "end_ms": 43753,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "Social media amplifies the extreme voices on both sides.",
+        "estimated_duration_ms": 3584
+      },
+      {
+        "id": "vo_scene_012",
+        "asset_id": "scene_012",
+        "start_ms": 43753,
+        "end_ms": 48788,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "Every disagreement becomes a battle. Every relationship becomes a power struggle.",
+        "estimated_duration_ms": 5035
+      },
+      {
+        "id": "vo_scene_013",
+        "asset_id": "scene_013",
+        "start_ms": 48788,
+        "end_ms": 51732,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "The result? Loneliness epidemics in both genders.",
+        "estimated_duration_ms": 2944
+      },
+      {
+        "id": "vo_scene_014",
+        "asset_id": "scene_014",
+        "start_ms": 51732,
+        "end_ms": 56553,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "Marriage rates have cratered. Birth rates are collapsing across developed nations.",
+        "estimated_duration_ms": 4821
+      },
+      {
+        "id": "vo_scene_015",
+        "asset_id": "scene_015",
+        "start_ms": 56553,
+        "end_ms": 59817,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "This is not a left or right issue. It is a human issue.",
+        "estimated_duration_ms": 3264
+      },
+      {
+        "id": "vo_scene_016",
+        "asset_id": "scene_016",
+        "start_ms": 59817,
+        "end_ms": 64020,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "When men and women see each other as enemies, society breaks down.",
+        "estimated_duration_ms": 4203
+      },
+      {
+        "id": "vo_scene_017",
+        "asset_id": "scene_017",
+        "start_ms": 64020,
+        "end_ms": 67945,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "The population decline in Korea and Japan is just the beginning.",
+        "estimated_duration_ms": 3925
+      },
+      {
+        "id": "vo_scene_018",
+        "asset_id": "scene_018",
+        "start_ms": 67945,
+        "end_ms": 72681,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "We need to find a way back to mutual understanding. Before it is too late.",
+        "estimated_duration_ms": 4736
+      }
+    ],
+    "music": [
+      {
+        "id": "music_bg",
+        "asset_id": "music_bg",
+        "start_ms": 0,
+        "end_ms": 72681,
+        "offset_ms": 0,
+        "gain_db": -20.0,
+        "fade_in_ms": 500,
+        "fade_out_ms": 500,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "music",
+        "mood": "neutral",
+        "energy": "medium",
+        "bpm": null,
+        "loopability": true,
+        "intro_friendly": true,
+        "cta_friendly": false,
+        "loudness_target_lufs": -14.0,
+        "loop_mode": "loop",
+        "ducking_policy": "auto"
+      }
+    ],
+    "captions": [],
+    "dialogue": [],
+    "sfx": [],
+    "broll": [
+      {
+        "id": "broll_bg",
+        "asset_id": "broll_bg",
+        "start_ms": 0,
+        "end_ms": 72681,
+        "offset_ms": 0,
+        "gain_db": -25.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": "background"
+        },
+        "event_type": "broll",
+        "concept": "background",
+        "source_provider": "youtube",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      }
+    ]
+  },
+  "directives": {
+    "ducking": [
+      {
+        "when": "voiceover",
+        "target_track": "music",
+        "reduction_db": 15.0,
+        "attack_ms": 50,
+        "release_ms": 200
+      }
+    ],
+    "transitions": [],
+    "mix": {
+      "master_gain_db": 0.0,
+      "limiter_threshold_db": -1.0,
+      "normalize_to_lufs": -14.0
+    },
+    "render_backend": "auto"
+  },
+  "assets": {
+    "voices": {
+      "scene_005": {
+        "path": "artifacts_gw/voices/scene_005_alice.wav"
+      },
+      "scene_002": {
+        "path": "artifacts_gw/voices/scene_002_bob.wav"
+      },
+      "scene_016": {
+        "path": "artifacts_gw/voices/scene_016_bob.wav"
+      },
+      "scene_010": {
+        "path": "artifacts_gw/voices/scene_010_bob.wav"
+      },
+      "scene_011": {
+        "path": "artifacts_gw/voices/scene_011_alice.wav"
+      },
+      "scene_017": {
+        "path": "artifacts_gw/voices/scene_017_alice.wav"
+      },
+      "scene_015": {
+        "path": "artifacts_gw/voices/scene_015_alice.wav"
+      },
+      "scene_006": {
+        "path": "artifacts_gw/voices/scene_006_bob.wav"
+      },
+      "scene_014": {
+        "path": "artifacts_gw/voices/scene_014_bob.wav"
+      },
+      "scene_001": {
+        "path": "artifacts_gw/voices/scene_001_alice.wav"
+      },
+      "scene_008": {
+        "path": "artifacts_gw/voices/scene_008_bob.wav"
+      },
+      "scene_012": {
+        "path": "artifacts_gw/voices/scene_012_bob.wav"
+      },
+      "scene_007": {
+        "path": "artifacts_gw/voices/scene_007_alice.wav"
+      },
+      "scene_018": {
+        "path": "artifacts_gw/voices/scene_018_bob.wav"
+      },
+      "scene_013": {
+        "path": "artifacts_gw/voices/scene_013_alice.wav"
+      },
+      "scene_009": {
+        "path": "artifacts_gw/voices/scene_009_alice.wav"
+      },
+      "scene_004": {
+        "path": "artifacts_gw/voices/scene_004_bob.wav"
+      },
+      "scene_003": {
+        "path": "artifacts_gw/voices/scene_003_alice.wav"
+      }
+    },
+    "broll": {
+      "broll_bg": {
+        "path": "mcp/assets/backgrounds/procedural_waves_purple.mp4"
+      }
+    },
+    "music": {
+      "music_bg": {
+        "path": "mcp/assets/music/lofi_chill.mp3"
+      }
+    },
+    "sfx": {},
+    "captions": {
+      "ass": {
+        "path": "artifacts_gw/captions.ass"
+      }
+    }
+  },
+  "effects": {
+    "burn_captions": true,
+    "audio": {
+      "loudnorm": true
+    }
+  }
+}

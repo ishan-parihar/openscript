@@ -1,0 +1,1260 @@
+{
+  "segments": [
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3861,
+      "end_ms": 3861,
+      "scene_id": "scene_001",
+      "speaker": "alice",
+      "start_ms": 0,
+      "text": "Welcome back to the show. Today we are diving into something serious.",
+      "wav_path": "artifacts_gw/voices/scene_001_alice.wav",
+      "words": [
+        {
+          "end_ms": 480,
+          "start_ms": 0,
+          "word": "Welcome"
+        },
+        {
+          "end_ms": 780,
+          "start_ms": 480,
+          "word": "back"
+        },
+        {
+          "end_ms": 920,
+          "start_ms": 780,
+          "word": "to"
+        },
+        {
+          "end_ms": 1020,
+          "start_ms": 920,
+          "word": "the"
+        },
+        {
+          "end_ms": 1440,
+          "start_ms": 1020,
+          "word": "show."
+        },
+        {
+          "end_ms": 1980,
+          "start_ms": 1700,
+          "word": "Today"
+        },
+        {
+          "end_ms": 2220,
+          "start_ms": 1980,
+          "word": "we"
+        },
+        {
+          "end_ms": 2360,
+          "start_ms": 2220,
+          "word": "are"
+        },
+        {
+          "end_ms": 2660,
+          "start_ms": 2360,
+          "word": "diving"
+        },
+        {
+          "end_ms": 2920,
+          "start_ms": 2660,
+          "word": "into"
+        },
+        {
+          "end_ms": 3240,
+          "start_ms": 2920,
+          "word": "something"
+        },
+        {
+          "end_ms": 3660,
+          "start_ms": 3240,
+          "word": "serious."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3797,
+      "end_ms": 7658,
+      "scene_id": "scene_002",
+      "speaker": "bob",
+      "start_ms": 3861,
+      "text": "The gender wars. It is not just internet drama anymore.",
+      "wav_path": "artifacts_gw/voices/scene_002_bob.wav",
+      "words": [
+        {
+          "end_ms": 4101,
+          "start_ms": 3861,
+          "word": "the"
+        },
+        {
+          "end_ms": 4441,
+          "start_ms": 4101,
+          "word": "gender"
+        },
+        {
+          "end_ms": 5061,
+          "start_ms": 4441,
+          "word": "wars."
+        },
+        {
+          "end_ms": 5481,
+          "start_ms": 5421,
+          "word": "It"
+        },
+        {
+          "end_ms": 5681,
+          "start_ms": 5481,
+          "word": "is"
+        },
+        {
+          "end_ms": 5901,
+          "start_ms": 5681,
+          "word": "not"
+        },
+        {
+          "end_ms": 6201,
+          "start_ms": 5901,
+          "word": "just"
+        },
+        {
+          "end_ms": 6581,
+          "start_ms": 6201,
+          "word": "internet"
+        },
+        {
+          "end_ms": 6961,
+          "start_ms": 6581,
+          "word": "drama"
+        },
+        {
+          "end_ms": 7161,
+          "start_ms": 6961,
+          "word": "and"
+        },
+        {
+          "end_ms": 7501,
+          "start_ms": 7161,
+          "word": "more."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3541,
+      "end_ms": 11199,
+      "scene_id": "scene_003",
+      "speaker": "alice",
+      "start_ms": 7658,
+      "text": "Right. It is actually changing how people form relationships.",
+      "wav_path": "artifacts_gw/voices/scene_003_alice.wav",
+      "words": [
+        {
+          "end_ms": 8018,
+          "start_ms": 7658,
+          "word": "Right,"
+        },
+        {
+          "end_ms": 8338,
+          "start_ms": 8278,
+          "word": "it"
+        },
+        {
+          "end_ms": 8658,
+          "start_ms": 8338,
+          "word": "is"
+        },
+        {
+          "end_ms": 8918,
+          "start_ms": 8658,
+          "word": "actually"
+        },
+        {
+          "end_ms": 9318,
+          "start_ms": 8918,
+          "word": "changing"
+        },
+        {
+          "end_ms": 9758,
+          "start_ms": 9318,
+          "word": "how"
+        },
+        {
+          "end_ms": 10018,
+          "start_ms": 9758,
+          "word": "people"
+        },
+        {
+          "end_ms": 10358,
+          "start_ms": 10018,
+          "word": "form"
+        },
+        {
+          "end_ms": 10898,
+          "start_ms": 10358,
+          "word": "relationships."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3051,
+      "end_ms": 14250,
+      "scene_id": "scene_004",
+      "speaker": "bob",
+      "start_ms": 11199,
+      "text": "And the data is alarming. Look at South Korea.",
+      "wav_path": "artifacts_gw/voices/scene_004_bob.wav",
+      "words": [
+        {
+          "end_ms": 11499,
+          "start_ms": 11199,
+          "word": "And"
+        },
+        {
+          "end_ms": 11619,
+          "start_ms": 11499,
+          "word": "the"
+        },
+        {
+          "end_ms": 11939,
+          "start_ms": 11619,
+          "word": "data"
+        },
+        {
+          "end_ms": 12219,
+          "start_ms": 11939,
+          "word": "is"
+        },
+        {
+          "end_ms": 12639,
+          "start_ms": 12219,
+          "word": "alarming."
+        },
+        {
+          "end_ms": 13219,
+          "start_ms": 13079,
+          "word": "Look"
+        },
+        {
+          "end_ms": 13419,
+          "start_ms": 13219,
+          "word": "at"
+        },
+        {
+          "end_ms": 13659,
+          "start_ms": 13419,
+          "word": "South"
+        },
+        {
+          "end_ms": 13979,
+          "start_ms": 13659,
+          "word": "Korea."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4523,
+      "end_ms": 18773,
+      "scene_id": "scene_005",
+      "speaker": "alice",
+      "start_ms": 14250,
+      "text": "Their birth rate dropped to zero point seven two. That is the lowest in the world.",
+      "wav_path": "artifacts_gw/voices/scene_005_alice.wav",
+      "words": [
+        {
+          "end_ms": 14510,
+          "start_ms": 14250,
+          "word": "Their"
+        },
+        {
+          "end_ms": 14750,
+          "start_ms": 14510,
+          "word": "birth"
+        },
+        {
+          "end_ms": 15030,
+          "start_ms": 14750,
+          "word": "rate"
+        },
+        {
+          "end_ms": 15350,
+          "start_ms": 15030,
+          "word": "dropped"
+        },
+        {
+          "end_ms": 15570,
+          "start_ms": 15350,
+          "word": "to"
+        },
+        {
+          "end_ms": 15890,
+          "start_ms": 15570,
+          "word": "0"
+        },
+        {
+          "end_ms": 16630,
+          "start_ms": 15890,
+          "word": ".72."
+        },
+        {
+          "end_ms": 17450,
+          "start_ms": 17230,
+          "word": "That"
+        },
+        {
+          "end_ms": 17670,
+          "start_ms": 17450,
+          "word": "is"
+        },
+        {
+          "end_ms": 17810,
+          "start_ms": 17670,
+          "word": "the"
+        },
+        {
+          "end_ms": 18110,
+          "start_ms": 17810,
+          "word": "lowest"
+        },
+        {
+          "end_ms": 18390,
+          "start_ms": 18110,
+          "word": "in"
+        },
+        {
+          "end_ms": 18450,
+          "start_ms": 18390,
+          "word": "the"
+        },
+        {
+          "end_ms": 18730,
+          "start_ms": 18450,
+          "word": "world."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4757,
+      "end_ms": 23530,
+      "scene_id": "scene_006",
+      "speaker": "bob",
+      "start_ms": 18773,
+      "text": "Japan is not far behind at one point two. Both countries are shrinking.",
+      "wav_path": "artifacts_gw/voices/scene_006_bob.wav",
+      "words": [
+        {
+          "end_ms": 19253,
+          "start_ms": 18773,
+          "word": "Japan"
+        },
+        {
+          "end_ms": 19533,
+          "start_ms": 19253,
+          "word": "is"
+        },
+        {
+          "end_ms": 19813,
+          "start_ms": 19533,
+          "word": "not"
+        },
+        {
+          "end_ms": 20073,
+          "start_ms": 19813,
+          "word": "far"
+        },
+        {
+          "end_ms": 20433,
+          "start_ms": 20073,
+          "word": "behind"
+        },
+        {
+          "end_ms": 20653,
+          "start_ms": 20433,
+          "word": "at"
+        },
+        {
+          "end_ms": 20793,
+          "start_ms": 20653,
+          "word": "1"
+        },
+        {
+          "end_ms": 21633,
+          "start_ms": 20793,
+          "word": ".2."
+        },
+        {
+          "end_ms": 22253,
+          "start_ms": 21993,
+          "word": "Both"
+        },
+        {
+          "end_ms": 22673,
+          "start_ms": 22253,
+          "word": "countries"
+        },
+        {
+          "end_ms": 23053,
+          "start_ms": 22673,
+          "word": "are"
+        },
+        {
+          "end_ms": 23293,
+          "start_ms": 23053,
+          "word": "shrinking."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3904,
+      "end_ms": 27434,
+      "scene_id": "scene_007",
+      "speaker": "alice",
+      "start_ms": 23530,
+      "text": "Young men and women are literally not dating anymore. They have given up.",
+      "wav_path": "artifacts_gw/voices/scene_007_alice.wav",
+      "words": [
+        {
+          "end_ms": 23870,
+          "start_ms": 23530,
+          "word": "Young"
+        },
+        {
+          "end_ms": 24130,
+          "start_ms": 23870,
+          "word": "men"
+        },
+        {
+          "end_ms": 24250,
+          "start_ms": 24130,
+          "word": "and"
+        },
+        {
+          "end_ms": 24590,
+          "start_ms": 24250,
+          "word": "women"
+        },
+        {
+          "end_ms": 24830,
+          "start_ms": 24590,
+          "word": "are"
+        },
+        {
+          "end_ms": 25130,
+          "start_ms": 24830,
+          "word": "literally"
+        },
+        {
+          "end_ms": 25490,
+          "start_ms": 25130,
+          "word": "not"
+        },
+        {
+          "end_ms": 25730,
+          "start_ms": 25490,
+          "word": "dating"
+        },
+        {
+          "end_ms": 26190,
+          "start_ms": 25730,
+          "word": "anymore."
+        },
+        {
+          "end_ms": 26750,
+          "start_ms": 26610,
+          "word": "They"
+        },
+        {
+          "end_ms": 26930,
+          "start_ms": 26750,
+          "word": "have"
+        },
+        {
+          "end_ms": 27110,
+          "start_ms": 26930,
+          "word": "given"
+        },
+        {
+          "end_ms": 27410,
+          "start_ms": 27110,
+          "word": "up."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3541,
+      "end_ms": 30975,
+      "scene_id": "scene_008",
+      "speaker": "bob",
+      "start_ms": 27434,
+      "text": "In Korea, there is a movement called the four B movement.",
+      "wav_path": "artifacts_gw/voices/scene_008_bob.wav",
+      "words": [
+        {
+          "end_ms": 27754,
+          "start_ms": 27434,
+          "word": "In"
+        },
+        {
+          "end_ms": 28154,
+          "start_ms": 27754,
+          "word": "Korea,"
+        },
+        {
+          "end_ms": 28694,
+          "start_ms": 28614,
+          "word": "there"
+        },
+        {
+          "end_ms": 28894,
+          "start_ms": 28694,
+          "word": "is"
+        },
+        {
+          "end_ms": 29014,
+          "start_ms": 28894,
+          "word": "a"
+        },
+        {
+          "end_ms": 29334,
+          "start_ms": 29014,
+          "word": "movement"
+        },
+        {
+          "end_ms": 29694,
+          "start_ms": 29334,
+          "word": "called"
+        },
+        {
+          "end_ms": 29934,
+          "start_ms": 29694,
+          "word": "the"
+        },
+        {
+          "end_ms": 30414,
+          "start_ms": 29934,
+          "word": "4B"
+        },
+        {
+          "end_ms": 30734,
+          "start_ms": 30414,
+          "word": "movement."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4885,
+      "end_ms": 35860,
+      "scene_id": "scene_009",
+      "speaker": "alice",
+      "start_ms": 30975,
+      "text": "No dating, no sex, no marriage, no childbirth. Women are opting out entirely.",
+      "wav_path": "artifacts_gw/voices/scene_009_alice.wav",
+      "words": [
+        {
+          "end_ms": 31295,
+          "start_ms": 30975,
+          "word": "No"
+        },
+        {
+          "end_ms": 31595,
+          "start_ms": 31295,
+          "word": "dating,"
+        },
+        {
+          "end_ms": 32095,
+          "start_ms": 31915,
+          "word": "no"
+        },
+        {
+          "end_ms": 32455,
+          "start_ms": 32095,
+          "word": "sex,"
+        },
+        {
+          "end_ms": 32735,
+          "start_ms": 32635,
+          "word": "no"
+        },
+        {
+          "end_ms": 33035,
+          "start_ms": 32735,
+          "word": "marriage,"
+        },
+        {
+          "end_ms": 33335,
+          "start_ms": 33235,
+          "word": "no"
+        },
+        {
+          "end_ms": 33995,
+          "start_ms": 33335,
+          "word": "childbirth."
+        },
+        {
+          "end_ms": 34515,
+          "start_ms": 34355,
+          "word": "Women"
+        },
+        {
+          "end_ms": 34755,
+          "start_ms": 34515,
+          "word": "are"
+        },
+        {
+          "end_ms": 35115,
+          "start_ms": 34755,
+          "word": "opting"
+        },
+        {
+          "end_ms": 35275,
+          "start_ms": 35115,
+          "word": "out"
+        },
+        {
+          "end_ms": 35655,
+          "start_ms": 35275,
+          "word": "entirely."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4309,
+      "end_ms": 40169,
+      "scene_id": "scene_010",
+      "speaker": "bob",
+      "start_ms": 35860,
+      "text": "And men are responding with their own movements. The divide is growing.",
+      "wav_path": "artifacts_gw/voices/scene_010_bob.wav",
+      "words": [
+        {
+          "end_ms": 36180,
+          "start_ms": 35860,
+          "word": "And"
+        },
+        {
+          "end_ms": 36380,
+          "start_ms": 36180,
+          "word": "men"
+        },
+        {
+          "end_ms": 36680,
+          "start_ms": 36380,
+          "word": "are"
+        },
+        {
+          "end_ms": 37060,
+          "start_ms": 36680,
+          "word": "responding"
+        },
+        {
+          "end_ms": 37420,
+          "start_ms": 37060,
+          "word": "with"
+        },
+        {
+          "end_ms": 37660,
+          "start_ms": 37420,
+          "word": "their"
+        },
+        {
+          "end_ms": 37820,
+          "start_ms": 37660,
+          "word": "own"
+        },
+        {
+          "end_ms": 38220,
+          "start_ms": 37820,
+          "word": "movements."
+        },
+        {
+          "end_ms": 38920,
+          "start_ms": 38800,
+          "word": "The"
+        },
+        {
+          "end_ms": 39340,
+          "start_ms": 38920,
+          "word": "divide"
+        },
+        {
+          "end_ms": 39680,
+          "start_ms": 39340,
+          "word": "is"
+        },
+        {
+          "end_ms": 39940,
+          "start_ms": 39680,
+          "word": "growing."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3584,
+      "end_ms": 43753,
+      "scene_id": "scene_011",
+      "speaker": "alice",
+      "start_ms": 40169,
+      "text": "Social media amplifies the extreme voices on both sides.",
+      "wav_path": "artifacts_gw/voices/scene_011_alice.wav",
+      "words": [
+        {
+          "end_ms": 40589,
+          "start_ms": 40169,
+          "word": "Social"
+        },
+        {
+          "end_ms": 40989,
+          "start_ms": 40589,
+          "word": "media"
+        },
+        {
+          "end_ms": 41829,
+          "start_ms": 40989,
+          "word": "amplifies"
+        },
+        {
+          "end_ms": 42049,
+          "start_ms": 41829,
+          "word": "the"
+        },
+        {
+          "end_ms": 42409,
+          "start_ms": 42049,
+          "word": "extreme"
+        },
+        {
+          "end_ms": 42809,
+          "start_ms": 42409,
+          "word": "voices"
+        },
+        {
+          "end_ms": 43089,
+          "start_ms": 42809,
+          "word": "on"
+        },
+        {
+          "end_ms": 43329,
+          "start_ms": 43089,
+          "word": "both"
+        },
+        {
+          "end_ms": 43729,
+          "start_ms": 43329,
+          "word": "sides."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5035,
+      "end_ms": 48788,
+      "scene_id": "scene_012",
+      "speaker": "bob",
+      "start_ms": 43753,
+      "text": "Every disagreement becomes a battle. Every relationship becomes a power struggle.",
+      "wav_path": "artifacts_gw/voices/scene_012_bob.wav",
+      "words": [
+        {
+          "end_ms": 44173,
+          "start_ms": 43753,
+          "word": "Every"
+        },
+        {
+          "end_ms": 44733,
+          "start_ms": 44173,
+          "word": "disagreement"
+        },
+        {
+          "end_ms": 45253,
+          "start_ms": 44733,
+          "word": "becomes"
+        },
+        {
+          "end_ms": 45513,
+          "start_ms": 45253,
+          "word": "a"
+        },
+        {
+          "end_ms": 45853,
+          "start_ms": 45513,
+          "word": "battle."
+        },
+        {
+          "end_ms": 46593,
+          "start_ms": 46353,
+          "word": "Every"
+        },
+        {
+          "end_ms": 47213,
+          "start_ms": 46593,
+          "word": "relationship"
+        },
+        {
+          "end_ms": 47793,
+          "start_ms": 47213,
+          "word": "becomes"
+        },
+        {
+          "end_ms": 48113,
+          "start_ms": 47793,
+          "word": "a"
+        },
+        {
+          "end_ms": 48333,
+          "start_ms": 48113,
+          "word": "power"
+        },
+        {
+          "end_ms": 48753,
+          "start_ms": 48333,
+          "word": "struggle."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 2944,
+      "end_ms": 51732,
+      "scene_id": "scene_013",
+      "speaker": "alice",
+      "start_ms": 48788,
+      "text": "The result? Loneliness epidemics in both genders.",
+      "wav_path": "artifacts_gw/voices/scene_013_alice.wav",
+      "words": [
+        {
+          "end_ms": 48948,
+          "start_ms": 48788,
+          "word": "The"
+        },
+        {
+          "end_ms": 49368,
+          "start_ms": 48948,
+          "word": "result,"
+        },
+        {
+          "end_ms": 50068,
+          "start_ms": 49908,
+          "word": "loneliness"
+        },
+        {
+          "end_ms": 50728,
+          "start_ms": 50068,
+          "word": "epidemics"
+        },
+        {
+          "end_ms": 50968,
+          "start_ms": 50728,
+          "word": "in"
+        },
+        {
+          "end_ms": 51208,
+          "start_ms": 50968,
+          "word": "both"
+        },
+        {
+          "end_ms": 51548,
+          "start_ms": 51208,
+          "word": "genders."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4821,
+      "end_ms": 56553,
+      "scene_id": "scene_014",
+      "speaker": "bob",
+      "start_ms": 51732,
+      "text": "Marriage rates have cratered. Birth rates are collapsing across developed nations.",
+      "wav_path": "artifacts_gw/voices/scene_014_bob.wav",
+      "words": [
+        {
+          "end_ms": 52232,
+          "start_ms": 51732,
+          "word": "Marriage"
+        },
+        {
+          "end_ms": 52512,
+          "start_ms": 52232,
+          "word": "rates"
+        },
+        {
+          "end_ms": 52832,
+          "start_ms": 52512,
+          "word": "have"
+        },
+        {
+          "end_ms": 53772,
+          "start_ms": 52832,
+          "word": "cratered."
+        },
+        {
+          "end_ms": 54012,
+          "start_ms": 53812,
+          "word": "Birth"
+        },
+        {
+          "end_ms": 54312,
+          "start_ms": 54012,
+          "word": "rates"
+        },
+        {
+          "end_ms": 54592,
+          "start_ms": 54312,
+          "word": "are"
+        },
+        {
+          "end_ms": 54952,
+          "start_ms": 54592,
+          "word": "collapsing"
+        },
+        {
+          "end_ms": 55432,
+          "start_ms": 54952,
+          "word": "across"
+        },
+        {
+          "end_ms": 55872,
+          "start_ms": 55432,
+          "word": "developed"
+        },
+        {
+          "end_ms": 56352,
+          "start_ms": 55872,
+          "word": "nations."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3264,
+      "end_ms": 59817,
+      "scene_id": "scene_015",
+      "speaker": "alice",
+      "start_ms": 56553,
+      "text": "This is not a left or right issue. It is a human issue.",
+      "wav_path": "artifacts_gw/voices/scene_015_alice.wav",
+      "words": [
+        {
+          "end_ms": 56793,
+          "start_ms": 56553,
+          "word": "This"
+        },
+        {
+          "end_ms": 57053,
+          "start_ms": 56793,
+          "word": "is"
+        },
+        {
+          "end_ms": 57233,
+          "start_ms": 57053,
+          "word": "not"
+        },
+        {
+          "end_ms": 57333,
+          "start_ms": 57233,
+          "word": "a"
+        },
+        {
+          "end_ms": 57593,
+          "start_ms": 57333,
+          "word": "left"
+        },
+        {
+          "end_ms": 57833,
+          "start_ms": 57593,
+          "word": "or"
+        },
+        {
+          "end_ms": 58053,
+          "start_ms": 57833,
+          "word": "right"
+        },
+        {
+          "end_ms": 58393,
+          "start_ms": 58053,
+          "word": "issue."
+        },
+        {
+          "end_ms": 58853,
+          "start_ms": 58753,
+          "word": "It"
+        },
+        {
+          "end_ms": 59033,
+          "start_ms": 58853,
+          "word": "is"
+        },
+        {
+          "end_ms": 59193,
+          "start_ms": 59033,
+          "word": "a"
+        },
+        {
+          "end_ms": 59353,
+          "start_ms": 59193,
+          "word": "human"
+        },
+        {
+          "end_ms": 59733,
+          "start_ms": 59353,
+          "word": "issue."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4203,
+      "end_ms": 64020,
+      "scene_id": "scene_016",
+      "speaker": "bob",
+      "start_ms": 59817,
+      "text": "When men and women see each other as enemies, society breaks down.",
+      "wav_path": "artifacts_gw/voices/scene_016_bob.wav",
+      "words": [
+        {
+          "end_ms": 60177,
+          "start_ms": 59817,
+          "word": "when"
+        },
+        {
+          "end_ms": 60337,
+          "start_ms": 60177,
+          "word": "men"
+        },
+        {
+          "end_ms": 60457,
+          "start_ms": 60337,
+          "word": "and"
+        },
+        {
+          "end_ms": 60777,
+          "start_ms": 60457,
+          "word": "women"
+        },
+        {
+          "end_ms": 60977,
+          "start_ms": 60777,
+          "word": "see"
+        },
+        {
+          "end_ms": 61197,
+          "start_ms": 60977,
+          "word": "each"
+        },
+        {
+          "end_ms": 61397,
+          "start_ms": 61197,
+          "word": "other"
+        },
+        {
+          "end_ms": 61617,
+          "start_ms": 61397,
+          "word": "as"
+        },
+        {
+          "end_ms": 62017,
+          "start_ms": 61617,
+          "word": "enemies,"
+        },
+        {
+          "end_ms": 62937,
+          "start_ms": 62617,
+          "word": "society"
+        },
+        {
+          "end_ms": 63317,
+          "start_ms": 62937,
+          "word": "breaks"
+        },
+        {
+          "end_ms": 63777,
+          "start_ms": 63317,
+          "word": "down."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 3925,
+      "end_ms": 67945,
+      "scene_id": "scene_017",
+      "speaker": "alice",
+      "start_ms": 64020,
+      "text": "The population decline in Korea and Japan is just the beginning.",
+      "wav_path": "artifacts_gw/voices/scene_017_alice.wav",
+      "words": [
+        {
+          "end_ms": 64180,
+          "start_ms": 64020,
+          "word": "The"
+        },
+        {
+          "end_ms": 64760,
+          "start_ms": 64180,
+          "word": "population"
+        },
+        {
+          "end_ms": 65340,
+          "start_ms": 64760,
+          "word": "decline"
+        },
+        {
+          "end_ms": 65640,
+          "start_ms": 65340,
+          "word": "in"
+        },
+        {
+          "end_ms": 66000,
+          "start_ms": 65640,
+          "word": "Korea"
+        },
+        {
+          "end_ms": 66240,
+          "start_ms": 66000,
+          "word": "and"
+        },
+        {
+          "end_ms": 66620,
+          "start_ms": 66240,
+          "word": "Japan"
+        },
+        {
+          "end_ms": 67180,
+          "start_ms": 66620,
+          "word": "is"
+        },
+        {
+          "end_ms": 67380,
+          "start_ms": 67180,
+          "word": "just"
+        },
+        {
+          "end_ms": 67540,
+          "start_ms": 67380,
+          "word": "the"
+        },
+        {
+          "end_ms": 67820,
+          "start_ms": 67540,
+          "word": "beginning."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4736,
+      "end_ms": 72681,
+      "scene_id": "scene_018",
+      "speaker": "bob",
+      "start_ms": 67945,
+      "text": "We need to find a way back to mutual understanding. Before it is too late.",
+      "wav_path": "artifacts_gw/voices/scene_018_bob.wav",
+      "words": [
+        {
+          "end_ms": 68165,
+          "start_ms": 67945,
+          "word": "We"
+        },
+        {
+          "end_ms": 68405,
+          "start_ms": 68165,
+          "word": "need"
+        },
+        {
+          "end_ms": 68525,
+          "start_ms": 68405,
+          "word": "to"
+        },
+        {
+          "end_ms": 68765,
+          "start_ms": 68525,
+          "word": "find"
+        },
+        {
+          "end_ms": 68885,
+          "start_ms": 68765,
+          "word": "a"
+        },
+        {
+          "end_ms": 69045,
+          "start_ms": 68885,
+          "word": "way"
+        },
+        {
+          "end_ms": 69385,
+          "start_ms": 69045,
+          "word": "back"
+        },
+        {
+          "end_ms": 69565,
+          "start_ms": 69385,
+          "word": "to"
+        },
+        {
+          "end_ms": 69905,
+          "start_ms": 69565,
+          "word": "mutual"
+        },
+        {
+          "end_ms": 70665,
+          "start_ms": 69905,
+          "word": "understanding."
+        },
+        {
+          "end_ms": 71505,
+          "start_ms": 71265,
+          "word": "Before"
+        },
+        {
+          "end_ms": 71805,
+          "start_ms": 71505,
+          "word": "it"
+        },
+        {
+          "end_ms": 72045,
+          "start_ms": 71805,
+          "word": "is"
+        },
+        {
+          "end_ms": 72325,
+          "start_ms": 72045,
+          "word": "too"
+        },
+        {
+          "end_ms": 72585,
+          "start_ms": 72325,
+          "word": "late."
+        }
+      ]
+    }
+  ],
+  "total_duration_ms": 72681,
+  "total_scenes": 18
+}

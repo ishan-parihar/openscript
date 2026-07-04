@@ -1,0 +1,1133 @@
+{
+  "segments": [
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5056,
+      "end_ms": 5056,
+      "scene_id": "scene_001",
+      "speaker": "narrator",
+      "start_ms": 0,
+      "text": "Every system has a purpose. But what happens when the system itself becomes the problem?",
+      "wav_path": "artifacts_ed/voices/scene_001_narrator.wav",
+      "words": [
+        {
+          "end_ms": 380,
+          "start_ms": 0,
+          "word": "Every"
+        },
+        {
+          "end_ms": 840,
+          "start_ms": 380,
+          "word": "system"
+        },
+        {
+          "end_ms": 1140,
+          "start_ms": 840,
+          "word": "has"
+        },
+        {
+          "end_ms": 1280,
+          "start_ms": 1140,
+          "word": "a"
+        },
+        {
+          "end_ms": 1660,
+          "start_ms": 1280,
+          "word": "purpose."
+        },
+        {
+          "end_ms": 2340,
+          "start_ms": 2240,
+          "word": "But"
+        },
+        {
+          "end_ms": 2580,
+          "start_ms": 2340,
+          "word": "what"
+        },
+        {
+          "end_ms": 2860,
+          "start_ms": 2580,
+          "word": "happens"
+        },
+        {
+          "end_ms": 3140,
+          "start_ms": 2860,
+          "word": "when"
+        },
+        {
+          "end_ms": 3240,
+          "start_ms": 3140,
+          "word": "the"
+        },
+        {
+          "end_ms": 3480,
+          "start_ms": 3240,
+          "word": "system"
+        },
+        {
+          "end_ms": 4019,
+          "start_ms": 3480,
+          "word": "itself"
+        },
+        {
+          "end_ms": 4380,
+          "start_ms": 4019,
+          "word": "becomes"
+        },
+        {
+          "end_ms": 4620,
+          "start_ms": 4380,
+          "word": "the"
+        },
+        {
+          "end_ms": 4920,
+          "start_ms": 4620,
+          "word": "problem?"
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 7317,
+      "end_ms": 12373,
+      "scene_id": "scene_002",
+      "speaker": "narrator",
+      "start_ms": 5056,
+      "text": "This is the Pathological Orange stage from Spiral Dynamics. It is when efficiency turns into exploitation.",
+      "wav_path": "artifacts_ed/voices/scene_002_narrator.wav",
+      "words": [
+        {
+          "end_ms": 5336,
+          "start_ms": 5056,
+          "word": "This"
+        },
+        {
+          "end_ms": 5636,
+          "start_ms": 5336,
+          "word": "is"
+        },
+        {
+          "end_ms": 5816,
+          "start_ms": 5636,
+          "word": "the"
+        },
+        {
+          "end_ms": 6396,
+          "start_ms": 5816,
+          "word": "pathological"
+        },
+        {
+          "end_ms": 6936,
+          "start_ms": 6396,
+          "word": "orange"
+        },
+        {
+          "end_ms": 7516,
+          "start_ms": 6936,
+          "word": "stage"
+        },
+        {
+          "end_ms": 7976,
+          "start_ms": 7516,
+          "word": "from"
+        },
+        {
+          "end_ms": 8416,
+          "start_ms": 7976,
+          "word": "spiral"
+        },
+        {
+          "end_ms": 8996,
+          "start_ms": 8416,
+          "word": "dynamics."
+        },
+        {
+          "end_ms": 9756,
+          "start_ms": 9696,
+          "word": "It"
+        },
+        {
+          "end_ms": 9996,
+          "start_ms": 9756,
+          "word": "is"
+        },
+        {
+          "end_ms": 10176,
+          "start_ms": 9996,
+          "word": "when"
+        },
+        {
+          "end_ms": 10616,
+          "start_ms": 10176,
+          "word": "efficiency"
+        },
+        {
+          "end_ms": 11176,
+          "start_ms": 10616,
+          "word": "turns"
+        },
+        {
+          "end_ms": 11476,
+          "start_ms": 11176,
+          "word": "into"
+        },
+        {
+          "end_ms": 12076,
+          "start_ms": 11476,
+          "word": "exploitation."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5675,
+      "end_ms": 18048,
+      "scene_id": "scene_003",
+      "speaker": "narrator",
+      "start_ms": 12373,
+      "text": "The economic system was designed to create wealth. But it now creates inequality instead.",
+      "wav_path": "artifacts_ed/voices/scene_003_narrator.wav",
+      "words": [
+        {
+          "end_ms": 12613,
+          "start_ms": 12373,
+          "word": "The"
+        },
+        {
+          "end_ms": 13013,
+          "start_ms": 12613,
+          "word": "economic"
+        },
+        {
+          "end_ms": 13613,
+          "start_ms": 13013,
+          "word": "system"
+        },
+        {
+          "end_ms": 14013,
+          "start_ms": 13613,
+          "word": "was"
+        },
+        {
+          "end_ms": 14453,
+          "start_ms": 14013,
+          "word": "designed"
+        },
+        {
+          "end_ms": 14653,
+          "start_ms": 14453,
+          "word": "to"
+        },
+        {
+          "end_ms": 14993,
+          "start_ms": 14653,
+          "word": "create"
+        },
+        {
+          "end_ms": 15433,
+          "start_ms": 14993,
+          "word": "wealth,"
+        },
+        {
+          "end_ms": 15973,
+          "start_ms": 15873,
+          "word": "but"
+        },
+        {
+          "end_ms": 16153,
+          "start_ms": 15973,
+          "word": "it"
+        },
+        {
+          "end_ms": 16333,
+          "start_ms": 16153,
+          "word": "now"
+        },
+        {
+          "end_ms": 16713,
+          "start_ms": 16333,
+          "word": "creates"
+        },
+        {
+          "end_ms": 17333,
+          "start_ms": 16713,
+          "word": "inequality"
+        },
+        {
+          "end_ms": 17813,
+          "start_ms": 17333,
+          "word": "instead."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4011,
+      "end_ms": 22059,
+      "scene_id": "scene_004",
+      "speaker": "narrator",
+      "start_ms": 18048,
+      "text": "The rich get richer. The poor stay poor. The middle class disappears.",
+      "wav_path": "artifacts_ed/voices/scene_004_narrator.wav",
+      "words": [
+        {
+          "end_ms": 18268,
+          "start_ms": 18048,
+          "word": "The"
+        },
+        {
+          "end_ms": 18448,
+          "start_ms": 18268,
+          "word": "rich"
+        },
+        {
+          "end_ms": 18708,
+          "start_ms": 18448,
+          "word": "get"
+        },
+        {
+          "end_ms": 19088,
+          "start_ms": 18708,
+          "word": "richer,"
+        },
+        {
+          "end_ms": 19508,
+          "start_ms": 19448,
+          "word": "the"
+        },
+        {
+          "end_ms": 19748,
+          "start_ms": 19508,
+          "word": "poor"
+        },
+        {
+          "end_ms": 19988,
+          "start_ms": 19748,
+          "word": "stay"
+        },
+        {
+          "end_ms": 20328,
+          "start_ms": 19988,
+          "word": "poor,"
+        },
+        {
+          "end_ms": 20708,
+          "start_ms": 20648,
+          "word": "the"
+        },
+        {
+          "end_ms": 20928,
+          "start_ms": 20708,
+          "word": "middle"
+        },
+        {
+          "end_ms": 21328,
+          "start_ms": 20928,
+          "word": "class"
+        },
+        {
+          "end_ms": 21668,
+          "start_ms": 21328,
+          "word": "disappears."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4629,
+      "end_ms": 26688,
+      "scene_id": "scene_005",
+      "speaker": "narrator",
+      "start_ms": 22059,
+      "text": "Wealth concentrates at the top. Resources flow upward, never trickling down.",
+      "wav_path": "artifacts_ed/voices/scene_005_narrator.wav",
+      "words": [
+        {
+          "end_ms": 22479,
+          "start_ms": 22059,
+          "word": "Wealth"
+        },
+        {
+          "end_ms": 23019,
+          "start_ms": 22479,
+          "word": "concentrates"
+        },
+        {
+          "end_ms": 23239,
+          "start_ms": 23019,
+          "word": "at"
+        },
+        {
+          "end_ms": 23339,
+          "start_ms": 23239,
+          "word": "the"
+        },
+        {
+          "end_ms": 23719,
+          "start_ms": 23339,
+          "word": "top."
+        },
+        {
+          "end_ms": 24519,
+          "start_ms": 24179,
+          "word": "Resources"
+        },
+        {
+          "end_ms": 24939,
+          "start_ms": 24519,
+          "word": "flow"
+        },
+        {
+          "end_ms": 25359,
+          "start_ms": 24939,
+          "word": "upward,"
+        },
+        {
+          "end_ms": 25879,
+          "start_ms": 25699,
+          "word": "never"
+        },
+        {
+          "end_ms": 26259,
+          "start_ms": 25879,
+          "word": "trickling"
+        },
+        {
+          "end_ms": 26599,
+          "start_ms": 26259,
+          "word": "down."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4907,
+      "end_ms": 31595,
+      "scene_id": "scene_006",
+      "speaker": "narrator",
+      "start_ms": 26688,
+      "text": "The political system was designed to represent the people. But it represents the money.",
+      "wav_path": "artifacts_ed/voices/scene_006_narrator.wav",
+      "words": [
+        {
+          "end_ms": 26868,
+          "start_ms": 26688,
+          "word": "The"
+        },
+        {
+          "end_ms": 27268,
+          "start_ms": 26868,
+          "word": "political"
+        },
+        {
+          "end_ms": 27908,
+          "start_ms": 27268,
+          "word": "system"
+        },
+        {
+          "end_ms": 28268,
+          "start_ms": 27908,
+          "word": "was"
+        },
+        {
+          "end_ms": 28728,
+          "start_ms": 28268,
+          "word": "designed"
+        },
+        {
+          "end_ms": 29028,
+          "start_ms": 28728,
+          "word": "to"
+        },
+        {
+          "end_ms": 29308,
+          "start_ms": 29028,
+          "word": "represent"
+        },
+        {
+          "end_ms": 29548,
+          "start_ms": 29308,
+          "word": "the"
+        },
+        {
+          "end_ms": 29888,
+          "start_ms": 29548,
+          "word": "people,"
+        },
+        {
+          "end_ms": 30428,
+          "start_ms": 30348,
+          "word": "but"
+        },
+        {
+          "end_ms": 30608,
+          "start_ms": 30428,
+          "word": "it"
+        },
+        {
+          "end_ms": 30948,
+          "start_ms": 30608,
+          "word": "represents"
+        },
+        {
+          "end_ms": 31208,
+          "start_ms": 30948,
+          "word": "the"
+        },
+        {
+          "end_ms": 31468,
+          "start_ms": 31208,
+          "word": "money."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5909,
+      "end_ms": 37504,
+      "scene_id": "scene_007",
+      "speaker": "narrator",
+      "start_ms": 31595,
+      "text": "Lobbyists write the laws. Corporations fund the campaigns. The people get the illusion of choice.",
+      "wav_path": "artifacts_ed/voices/scene_007_narrator.wav",
+      "words": [
+        {
+          "end_ms": 32335,
+          "start_ms": 31595,
+          "word": "lobbyists"
+        },
+        {
+          "end_ms": 32575,
+          "start_ms": 32335,
+          "word": "write"
+        },
+        {
+          "end_ms": 32735,
+          "start_ms": 32575,
+          "word": "the"
+        },
+        {
+          "end_ms": 33175,
+          "start_ms": 32735,
+          "word": "laws,"
+        },
+        {
+          "end_ms": 33995,
+          "start_ms": 33615,
+          "word": "corporations"
+        },
+        {
+          "end_ms": 34435,
+          "start_ms": 33995,
+          "word": "fund"
+        },
+        {
+          "end_ms": 34675,
+          "start_ms": 34435,
+          "word": "the"
+        },
+        {
+          "end_ms": 35135,
+          "start_ms": 34675,
+          "word": "campaigns."
+        },
+        {
+          "end_ms": 35795,
+          "start_ms": 35735,
+          "word": "The"
+        },
+        {
+          "end_ms": 36035,
+          "start_ms": 35795,
+          "word": "people"
+        },
+        {
+          "end_ms": 36335,
+          "start_ms": 36035,
+          "word": "get"
+        },
+        {
+          "end_ms": 36515,
+          "start_ms": 36335,
+          "word": "the"
+        },
+        {
+          "end_ms": 36775,
+          "start_ms": 36515,
+          "word": "illusion"
+        },
+        {
+          "end_ms": 37075,
+          "start_ms": 36775,
+          "word": "of"
+        },
+        {
+          "end_ms": 37415,
+          "start_ms": 37075,
+          "word": "choice."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4523,
+      "end_ms": 42027,
+      "scene_id": "scene_008",
+      "speaker": "narrator",
+      "start_ms": 37504,
+      "text": "Privileges are distributed unequally. Justice depends on your bank account.",
+      "wav_path": "artifacts_ed/voices/scene_008_narrator.wav",
+      "words": [
+        {
+          "end_ms": 38204,
+          "start_ms": 37504,
+          "word": "Prevalidges"
+        },
+        {
+          "end_ms": 38444,
+          "start_ms": 38204,
+          "word": "are"
+        },
+        {
+          "end_ms": 38924,
+          "start_ms": 38444,
+          "word": "distributed"
+        },
+        {
+          "end_ms": 39704,
+          "start_ms": 38924,
+          "word": "unequally."
+        },
+        {
+          "end_ms": 40624,
+          "start_ms": 40264,
+          "word": "Justice"
+        },
+        {
+          "end_ms": 40984,
+          "start_ms": 40624,
+          "word": "depends"
+        },
+        {
+          "end_ms": 41184,
+          "start_ms": 40984,
+          "word": "on"
+        },
+        {
+          "end_ms": 41344,
+          "start_ms": 41184,
+          "word": "your"
+        },
+        {
+          "end_ms": 41523,
+          "start_ms": 41344,
+          "word": "bank"
+        },
+        {
+          "end_ms": 41904,
+          "start_ms": 41523,
+          "word": "account."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4651,
+      "end_ms": 46678,
+      "scene_id": "scene_009",
+      "speaker": "narrator",
+      "start_ms": 42027,
+      "text": "The wealthy get bailouts. The poor get sentences. The system protects itself.",
+      "wav_path": "artifacts_ed/voices/scene_009_narrator.wav",
+      "words": [
+        {
+          "end_ms": 42227,
+          "start_ms": 42027,
+          "word": "The"
+        },
+        {
+          "end_ms": 42547,
+          "start_ms": 42227,
+          "word": "wealthy"
+        },
+        {
+          "end_ms": 42807,
+          "start_ms": 42547,
+          "word": "get"
+        },
+        {
+          "end_ms": 43407,
+          "start_ms": 42807,
+          "word": "bailouts,"
+        },
+        {
+          "end_ms": 43807,
+          "start_ms": 43767,
+          "word": "the"
+        },
+        {
+          "end_ms": 44027,
+          "start_ms": 43807,
+          "word": "poor"
+        },
+        {
+          "end_ms": 44247,
+          "start_ms": 44027,
+          "word": "get"
+        },
+        {
+          "end_ms": 44707,
+          "start_ms": 44247,
+          "word": "sentences,"
+        },
+        {
+          "end_ms": 45387,
+          "start_ms": 45307,
+          "word": "the"
+        },
+        {
+          "end_ms": 45727,
+          "start_ms": 45387,
+          "word": "system"
+        },
+        {
+          "end_ms": 46107,
+          "start_ms": 45727,
+          "word": "protects"
+        },
+        {
+          "end_ms": 46507,
+          "start_ms": 46107,
+          "word": "itself."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5696,
+      "end_ms": 52374,
+      "scene_id": "scene_010",
+      "speaker": "narrator",
+      "start_ms": 46678,
+      "text": "Corruption is not a bug. It is a feature of a system designed by the powerful, for the powerful.",
+      "wav_path": "artifacts_ed/voices/scene_010_narrator.wav",
+      "words": [
+        {
+          "end_ms": 47238,
+          "start_ms": 46678,
+          "word": "Corruption"
+        },
+        {
+          "end_ms": 47598,
+          "start_ms": 47238,
+          "word": "is"
+        },
+        {
+          "end_ms": 47778,
+          "start_ms": 47598,
+          "word": "not"
+        },
+        {
+          "end_ms": 47898,
+          "start_ms": 47778,
+          "word": "a"
+        },
+        {
+          "end_ms": 48178,
+          "start_ms": 47898,
+          "word": "bug."
+        },
+        {
+          "end_ms": 48778,
+          "start_ms": 48678,
+          "word": "It"
+        },
+        {
+          "end_ms": 48938,
+          "start_ms": 48778,
+          "word": "is"
+        },
+        {
+          "end_ms": 49058,
+          "start_ms": 48938,
+          "word": "a"
+        },
+        {
+          "end_ms": 49318,
+          "start_ms": 49058,
+          "word": "feature"
+        },
+        {
+          "end_ms": 49518,
+          "start_ms": 49318,
+          "word": "of"
+        },
+        {
+          "end_ms": 49638,
+          "start_ms": 49518,
+          "word": "a"
+        },
+        {
+          "end_ms": 49998,
+          "start_ms": 49638,
+          "word": "system"
+        },
+        {
+          "end_ms": 50418,
+          "start_ms": 49998,
+          "word": "designed"
+        },
+        {
+          "end_ms": 50678,
+          "start_ms": 50418,
+          "word": "by"
+        },
+        {
+          "end_ms": 50858,
+          "start_ms": 50678,
+          "word": "the"
+        },
+        {
+          "end_ms": 51198,
+          "start_ms": 50858,
+          "word": "powerful"
+        },
+        {
+          "end_ms": 51718,
+          "start_ms": 51198,
+          "word": "for"
+        },
+        {
+          "end_ms": 51918,
+          "start_ms": 51718,
+          "word": "the"
+        },
+        {
+          "end_ms": 52178,
+          "start_ms": 51918,
+          "word": "powerful."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 4715,
+      "end_ms": 57089,
+      "scene_id": "scene_011",
+      "speaker": "narrator",
+      "start_ms": 52374,
+      "text": "The justice system degrades. Laws become tools of oppression, not protection.",
+      "wav_path": "artifacts_ed/voices/scene_011_narrator.wav",
+      "words": [
+        {
+          "end_ms": 52574,
+          "start_ms": 52374,
+          "word": "The"
+        },
+        {
+          "end_ms": 52914,
+          "start_ms": 52574,
+          "word": "justice"
+        },
+        {
+          "end_ms": 53254,
+          "start_ms": 52914,
+          "word": "system"
+        },
+        {
+          "end_ms": 53894,
+          "start_ms": 53254,
+          "word": "degrades,"
+        },
+        {
+          "end_ms": 54674,
+          "start_ms": 54454,
+          "word": "laws"
+        },
+        {
+          "end_ms": 55014,
+          "start_ms": 54674,
+          "word": "become"
+        },
+        {
+          "end_ms": 55394,
+          "start_ms": 55014,
+          "word": "tools"
+        },
+        {
+          "end_ms": 55574,
+          "start_ms": 55394,
+          "word": "of"
+        },
+        {
+          "end_ms": 55994,
+          "start_ms": 55574,
+          "word": "oppression,"
+        },
+        {
+          "end_ms": 56474,
+          "start_ms": 56354,
+          "word": "not"
+        },
+        {
+          "end_ms": 56874,
+          "start_ms": 56474,
+          "word": "protection."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5909,
+      "end_ms": 62998,
+      "scene_id": "scene_012",
+      "speaker": "narrator",
+      "start_ms": 57089,
+      "text": "Regulatory capture means the regulators work for the regulated. The fox guards the henhouse.",
+      "wav_path": "artifacts_ed/voices/scene_012_narrator.wav",
+      "words": [
+        {
+          "end_ms": 57889,
+          "start_ms": 57089,
+          "word": "Regulatory"
+        },
+        {
+          "end_ms": 58369,
+          "start_ms": 57889,
+          "word": "capture"
+        },
+        {
+          "end_ms": 58869,
+          "start_ms": 58369,
+          "word": "means"
+        },
+        {
+          "end_ms": 59109,
+          "start_ms": 58869,
+          "word": "the"
+        },
+        {
+          "end_ms": 59489,
+          "start_ms": 59109,
+          "word": "regulators"
+        },
+        {
+          "end_ms": 59969,
+          "start_ms": 59489,
+          "word": "work"
+        },
+        {
+          "end_ms": 60169,
+          "start_ms": 59969,
+          "word": "for"
+        },
+        {
+          "end_ms": 60289,
+          "start_ms": 60169,
+          "word": "the"
+        },
+        {
+          "end_ms": 60769,
+          "start_ms": 60289,
+          "word": "regulated."
+        },
+        {
+          "end_ms": 61529,
+          "start_ms": 61369,
+          "word": "The"
+        },
+        {
+          "end_ms": 61809,
+          "start_ms": 61529,
+          "word": "Fox"
+        },
+        {
+          "end_ms": 62229,
+          "start_ms": 61809,
+          "word": "guards"
+        },
+        {
+          "end_ms": 62489,
+          "start_ms": 62229,
+          "word": "the"
+        },
+        {
+          "end_ms": 62969,
+          "start_ms": 62489,
+          "word": "henhouse."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5312,
+      "end_ms": 68310,
+      "scene_id": "scene_013",
+      "speaker": "narrator",
+      "start_ms": 62998,
+      "text": "Media consolidation means a few corporations control what you see, hear, and think.",
+      "wav_path": "artifacts_ed/voices/scene_013_narrator.wav",
+      "words": [
+        {
+          "end_ms": 63398,
+          "start_ms": 62998,
+          "word": "Media"
+        },
+        {
+          "end_ms": 64178,
+          "start_ms": 63398,
+          "word": "consolidation"
+        },
+        {
+          "end_ms": 64878,
+          "start_ms": 64178,
+          "word": "means"
+        },
+        {
+          "end_ms": 65058,
+          "start_ms": 64878,
+          "word": "a"
+        },
+        {
+          "end_ms": 65178,
+          "start_ms": 65058,
+          "word": "few"
+        },
+        {
+          "end_ms": 65738,
+          "start_ms": 65178,
+          "word": "corporations"
+        },
+        {
+          "end_ms": 66358,
+          "start_ms": 65738,
+          "word": "control"
+        },
+        {
+          "end_ms": 66558,
+          "start_ms": 66358,
+          "word": "what"
+        },
+        {
+          "end_ms": 66778,
+          "start_ms": 66558,
+          "word": "you"
+        },
+        {
+          "end_ms": 67158,
+          "start_ms": 66778,
+          "word": "see,"
+        },
+        {
+          "end_ms": 67658,
+          "start_ms": 67438,
+          "word": "here"
+        },
+        {
+          "end_ms": 67978,
+          "start_ms": 67658,
+          "word": "and"
+        },
+        {
+          "end_ms": 68198,
+          "start_ms": 67978,
+          "word": "think."
+        }
+      ]
+    },
+    {
+      "backend": "kokoro",
+      "cached": false,
+      "duration_ms": 5632,
+      "end_ms": 73942,
+      "scene_id": "scene_014",
+      "speaker": "narrator",
+      "start_ms": 68310,
+      "text": "Education becomes a commodity. Healthcare becomes a luxury. Housing becomes an investment.",
+      "wav_path": "artifacts_ed/voices/scene_014_narrator.wav",
+      "words": [
+        {
+          "end_ms": 68950,
+          "start_ms": 68310,
+          "word": "Education"
+        },
+        {
+          "end_ms": 69390,
+          "start_ms": 68950,
+          "word": "becomes"
+        },
+        {
+          "end_ms": 69630,
+          "start_ms": 69390,
+          "word": "a"
+        },
+        {
+          "end_ms": 69970,
+          "start_ms": 69630,
+          "word": "commodity."
+        },
+        {
+          "end_ms": 70730,
+          "start_ms": 70570,
+          "word": "Health"
+        },
+        {
+          "end_ms": 71010,
+          "start_ms": 70730,
+          "word": "care"
+        },
+        {
+          "end_ms": 71330,
+          "start_ms": 71010,
+          "word": "becomes"
+        },
+        {
+          "end_ms": 71630,
+          "start_ms": 71330,
+          "word": "a"
+        },
+        {
+          "end_ms": 71870,
+          "start_ms": 71630,
+          "word": "luxury."
+        },
+        {
+          "end_ms": 72730,
+          "start_ms": 72450,
+          "word": "Housing"
+        },
+        {
+          "end_ms": 73170,
+          "start_ms": 72730,
+          "word": "becomes"
+        },
+        {
+          "end_ms": 73370,
+          "start_ms": 73170,
+          "word": "an"
+        },
+        {
+          "end_ms": 73710,
+          "start_ms": 73370,
+          "word": "investment."
+        }
+      ]
+    }
+  ],
+  "total_duration_ms": 73942,
+  "total_scenes": 14
+}
