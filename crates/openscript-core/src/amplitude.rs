@@ -47,7 +47,7 @@ pub fn extract_amplitude(wav_path: &str, fps: u32) -> Result<AmplitudeTrack, Amp
                 8 => reader
                     .into_samples::<i16>()
                     // 8-bit WAV is unsigned (0..255), center around 0
-                    .map(|s| s.map(|v| ((v as f32 - 128.0) / 128.0)).unwrap_or(0.0))
+                    .map(|s| s.map(|v| (v as f32 - 128.0) / 128.0).unwrap_or(0.0))
                     .collect(),
                 16 => reader
                     .into_samples::<i16>()

@@ -243,9 +243,6 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         ));
     } else {
         // Multiple backgrounds — concat then scale
-        let concat_inputs: String = (0..bg_count)
-            .map(|i| format!("[{}:v]", i))
-            .collect::<String>();
         let bg_durations: Vec<String> = filtered_bgs.iter()
             .map(|bg| format!("trim=duration={}", bg.duration_s))
             .collect();

@@ -1,6 +1,6 @@
 use openscript_core::amplitude::extract_amplitude;
 use openscript_core::captions::{estimate_word_timings, generate_ass, CaptionSegment};
-use openscript_core::background::{assign_backgrounds, BackgroundClip};
+use openscript_core::background::assign_backgrounds;
 use openscript_core::script::{parse_script, validate_script};
 use openscript_core::sticker::{generate_sticker_composition, StickerPreset};
 use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, write_srt};
@@ -5435,7 +5435,7 @@ fn read_script_input(script_input: &str) -> Result<String, ToolError> {
 async fn run_whisper_alignment(
     wav_path: &str,
     offset_ms: i64,
-    scene_end_ms: i64,
+    _scene_end_ms: i64,
 ) -> Result<Vec<openscript_core::captions::WordTiming>, String> {
     // Write alignment to a temp JSON file
     let tmp_json = format!("{}.align.json", wav_path);
@@ -6641,7 +6641,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let stickers_dir = "mcp/assets/stickers";
             std::fs::create_dir_all(stickers_dir).ok();
 
-            for (speaker_name, speaker_spec) in &spec.speakers {
+            for (speaker_name, _speaker_spec) in &spec.speakers {
                 // Search GIPHY for a sticker matching the speaker's name and persona
                 let search_query = format!("{} talking", speaker_name);
                 let giphy_url = format!(
@@ -6721,7 +6721,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     }
 
     // Get music path
-    let timeline_json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&timeline_path)?)?;
+    // (Prior versions loaded timeline_json here but never read it — the music
+    // path comes from spec.music, not the timeline JSON. Removed the dead load.)
     let music_path = spec.music.as_ref()
         .map(|m| m.path.clone())
         .filter(|p| std::path::Path::new(p).exists());

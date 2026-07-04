@@ -7,7 +7,6 @@
 //! - Identify layering issues before rendering
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 
 /// A single layer in the timeline (video, audio, captions, stickers).
 #[derive(Debug, Clone, Serialize, Deserialize)]
