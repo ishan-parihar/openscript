@@ -134,6 +134,36 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         return Err(FfmpegError::NoSegments);
     }
 
+    // Defense-in-depth: filter out placeholder or empty background paths
+    // before they reach ffmpeg. The MCP `timeline.render` handler already
+    // filters placeholder b-roll events, but callers that build a
+    // MultiLayerRenderSpec directly (e.g. `script.to_video`) could pass
+    // placeholder strings through. ffmpeg would then fail with a cryptic
+    // "Unable to parse 'si' option value 'v'" error. Log and skip such
+    // entries here so the render degrades gracefully to the remaining
+    // valid backgrounds.
+    //
+    // We do NOT filter non-existent paths here — those will fail at ffmpeg
+    // spawn with a clearer "No such file" error, and tests use fake paths.
+    let filtered_bgs: Vec<&crate::multilayer_render::BackgroundClip> = spec
+        .backgrounds
+        .iter()
+        .filter(|bg| {
+            if bg.path == "placeholder" || bg.path.is_empty() {
+                tracing::warn!(
+                    "[multilayer_render] Skipping placeholder/empty background path"
+                );
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if filtered_bgs.is_empty() {
+        return Err(FfmpegError::NoSegments);
+    }
+
     // Build voiceover concat list
     let concat_list_path = format!("{}.concat.txt", spec.output_path);
     let concat_content: String = spec
@@ -151,11 +181,11 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     cmd.arg("-y");
 
     // Check if all backgrounds are the same file (single-background playback)
-    let all_same_bg = spec.backgrounds.len() > 1 && spec.backgrounds.windows(2).all(|w| w[0].path == w[1].path);
+    let all_same_bg = filtered_bgs.len() > 1 && filtered_bgs.windows(2).all(|w| w[0].path == w[1].path);
 
     let bg_count = if all_same_bg {
         // Single background — use ONE input, looped for the full duration
-        let bg = &spec.backgrounds[0];
+        let bg = filtered_bgs[0];
         if bg.looped {
             cmd.arg("-stream_loop").arg("-1");
         }
@@ -164,8 +194,8 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         1
     } else {
         // Multiple different backgrounds — one input per clip
-        let count = spec.backgrounds.len();
-        for bg in &spec.backgrounds {
+        let count = filtered_bgs.len();
+        for bg in &filtered_bgs {
             if bg.looped {
                 cmd.arg("-stream_loop").arg("-1");
             }
@@ -216,7 +246,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         let concat_inputs: String = (0..bg_count)
             .map(|i| format!("[{}:v]", i))
             .collect::<String>();
-        let bg_durations: Vec<String> = spec.backgrounds.iter()
+        let bg_durations: Vec<String> = filtered_bgs.iter()
             .map(|bg| format!("trim=duration={}", bg.duration_s))
             .collect();
 

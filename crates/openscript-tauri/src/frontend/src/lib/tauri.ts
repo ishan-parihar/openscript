@@ -100,10 +100,19 @@ export async function removeFillerWordsFromText(text: string) {
   );
 }
 
-export async function applyTranscriptEdit(videoPath: string, segments: unknown[]) {
+export async function applyTranscriptEdit(
+  videoPath: string,
+  editedSegments: unknown[],
+  outputPath?: string,
+) {
+  // Auto-generate an output path if the caller did not supply one. Prior
+  // versions sent { segments } which the Rust backend rejected because it
+  // expects { edited_segments, output_path }. This is a CRITICAL bug fix.
+  const resolvedOutputPath = outputPath
+    ?? `${videoPath.replace(/\.[^.]+$/, "")}.edited.mp4`;
   return invoke<{ output_path: string; segments_count: number; total_duration_s: number }>(
     "apply_transcript_edit",
-    { videoPath, segments }
+    { videoPath, editedSegments, outputPath: resolvedOutputPath }
   );
 }
 
@@ -235,8 +244,14 @@ export async function ttsEstimateDuration(text: string, voiceProfileId?: string)
 }
 
 // Render commands
+export interface RenderResult {
+  output_path: string | null;
+  file_size_bytes: number;
+  duration_ms?: number;
+  status: "completed" | "cancelled";
+}
 export async function renderTimeline(options?: { outputPath?: string; quality?: string }) {
-  return invoke<{ output_path: string; file_size_bytes: number; duration_ms: number }>(
+  return invoke<RenderResult>(
     "render_timeline",
     { outputPath: options?.outputPath, quality: options?.quality }
   );

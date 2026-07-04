@@ -19,33 +19,57 @@ pub struct AmplitudeTrack {
 
 /// Extract per-frame amplitude from a WAV file.
 ///
-/// Reads the WAV, computes RMS amplitude in 30ms windows centered on each
+/// Reads the WAV via `hound` (chunk-aware, supports 8/16/24/32-bit PCM and
+/// IEEE float), computes RMS amplitude in 30ms windows centered on each
 /// frame, normalizes to 0.0–1.0, and applies a 3-frame moving average
 /// smoothing pass.
+///
+/// Prior versions hand-parsed the WAV header assuming the `data` chunk
+/// starts at byte 44 — this breaks on WAVs with `LIST`/`fact`/`bext`
+/// chunks between `fmt ` and `data`, and only supported 16-bit PCM.
+/// `hound` handles all of these correctly.
 pub fn extract_amplitude(wav_path: &str, fps: u32) -> Result<AmplitudeTrack, AmplitudeError> {
-    let wav_bytes = std::fs::read(wav_path).map_err(|e| AmplitudeError::Io(e.to_string()))?;
+    let reader = hound::WavReader::open(wav_path)
+        .map_err(|e| AmplitudeError::InvalidWav(format!("hound: {}", e)))?;
 
-    // Parse WAV header
-    if wav_bytes.len() < 44 || &wav_bytes[..4] != b"RIFF" {
-        return Err(AmplitudeError::InvalidWav("Not a valid WAV file".into()));
-    }
-    let sample_rate = u32::from_le_bytes(wav_bytes[24..28].try_into().unwrap());
-    let num_channels = u16::from_le_bytes(wav_bytes[22..24].try_into().unwrap()) as usize;
-    let bits_per_sample = u16::from_le_bytes(wav_bytes[34..36].try_into().unwrap());
+    let spec = reader.spec();
+    let sample_rate = spec.sample_rate;
+    let num_channels = spec.channels as usize;
+    let bits_per_sample = spec.bits_per_sample;
 
-    if bits_per_sample != 16 {
-        return Err(AmplitudeError::InvalidWav(format!(
-            "Only 16-bit PCM supported, got {}-bit",
-            bits_per_sample
-        )));
-    }
-
-    // Extract samples (16-bit signed PCM, starting at byte 44)
-    let data = &wav_bytes[44..];
-    let samples: Vec<i16> = data
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
+    // Read all samples as f32, normalised to [-1.0, 1.0].
+    // hound gives us i16 for 16-bit, i32 for 24/32-bit, and f32 for float.
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Int => {
+            // For integer samples, divide by the max value of the bit depth.
+            let max_val = (1u64 << (bits_per_sample - 1)) as f32;
+            match bits_per_sample {
+                8 => reader
+                    .into_samples::<i16>()
+                    // 8-bit WAV is unsigned (0..255), center around 0
+                    .map(|s| s.map(|v| ((v as f32 - 128.0) / 128.0)).unwrap_or(0.0))
+                    .collect(),
+                16 => reader
+                    .into_samples::<i16>()
+                    .map(|s| s.map(|v| v as f32 / max_val).unwrap_or(0.0))
+                    .collect(),
+                24 | 32 => reader
+                    .into_samples::<i32>()
+                    .map(|s| s.map(|v| v as f32 / max_val).unwrap_or(0.0))
+                    .collect(),
+                _ => {
+                    return Err(AmplitudeError::InvalidWav(format!(
+                        "Unsupported integer bit depth: {}",
+                        bits_per_sample
+                    )))
+                }
+            }
+        }
+        hound::SampleFormat::Float => reader
+            .into_samples::<f32>()
+            .map(|s| s.unwrap_or(0.0))
+            .collect(),
+    };
 
     if samples.is_empty() {
         return Ok(AmplitudeTrack {
@@ -75,11 +99,11 @@ pub fn extract_amplitude(wav_path: &str, fps: u32) -> Result<AmplitudeTrack, Amp
             continue;
         }
 
-        // Compute RMS for this window (mono: average channels)
+        // Compute RMS for this window (mono: average channels by stepping)
         let mut sum_sq: f64 = 0.0;
         let mut count = 0;
-        for i in (start..end).step_by(num_channels) {
-            let sample = samples[i] as f64 / 32768.0;
+        for i in (start..end).step_by(num_channels.max(1)) {
+            let sample = samples[i] as f64;
             sum_sq += sample * sample;
             count += 1;
         }

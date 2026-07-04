@@ -81,10 +81,6 @@ pub enum TranscribeError {
     WrapperNotFound(String),
     #[error("Conda environment python not found. Set WHISPER_HINDI_PYTHON env var or install at ~/miniconda3/envs/whisper-hindi/bin/python3.11")]
     CondaPythonNotFound,
-    #[error("Apex model unhealthy: {0}")]
-    ApexUnhealthy(String),
-    #[error("Output validation failed: {0}")]
-    OutputValidationFailed(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -208,22 +204,27 @@ pub async fn check_apex_health() -> ApexHealth {
 }
 
 /// Find the Apex transcription wrapper script.
+///
+/// Resolution order:
+///   1. `OPENSCRIPT_APEX_WRAPPER` env var (explicit user override)
+///   2. `CARGO_MANIFEST_DIR/../../mcp/scripts/apex_transcriber.py` (dev workspace)
+///   3. `OPENSCRIPT_ROOT/mcp/scripts/apex_transcriber.py` (deployment override)
+///   4. Relative `mcp/scripts/apex_transcriber.py` (works if CWD is repo root)
+///   5. Relative `../mcp/scripts/apex_transcriber.py` (works if CWD is a crate dir)
+///
+/// Prior versions hardcoded `~/Documents/GitHub/openscript/...` and
+/// `~/projects/openscript/...` (developer-specific paths) which only worked
+/// on one machine. The env-var path is now first-class.
 fn find_apex_script() -> Option<PathBuf> {
-    let home = home_dir()?;
-    let candidates = [
-        home.join("Documents/GitHub/openscript/mcp/scripts/apex_transcriber.py"),
-        home.join("projects/openscript/mcp/scripts/apex_transcriber.py"),
-        PathBuf::from("mcp/scripts/apex_transcriber.py"),
-        PathBuf::from("../mcp/scripts/apex_transcriber.py"),
-        PathBuf::from("../../mcp/scripts/apex_transcriber.py"),
-    ];
-    for c in &candidates {
-        let p = Path::new(c);
+    // 1. Explicit env var override
+    if let Ok(path) = std::env::var("OPENSCRIPT_APEX_WRAPPER") {
+        let p = Path::new(&path);
         if p.exists() {
             return Some(p.to_path_buf());
         }
     }
 
+    // 2. CARGO_MANIFEST_DIR (compile-time workspace path; works in dev)
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
         let p = Path::new(&manifest_dir)
             .join("../../mcp/scripts/apex_transcriber.py");
@@ -232,12 +233,26 @@ fn find_apex_script() -> Option<PathBuf> {
         }
     }
 
-    if let Ok(path) = std::env::var("OPENSCRIPT_APEX_WRAPPER") {
-        let p = Path::new(&path);
+    // 3. OPENSCRIPT_ROOT (deployment override)
+    if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
+        let p = Path::new(&root).join("mcp/scripts/apex_transcriber.py");
         if p.exists() {
-            return Some(p.to_path_buf());
+            return Some(p);
         }
     }
+
+    // 4-5. Relative fallbacks (work if CWD is repo root or a crate dir)
+    let relative_candidates = [
+        PathBuf::from("mcp/scripts/apex_transcriber.py"),
+        PathBuf::from("../mcp/scripts/apex_transcriber.py"),
+        PathBuf::from("../../mcp/scripts/apex_transcriber.py"),
+    ];
+    for c in &relative_candidates {
+        if c.exists() {
+            return Some(c.clone());
+        }
+    }
+
     None
 }
 

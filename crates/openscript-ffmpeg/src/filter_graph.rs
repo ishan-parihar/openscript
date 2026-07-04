@@ -99,6 +99,10 @@ pub struct FilterGraphBuilder {
     srt_path: Option<String>,
     overlay_mov: Option<String>,
     loudnorm: bool,
+    /// Loudness target in LUFS for the loudnorm filter. Defaults to -16
+    /// (EBU R128 broadcast standard). Prior versions hardcoded this to -16
+    /// and ignored the timeline's `directives.mix.normalize_to_lufs` field.
+    normalize_lufs: f64,
     broll_events: Vec<BrollEvent>,
     music_events: Vec<MusicEvent>,
     sfx_events: Vec<SfxEvent>,
@@ -118,6 +122,7 @@ impl FilterGraphBuilder {
             srt_path: None,
             overlay_mov: None,
             loudnorm,
+            normalize_lufs: -16.0, // EBU R128 broadcast default
             broll_events: Vec::new(),
             music_events: Vec::new(),
             sfx_events: Vec::new(),
@@ -125,6 +130,13 @@ impl FilterGraphBuilder {
             ducking_events: Vec::new(),
             fonts_dir: None,
         }
+    }
+
+    /// Set the loudness target (LUFS) used by the loudnorm filter. Reads from
+    /// `timeline.directives.mix.normalize_to_lufs` in `from_timeline`.
+    pub fn with_normalize_lufs(mut self, lufs: f64) -> Self {
+        self.normalize_lufs = lufs;
+        self
     }
 
     pub fn with_ass(mut self, path: String) -> Self {
@@ -143,7 +155,29 @@ impl FilterGraphBuilder {
     }
 
     pub fn with_broll(mut self, events: Vec<BrollEvent>) -> Self {
-        self.broll_events = events;
+        // Defense-in-depth: filter out placeholder or empty b-roll paths so
+        // they never reach the ffmpeg `movie=` filter (which would crash
+        // with "Unable to parse 'si' option value 'v'" on the placeholder
+        // string). The MCP `timeline.render` handler already does this
+        // filter, but callers that build a FilterGraphBuilder manually via
+        // `with_broll` are also protected now.
+        //
+        // We do NOT filter non-existent paths here — those will fail at
+        // ffmpeg spawn with a clearer "No such file" error, and tests use
+        // fake paths to validate the filter-string construction.
+        self.broll_events = events
+            .into_iter()
+            .filter(|e| {
+                if e.path == "placeholder" || e.path.is_empty() {
+                    tracing::warn!(
+                        "[filter_graph] Skipping placeholder/empty b-roll path"
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
         self
     }
 
@@ -177,6 +211,12 @@ impl FilterGraphBuilder {
         let fps = timeline.target.fps;
         let aspect = timeline.target.aspect.clone();
         let loudnorm = timeline.effects.audio.loudnorm;
+        // Read the timeline's loudness target so the loudnorm filter honors
+        // `directives.mix.normalize_to_lufs` instead of a hardcoded -16.
+        let normalize_lufs = timeline.directives.mix.normalize_to_lufs;
+
+        let mut b = FilterGraphBuilder::new(segments, fps, &aspect, loudnorm)
+            .with_normalize_lufs(normalize_lufs);
 
         let mut broll_events = Vec::new();
         let mut music_events = Vec::new();
@@ -226,7 +266,13 @@ impl FilterGraphBuilder {
                         .unwrap_or("")
                         .to_string();
                     if !path.is_empty() && path != "placeholder" {
-                        music_events.push(MusicEvent { path, volume: 0.3 });
+                        // Convert the event's gain_db (default -12 dB if unset) to a
+                        // linear volume coefficient. Prior versions hardcoded 0.3,
+                        // which silently ignored the MusicSpec.gain_db field and
+                        // produced a different mix than the timeline specified.
+                        let gain_db = evt.gain_db;
+                        let volume = 10f64.powf(gain_db / 20.0);
+                        music_events.push(MusicEvent { path, volume });
                     }
                 }
             }
@@ -293,22 +339,12 @@ impl FilterGraphBuilder {
             }
         }
 
-        Self {
-            segments,
-            parts: Vec::new(),
-            fps,
-            aspect,
-            ass_path: None,
-            srt_path: None,
-            overlay_mov: None,
-            loudnorm,
-            broll_events,
-            music_events,
-            sfx_events,
-            voiceover_events,
-            ducking_events,
-            fonts_dir: None,
-        }
+        b.broll_events = broll_events;
+        b.music_events = music_events;
+        b.sfx_events = sfx_events;
+        b.voiceover_events = voiceover_events;
+        b.ducking_events = ducking_events;
+        b
     }
 
     /// Build the complete filter_complex string.
@@ -565,9 +601,13 @@ impl FilterGraphBuilder {
         // Audio loudnorm
         let mut aout = a_trim.to_string();
         if self.loudnorm {
+            // Use the timeline's normalize_to_lufs (default -16.0) rather than
+            // a hardcoded value. This lets `directives.mix.normalize_to_lufs`
+            // actually control the output loudness.
             parts.push(format!(
-                "[{}]loudnorm=I=-16:TP=-1.5:LRA=11[aloud]",
-                &aout[1..aout.len() - 1]
+                "[{}]loudnorm=I={}:TP=-1.5:LRA=11[aloud]",
+                &aout[1..aout.len() - 1],
+                self.normalize_lufs
             ));
             aout = "[aloud]".into();
         }

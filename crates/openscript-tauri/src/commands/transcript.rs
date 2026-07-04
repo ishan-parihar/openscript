@@ -146,7 +146,7 @@ pub async fn apply_transcript_edit(
     );
     timeline.segments = segments;
 
-    // Render using FFmpeg
+    // Render using FFmpeg (no cancel token for transcript-edit renders)
     let output = render_from_timeline(
         &timeline,
         &video_path,

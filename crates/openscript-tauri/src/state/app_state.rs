@@ -52,10 +52,23 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        // Resolve assets base path. Priority:
+        //   1. OPENSCRIPT_SFX_PATH env var (explicit user override)
+        //   2. $HOME/Videos/Assets (XDG-ish default; works on Linux/macOS)
+        //   3. "Assets" (relative fallback; lets the app boot even if HOME is unset)
+        //
+        // Prior versions hardcoded `/home/ishanp/Videos/Assets` (a developer-specific
+        // path) which silently broke asset search on every other machine. This is a
+        // CRITICAL portability bug — the path leaked into release binaries.
         let assets_base = std::env::var("OPENSCRIPT_SFX_PATH")
             .ok()
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/home/ishanp/Videos/Assets"));
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join("Videos").join("Assets"))
+            })
+            .unwrap_or_else(|| PathBuf::from("Assets"));
         let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
         let pexels_key = std::env::var("PEXELS_API_KEY").ok();

@@ -52,56 +52,103 @@ export const useRenderStore = create<RenderState>((set, get) => ({
 
   render: async () => {
     const { quality } = get();
-    set({ isRendering: true, progress: 0, status: "Starting render...", error: null, outputPath: null, fileSizeBytes: null, durationMs: null, etaSeconds: null });
+    set({
+      isRendering: true,
+      progress: 0,
+      status: "Starting render...",
+      error: null,
+      outputPath: null,
+      fileSizeBytes: null,
+      durationMs: null,
+      etaSeconds: null,
+    });
 
-    try {
-      const result = await api.renderTimeline({ quality });
-
-      if (pollInterval) clearInterval(pollInterval);
-
-      pollInterval = setInterval(async () => {
-        try {
-          const progressData = await api.getRenderProgress();
-          set({
-            progress: progressData.progress,
-            status: progressData.status,
-            etaSeconds: progressData.eta_seconds ?? null,
-          });
-
-          if (progressData.status === "completed") {
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = null;
-            set({
-              isRendering: false,
-              progress: 100,
-              status: "Completed",
-              outputPath: result.output_path,
-              fileSizeBytes: result.file_size_bytes,
-              durationMs: result.duration_ms,
-            });
-          } else if (progressData.status === "error") {
-            if (pollInterval) clearInterval(pollInterval);
-            pollInterval = null;
-            set({ isRendering: false, error: progressData.status });
-          }
-        } catch {
-          if (pollInterval) clearInterval(pollInterval);
-          pollInterval = null;
-          set({ isRendering: false, error: "Failed to poll render progress" });
-        }
-      }, 500);
-    } catch (e: unknown) {
-      set({
-        isRendering: false,
-        error: e instanceof Error ? e.message : "Render failed",
-      });
+    // Clear any leftover poller.
+    if (pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
     }
+
+    // Start polling BEFORE firing the render. Prior versions awaited
+    // renderTimeline first, which meant the poller only ever saw the
+    // terminal state — the progress bar was useless. Now the poller runs
+    // concurrently with the render and can observe intermediate progress
+    // and a user-initiated cancellation.
+    pollInterval = setInterval(async () => {
+      try {
+        const p = await api.getRenderProgress();
+        set({
+          progress: p.progress,
+          status: p.status,
+        });
+
+        if (p.status === "completed" || p.status === "cancelled" || p.status === "idle") {
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+          set({ isRendering: false });
+        }
+      } catch {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        set({ isRendering: false, error: "Failed to poll render progress" });
+      }
+    }, 500);
+
+    // Fire the render without synchronously awaiting it. The poller above
+    // will observe completion. The .then/.catch handlers update the final
+    // output_path / file_size / error state.
+    api
+      .renderTimeline({ quality })
+      .then((result) => {
+        if (result.status === "cancelled") {
+          set({
+            isRendering: false,
+            progress: 0,
+            status: "Cancelled",
+            outputPath: null,
+            fileSizeBytes: null,
+            durationMs: null,
+          });
+        } else {
+          set({
+            outputPath: result.output_path,
+            fileSizeBytes: result.file_size_bytes,
+            durationMs: result.duration_ms ?? null,
+            progress: 100,
+            status: "Completed",
+            isRendering: false,
+          });
+        }
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+      })
+      .catch((e: unknown) => {
+        set({
+          isRendering: false,
+          error: e instanceof Error ? e.message : "Render failed",
+        });
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+      });
   },
 
   cancelRender: async () => {
-    await api.cancelRender().catch(() => {});
-    if (pollInterval) clearInterval(pollInterval);
-    pollInterval = null;
-    set({ isRendering: false, status: "Cancelled" });
+    try {
+      await api.cancelRender();
+    } catch {
+      // ignore — the poller will still observe the cancelled status
+    }
+    // Don't clear the poller here; let it observe the cancelled status and
+    // clean up. This avoids a race where the UI shows "cancelled" before
+    // ffmpeg has actually been killed.
+    set({ status: "Cancelling..." });
   },
 }));

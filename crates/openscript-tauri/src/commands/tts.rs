@@ -98,12 +98,18 @@ pub async fn voice_profile_remove(
 }
 
 /// Generate TTS audio using a voice profile.
+///
+/// `output_path` is optional — if `None`, a default path under
+/// `/tmp/openscript-tts-cache/{uuid}.wav` is generated. This fixes a
+/// CRITICAL bug where the frontend called `ttsGenerate(text, voice, undefined)`
+/// and Rust's required `output_path: String` deserialisation failed, breaking
+/// the Generate button.
 #[tauri::command]
 pub async fn tts_generate(
     state: State<'_, AppState>,
     text: String,
     voice_profile_id: String,
-    output_path: String,
+    output_path: Option<String>,
 ) -> Result<Value, String> {
     let registry = load_registry(&state)?;
     let profile = registry
@@ -112,13 +118,18 @@ pub async fn tts_generate(
         .clone();
 
     let cache_dir = "/tmp/openscript-tts-cache";
+    std::fs::create_dir_all(cache_dir).map_err(|e| format!("Failed to create TTS cache dir: {}", e))?;
+    let resolved_output_path = output_path
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| format!("{}/{}.wav", cache_dir, uuid::Uuid::new_v4()));
+
     let client = TtsClient::new(&state.tts_url, cache_dir);
 
     let result = client
         .generate(
             &voice_profile_id,
             &text,
-            &output_path,
+            &resolved_output_path,
             1.0,
             1.0,
             1.0,

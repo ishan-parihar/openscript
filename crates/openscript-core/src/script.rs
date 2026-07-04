@@ -556,7 +556,14 @@ pub struct OutputSpec {
     pub crf: u32,
 
     /// FFmpeg preset: "ultrafast" ... "slow".
-    #[serde(default = "default_preset")]
+    /// Note: this uses `default_ffmpeg_preset` (returns "slow"), NOT
+    /// `default_preset` (returns "default_person", a SpeakerSpec preset
+    /// name). Prior versions incorrectly called `default_preset` here,
+    /// which meant `serde_json::from_str::<ScriptSpec>(r#"{"output":{}}"#)`
+    /// produced `preset = "default_person"` — a value ffmpeg would reject.
+    /// `Default::default()` and serde deserialisation now produce the same
+    /// preset ("slow").
+    #[serde(default = "default_ffmpeg_preset")]
     pub preset: String,
 }
 

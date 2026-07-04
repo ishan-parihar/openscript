@@ -342,7 +342,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "sfx.index",
-            "description": "Scan the SFX library directory and build a searchable index JSON. Run once when SFX library changes. The index enables sfx.search and sfx.assign. Default path: /home/ishanp/Videos/Assets/SFX. Returns: output_path, count of indexed files.",
+            "description": "Scan the SFX library directory and build a searchable index JSON. Run once when SFX library changes. The index enables sfx.search and sfx.assign. Default path: $HOME/Videos/Assets/SFX (override with OPENSCRIPT_SFX_PATH env var). Returns: output_path, count of indexed files.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -382,7 +382,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "music.index",
-            "description": "Scan music directories and build a searchable index JSON. Run once when adding new music files. Default path: /home/ishanp/Videos/Assets/Music. Returns: output_path, count of indexed files.",
+            "description": "Scan music directories and build a searchable index JSON. Run once when adding new music files. Default path: $HOME/Videos/Assets/Music (override with OPENSCRIPT_MUSIC_PATH env var). Returns: output_path, count of indexed files.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -964,6 +964,31 @@ pub fn tool_definitions() -> serde_json::Value {
                 "properties": {},
                 "additionalProperties": false
             }
+        },
+        // ===================================================================
+        // META-TOOLS — discovery and capability introspection
+        // ===================================================================
+        {
+            "name": "system.capabilities",
+            "description": "Check which OpenScript subsystems are available BEFORE calling other tools. Returns availability status for: voicebox/TTS, Pexels API, GIPHY API, Pixabay API, SFX library, music library, transcription engine, Kokoro TTS, HyperFrames. Use this first when you're unsure which features are wired — avoids opaque failures from tools whose backing service is missing. Example: if voicebox.available is false, skip tts.generate and use Kokoro (script.generate_voices) instead. No arguments.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "help.tool",
+            "description": "Find relevant MCP tools for a natural-language task description. Returns ranked tool suggestions with name, relevance score (0.0-1.0), and a short description. Example queries: 'add voiceover to a timeline', 'download background music', 'burn captions into video', 'transcribe Hindi audio'. Use this when you know WHAT you want to do but not WHICH tool to call. Returns up to 8 suggestions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Natural-language description of the task you want to accomplish"},
+                    "limit": {"type": "integer", "description": "Max suggestions to return (default 8, max 20)", "default": 8}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -1078,6 +1103,9 @@ pub fn route_tool(
         "library.search" => Box::pin(handle_library_search(args)),
         "library.download" => Box::pin(handle_library_download(args)),
         "library.build" => Box::pin(handle_library_build(args)),
+        // Meta-tools (P1-2 + Rec 3.1 from prior audit)
+        "system.capabilities" => Box::pin(handle_system_capabilities(args)),
+        "help.tool" => Box::pin(handle_help_tool(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -2335,6 +2363,12 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
     let position_ms = default_i64(&args, "position_ms", 0);
     let gain_db = default_f64(&args, "gain_db", -10.0);
 
+    // P1-1 fix: map "hook" -> "intro". The SFX index uses "intro" for opening
+    // effects, but the tool documentation and `reelize.timeline` refer to the
+    // opening slot as "hook". Without this mapping, `sfx.assign(editorial_role="hook")`
+    // returns 0 results even though perfectly suitable "intro" SFX exist.
+    let mapped_role = if editorial_role == "hook" { "intro" } else { editorial_role };
+
     let mut timeline = Timeline::load(timeline_path)?;
     let event_id = format!("sfx_{:03}", track_count(&timeline, &TrackType::Sfx) + 1);
 
@@ -2342,7 +2376,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
         .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
     let sfx_path = SfxIndex::load(Some(&index_path))
         .ok()
-        .and_then(|idx| idx.search(&query, Some(editorial_role), None, 1)
+        .and_then(|idx| idx.search(&query, Some(mapped_role), None, 1)
             .first()
             .map(|a| a.path.clone()));
 
@@ -2383,8 +2417,31 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
     }
     timeline.save(timeline_path)?;
 
+    // P1-4 fix: return status "warning" (not "assigned") when no asset matched,
+    // plus an explicit `matched` flag and a human-readable message. Prior
+    // versions returned "assigned" with asset_path:null, which led agents to
+    // believe the operation succeeded.
+    let (status, matched, message) = if sfx_path.is_some() {
+        (
+            "assigned",
+            true,
+            format!("SFX assigned for role '{}' at {} ms", editorial_role, position_ms),
+        )
+    } else {
+        (
+            "warning",
+            false,
+            format!(
+                "No SFX found for role '{}' (mapped to '{}'). Placeholder event created at {} ms — render will skip this event. Try sfx.search to inspect available assets.",
+                editorial_role, mapped_role, position_ms
+            ),
+        )
+    };
+
     Ok(json!({
-        "status": "assigned",
+        "status": status,
+        "matched": matched,
+        "message": message,
         "event_id": event_id,
         "position_ms": position_ms,
         "timeline_path": timeline_path,
@@ -2483,11 +2540,34 @@ async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Valu
         })
         .collect();
 
-    Ok(json!({
-        "status": "success",
-        "results": result_json,
-        "count": result_json.len(),
-    }))
+    // P1-3 fix: surface a warning when the caller requested loopable/intro_friendly/
+    // cta_friendly filters but the index has no tracks with those flags set true.
+    // Prior versions silently returned 0 results, leaving agents confused.
+    let mut warnings: Vec<String> = Vec::new();
+    if loopable || intro_friendly || cta_friendly {
+        let total_indexed = index.len();
+        let any_loopable = results.iter().any(|m| m.loopability);
+        let any_intro = results.iter().any(|m| m.intro_friendly);
+        let any_cta = results.iter().any(|m| m.cta_friendly);
+        if total_indexed > 0 && (loopable && !any_loopable)
+            || (intro_friendly && !any_intro)
+            || (cta_friendly && !any_cta)
+        {
+            warnings.push(format!(
+                "Filter requested (loopable={}, intro_friendly={}, cta_friendly={}) but no tracks in the index ({} indexed) have these flags set. Run music.index with a directory containing tagged files, or set the flags manually in the index JSON. As a workaround, omit these filters and search by mood/energy.",
+                loopable, intro_friendly, cta_friendly, total_indexed
+            ));
+        }
+    }
+
+    let mut response = serde_json::Map::new();
+    response.insert("status".to_string(), json!("success"));
+    response.insert("results".to_string(), json!(result_json));
+    response.insert("count".to_string(), json!(result_json.len()));
+    if !warnings.is_empty() {
+        response.insert("warnings".to_string(), json!(warnings));
+    }
+    Ok(serde_json::Value::Object(response))
 }
 
 // ---------------------------------------------------------------------------
@@ -2518,8 +2598,17 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
     let end = end_ms.unwrap_or(total_ms);
     let event_id = format!("music_{:03}", track_count(&timeline, &TrackType::Music) + 1);
 
+    // P2-2 fix: only add a ducking directive when speech tracks actually
+    // exist on the timeline. Prior versions added a "dialogue_active"
+    // directive unconditionally, which would attenuate the music even when
+    // there was no dialogue to duck against — silently producing a quieter
+    // mix than the user intended for music-only videos.
     if ducking {
-        timeline.add_ducking_directive("dialogue_active", "music", 10.0, 50, 200);
+        let has_speech = track_count(&timeline, &TrackType::Dialogue) > 0
+            || track_count(&timeline, &TrackType::Voiceover) > 0;
+        if has_speech {
+            timeline.add_ducking_directive("dialogue_active", "music", 10.0, 50, 200);
+        }
     }
 
     let event = openscript_core::timeline::TimelineEvent {
@@ -3131,8 +3220,16 @@ async fn handle_timeline_diff(args: serde_json::Value) -> Result<serde_json::Val
     let seg_ids_b: std::collections::HashSet<&str> =
         b.segments.iter().map(|s| s.id.as_str()).collect();
 
-    let added: Vec<&str> = seg_ids_b.difference(&seg_ids_a).copied().collect();
-    let removed: Vec<&str> = seg_ids_a.difference(&seg_ids_b).copied().collect();
+    let added: Vec<&str> = {
+        let mut v: Vec<&str> = seg_ids_b.difference(&seg_ids_a).copied().collect();
+        v.sort();
+        v
+    };
+    let removed: Vec<&str> = {
+        let mut v: Vec<&str> = seg_ids_a.difference(&seg_ids_b).copied().collect();
+        v.sort();
+        v
+    };
 
     let mut modified = Vec::new();
     for seg_a in &a.segments {
@@ -3142,11 +3239,14 @@ async fn handle_timeline_diff(args: serde_json::Value) -> Result<serde_json::Val
                     || seg_a.end != seg_b.end
                     || seg_a.caption != seg_b.caption
                 {
-                    modified.push(&seg_a.id);
+                    modified.push(seg_a.id.as_str());
                 }
             }
         }
     }
+    // P2-4 fix: sort modified segment ids for stable, readable output. Prior
+    // versions returned them in arbitrary iteration order.
+    modified.sort();
 
     let track_changes = json!({
         "dialogue": {
@@ -3196,11 +3296,19 @@ async fn handle_timeline_preview(args: serde_json::Value) -> Result<serde_json::
         .segments
         .iter()
         .map(|s| {
+            // P2-1 fix: append ellipsis when the caption is truncated, so agents
+            // can tell the preview is abbreviated. Prior versions silently cut at
+            // 60 chars with no indication.
+            let caption_display = if s.caption.chars().count() > 60 {
+                format!("{}...", s.caption.chars().take(57).collect::<String>())
+            } else {
+                s.caption.clone()
+            };
             json!({
                 "id": s.id,
                 "start": s.start,
                 "end": s.end,
-                "caption": s.caption.chars().take(60).collect::<String>(),
+                "caption": caption_display,
                 "crossfade_ms": s.crossfade_ms,
             })
         })
@@ -3460,7 +3568,34 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
                 "tracks_rendered": total_tracks,
             }))
         }
-        Err(e) => Err(ToolError::Ffmpeg(e.to_string())),
+        Err(e) => {
+            // P0-2 fix: include the ffmpeg error inline (and a tail of the render
+            // log when one exists) so AI agents can self-correct without having
+            // to read a separate log file. Prior versions returned only
+            // "Render failed, see log: /path/to/render.log" which gave agents
+            // no actionable information.
+            let err_str = e.to_string();
+            let log_excerpt = if let Some(log_path) = err_str
+                .strip_prefix("Render failed, see log: ")
+                .or_else(|| err_str.strip_prefix("Render failed: "))
+            {
+                std::fs::read_to_string(log_path).ok().map(|content| {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let last_20: Vec<&str> = lines.iter().rev().take(20).rev().cloned().collect();
+                    last_20.join("\n")
+                })
+            } else {
+                None
+            };
+            let mut msg = format!("Render failed: {}", err_str);
+            if let Some(excerpt) = log_excerpt {
+                if !excerpt.is_empty() {
+                    msg.push_str("\n\n--- render log (last 20 lines) ---\n");
+                    msg.push_str(&excerpt);
+                }
+            }
+            Err(ToolError::Ffmpeg(msg))
+        }
     }
 }
 
@@ -5378,8 +5513,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
 
     // === PRIORITY 1: Pexels API (most reliable) ===
-    let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
+    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
 
     if !pexels_key.is_empty() {
         report_progress(0.0, 100.0, "Searching Pexels for stock footage...").await.ok();
@@ -6328,8 +6462,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // Instead of looping one short clip, download a unique stock video
     // for each scene based on keywords extracted from the scene text.
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
-    let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
+    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
 
     if !skip_background && !pexels_key.is_empty() && spec.background.r#type == "gameplay" {
         report_progress(35.0, 60.0, "Fetching multi-broll backgrounds from Pexels...").await.ok();
@@ -6491,8 +6624,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // Build sticker overlays — download GIPHY stickers per speaker
     let mut stickers: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
     if !skip_stickers && spec.stickers.enabled {
-        let giphy_key = std::env::var("GIPHY_API_KEY")
-            .unwrap_or_else(|_| std::env::var("GIPHY_API_KEY").unwrap_or_default());
+        // Fix: prior versions called env::var("GIPHY_API_KEY") twice in
+        // unwrap_or_else (the inner call shadowed the outer). Simplify to a
+        // single lookup.
+        let giphy_key = std::env::var("GIPHY_API_KEY").unwrap_or_default();
 
         // Download one sticker per speaker
         let mut speaker_stickers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -7385,8 +7520,7 @@ async fn handle_media_search(args: serde_json::Value) -> Result<serde_json::Valu
 
     report_progress(0.0, 100.0, &format!("Searching for images: {}...", query)).await.ok();
 
-    let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
+    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -7563,8 +7697,7 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
 
     // Fallback: Pexels video search for short clips
     report_progress(50.0, 100.0, "GIPHY key not set, searching Pexels for short clips...").await.ok();
-    let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
+    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
 
     let url = format!(
         "https://api.pexels.com/videos/search?query={}&per_page={}&orientation=square",
@@ -8007,5 +8140,283 @@ async fn handle_library_build(_args: serde_json::Value) -> Result<serde_json::Va
         "music_count": index.get("music_count"),
         "sfx_count": index.get("sfx_count"),
         "sources": index.get("sources"),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: system.capabilities (P1-2 from prior audit)
+// ---------------------------------------------------------------------------
+
+/// Probe every backend subsystem and report availability. Agents should call
+/// this once at the start of a session to know which tools will work.
+async fn handle_system_capabilities(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    use openscript_assets::music::MusicIndex;
+    use openscript_assets::sfx::SfxIndex;
+
+    // Pexels API key
+    let pexels_key = std::env::var("PEXELS_API_KEY").ok().filter(|s| !s.is_empty());
+    let pexels = json!({
+        "available": pexels_key.is_some(),
+        "reason": if pexels_key.is_some() {
+            serde_json::Value::Null
+        } else {
+            "PEXELS_API_KEY env var not set. Get a free key at https://www.pexels.com/api/".into()
+        },
+    });
+
+    // GIPHY API key
+    let giphy_key = std::env::var("GIPHY_API_KEY").ok().filter(|s| !s.is_empty());
+    let giphy = json!({
+        "available": giphy_key.is_some(),
+        "reason": if giphy_key.is_some() {
+            serde_json::Value::Null
+        } else {
+            "GIPHY_API_KEY env var not set. Get a key at https://developers.giphy.com/".into()
+        },
+    });
+
+    // Pixabay API key
+    let pixabay_key = std::env::var("PIXABAY_API_KEY").ok().filter(|s| !s.is_empty());
+    let pixabay = json!({
+        "available": pixabay_key.is_some(),
+        "reason": if pixabay_key.is_some() {
+            serde_json::Value::Null
+        } else {
+            "PIXABAY_API_KEY env var not set. Optional — only needed for stock.search/stock.fetch.".into()
+        },
+    });
+
+    // SFX library
+    let sfx_index_path = std::env::var("OPENSCRIPT_SFX_INDEX")
+        .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
+    let sfx_count = SfxIndex::load(Some(&sfx_index_path))
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let sfx = json!({
+        "available": sfx_count > 0,
+        "indexed_count": sfx_count,
+        "index_path": sfx_index_path,
+    });
+
+    // Music library
+    let music_index_path = std::env::var("OPENSCRIPT_MUSIC_INDEX")
+        .unwrap_or_else(|_| "mcp/assets/music_index.json".to_string());
+    let music_count = MusicIndex::load(Some(&music_index_path))
+        .map(|idx| idx.len())
+        .unwrap_or(0);
+    let music = json!({
+        "available": music_count > 0,
+        "indexed_count": music_count,
+        "index_path": music_index_path,
+    });
+
+    // Voicebox TTS (qwen3 / faster-tts sidecar at OPENSCRIPT_TTS_URL)
+    let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
+    let voicebox_available = probe_http(&format!("{}/models", tts_url)).await;
+    let voicebox = json!({
+        "available": voicebox_available,
+        "url": tts_url,
+        "reason": if voicebox_available {
+            serde_json::Value::Null
+        } else {
+            "No voicebox server responding at OPENSCRIPT_TTS_URL. Kokoro (script.generate_voices) is the default TTS and does NOT need voicebox.".into()
+        },
+    });
+
+    // Kokoro TTS (Python sidecar)
+    let kokoro_model = std::env::var("KOKORO_MODEL")
+        .unwrap_or_else(|_| "mcp/assets/kokoro-v1.0.onnx".to_string());
+    let kokoro_voices = std::env::var("KOKORO_VOICES")
+        .unwrap_or_else(|_| "mcp/assets/voices.json".to_string());
+    let kokoro_sidecar = std::env::var("KOKORO_SIDECAR")
+        .unwrap_or_else(|_| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
+    let kokoro_available = std::path::Path::new(&kokoro_sidecar).exists()
+        && std::path::Path::new(&kokoro_voices).exists();
+    let kokoro = json!({
+        "available": kokoro_available,
+        "sidecar_path": kokoro_sidecar,
+        "model_path": kokoro_model,
+        "voices_path": kokoro_voices,
+        "reason": if kokoro_available {
+            serde_json::Value::Null
+        } else {
+            "Kokoro sidecar script or voices.json not found. script.generate_voices / script.to_video will fail until these are in place.".into()
+        },
+    });
+
+    // Transcription engine (Apex)
+    let apex_wrapper = std::env::var("OPENSCRIPT_APEX_WRAPPER").ok();
+    let transcription_available = apex_wrapper
+        .as_ref()
+        .map(|p| std::path::Path::new(p).exists())
+        .unwrap_or_else(|| {
+            // Fall back to checking the relative path
+            std::path::Path::new("mcp/scripts/apex_transcriber.py").exists()
+        });
+    let transcription = json!({
+        "available": transcription_available,
+        "engine": "apex",
+        "wrapper_path": apex_wrapper.unwrap_or_else(|| "mcp/scripts/apex_transcriber.py".to_string()),
+        "reason": if transcription_available {
+            serde_json::Value::Null
+        } else {
+            "Apex wrapper script not found. Set OPENSCRIPT_APEX_WRAPPER env var. Requires whisper-hindi conda env with whisper_timestamped installed.".into()
+        },
+    });
+
+    // HyperFrames (default render engine)
+    let hf_dir = std::path::Path::new("hyperframes");
+    let hyperframes = json!({
+        "available": hf_dir.exists(),
+        "path": hf_dir.to_string_lossy(),
+    });
+
+    // FFmpeg
+    let ffmpeg_available = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let ffmpeg = json!({
+        "available": ffmpeg_available,
+        "reason": if ffmpeg_available {
+            serde_json::Value::Null
+        } else {
+            "ffmpeg binary not found on PATH. Required for all video rendering tools.".into()
+        },
+    });
+
+    Ok(json!({
+        "status": "success",
+        "voicebox": voicebox,
+        "kokoro": kokoro,
+        "transcription": transcription,
+        "pexels": pexels,
+        "giphy": giphy,
+        "pixabay": pixabay,
+        "sfx_library": sfx,
+        "music_library": music,
+        "ffmpeg": ffmpeg,
+        "hyperframes": hyperframes,
+    }))
+}
+
+/// Lightweight HTTP probe — returns true if the URL responds with any HTTP
+/// status (even 404). Used to check if a local sidecar is running without
+/// depending on a specific endpoint shape.
+async fn probe_http(url: &str) -> bool {
+    match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(800))
+        .build()
+    {
+        Ok(client) => client.get(url).send().await.is_ok(),
+        Err(_) => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handler: help.tool (Recommendation 3.1 from prior audit)
+// ---------------------------------------------------------------------------
+
+/// Natural-language tool discovery. Tokenises the query, scores each tool by
+/// keyword overlap with its name + description, and returns the top N matches.
+async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let limit = default_u32(&args, "limit", 8).clamp(1, 20) as usize;
+
+    // Normalise the query into a set of lowercase tokens, dropping stopwords.
+    let stop = [
+        "a", "an", "the", "to", "for", "of", "in", "on", "at", "by", "with",
+        "and", "or", "is", "are", "be", "do", "does", "how", "i", "my", "me",
+        "want", "need", "please", "can", "could", "would", "should",
+    ];
+    let query_tokens: std::collections::HashSet<String> = query
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty() && !stop.contains(t))
+        .map(String::from)
+        .collect();
+
+    if query_tokens.is_empty() {
+        return Ok(json!({
+            "status": "success",
+            "query": query,
+            "results": [],
+            "count": 0,
+            "message": "Query contained no searchable keywords. Try describing the task, e.g. 'add voiceover to a timeline'."
+        }));
+    }
+
+    // Iterate all tool definitions, score each by token overlap with name + description.
+    let all_tools = tool_definitions();
+    let mut scored: Vec<serde_json::Value> = Vec::new();
+
+    if let Some(arr) = all_tools.as_array() {
+        for tool in arr {
+            let name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let desc = tool.get("description").and_then(|v| v.as_str()).unwrap_or("");
+
+            // Combine name + description, lowercase, tokenise
+            let combined = format!("{} {}", name, desc).to_lowercase();
+            let tool_tokens: std::collections::HashSet<&str> = combined
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|t| !t.is_empty())
+                .collect();
+
+            // Score = (matching tokens) / (query tokens). Boost exact name-token matches.
+            let mut matches = 0usize;
+            let mut name_boost = 0.0;
+            for qt in &query_tokens {
+                if tool_tokens.contains(qt.as_str()) {
+                    matches += 1;
+                    if name.to_lowercase().contains(qt.as_str()) {
+                        name_boost += 0.15;
+                    }
+                }
+            }
+            let coverage = matches as f64 / query_tokens.len() as f64;
+            let score = (coverage + name_boost).min(1.0);
+
+            if score > 0.0 {
+                // Short description = first sentence of the description, capped at 180 chars.
+                let short_desc = desc
+                    .split('.')
+                    .next()
+                    .unwrap_or(desc)
+                    .chars()
+                    .take(180)
+                    .collect::<String>();
+                scored.push(json!({
+                    "name": name,
+                    "relevance": (score * 100.0).round() / 100.0,
+                    "description": short_desc,
+                }));
+            }
+        }
+    }
+
+    // Sort by relevance desc, then name asc
+    scored.sort_by(|a, b| {
+        let ra = a.get("relevance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let rb = b.get("relevance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        rb.partial_cmp(&ra)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                let na = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let nb = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                na.cmp(nb)
+            })
+    });
+    scored.truncate(limit);
+
+    let count = scored.len();
+    Ok(json!({
+        "status": "success",
+        "query": query,
+        "results": scored,
+        "count": count,
     }))
 }

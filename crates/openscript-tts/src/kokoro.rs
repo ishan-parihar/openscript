@@ -117,8 +117,41 @@ impl KokoroEngine {
                 .unwrap_or(0)
         ));
 
+        // Resolve the Kokoro sidecar script path. Priority:
+        //   1. KOKORO_SIDECAR env var (explicit override)
+        //   2. CARGO_MANIFEST_DIR/../../mcp/scripts/kokoro_tts_sidecar.py
+        //      (workspace-relative at dev time)
+        //   3. OPENSCRIPT_ROOT/mcp/scripts/kokoro_tts_sidecar.py
+        //      (deployment override)
+        //   4. Relative "mcp/scripts/kokoro_tts_sidecar.py" (last resort;
+        //      only works if CWD is the repo root)
+        //
+        // Prior versions defaulted to the relative path, which broke the
+        // sidecar spawn whenever the process CWD was not the repo root.
         let sidecar_script = std::env::var("KOKORO_SIDECAR")
-            .unwrap_or_else(|_| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                // CARGO_MANIFEST_DIR is set at compile time for the crate.
+                // At runtime this still points at the build-time location,
+                // which is fine for dev. For production binaries, fall through
+                // to OPENSCRIPT_ROOT.
+                option_env!("CARGO_MANIFEST_DIR")
+                    .map(|d| {
+                        std::path::Path::new(d)
+                            .join("../../mcp/scripts/kokoro_tts_sidecar.py")
+                            .to_string_lossy()
+                            .to_string()
+                    })
+                    .filter(|p| std::path::Path::new(p).exists())
+            })
+            .or_else(|| {
+                std::env::var("OPENSCRIPT_ROOT")
+                    .ok()
+                    .map(|root| format!("{}/mcp/scripts/kokoro_tts_sidecar.py", root))
+                    .filter(|p| std::path::Path::new(p).exists())
+            })
+            .unwrap_or_else(|| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
 
         let output = std::process::Command::new("python3")
             .arg(&sidecar_script)
@@ -143,33 +176,37 @@ impl KokoroEngine {
             )));
         }
 
-        // Read the WAV file and convert to f32 samples
-        let wav_bytes = std::fs::read(&tmp).map_err(|e| {
-            let _ = std::fs::remove_file(&tmp);
-            KokoroError::Engine(format!("Failed to read sidecar output: {}", e))
-        })?;
+        // Read the WAV file via hound (chunk-aware, supports 16/24/32-bit + float).
+        // Prior versions hand-parsed the WAV header assuming `data` starts at
+        // byte 44, which breaks on WAVs with LIST/fact/bext chunks and only
+        // supports 16-bit PCM.
+        let samples = match hound::WavReader::open(&tmp) {
+            Ok(reader) => {
+                let spec = reader.spec();
+                match spec.sample_format {
+                    hound::SampleFormat::Int => {
+                        let max_val = (1u64 << (spec.bits_per_sample - 1)) as f32;
+                        reader.into_samples::<i32>()
+                            .map(|s| s.map(|v| v as f32 / max_val).unwrap_or(0.0))
+                            .collect::<Vec<f32>>()
+                    }
+                    hound::SampleFormat::Float => {
+                        reader.into_samples::<f32>()
+                            .map(|s| s.unwrap_or(0.0))
+                            .collect::<Vec<f32>>()
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(KokoroError::Engine(format!(
+                    "Failed to parse sidecar WAV output: {}", e
+                )));
+            }
+        };
         let _ = std::fs::remove_file(&tmp);
-
-        // Parse WAV and extract f32 samples
-        let samples = wav_to_f32_samples(&wav_bytes)?;
         Ok(samples)
     }
-}
-
-/// Parse a 16-bit PCM WAV file and return f32 samples in range [-1.0, 1.0].
-fn wav_to_f32_samples(wav: &[u8]) -> Result<Vec<f32>, KokoroError> {
-    if wav.len() < 44 || &wav[..4] != b"RIFF" {
-        return Err(KokoroError::Engine("Invalid WAV format".into()));
-    }
-    let data = &wav[44..];
-    let samples: Vec<f32> = data
-        .chunks_exact(2)
-        .map(|chunk| {
-            let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
-            sample as f32 / 32768.0
-        })
-        .collect();
-    Ok(samples)
 }
 
 /// Kokoro's hard limit on input token count. We approximate 1 token ≈ 0.75 word
@@ -610,50 +647,35 @@ pub enum KokoroError {
     AssetMissing(String),
     #[error("Kokoro engine error: {0}")]
     Engine(String),
-    #[error("Backend not yet wired: {0}")]
-    NotWired(String),
 }
 
-// ---- tiny WAV encoder so we don't pull in `hound` for a one-shot write ----
+// ---- WAV helpers via hound (replaces hand-rolled encoder + duration parser) ----
+
+/// Encode f32 samples (range [-1.0, 1.0]) as a 16-bit PCM mono WAV file.
 fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
-    let mut out = Vec::with_capacity(44 + samples.len() * 2);
-    let data_len = (samples.len() * 2) as u32;
-    let fmt_len: u32 = 16;
-    let audio_fmt: u16 = 1; // PCM
-    let channels: u16 = 1;
-    let bits: u16 = 16;
-    let byte_rate = sample_rate * channels as u32 * (bits as u32 / 2);
-    let block_align = channels * (bits / 2);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVE");
-    out.extend_from_slice(b"fmt ");
-    out.extend_from_slice(&fmt_len.to_le_bytes());
-    out.extend_from_slice(&audio_fmt.to_le_bytes());
-    out.extend_from_slice(&channels.to_le_bytes());
-    out.extend_from_slice(&sample_rate.to_le_bytes());
-    out.extend_from_slice(&byte_rate.to_le_bytes());
-    out.extend_from_slice(&block_align.to_le_bytes());
-    out.extend_from_slice(&bits.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    for &s in samples {
-        let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
-        out.extend_from_slice(&v.to_le_bytes());
+    let mut out = Vec::new();
+    {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::new(&mut out, spec)
+            .expect("hound WavWriter init on Vec<u8> cannot fail");
+        for &s in samples {
+            let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
+            writer.write_sample(v).expect("write_sample on Vec cannot fail");
+        }
+        writer.finalize().expect("finalize on Vec cannot fail");
     }
     out
 }
 
+/// Read a WAV file's duration in milliseconds via hound (chunk-aware).
 fn wav_duration_ms(path: &Path) -> Option<i64> {
-    // Prefer the embedded duration; fall back to ffprobe (same as client.rs).
-    let bytes = std::fs::read(path).ok()?;
-    if bytes.len() < 44 || &bytes[..4] != b"RIFF" {
-        return None;
-    }
-    let sample_rate = u32::from_le_bytes(bytes[24..28].try_into().ok()?);
-    let data_len = u32::from_le_bytes(bytes[40..44].try_into().ok()?) as f64;
-    if sample_rate == 0 {
-        return None;
-    }
-    Some(((data_len / 2.0 / sample_rate as f64) * 1000.0).round() as i64)
+    let reader = hound::WavReader::open(path).ok()?;
+    let spec = reader.spec();
+    let duration = reader.duration();
+    Some(((duration as f64 / spec.sample_rate as f64) * 1000.0).round() as i64)
 }

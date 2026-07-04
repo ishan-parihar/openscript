@@ -1,4 +1,5 @@
 use std::process::Stdio;
+use std::sync::atomic::AtomicBool;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -42,10 +43,15 @@ fn parse_ffmpeg_time_to_ms(time_str: &str) -> Option<i64> {
 /// Spawn FFmpeg as a child process, parse stderr for progress, and wait for completion.
 ///
 /// Returns the output path on success. On failure, writes the log and returns the log path.
+///
+/// If `cancel_token` is `Some`, the function polls the token between stderr reads; if the
+/// token becomes `true`, the child process is killed and `FfmpegError::RenderFailed` is
+/// returned with a "cancelled by user" message.
 async fn spawn_ffmpeg_with_progress(
     mut cmd: Command,
     total_duration_ms: i64,
     log_path: &str,
+    cancel_token: Option<&AtomicBool>,
 ) -> Result<String, FfmpegError> {
     let mut child = cmd
         .stdout(Stdio::null())
@@ -59,22 +65,54 @@ async fn spawn_ffmpeg_with_progress(
     let mut last_progress: f64 = 0.0;
     let mut full_stderr = Vec::new();
 
-    while reader.read_line(&mut line).await? > 0 {
-        // Collect stderr for error reporting
-        full_stderr.extend_from_slice(line.as_bytes());
-
-        // Parse "time=HH:MM:SS.ms" pattern from FFmpeg stderr
-        if let Some(rest) = line.strip_prefix("time=") {
-            if let Some(time_str) = rest.split_whitespace().next() {
-                if let Some(current_ms) = parse_ffmpeg_time_to_ms(time_str) {
-                    if total_duration_ms > 0 {
-                        last_progress =
-                            (current_ms as f64 / total_duration_ms as f64 * 100.0).min(100.0);
-                    }
-                }
+    loop {
+        // Check cancellation before each read. If cancelled, kill the child and bail.
+        if let Some(token) = cancel_token {
+            if token.load(std::sync::atomic::Ordering::SeqCst) {
+                // Best-effort kill; ignore the result because the child may have exited already.
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                std::fs::write(
+                    log_path,
+                    "Render cancelled by user\n".to_string(),
+                )?;
+                return Err(FfmpegError::RenderFailed("cancelled by user".to_string()));
             }
         }
-        line.clear();
+
+        // tokio::select! races the next stderr line against a 200ms timeout so we can
+        // re-check the cancel token. ffmpeg emits progress roughly every 100ms-1s.
+        let read_result = tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            reader.read_line(&mut line),
+        )
+        .await;
+
+        match read_result {
+            Ok(Ok(0)) => break,              // EOF
+            Ok(Ok(_n)) => {
+                // Collect stderr for error reporting
+                full_stderr.extend_from_slice(line.as_bytes());
+
+                // Parse "time=HH:MM:SS.ms" pattern from FFmpeg stderr
+                if let Some(rest) = line.strip_prefix("time=") {
+                    if let Some(time_str) = rest.split_whitespace().next() {
+                        if let Some(current_ms) = parse_ffmpeg_time_to_ms(time_str) {
+                            if total_duration_ms > 0 {
+                                last_progress =
+                                    (current_ms as f64 / total_duration_ms as f64 * 100.0).min(100.0);
+                            }
+                        }
+                    }
+                }
+                line.clear();
+            }
+            Ok(Err(_e)) => break,
+            Err(_elapsed) => {
+                // Timeout — loop back to check cancellation. Continue reading.
+                continue;
+            }
+        }
     }
 
     let status = child.wait().await?;
@@ -108,6 +146,13 @@ pub struct RenderConfig {
 }
 
 pub async fn render(config: RenderConfig) -> Result<String, FfmpegError> {
+    render_with_cancel(config, None).await
+}
+
+pub async fn render_with_cancel(
+    config: RenderConfig,
+    cancel_token: Option<&AtomicBool>,
+) -> Result<String, FfmpegError> {
     // Load EDL
     let edl_data = std::fs::read_to_string(&config.edl_path)?;
     let edl: serde_json::Value = serde_json::from_str(&edl_data)?;
@@ -165,7 +210,7 @@ pub async fn render(config: RenderConfig) -> Result<String, FfmpegError> {
     cmd.arg(&out_path);
 
     // Execute with progress parsing
-    spawn_ffmpeg_with_progress(cmd, total_duration_ms, &log_path).await?;
+    spawn_ffmpeg_with_progress(cmd, total_duration_ms, &log_path, cancel_token).await?;
 
     Ok(out_path)
 }
@@ -177,6 +222,19 @@ pub async fn render_from_timeline(
     source_video: &str,
     output_path: Option<&str>,
     crf: Option<u32>,
+) -> Result<String, FfmpegError> {
+    render_from_timeline_with_cancel(timeline, source_video, output_path, crf, None).await
+}
+
+/// Same as `render_from_timeline` but accepts an optional cancellation token.
+/// When the token becomes `true`, the ffmpeg child process is killed and the
+/// render returns `FfmpegError::RenderFailed("cancelled by user")`.
+pub async fn render_from_timeline_with_cancel(
+    timeline: &Timeline,
+    source_video: &str,
+    output_path: Option<&str>,
+    crf: Option<u32>,
+    cancel_token: Option<&AtomicBool>,
 ) -> Result<String, FfmpegError> {
     if timeline.segments.is_empty() {
         return Err(FfmpegError::NoSegments);
@@ -279,7 +337,7 @@ pub async fn render_from_timeline(
     cmd.arg(&out_path);
 
     // Execute with progress parsing
-    spawn_ffmpeg_with_progress(cmd, total_duration_ms, &log_path).await?;
+    spawn_ffmpeg_with_progress(cmd, total_duration_ms, &log_path, cancel_token).await?;
 
     Ok(out_path)
 }
