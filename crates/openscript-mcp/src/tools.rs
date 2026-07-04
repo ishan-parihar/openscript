@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (65 tools: 64 + timeline.inspect)
+// Tool definitions (68 tools: 65 + library.search + library.download + library.build)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -928,6 +928,42 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["timeline_preview_path", "layer"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "library.search",
+            "description": "Search the de-duplicated music/SFX library index. Index contains 500+ entries from NoCopyrightSounds, AudioLibrary, BreakingCopyright, VlogNoCopyrightMusic, MixtureOfficial, SoundLibrary1, and local stock. Each entry has filename, title, tags, download_url, source, duration, and license. Use library.download to fetch the audio file on demand. Use library.build to rebuild the index from YouTube channels.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query (e.g. 'epic cinematic', 'lofi chill', 'explosion', 'whoosh')"},
+                    "type": {"type": "string", "enum": ["music", "sfx"], "description": "Filter by media type: music or sfx"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results"}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "library.download",
+            "description": "Download a music/SFX file from the library index on demand. Uses yt-dlp to extract audio as MP3 from YouTube sources. Caches downloaded files for reuse. Use library.search first to find the filename, then library.download to fetch it.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "filename": {"type": "string", "description": "Filename from library.search results (e.g. 'Epic_Cinematic_Action_by_Infraction.mp3')"},
+                    "output_dir": {"type": "string", "default": "mcp/assets/music_cache", "description": "Directory for downloaded files"}
+                },
+                "required": ["filename"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "library.build",
+            "description": "Rebuild the music/SFX library index by scraping YouTube channels (NoCopyrightSounds, AudioLibrary, BreakingCopyright, VlogNoCopyrightMusic, MixtureOfficial, SoundLibrary1). Run once at setup or when you want to refresh the library. Takes ~2 minutes. Returns index stats.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }
         }
     ]);
 
@@ -1039,6 +1075,9 @@ pub fn route_tool(
         "media.search" => Box::pin(handle_media_search(args)),
         "gif.search" => Box::pin(handle_gif_search(args)),
         "timeline.inspect" => Box::pin(handle_timeline_inspect(args)),
+        "library.search" => Box::pin(handle_library_search(args)),
+        "library.download" => Box::pin(handle_library_download(args)),
+        "library.build" => Box::pin(handle_library_build(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -7683,5 +7722,224 @@ async fn handle_timeline_inspect(args: serde_json::Value) -> Result<serde_json::
         "event_count": details.len(),
         "events": details,
         "preview_excerpt": preview.lines().take(5).collect::<Vec<_>>().join("\n"),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: library.search — search music/SFX library index
+// ---------------------------------------------------------------------------
+
+async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let media_type = default_opt_str(&args, "type");
+    let limit = default_u32(&args, "limit", 10) as usize;
+
+    let index_path = std::env::var("OPENSCRIPT_MUSIC_LIBRARY_INDEX")
+        .unwrap_or_else(|_| "mcp/assets/music_library_index.json".to_string());
+
+    if !Path::new(&index_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Music library index not found at {}. Run: python3 mcp/scripts/music_library_indexer.py --build",
+            index_path
+        )));
+    }
+
+    let index_str = std::fs::read_to_string(&index_path)?;
+    let index: serde_json::Value = serde_json::from_str(&index_str)?;
+
+    let entries = index.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let query_lower = query.to_lowercase();
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+
+    for entry in &entries {
+        // Filter by media type if specified
+        if let Some(ref mt) = media_type {
+            let entry_type = entry.get("media_type").and_then(|v| v.as_str()).unwrap_or("");
+            if entry_type != mt {
+                continue;
+            }
+        }
+
+        let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+        let tags: Vec<String> = entry.get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|t| t.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        let mut score = 0i32;
+
+        // Exact title match
+        if query_lower.contains(&title) || title.contains(&query_lower) {
+            score += 10;
+        }
+
+        // Word matches
+        for word in &query_words {
+            if title.contains(word) {
+                score += 3;
+            }
+            if tags.iter().any(|t| t == word) {
+                score += 5;
+            }
+        }
+
+        if score > 0 {
+            let mut result = entry.clone();
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("relevance_score".into(), json!(score));
+            }
+            results.push(result);
+        }
+    }
+
+    // Sort by relevance
+    results.sort_by(|a, b| {
+        let sa = a.get("relevance_score").and_then(|v| v.as_i64()).unwrap_or(0);
+        let sb = b.get("relevance_score").and_then(|v| v.as_i64()).unwrap_or(0);
+        sb.cmp(&sa)
+    });
+
+    let total = results.len();
+    results.truncate(limit);
+
+    Ok(json!({
+        "status": "searched",
+        "query": query,
+        "type": media_type,
+        "total_matches": total,
+        "count": results.len(),
+        "results": results,
+        "index_stats": {
+            "total_entries": index.get("total_entries"),
+            "music_count": index.get("music_count"),
+            "sfx_count": index.get("sfx_count"),
+            "sources": index.get("sources"),
+        },
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: library.download — download music/SFX on demand
+// ---------------------------------------------------------------------------
+
+async fn handle_library_download(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let filename = extract_str(&args, "filename")?;
+    let output_dir = default_str(&args, "output_dir", "mcp/assets/music_cache");
+    let output_dir_owned = output_dir.to_string();
+
+    std::fs::create_dir_all(&output_dir_owned)?;
+
+    let index_path = std::env::var("OPENSCRIPT_MUSIC_LIBRARY_INDEX")
+        .unwrap_or_else(|_| "mcp/assets/music_library_index.json".to_string());
+
+    let index_str = std::fs::read_to_string(&index_path)?;
+    let index: serde_json::Value = serde_json::from_str(&index_str)?;
+
+    let entries = index.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let entry = entries.iter().find(|e| {
+        e.get("filename").and_then(|v| v.as_str()).unwrap_or("") == filename
+    }).ok_or_else(|| ToolError::NotFound(format!("Entry not found in library: {}", filename)))?;
+
+    let source_type = entry.get("source_type").and_then(|v| v.as_str()).unwrap_or("local").to_string();
+    let download_url = entry.get("download_url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let output_path = format!("{}/{}", output_dir_owned, filename);
+
+    // Check if already downloaded
+    if Path::new(&output_path).exists() {
+        return Ok(json!({
+            "status": "cached",
+            "path": output_path,
+            "filename": filename,
+            "source": entry.get("source"),
+        }));
+    }
+
+    if source_type == "local" {
+        // Local file — just return the path
+        return Ok(json!({
+            "status": "local",
+            "path": download_url,
+            "filename": filename,
+            "source": entry.get("source"),
+        }));
+    }
+
+    // Download with yt-dlp
+    report_progress(0.0, 100.0, &format!("Downloading: {}", filename)).await.ok();
+
+    let result = tokio::process::Command::new("yt-dlp")
+        .arg("-x").arg("--audio-format").arg("mp3")
+        .arg("--audio-quality").arg("0")
+        .arg("-o").arg(&output_path)
+        .arg("--no-playlist")
+        .arg("--quiet")
+        .arg(&download_url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await;
+
+    match result {
+        Ok(output) if output.status.success() => {
+            report_progress(100.0, 100.0, "Downloaded").await.ok();
+            let file_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+            Ok(json!({
+                "status": "downloaded",
+                "path": output_path,
+                "filename": filename,
+                "file_size_bytes": file_size,
+                "source": entry.get("source"),
+                "title": entry.get("title"),
+            }))
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(ToolError::Asset(format!("Download failed: {}", stderr.lines().last().unwrap_or("unknown"))))
+        }
+        Err(e) => Err(ToolError::Asset(format!("yt-dlp not available: {}", e))),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handler: library.build — rebuild the music/SFX library index
+// ---------------------------------------------------------------------------
+
+async fn handle_library_build(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    report_progress(0.0, 100.0, "Building music/SFX library index...").await.ok();
+
+    let result = tokio::process::Command::new("python3")
+        .arg("mcp/scripts/music_library_indexer.py")
+        .arg("--build")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(ToolError::Asset(format!("Index build failed: {}", stderr)));
+    }
+
+    // Read the built index
+    let index_path = "mcp/assets/music_library_index.json";
+    let index_str = std::fs::read_to_string(index_path)?;
+    let index: serde_json::Value = serde_json::from_str(&index_str)?;
+
+    report_progress(100.0, 100.0, "Library index built").await.ok();
+
+    Ok(json!({
+        "status": "built",
+        "index_path": index_path,
+        "total_entries": index.get("total_entries"),
+        "music_count": index.get("music_count"),
+        "sfx_count": index.get("sfx_count"),
+        "sources": index.get("sources"),
     }))
 }
