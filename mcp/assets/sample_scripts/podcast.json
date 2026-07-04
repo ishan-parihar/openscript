@@ -33,14 +33,14 @@
     "type": "gameplay",
     "source": "youtube",
     "query": "minecraft parkour no copyright gameplay",
-    "fallback_pool": [],
+    "fallback_pool": ["mcp/assets/backgrounds/procedural_waves_purple.mp4", "mcp/assets/backgrounds/procedural_waves_teal.mp4"],
     "crop_mode": "center",
     "loop": true,
     "volume_db": -20,
     "change_cadence": "scene"
   },
   "music": {
-    "path": "lofi.mp3",
+    "path": "mcp/assets/music/lofi_chill.mp3",
     "gain_db": -18,
     "ducking": true,
     "ducking_depth_db": 12

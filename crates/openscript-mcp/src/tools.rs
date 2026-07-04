@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (58 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline + 1 script.to_video)
+// Tool definitions (60 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline + 1 script.to_video + 1 stock.fetch + 1 youtube.download)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -814,7 +814,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "script.to_video",
-            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. Calls script.to_timeline (which orchestrates TTS, captions, backgrounds, stickers) then timeline.render (FFmpeg render). This is the simplest entry point for AI agents — provide a script, get a video. Returns output_path + file_size + timeline_path + warnings. Use script.parse first to validate the script.",
+            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. Calls script.to_timeline (which orchestrates TTS, captions, backgrounds, stickers) then renders via the from-scratch render path (background + voiceover + music + captions). This is the simplest entry point for AI agents — provide a script, get a video. Returns output_path + file_size + timeline_path + warnings. Use script.parse first to validate the script.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -826,6 +826,37 @@ pub fn tool_definitions() -> serde_json::Value {
                     "preview_mode": {"type": "boolean", "default": false, "description": "If true, use draft quality for faster iteration"}
                 },
                 "required": ["script"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "stock.fetch",
+            "description": "Download stock music or videos from Pixabay API. Requires PIXABAY_API_KEY env var. Falls back to local stock library if API key not set. For music: downloads MP3 tracks by mood/genre query. For video: downloads animation/footage clips. Returns downloaded file paths. Use for sourcing royalty-free background music and video footage.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["music", "video"], "description": "Media type to fetch"},
+                    "query": {"type": "string", "description": "Search query (e.g. 'lofi chill' for music, 'minecraft gameplay' for video)"},
+                    "limit": {"type": "integer", "default": 5, "description": "Max results to download"},
+                    "output_dir": {"type": "string", "default": "mcp/assets/stock_cache", "description": "Directory for downloaded files"}
+                },
+                "required": ["type", "query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "youtube.download",
+            "description": "Download a YouTube video clip for use as background footage. Accepts either a direct YouTube URL or a search query. Downloads the video, extracts a random clip of the specified duration, and crops to the target aspect ratio. Tries browser cookies to avoid bot detection. Caches downloaded videos for reuse. Requires yt-dlp installed (pip install yt-dlp).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "YouTube URL or search query (e.g. 'https://youtube.com/watch?v=...' or 'minecraft parkour no copyright')"},
+                    "duration_s": {"type": "number", "default": 30.0, "description": "Clip duration in seconds"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
+                    "cache_dir": {"type": "string", "default": "mcp/assets/background_cache", "description": "Cache directory"},
+                    "use_cookies": {"type": "boolean", "default": true, "description": "Try browser cookies to avoid YouTube bot detection"}
+                },
+                "required": ["query"],
                 "additionalProperties": false
             }
         }
@@ -932,6 +963,8 @@ pub fn route_tool(
         "sticker.render" => Box::pin(handle_sticker_render(args)),
         "script.to_timeline" => Box::pin(handle_script_to_timeline(args)),
         "script.to_video" => Box::pin(handle_script_to_video(args)),
+        "stock.fetch" => Box::pin(handle_stock_fetch(args)),
+        "youtube.download" => Box::pin(handle_youtube_download(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -5960,5 +5993,328 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         Err(e) => {
             Err(ToolError::Ffmpeg(format!("Render failed: {}", e)))
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handler: stock.fetch — download stock music/videos from Pixabay/Pexels APIs
+// ---------------------------------------------------------------------------
+
+async fn handle_stock_fetch(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let media_type = extract_str(&args, "type")?; // "music" or "video"
+    let query = extract_str(&args, "query")?;
+    let limit = default_u32(&args, "limit", 5) as usize;
+    let output_dir = default_str(&args, "output_dir", "mcp/assets/stock_cache");
+
+    std::fs::create_dir_all(&output_dir)?;
+
+    report_progress(0.0, 100.0, &format!("Searching for {}...", media_type)).await.ok();
+
+    if media_type == "music" {
+        // Try Pixabay music API
+        let pixabay_key = std::env::var("PIXABAY_API_KEY").ok();
+        if let Some(key) = pixabay_key {
+            let url = format!(
+                "https://pixabay.com/api/audio/?key={}&q={}&per_page={}",
+                key,
+                urlencoding::encode(query),
+                limit
+            );
+            let client = reqwest::Client::new();
+            match client.get(&url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let body: serde_json::Value = resp.json().await.map_err(|e| ToolError::Asset(e.to_string()))?;
+                    let hits = body.get("hits").cloned().unwrap_or(json!([]));
+                    let mut results = Vec::new();
+
+                    if let Some(arr) = hits.as_array() {
+                        for hit in arr.iter().take(limit) {
+                            let audio_url = hit.get("audio").and_then(|v| v.as_str()).unwrap_or("");
+                            let title = hit.get("tags").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let duration = hit.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                            if !audio_url.is_empty() {
+                                let filename = format!("{}/{}_{}.mp3", output_dir, query.replace(' ', "_"), results.len());
+                                match client.get(audio_url).send().await {
+                                    Ok(resp) if resp.status().is_success() => {
+                                        let bytes = resp.bytes().await.map_err(|e| ToolError::Asset(e.to_string()))?;
+                                        std::fs::write(&filename, &bytes)?;
+                                        results.push(json!({
+                                            "title": title,
+                                            "path": filename,
+                                            "duration_s": duration,
+                                            "source": "pixabay",
+                                        }));
+                                    }
+                                    Err(e) => tracing::warn!("[stock.fetch] Download failed: {}", e),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+
+                    report_progress(100.0, 100.0, &format!("Downloaded {} tracks", results.len())).await.ok();
+                    return Ok(json!({
+                        "status": "fetched",
+                        "type": "music",
+                        "source": "pixabay",
+                        "count": results.len(),
+                        "results": results,
+                    }));
+                }
+                _ => tracing::warn!("[stock.fetch] Pixabay API failed"),
+            }
+        }
+
+        // Fallback: return local stock library results
+        report_progress(100.0, 100.0, "Using local stock library").await.ok();
+        return Ok(json!({
+            "status": "fallback",
+            "type": "music",
+            "source": "local",
+            "message": "Set PIXABAY_API_KEY env var to download from Pixabay. Using local stock library.",
+            "local_library": "mcp/assets/music_index.json",
+        }));
+    }
+
+    if media_type == "video" {
+        // Try Pixabay video API
+        let pixabay_key = std::env::var("PIXABAY_API_KEY").ok();
+        if let Some(key) = pixabay_key {
+            let url = format!(
+                "https://pixabay.com/api/videos/?key={}&q={}&per_page={}&video_type=animation",
+                key,
+                urlencoding::encode(query),
+                limit
+            );
+            let client = reqwest::Client::new();
+            match client.get(&url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let body: serde_json::Value = resp.json().await.map_err(|e| ToolError::Asset(e.to_string()))?;
+                    let hits = body.get("hits").cloned().unwrap_or(json!([]));
+                    let mut results = Vec::new();
+
+                    if let Some(arr) = hits.as_array() {
+                        for hit in arr.iter().take(limit) {
+                            // Get the best quality video URL
+                            let videos = hit.get("videos");
+                            let video_url = videos
+                                .and_then(|v| v.get("large"))
+                                .or_else(|| videos.and_then(|v| v.get("medium")))
+                                .or_else(|| videos.and_then(|v| v.get("small")))
+                                .and_then(|q| q.get("url"))
+                                .and_then(|u| u.as_str())
+                                .unwrap_or("");
+
+                            let tags = hit.get("tags").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let duration = hit.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                            if !video_url.is_empty() {
+                                let filename = format!("{}/{}_{}.mp4", output_dir, query.replace(' ', "_"), results.len());
+                                match client.get(video_url).send().await {
+                                    Ok(resp) if resp.status().is_success() => {
+                                        let bytes = resp.bytes().await.map_err(|e| ToolError::Asset(e.to_string()))?;
+                                        std::fs::write(&filename, &bytes)?;
+                                        results.push(json!({
+                                            "title": tags,
+                                            "path": filename,
+                                            "duration_s": duration,
+                                            "source": "pixabay",
+                                        }));
+                                    }
+                                    Err(e) => tracing::warn!("[stock.fetch] Download failed: {}", e),
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+
+                    report_progress(100.0, 100.0, &format!("Downloaded {} videos", results.len())).await.ok();
+                    return Ok(json!({
+                        "status": "fetched",
+                        "type": "video",
+                        "source": "pixabay",
+                        "count": results.len(),
+                        "results": results,
+                    }));
+                }
+                _ => tracing::warn!("[stock.fetch] Pixabay API failed"),
+            }
+        }
+
+        // Fallback: return local stock library
+        report_progress(100.0, 100.0, "Using local stock library").await.ok();
+        return Ok(json!({
+            "status": "fallback",
+            "type": "video",
+            "source": "local",
+            "message": "Set PIXABAY_API_KEY env var to download from Pixabay. Using local stock library.",
+            "local_library": "mcp/assets/backgrounds/",
+        }));
+    }
+
+    Err(ToolError::InvalidArg(format!("Unknown media type: {}. Use 'music' or 'video'.", media_type)))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: youtube.download — download YouTube video clips
+// ---------------------------------------------------------------------------
+
+async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?; // URL or search query
+    let duration_s = default_f64(&args, "duration_s", 30.0);
+    let aspect = default_str(&args, "aspect", "9:16");
+    let cache_dir = default_str(&args, "cache_dir", "mcp/assets/background_cache");
+    let use_cookies = default_bool(&args, "use_cookies", true);
+
+    std::fs::create_dir_all(&cache_dir)?;
+
+    report_progress(0.0, 100.0, "Downloading from YouTube...").await.ok();
+
+    // Determine if query is a URL or a search term
+    let is_url = query.starts_with("http://") || query.starts_with("https://") || query.starts_with("youtu.be");
+    let cache_key = format!("{:x}", md5_hash(query.as_bytes()));
+    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
+    let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
+
+    // Check cache first
+    if Path::new(&full_video_path).exists() {
+        report_progress(50.0, 100.0, "Using cached video...").await.ok();
+    } else {
+        // Build yt-dlp command
+        let mut yt_args = vec![
+            "--format".to_string(),
+            "best[height<=720]".to_string(),
+            "--output".to_string(),
+            full_video_path.clone(),
+            "--no-playlist".to_string(),
+            "--quiet".to_string(),
+        ];
+
+        // Add cookies if enabled
+        if use_cookies {
+            // Try browser cookies
+            for browser in &["chrome", "firefox", "edge"] {
+                yt_args.push("--cookies-from-browser".to_string());
+                yt_args.push(browser.to_string());
+                // Only try one browser — if it fails, yt-dlp will continue without cookies
+                break;
+            }
+        }
+
+        // Add user agent to avoid bot detection
+        yt_args.push("--user-agent".to_string());
+        yt_args.push("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string());
+
+        // Search or direct URL
+        if is_url {
+            yt_args.push(query.to_string());
+        } else {
+            yt_args.push(format!("ytsearch1:{}", query));
+        }
+
+        let yt_result = tokio::process::Command::new("yt-dlp")
+            .args(&yt_args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await;
+
+        match yt_result {
+            Ok(output) if output.status.success() => {
+                report_progress(50.0, 100.0, "Downloaded, extracting clip...").await.ok();
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                tracing::warn!("[youtube.download] yt-dlp failed: {}", stderr);
+                return Err(ToolError::Ffmpeg(format!(
+                    "YouTube download failed: {}. Try providing a direct URL, or set PIXABAY_API_KEY for stock footage.",
+                    stderr.lines().last().unwrap_or("unknown error")
+                )));
+            }
+            Err(e) => {
+                return Err(ToolError::Ffmpeg(format!(
+                    "yt-dlp not available: {}. Install with: pip install yt-dlp",
+                    e
+                )));
+            }
+        }
+    }
+
+    // Get video duration
+    let probe_output = tokio::process::Command::new("ffprobe")
+        .arg("-v").arg("error")
+        .arg("-show_entries").arg("format=duration")
+        .arg("-of").arg("default=noprint_wrappers=1:nokey=1")
+        .arg(&full_video_path)
+        .output()
+        .await;
+
+    let source_duration_s: f64 = match probe_output {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout).trim().parse().unwrap_or(duration_s)
+        }
+        _ => duration_s,
+    };
+
+    // Pick random start time
+    let max_start = (source_duration_s - duration_s).max(0.0);
+    let start_s = if max_start > 0.0 {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0) as u64;
+        (seed as f64 / u64::MAX as f64) * max_start
+    } else {
+        0.0
+    };
+
+    // Crop dimensions
+    let (crop_w, crop_h) = match aspect.as_str() {
+        "9:16" => (720, 1280),
+        "16:9" => (1280, 720),
+        "1:1" => (1080, 1080),
+        _ => (720, 1280),
+    };
+
+    // Extract clip with crop
+    let extract_result = tokio::process::Command::new("ffmpeg")
+        .arg("-y")
+        .arg("-ss").arg(start_s.to_string())
+        .arg("-i").arg(&full_video_path)
+        .arg("-t").arg(duration_s.to_string())
+        .arg("-vf").arg(format!("crop={}:{}", crop_w, crop_h))
+        .arg("-c:v").arg("libx264")
+        .arg("-preset").arg("fast")
+        .arg("-crf").arg("23")
+        .arg("-an")
+        .arg(&clip_path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await;
+
+    match extract_result {
+        Ok(o) if o.status.success() => {
+            report_progress(100.0, 100.0, "Clip extracted").await.ok();
+            Ok(json!({
+                "status": "downloaded",
+                "clip_path": clip_path,
+                "source_duration_s": source_duration_s,
+                "start_s": start_s,
+                "duration_s": duration_s,
+                "aspect": aspect,
+                "cached": Path::new(&full_video_path).exists(),
+            }))
+        }
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            Err(ToolError::Ffmpeg(format!("Clip extraction failed: {}", stderr)))
+        }
+        Err(e) => Err(ToolError::Ffmpeg(format!("FFmpeg failed: {}", e))),
     }
 }
