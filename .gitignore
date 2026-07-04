@@ -10,6 +10,20 @@ mcp/assets/background_cache/
 mcp/assets/broll_cache/
 artifacts/
 
+# Generated JSON indices — regenerable at runtime via library.build / sfx.index.
+# music_library_index.json is fully regenerable and not used by any test, so
+# it is gitignored. (sfx_index.json IS used by test_mcp_sfx_search, so it is
+# kept committed for now — to remove it, the test would need to regenerate it
+# at the start of the run.)
+mcp/assets/music_library_index.json
+
+# Render output + TTS cache (never commit)
+*.reel.mp4
+*.render.log
+*.concat.txt
+*.align.json
+openscript-tts-cache/
+
 # Python
 __pycache__/
 *.pyc
@@ -22,3 +36,12 @@ __pycache__/
 artifacts_test/
 artifacts_*/
 artifacts/
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
