@@ -101,23 +101,23 @@ pub fn generate_ass(
     let primary_color = hex_to_ass_color(&spec.color);
     let highlight_color = hex_to_ass_color(&spec.highlight_color);
 
-    // Default style (white text, black outline)
+    // Default style — center of screen, bold, with outline and shadow
+    // Alignment=5 means middle-center
+    let margin_v = canvas_height / 6; // push captions toward center area
     out.push_str(&format!(
-        "Style: Default,{},{},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,4,1,2,60,60,{},{},1\n",
+        "Style: Default,{},{},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,5,80,80,{},1\n",
         spec.font,
         spec.font_size,
-        canvas_height / 12,  // bottom margin
-        canvas_height / 12,
+        margin_v,
     ));
 
-    // Highlight style (highlight color text)
+    // Highlight style — same position, highlight color, bold
     out.push_str(&format!(
-        "Style: Highlight,{},{},{},&H000000FF,&H00000000,&H64000000,1,0,0,0,100,100,0,0,1,4,1,2,60,60,{},{},1\n",
+        "Style: Highlight,{},{},{},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,5,80,80,{},1\n",
         spec.font,
         spec.font_size,
         highlight_color,
-        canvas_height / 12,
-        canvas_height / 12,
+        margin_v,
     ));
 
     out.push('\n');
@@ -149,7 +149,9 @@ fn hex_to_ass_color(hex: &str) -> String {
     format!("&H00{}{}{}", b, g, r) // ASS is BGR
 }
 
-/// Word highlight style: each word appears as spoken, current word in highlight color.
+/// Word highlight style: the full line is shown for the chunk duration,
+/// with the currently-spoken word highlighted in a different color.
+/// As each word is spoken, the highlight moves to it.
 fn generate_word_highlight(
     out: &mut String,
     segments: &[CaptionSegment],
@@ -158,31 +160,47 @@ fn generate_word_highlight(
     highlight_color: String,
 ) {
     for seg in segments {
-        // Group words into lines based on max_words_per_line
         let words: Vec<&WordTiming> = seg.words.iter().collect();
         let max_per_line = spec.max_words_per_line as usize;
-        let mut line_start_ms = seg.start_ms;
 
         for chunk in words.chunks(max_per_line) {
-            let line_end_ms = chunk.last().map(|w| w.end_ms).unwrap_or(line_start_ms);
+            let chunk_start = chunk.first().map(|w| w.start_ms).unwrap_or(seg.start_ms);
+            let chunk_end = chunk.last().map(|w| w.end_ms).unwrap_or(seg.end_ms);
 
-            // For each word in the line, create an event where that word is highlighted
+            // For each word in the chunk, create a dialogue event spanning
+            // that word's duration. The full line is shown, with the current
+            // word highlighted. This creates the "word-by-word highlight" effect.
             for (i, word) in chunk.iter().enumerate() {
                 let text = build_highlighted_line(chunk, i, &primary_color, &highlight_color);
+                // Do NOT ass_escape the text — it contains ASS override tags
                 out.push_str(&format!(
                     "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
                     ass_time(word.start_ms),
                     ass_time(word.end_ms),
-                    ass_escape(&text)
+                    text
                 ));
             }
 
-            line_start_ms = line_end_ms;
+            // If there's a gap between the last word and chunk_end, show
+            // the line with no highlight (all primary color)
+            if let Some(last) = chunk.last() {
+                if last.end_ms < chunk_end {
+                    let text = build_highlighted_line(chunk, chunk.len(), &primary_color, &highlight_color);
+                    out.push_str(&format!(
+                        "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
+                        ass_time(last.end_ms),
+                        ass_time(chunk_end),
+                        text
+                    ));
+                }
+            }
         }
     }
 }
 
 /// Build a line of text where the word at `highlight_idx` is in highlight color.
+/// Words are escaped individually BEFORE being inserted into the ASS string,
+/// so the override tags ({\c...}) are not corrupted.
 fn build_highlighted_line(
     words: &[&WordTiming],
     highlight_idx: usize,
@@ -193,10 +211,12 @@ fn build_highlighted_line(
         .iter()
         .enumerate()
         .map(|(i, w)| {
+            let escaped_word = ass_escape(&w.word);
             if i == highlight_idx {
-                format!("{{\\c{}}}{}{{\\c{}}}", highlight_color, w.word, primary_color)
+                // Highlight: change color + scale up slightly for emphasis
+                format!("{{\\c{}\\fscx110\\fscy110}}{}{{\\c{}\\fscx100\\fscy100}}", highlight_color, escaped_word, primary_color)
             } else {
-                w.word.clone()
+                escaped_word
             }
         })
         .collect::<Vec<_>>()
@@ -207,19 +227,12 @@ fn build_highlighted_line(
 fn generate_sentence_fade(out: &mut String, segments: &[CaptionSegment], _spec: &CaptionsSpec) {
     for seg in segments {
         let text = ass_escape(&seg.text);
-        // Fade in over 200ms, fade out over 300ms
-        let fade_in_start = seg.start_ms;
-        let fade_in_end = seg.start_ms + 200;
-        let fade_out_start = seg.end_ms - 300;
-        let fade_out_end = seg.end_ms;
-
         out.push_str(&format!(
             "Dialogue: 1,{},{},Default,,0,0,0,,{{\\fad(200,300)}}{}\n",
-            ass_time(fade_in_start),
-            ass_time(fade_out_end),
+            ass_time(seg.start_ms),
+            ass_time(seg.end_ms),
             text
         ));
-        let _ = (fade_in_end, fade_out_start); // suppress unused warnings
     }
 }
 
@@ -254,7 +267,7 @@ fn generate_karaoke_fill(
     }
 }
 
-/// Subtitle rail style: lower-third box with sentence text.
+/// Subtitle rail style: centered box with sentence text.
 fn generate_subtitle_rail(
     out: &mut String,
     segments: &[CaptionSegment],
@@ -262,8 +275,10 @@ fn generate_subtitle_rail(
     canvas_width: u32,
     canvas_height: u32,
 ) {
-    let box_top = canvas_height as i64 - 300;
-    let box_bottom = canvas_height as i64 - 100;
+    // Center the box vertically
+    let box_height = 200i64;
+    let box_top = (canvas_height as i64 / 2) - (box_height / 2);
+    let box_bottom = box_top + box_height;
     let box_left = 60i64;
     let box_right = canvas_width as i64 - 60;
 
@@ -271,7 +286,7 @@ fn generate_subtitle_rail(
         let text = ass_escape(&seg.text);
         // Draw a semi-transparent box behind the text (layer 0)
         out.push_str(&format!(
-            "Dialogue: 0,{},{},Default,,0,0,0,,{{\\1c&H64000000&\\p1}}m {} {} l {} {} l {} {} l {} {} {{\\p0}}\n",
+            "Dialogue: 0,{},{},Default,,0,0,0,,{{\\1c&H80000000&\\p1}}m {} {} l {} {} l {} {} l {} {} {{\\p0}}\n",
             ass_time(seg.start_ms),
             ass_time(seg.end_ms),
             box_left, box_top,
@@ -369,6 +384,12 @@ mod tests {
         assert!(ass.contains("Dialogue:"));
         assert!(ass.contains("hello"));
         assert!(ass.contains("world"));
+        // BUG FIX: ASS override tags should NOT be escaped
+        // The old code was escaping { and } which broke the tags
+        assert!(!ass.contains("\\{\\c"), "ASS override tags must not be escaped");
+        assert!(ass.contains("{\\c"), "Should contain valid ASS color override tags");
+        // Should use center alignment (Alignment=5)
+        assert!(ass.contains(",5,"), "Should use center alignment (Alignment=5)");
     }
 
     #[test]
@@ -433,11 +454,13 @@ mod tests {
         let words = estimate_word_timings("one two three", 0, 3000);
         let word_refs: Vec<&WordTiming> = words.iter().collect();
         let line = build_highlighted_line(&word_refs, 1, "&H00ffffff", "&H0088ff00");
-        // Word at index 1 ("two") should have the highlight color
-        assert!(line.contains("&H0088ff00"));
-        assert!(line.contains("two"));
-        assert!(line.contains("one"));
-        assert!(line.contains("three"));
+        // Word at index 1 ("two") should have the highlight color + scale
+        assert!(line.contains("&H0088ff00"), "Should contain highlight color");
+        assert!(line.contains("two"), "Should contain highlighted word");
+        assert!(line.contains("one"), "Should contain non-highlighted word");
+        assert!(line.contains("three"), "Should contain non-highlighted word");
+        // Should contain scale override for the highlighted word
+        assert!(line.contains("fscx110"), "Should contain scale-up for highlighted word");
     }
 
     #[test]
