@@ -736,7 +736,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "background.fetch",
-            "description": "Fetch a background video clip from YouTube via yt-dlp. Searches for copyright-free gameplay footage (Minecraft, Subway Surfers, etc.), downloads, extracts a random clip of the desired duration, and crops to the target aspect ratio. Caches downloaded videos for reuse. Falls back to procedural FFmpeg background if yt-dlp is unavailable. Returns: clip_path, source_duration_s, cached.",
+            "description": "Fetch a background video clip. Searches Pexels API FIRST (stock footage, requires PEXELS_API_KEY), then YouTube via yt-dlp as fallback. Downloads, extracts a random clip of desired duration, crops to target aspect ratio. For multi-broll: call once per scene with different queries to get topic-relevant backgrounds. Returns: clip_path, source (pexels/youtube/fallback/procedural), duration_s.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -5262,7 +5262,7 @@ async fn run_whisper_alignment(
 }
 
 // ---------------------------------------------------------------------------
-// Handler: background.fetch — YouTube auto-download via yt-dlp
+// Handler: background.fetch — Pexels API (primary) + YouTube (fallback)
 // ---------------------------------------------------------------------------
 
 async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
@@ -5278,18 +5278,149 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
     std::fs::create_dir_all(&cache_dir)?;
 
-    report_progress(0.0, 100.0, "Searching YouTube...").await.ok();
-
-    // Try yt-dlp
     let cache_key = format!("{:x}", md5_hash(query.as_bytes()));
-    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
     let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
 
-    // Check if we already have the full video cached
-    let full_cached = Path::new(&full_video_path).exists();
+    // === PRIORITY 1: Pexels API (most reliable) ===
+    let pexels_key = std::env::var("PEXELS_API_KEY")
+        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
 
-    if !full_cached {
-        // Download via yt-dlp
+    if !pexels_key.is_empty() {
+        report_progress(0.0, 100.0, "Searching Pexels for stock footage...").await.ok();
+
+        let orientation = match aspect.as_str() {
+            "9:16" => "portrait",
+            "16:9" => "landscape",
+            "1:1" => "square",
+            _ => "portrait",
+        };
+
+        let pexels_url = format!(
+            "https://api.pexels.com/videos/search?query={}&per_page=15&orientation={}",
+            urlencoding::encode(&query),
+            orientation
+        );
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+        match client.get(&pexels_url).header("Authorization", &pexels_key).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let body: serde_json::Value = resp.json().await
+                    .map_err(|e| ToolError::Asset(format!("Pexels parse error: {}", e)))?;
+
+                let videos = body.get("videos").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+                // Find a video with enough duration, prefer HD quality
+                let mut best_video: Option<(String, i64)> = None;
+                for video in &videos {
+                    let vid_duration = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+                    if vid_duration >= (duration_s as i64).min(5) {
+                        // Get the best quality file that's 1080p or 720p
+                        for file in video.get("video_files").and_then(|v| v.as_array()).unwrap_or(&Vec::new()) {
+                            let width = file.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let url = file.get("link").and_then(|v| v.as_str()).unwrap_or("");
+                            if width >= 720 && width <= 1920 && !url.is_empty() {
+                                best_video = Some((url.to_string(), vid_duration));
+                                break;
+                            }
+                        }
+                        if best_video.is_some() { break; }
+                    }
+                }
+
+                if let Some((video_url, source_duration)) = best_video {
+                    report_progress(40.0, 100.0, "Downloading stock footage...").await.ok();
+
+                    // Download the video
+                    match client.get(&video_url).send().await {
+                        Ok(resp) if resp.status().is_success() => {
+                            let bytes = resp.bytes().await
+                                .map_err(|e| ToolError::Asset(format!("Download error: {}", e)))?;
+                            let full_path = format!("{}/{}_full.mp4", cache_dir, cache_key);
+                            std::fs::write(&full_path, &bytes)?;
+
+                            report_progress(70.0, 100.0, "Extracting clip...").await.ok();
+
+                            // Pick random start time
+                            let max_start = (source_duration as f64 - duration_s).max(0.0);
+                            let start_s = if max_start > 0.0 {
+                                let seed = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .map(|d| d.as_nanos()).unwrap_or(0) as u64;
+                                (seed as f64 / u64::MAX as f64) * max_start
+                            } else { 0.0 };
+
+                            // Crop to aspect ratio
+                            let (crop_w, crop_h) = match aspect.as_str() {
+                                "9:16" => (720, 1280),
+                                "16:9" => (1280, 720),
+                                "1:1" => (1080, 1080),
+                                _ => (720, 1280),
+                            };
+
+                            let crop_result = tokio::process::Command::new("ffmpeg")
+                                .arg("-y")
+                                .arg("-ss").arg(start_s.to_string())
+                                .arg("-i").arg(&full_path)
+                                .arg("-t").arg(duration_s.to_string())
+                                .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                .arg("-c:v").arg("libx264")
+                                .arg("-preset").arg("fast")
+                                .arg("-crf").arg("23")
+                                .arg("-an")
+                                .arg(&clip_path)
+                                .stdin(std::process::Stdio::null())
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::piped())
+                                .kill_on_drop(true)
+                                .output()
+                                .await;
+
+                            if let Ok(o) = crop_result {
+                                if o.status.success() {
+                                    report_progress(100.0, 100.0, "Stock footage ready").await.ok();
+                                    return Ok(json!({
+                                        "status": "fetched",
+                                        "clip_path": clip_path,
+                                        "source": "pexels",
+                                        "source_duration_s": source_duration,
+                                        "start_s": start_s,
+                                        "duration_s": duration_s,
+                                        "cached": false,
+                                    }));
+                                }
+                            }
+                            // If crop failed, use the full video
+                            if Path::new(&full_path).exists() {
+                                return Ok(json!({
+                                    "status": "fetched",
+                                    "clip_path": full_path,
+                                    "source": "pexels",
+                                    "source_duration_s": source_duration,
+                                    "duration_s": source_duration,
+                                    "cached": false,
+                                    "warning": "Crop failed, using full video"
+                                }));
+                            }
+                        }
+                        _ => tracing::warn!("[background.fetch] Pexels download failed"),
+                    }
+                } else {
+                    tracing::warn!("[background.fetch] No suitable Pexels videos found for query: {}", query);
+                }
+            }
+            _ => tracing::warn!("[background.fetch] Pexels API request failed"),
+        }
+    }
+
+    // === PRIORITY 2: YouTube via yt-dlp ===
+    report_progress(30.0, 100.0, "Trying YouTube...").await.ok();
+    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
+
+    if !Path::new(&full_video_path).exists() {
         let yt_dlp_result = tokio::process::Command::new("yt-dlp")
             .arg("--format").arg("best[height<=720]")
             .arg("--output").arg(&full_video_path)
@@ -5305,44 +5436,28 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
         match yt_dlp_result {
             Ok(output) if output.status.success() => {
-                report_progress(50.0, 100.0, "Downloaded, extracting clip...").await.ok();
+                report_progress(60.0, 100.0, "YouTube downloaded, extracting clip...").await.ok();
             }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                tracing::warn!("[background.fetch] yt-dlp failed: {}", stderr);
-                // Try fallback pool
+            _ => {
+                // === PRIORITY 3: Fallback pool ===
                 if let Some(fallback) = fallback_pool.first() {
                     if Path::new(fallback).exists() {
                         return Ok(json!({
                             "status": "fallback",
                             "clip_path": fallback,
+                            "source": "fallback_pool",
                             "source_duration_s": duration_s,
                             "cached": false,
-                            "warning": "yt-dlp failed, using fallback pool"
+                            "warning": "Pexels + YouTube failed, using fallback pool"
                         }));
                     }
                 }
-                // No fallback — generate procedural background
-                return generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect).await;
-            }
-            Err(e) => {
-                tracing::warn!("[background.fetch] yt-dlp not available: {}", e);
-                if let Some(fallback) = fallback_pool.first() {
-                    if Path::new(fallback).exists() {
-                        return Ok(json!({
-                            "status": "fallback",
-                            "clip_path": fallback,
-                            "source_duration_s": duration_s,
-                            "cached": false,
-                            "warning": "yt-dlp not available, using fallback pool"
-                        }));
-                    }
-                }
+                // === PRIORITY 4: Procedural ===
                 return generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect).await;
             }
         }
     } else {
-        report_progress(50.0, 100.0, "Using cached video, extracting clip...").await.ok();
+        report_progress(60.0, 100.0, "Using cached YouTube video...").await.ok();
     }
 
     // Get video duration via ffprobe
@@ -5412,7 +5527,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                 "source_duration_s": source_duration_s,
                 "start_s": start_s,
                 "duration_s": duration_s,
-                "cached": full_cached,
+                "cached": Path::new(&full_video_path).exists(),
             }))
         }
         Ok(o) => {

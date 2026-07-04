@@ -153,9 +153,9 @@ fn hex_to_ass_color(hex: &str) -> String {
 /// with the currently-spoken word highlighted in a different color.
 /// As each word is spoken, the highlight moves to it.
 ///
-/// SENTENCE SEPARATION: Each segment is treated as a complete sentence.
-/// A gap is enforced between segments so captions don't leak into the next
-/// scene. The line is cleared at the end of each segment.
+/// SENTENCE SEPARATION: Each segment is split into sentences on punctuation.
+/// Each sentence is displayed independently — the next sentence does NOT
+/// appear until the current one is fully spoken.
 fn generate_word_highlight(
     out: &mut String,
     segments: &[CaptionSegment],
@@ -164,11 +164,46 @@ fn generate_word_highlight(
     highlight_color: String,
 ) {
     for seg in segments {
-        let words: Vec<&WordTiming> = seg.words.iter().collect();
+        // Split words into sentences based on punctuation (., !, ?)
+        let sentences = split_words_into_sentences(&seg.words);
         let max_per_line = spec.max_words_per_line as usize;
 
-        // If no words, show the full text as a single event for the segment
-        if words.is_empty() {
+        for sentence in &sentences {
+            if sentence.is_empty() {
+                continue;
+            }
+
+            // If the sentence fits in one line, show it as a single line
+            if sentence.len() <= max_per_line {
+                // For each word in the sentence, show the full sentence with
+                // the current word highlighted
+                for (i, word) in sentence.iter().enumerate() {
+                    let text = build_highlighted_line(sentence, i, &primary_color, &highlight_color);
+                    out.push_str(&format!(
+                        "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
+                        ass_time(word.start_ms),
+                        ass_time(word.end_ms),
+                        text
+                    ));
+                }
+            } else {
+                // Sentence is longer than max_per_line — split into chunks
+                for chunk in sentence.chunks(max_per_line) {
+                    for (i, word) in chunk.iter().enumerate() {
+                        let text = build_highlighted_line(chunk, i, &primary_color, &highlight_color);
+                        out.push_str(&format!(
+                            "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
+                            ass_time(word.start_ms),
+                            ass_time(word.end_ms),
+                            text
+                        ));
+                    }
+                }
+            }
+        }
+
+        // If no words at all, show the full text as a single event
+        if seg.words.is_empty() && !seg.text.is_empty() {
             let text = ass_escape(&seg.text);
             out.push_str(&format!(
                 "Dialogue: 1,{},{},Default,,0,0,0,,{{\\fad(100,100)}}{}\n",
@@ -176,32 +211,32 @@ fn generate_word_highlight(
                 ass_time(seg.end_ms),
                 text
             ));
-            continue;
         }
-
-        for chunk in words.chunks(max_per_line) {
-            let chunk_end = chunk.last().map(|w| w.end_ms).unwrap_or(seg.end_ms);
-
-            // For each word in the chunk, create a dialogue event spanning
-            // that word's duration. The full line is shown, with the current
-            // word highlighted. This creates the "word-by-word highlight" effect.
-            for (i, word) in chunk.iter().enumerate() {
-                let text = build_highlighted_line(chunk, i, &primary_color, &highlight_color);
-                out.push_str(&format!(
-                    "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
-                    ass_time(word.start_ms),
-                    ass_time(word.end_ms),
-                    text
-                ));
-            }
-        }
-
-        // SENTENCE SEPARATION: Clear captions at the end of each segment
-        // by ensuring the last word's end_ms equals the segment end.
-        // The next segment starts fresh with its own first word.
-        // No gap-filling event is added — the screen goes blank between
-        // sentences, preventing text from leaking into the next scene.
     }
+}
+
+/// Split a list of word timings into sentences based on punctuation.
+/// A sentence ends when a word contains ., !, or ? at the end.
+fn split_words_into_sentences(words: &[WordTiming]) -> Vec<Vec<&WordTiming>> {
+    let mut sentences = Vec::new();
+    let mut current = Vec::new();
+
+    for word in words {
+        current.push(word);
+        // Check if this word ends a sentence
+        let trimmed = word.word.trim();
+        if trimmed.ends_with('.') || trimmed.ends_with('!') || trimmed.ends_with('?') {
+            sentences.push(current.clone());
+            current.clear();
+        }
+    }
+
+    // Don't forget the last partial sentence
+    if !current.is_empty() {
+        sentences.push(current);
+    }
+
+    sentences
 }
 
 /// Build a line of text where the word at `highlight_idx` is in highlight color.
