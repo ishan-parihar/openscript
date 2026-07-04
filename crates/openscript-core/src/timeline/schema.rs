@@ -26,6 +26,38 @@ pub struct RenderTarget {
     pub aspect: String,
     pub fps: u32,
     pub max_duration: Option<u32>,
+    /// Output width in pixels. If absent, derived from `aspect`:
+    /// `9:16` → 1080, `16:9` → 1920, `1:1` → 1080.
+    #[serde(default)]
+    pub width: Option<u32>,
+    /// Output height in pixels. If absent, derived from `aspect`:
+    /// `9:16` → 1920, `16:9` → 1080, `1:1` → 1080.
+    #[serde(default)]
+    pub height: Option<u32>,
+}
+
+impl RenderTarget {
+    /// Resolve the output width, falling back to the aspect-ratio default
+    /// when `width` is `None`. Used by the ffmpeg filter graph builder so
+    /// renders honour the timeline's resolution instead of a hardcoded
+    /// 1080×1920.
+    pub fn resolve_width(&self) -> u32 {
+        self.width.unwrap_or_else(|| match self.aspect.as_str() {
+            "16:9" => 1920,
+            "1:1" => 1080,
+            _ => 1080, // "9:16" and any unknown → portrait default
+        })
+    }
+
+    /// Resolve the output height, falling back to the aspect-ratio default
+    /// when `height` is `None`.
+    pub fn resolve_height(&self) -> u32 {
+        self.height.unwrap_or_else(|| match self.aspect.as_str() {
+            "16:9" => 1080,
+            "1:1" => 1080,
+            _ => 1920, // "9:16" and any unknown → portrait default
+        })
+    }
 }
 
 /// A single cut segment from the source video.

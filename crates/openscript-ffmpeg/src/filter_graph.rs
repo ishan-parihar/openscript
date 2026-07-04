@@ -95,6 +95,12 @@ pub struct FilterGraphBuilder {
     parts: Vec<String>,
     fps: u32,
     aspect: String,
+    /// Output width in pixels. Used by the crop/scale filters instead of
+    /// a hardcoded 1080. Defaults to 1080 (portrait) or 1920 (landscape)
+    /// based on `aspect` via `RenderTarget::resolve_width()`.
+    width: u32,
+    /// Output height in pixels. Defaults to 1920 (portrait) or 1080 (landscape).
+    height: u32,
     ass_path: Option<String>,
     srt_path: Option<String>,
     overlay_mov: Option<String>,
@@ -113,11 +119,20 @@ pub struct FilterGraphBuilder {
 
 impl FilterGraphBuilder {
     pub fn new(segments: Vec<Segment>, fps: u32, aspect: &str, loudnorm: bool) -> Self {
+        // Derive default width/height from aspect so the filter graph is not
+        // hardcoded to 1080×1920. Callers can override via `with_dimensions`.
+        let (width, height) = match aspect {
+            "16:9" => (1920, 1080),
+            "1:1" => (1080, 1080),
+            _ => (1080, 1920), // "9:16" and any unknown → portrait default
+        };
         Self {
             segments,
             parts: Vec::new(),
             fps,
             aspect: aspect.into(),
+            width,
+            height,
             ass_path: None,
             srt_path: None,
             overlay_mov: None,
@@ -130,6 +145,16 @@ impl FilterGraphBuilder {
             ducking_events: Vec::new(),
             fonts_dir: None,
         }
+    }
+
+    /// Override the output width/height. Read from
+    /// `RenderTarget::resolve_width()` / `resolve_height()` in `from_timeline`
+    /// so renders honour the timeline's resolution instead of a hardcoded
+    /// 1080×1920.
+    pub fn with_dimensions(mut self, width: u32, height: u32) -> Self {
+        self.width = width;
+        self.height = height;
+        self
     }
 
     /// Set the loudness target (LUFS) used by the loudnorm filter. Reads from
@@ -214,9 +239,14 @@ impl FilterGraphBuilder {
         // Read the timeline's loudness target so the loudnorm filter honors
         // `directives.mix.normalize_to_lufs` instead of a hardcoded -16.
         let normalize_lufs = timeline.directives.mix.normalize_to_lufs;
+        // Read the timeline's resolution so renders honor `RenderTarget.width/height`
+        // instead of a hardcoded 1080×1920.
+        let width = timeline.target.resolve_width();
+        let height = timeline.target.resolve_height();
 
         let mut b = FilterGraphBuilder::new(segments, fps, &aspect, loudnorm)
-            .with_normalize_lufs(normalize_lufs);
+            .with_normalize_lufs(normalize_lufs)
+            .with_dimensions(width, height);
 
         let mut broll_events = Vec::new();
         let mut music_events = Vec::new();
@@ -493,11 +523,16 @@ impl FilterGraphBuilder {
         ));
         vout = "[vfps]".into();
 
-        // Aspect handling (9:16 = center crop to 1080x1920)
-        if self.aspect == "9:16" {
-            parts.push(
-                "[vfps]scale=-2:1920,crop=1080:1920:(in_w-1080)/2:(in_h-1920)/2[vcrop]".into(),
-            );
+        // Aspect handling: scale + center-crop to the target width/height.
+        // Prior versions hardcoded 1080×1920 (9:16 portrait only) which broke
+        // 720p / 4K / landscape / square renders. The width/height now come
+        // from `RenderTarget::resolve_width/height` via `with_dimensions`.
+        if self.aspect == "9:16" || self.aspect == "16:9" || self.aspect == "1:1" {
+            parts.push(format!(
+                "[vfps]scale=-2:{h},crop={w}:{h}:(in_w-{w})/2:(in_h-{h})/2[vcrop]",
+                w = self.width,
+                h = self.height,
+            ));
             vout = "[vcrop]".to_string();
         }
 
@@ -564,11 +599,13 @@ impl FilterGraphBuilder {
                     i
                 ));
                 parts.push(format!(
-                    "[broll_src_{}]scale=1080:1920[broll_scaled_{}]",
-                    i, i
+                    "[broll_src_{}]scale={w}:{h}[broll_scaled_{}]",
+                    i, i,
+                    w = self.width,
+                    h = self.height,
                 ));
                 parts.push(format!(
-                    "[{}][broll_scaled_{}]overlay=0:0:enable='between(t,{},{} )'[{}]",
+                    "[{}][broll_scaled_{}]overlay=0:0:enable='between(t,{},{})'[{}]",
                     &current_v[1..current_v.len() - 1],
                     i,
                     start_s,
@@ -864,8 +901,10 @@ mod tests {
         let segments = vec![make_segment("seg_001", 0.0, 1.0)];
         let (filter, vout, _) = FilterGraphBuilder::new(segments, 30, "16:9", false).build();
 
-        assert!(!filter.contains("scale=-2:1920"));
-        assert_eq!(vout, "[vfps]");
+        // 16:9 now also crops (to 1920×1080) instead of leaving the source untouched.
+        assert!(filter.contains("scale=-2:1080"));
+        assert!(filter.contains("crop=1920:1080"));
+        assert_eq!(vout, "[vcrop]");
     }
 
     #[test]

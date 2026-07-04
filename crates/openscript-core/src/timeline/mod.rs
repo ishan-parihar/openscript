@@ -17,6 +17,8 @@ impl Timeline {
                 aspect: aspect.into(),
                 fps,
                 max_duration,
+                width: None,
+                height: None,
             },
             segments: Vec::new(),
             tracks: std::collections::HashMap::from([

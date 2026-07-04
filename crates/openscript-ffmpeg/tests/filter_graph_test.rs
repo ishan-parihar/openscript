@@ -65,10 +65,13 @@ fn test_filter_graph_16x9_aspect() {
     let builder = FilterGraphBuilder::new(segments, 30, "16:9", true);
     let (filter, vout, aout) = builder.build();
 
-    // 16:9 should NOT have scale/crop
-    assert!(!filter.contains("scale=-2:1920"));
-    assert!(!filter.contains("crop=1080:1920"));
-    assert_eq!(vout, "[vfps]");
+    // 16:9 now also crops (to 1920×1080) instead of leaving the source untouched.
+    // Prior versions skipped the crop for non-9:16 aspects, which meant 16:9
+    // renders used the source resolution verbatim. Now all three standard
+    // aspects (9:16, 16:9, 1:1) produce a deterministic crop.
+    assert!(filter.contains("scale=-2:1080"));
+    assert!(filter.contains("crop=1920:1080"));
+    assert_eq!(vout, "[vcrop]");
     assert_eq!(aout, "[aloud]");
 }
 
