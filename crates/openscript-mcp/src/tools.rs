@@ -6456,7 +6456,12 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
             for (speaker_name, speaker_spec) in &spec.speakers {
                 // Search GIPHY for a sticker matching the speaker's persona
-                let search_query = format!("person talking");
+                // Search GIPHY for a sticker matching the speaker's voice gender
+                let search_query = if speaker_spec.voice.contains("af_") || speaker_spec.voice.contains("bf_") {
+                    "woman talking animated".to_string()
+                } else {
+                    "man talking animated".to_string()
+                };
                 let giphy_url = format!(
                     "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=1&rating=g&bundle=sticker_layering",
                     giphy_key,

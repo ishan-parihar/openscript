@@ -118,17 +118,17 @@ impl LayeredTimeline {
                 format!("{}: \"{}\"", speaker, truncated)
             }
             "captions" => {
-                let word = event.metadata.get("word")
+                let word_count = event.metadata.get("word_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let style = event.metadata.get("style")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let highlighted = event.metadata.get("highlighted")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if highlighted {
-                    format!("\"{}\" (highlighted)", word)
-                } else {
-                    format!("\"{}\"", word)
-                }
+                    .unwrap_or("word_highlight");
+                let filename = std::path::Path::new(&event.asset)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&event.asset);
+                format!("{} ({} words, {} style)", filename, word_count, style)
             }
             "stickers" => {
                 let position = event.metadata.get("position")

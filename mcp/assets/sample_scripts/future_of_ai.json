@@ -1,0 +1,66 @@
+{
+  "title": "The Future of AI",
+  "meta": {
+    "aspect": "9:16",
+    "fps": 30,
+    "width": 1080,
+    "height": 1920
+  },
+  "tts": {
+    "backend": "kokoro",
+    "default_speed": 1.0
+  },
+  "speakers": {
+    "alice": {
+      "voice": "kokoro:af_heart",
+      "position": "bottom-left",
+      "scale": 0.2
+    },
+    "bob": {
+      "voice": "kokoro:am_michael",
+      "position": "bottom-right",
+      "scale": 0.2
+    }
+  },
+  "background": {
+    "type": "gameplay",
+    "query": "technology future",
+    "change_cadence": "scene"
+  },
+  "music": {
+    "path": "mcp/assets/music/electronic_dance.mp3",
+    "gain_db": -22,
+    "ducking": true,
+    "ducking_depth_db": 15
+  },
+  "captions": {
+    "style": "word_highlight",
+    "font": "Bebas Neue",
+    "font_size": 76,
+    "color": "#ffffff",
+    "highlight_color": "#00ff88",
+    "max_words_per_line": 5
+  },
+  "speaker_layout": "split_top",
+  "stickers": {
+    "enabled": true,
+    "lip_sync": "amplitude"
+  },
+  "scenes": [
+    {"speaker": "alice", "text": "What does the future of AI look like?"},
+    {"speaker": "bob", "text": "It is not just about smarter models."},
+    {"speaker": "alice", "text": "It is about AI that can reason, plan, and act."},
+    {"speaker": "bob", "text": "Imagine AI agents that can use tools autonomously."},
+    {"speaker": "alice", "text": "They could write code, design systems, and create art."},
+    {"speaker": "bob", "text": "But with great power comes great responsibility."},
+    {"speaker": "alice", "text": "We need alignment. We need safety. We need trust."},
+    {"speaker": "bob", "text": "The future is not AI versus humans."},
+    {"speaker": "alice", "text": "It is humans and AI, working together."},
+    {"speaker": "bob", "text": "That is the future worth building."}
+  ],
+  "output": {
+    "format": "mp4",
+    "crf": 20,
+    "preset": "fast"
+  }
+}
