@@ -846,12 +846,13 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "youtube.download",
-            "description": "Download a YouTube video clip for use as background footage. Accepts either a direct YouTube URL or a search query. Downloads the video, extracts a random clip of the specified duration, and crops to the target aspect ratio. Tries browser cookies to avoid bot detection. Caches downloaded videos for reuse. Requires yt-dlp installed (pip install yt-dlp).",
+            "description": "Download a YouTube video clip for use as background footage. Accepts a direct YouTube URL or search query. If start_s is specified, uses --download-sections to download ONLY that time range (avoids downloading entire 10-hour videos). If start_s is omitted, downloads the full video and extracts a random clip. Crops to target aspect ratio. Use youtube.search first to find the video URL and duration, then specify start_s to clip a specific range.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "YouTube URL or search query (e.g. 'https://youtube.com/watch?v=...' or 'minecraft parkour no copyright')"},
                     "duration_s": {"type": "number", "default": 30.0, "description": "Clip duration in seconds"},
+                    "start_s": {"type": "number", "description": "Start time in seconds for range download. If specified, downloads ONLY this range using --download-sections (much faster for long videos). If omitted, downloads full video and extracts random clip."},
                     "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
                     "cache_dir": {"type": "string", "default": "mcp/assets/background_cache", "description": "Cache directory"},
                     "use_cookies": {"type": "boolean", "default": true, "description": "Try browser cookies to avoid YouTube bot detection"}
@@ -5072,9 +5073,14 @@ async fn handle_script_generate_voices(args: serde_json::Value) -> Result<serde_
             &profile,
         ).await?;
 
-        // Calculate word timings for this scene
+        // Calculate word timings for this scene using whisper force alignment
         let scene_end_ms = current_ms + result.duration_ms;
-        let words = estimate_word_timings(&scene.text, current_ms, scene_end_ms);
+        let words = run_whisper_alignment(&result.output_path, current_ms, scene_end_ms)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("[script.generate_voices] Whisper alignment failed ({}), using estimate", e);
+                estimate_word_timings(&scene.text, current_ms, scene_end_ms)
+            });
 
         segments.push(serde_json::json!({
             "scene_id": scene.id,
@@ -5191,6 +5197,68 @@ fn read_script_input(script_input: &str) -> Result<String, ToolError> {
         }
         Ok(std::fs::read_to_string(&path)?)
     }
+}
+
+/// Run whisper force alignment on a TTS WAV file to get accurate word timestamps.
+/// Falls back to even-spacing estimation if whisper is unavailable.
+async fn run_whisper_alignment(
+    wav_path: &str,
+    offset_ms: i64,
+    scene_end_ms: i64,
+) -> Result<Vec<openscript_core::captions::WordTiming>, String> {
+    // Write alignment to a temp JSON file
+    let tmp_json = format!("{}.align.json", wav_path);
+
+    let output = tokio::process::Command::new("python3")
+        .arg("mcp/scripts/whisper_align.py")
+        .arg("--wav").arg(wav_path)
+        .arg("--output").arg(&tmp_json)
+        .arg("--model").arg("tiny")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn whisper: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = std::fs::remove_file(&tmp_json);
+        return Err(format!("Whisper failed: {}", stderr.lines().last().unwrap_or("unknown")));
+    }
+
+    // Read the alignment JSON
+    let align_str = std::fs::read_to_string(&tmp_json)
+        .map_err(|e| format!("Failed to read alignment: {}", e))?;
+    let _ = std::fs::remove_file(&tmp_json);
+
+    let align: serde_json::Value = serde_json::from_str(&align_str)
+        .map_err(|e| format!("Failed to parse alignment JSON: {}", e))?;
+
+    // Convert to WordTiming with offset
+    let mut words = Vec::new();
+    if let Some(word_arr) = align.get("words").and_then(|v| v.as_array()) {
+        for w in word_arr {
+            let word = w.get("word").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let start_ms = w.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+            let end_ms = w.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(start_ms);
+
+            if !word.is_empty() {
+                words.push(openscript_core::captions::WordTiming {
+                    word,
+                    start_ms: start_ms + offset_ms,
+                    end_ms: end_ms + offset_ms,
+                });
+            }
+        }
+    }
+
+    if words.is_empty() {
+        return Err("Whisper returned no words".to_string());
+    }
+
+    Ok(words)
 }
 
 // ---------------------------------------------------------------------------
@@ -5483,6 +5551,15 @@ fn md5_hash(data: &[u8]) -> u128 {
         hash = hash.wrapping_mul(0x0000000001000000000000000000013b);
     }
     hash
+}
+
+/// Format seconds as HH:MM:SS for yt-dlp --download-sections
+fn format_seconds_to_timestamp(s: f64) -> String {
+    let total = s as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
 // ---------------------------------------------------------------------------
@@ -6192,6 +6269,7 @@ async fn handle_stock_fetch(args: serde_json::Value) -> Result<serde_json::Value
 async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let query = extract_str(&args, "query")?; // URL or search query
     let duration_s = default_f64(&args, "duration_s", 30.0);
+    let start_s = default_opt_f64(&args, "start_s"); // Optional: specific start time
     let aspect = default_str(&args, "aspect", "9:16");
     let cache_dir = default_str(&args, "cache_dir", "mcp/assets/background_cache");
     let use_cookies = default_bool(&args, "use_cookies", true);
@@ -6203,8 +6281,115 @@ async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::
     // Determine if query is a URL or a search term
     let is_url = query.starts_with("http://") || query.starts_with("https://") || query.starts_with("youtu.be");
     let cache_key = format!("{:x}", md5_hash(query.as_bytes()));
-    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
     let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
+
+    // If start_s is specified, use --download-sections to download only the range
+    // This avoids downloading a 10-hour video when we only need 100 seconds
+    if let Some(start) = start_s {
+        let end = start + duration_s;
+        let start_fmt = format_seconds_to_timestamp(start);
+        let end_fmt = format_seconds_to_timestamp(end);
+        let section_arg = format!("*{}-{}", start_fmt, end_fmt);
+
+        report_progress(20.0, 100.0, &format!("Downloading range {}-{}...", start_fmt, end_fmt)).await.ok();
+
+        let mut yt_args = vec![
+            "--download-sections".to_string(),
+            section_arg,
+            "--force-keyframes-at-cuts".to_string(),
+            "--format".to_string(),
+            "best[height<=720]".to_string(),
+            "--output".to_string(),
+            clip_path.clone(),
+            "--no-playlist".to_string(),
+        ];
+
+        if use_cookies {
+            yt_args.push("--cookies-from-browser".to_string());
+            yt_args.push("chrome".to_string());
+        }
+        yt_args.push("--user-agent".to_string());
+        yt_args.push("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string());
+
+        if is_url {
+            yt_args.push(query.to_string());
+        } else {
+            yt_args.push(format!("ytsearch1:{}", query));
+        }
+
+        let yt_result = tokio::process::Command::new("yt-dlp")
+            .args(&yt_args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await;
+
+        match yt_result {
+            Ok(output) if output.status.success() => {
+                // Clip is already the right duration — just crop to aspect
+                report_progress(70.0, 100.0, "Cropping to aspect ratio...").await.ok();
+                let (crop_w, crop_h) = match aspect.as_str() {
+                    "9:16" => (720, 1280),
+                    "16:9" => (1280, 720),
+                    "1:1" => (1080, 1080),
+                    _ => (720, 1280),
+                };
+
+                let cropped_path = format!("{}/{}_cropped.mp4", cache_dir, cache_key);
+                let crop_result = tokio::process::Command::new("ffmpeg")
+                    .arg("-y")
+                    .arg("-i").arg(&clip_path)
+                    .arg("-vf").arg(format!("crop={}:{}", crop_w, crop_h))
+                    .arg("-c:v").arg("libx264")
+                    .arg("-preset").arg("fast")
+                    .arg("-crf").arg("23")
+                    .arg("-an")
+                    .arg(&cropped_path)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::piped())
+                    .kill_on_drop(true)
+                    .output()
+                    .await;
+
+                if let Ok(o) = crop_result {
+                    if o.status.success() {
+                        let _ = std::fs::rename(&cropped_path, &clip_path);
+                    } else {
+                        let _ = std::fs::remove_file(&cropped_path);
+                    }
+                }
+
+                report_progress(100.0, 100.0, "Clip downloaded").await.ok();
+                return Ok(json!({
+                    "status": "downloaded",
+                    "clip_path": clip_path,
+                    "start_s": start,
+                    "duration_s": duration_s,
+                    "aspect": aspect,
+                    "method": "range_download",
+                    "cached": false,
+                }));
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(ToolError::Ffmpeg(format!(
+                    "YouTube range download failed: {}",
+                    stderr.lines().last().unwrap_or("unknown error")
+                )));
+            }
+            Err(e) => {
+                return Err(ToolError::Ffmpeg(format!(
+                    "yt-dlp not available: {}", e
+                )));
+            }
+        }
+    }
+
+    // No start_s specified — download full video (or use cache), then extract random clip
+    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
 
     // Check cache first
     if Path::new(&full_video_path).exists() {
