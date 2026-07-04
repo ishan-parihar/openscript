@@ -50,7 +50,7 @@
   },
   "speaker_layout": "pip_corner",
   "stickers": {
-    "enabled": false,
+    "enabled": true,
     "lip_sync": "amplitude",
     "blink": true,
     "idle_bob": true

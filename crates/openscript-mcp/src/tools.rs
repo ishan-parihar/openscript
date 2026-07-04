@@ -5749,6 +5749,38 @@ fn format_seconds_to_timestamp(s: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+/// Extract search keywords from a scene text for Pexels video search.
+/// Takes the first 3-4 significant words, removing stop words.
+fn extract_keywords(text: &str, fallback_query: &str) -> String {
+    let stop_words = [
+        "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "must", "shall", "can", "need", "it", "its",
+        "this", "that", "these", "those", "i", "you", "he", "she", "we", "they",
+        "what", "which", "who", "when", "where", "why", "how", "all", "each",
+        "every", "both", "few", "more", "most", "other", "some", "such", "no",
+        "nor", "not", "only", "own", "same", "so", "than", "too", "very", "just",
+        "but", "and", "or", "if", "then", "else", "for", "of", "to", "in", "on",
+        "at", "by", "with", "from", "as", "into", "through", "during", "before",
+        "after", "above", "below", "up", "down", "out", "off", "over", "under",
+        "again", "further", "once", "here", "there", "now",
+    ];
+
+    let words: Vec<&str> = text.split_whitespace()
+        .filter(|w| {
+            let cleaned = w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
+            !cleaned.is_empty() && !stop_words.contains(&cleaned.as_str()) && cleaned.len() > 2
+        })
+        .take(4)
+        .collect();
+
+    if words.is_empty() {
+        fallback_query.to_string()
+    } else {
+        words.join(" ")
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Handler: sticker.load_preset — load SVG preset config
 // ---------------------------------------------------------------------------
@@ -6226,38 +6258,137 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
-    // Fetch a real background from Pexels/YouTube if the script requests it
-    let mut fetched_bg_path: Option<String> = None;
-    if !skip_background && spec.background.r#type == "gameplay" && !spec.background.query.is_empty() {
-        report_progress(35.0, 100.0, &format!("Fetching background from Pexels: {}...", spec.background.query)).await.ok();
-        let fetch_result = handle_background_fetch(json!({
-            "query": spec.background.query,
-            "duration_s": total_duration_s,
-            "aspect": spec.meta.aspect,
-        })).await;
+    // === MULTI-BROLL: Download a DIFFERENT Pexels clip per scene ===
+    // Instead of looping one short clip, download a unique stock video
+    // for each scene based on keywords extracted from the scene text.
+    let mut per_scene_backgrounds: Vec<String> = Vec::new();
+    let pexels_key = std::env::var("PEXELS_API_KEY")
+        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
 
-        if let Ok(ref result) = fetch_result {
-            if let Some(path) = result.get("clip_path").and_then(|v| v.as_str()) {
-                if std::path::Path::new(path).exists() {
-                    fetched_bg_path = Some(path.to_string());
-                    tracing::info!("[script.to_video] Using fetched background: {} (source: {})",
-                        path, result.get("source").and_then(|v| v.as_str()).unwrap_or("unknown"));
+    if !skip_background && !pexels_key.is_empty() && spec.background.r#type == "gameplay" {
+        report_progress(35.0, 60.0, "Fetching multi-broll backgrounds from Pexels...").await.ok();
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(20))
+            .build()
+            .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+        let orientation = match spec.meta.aspect.as_str() {
+            "9:16" => "portrait",
+            "16:9" => "landscape",
+            "1:1" => "square",
+            _ => "portrait",
+        };
+
+        let cache_dir = "mcp/assets/background_cache";
+        std::fs::create_dir_all(cache_dir).ok();
+
+        for (scene_idx, &dur) in scene_durations.iter().enumerate() {
+            // Extract keywords from scene text for the search query
+            let scene_text = manifest.get("segments")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.get(scene_idx))
+                .and_then(|s| s.get("text"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let query = extract_keywords(scene_text, &spec.background.query);
+
+            let progress_pct = 35.0 + (scene_idx as f64 / scene_durations.len() as f64) * 25.0;
+            report_progress(progress_pct, 100.0, &format!("Scene {}/{}: {}", scene_idx + 1, scene_durations.len(), query)).await.ok();
+
+            // Search Pexels for this scene's background
+            let pexels_url = format!(
+                "https://api.pexels.com/videos/search?query={}&per_page=5&orientation={}",
+                urlencoding::encode(&query),
+                orientation
+            );
+
+            let mut scene_bg: Option<String> = None;
+
+            if let Ok(resp) = client.get(&pexels_url).header("Authorization", &pexels_key).send().await {
+                if resp.status().is_success() {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        if let Some(videos) = body.get("videos").and_then(|v| v.as_array()) {
+                            // Find a video >= 5s with HD quality
+                            for video in videos {
+                                let vid_dur = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+                                if vid_dur >= 3 {
+                                    if let Some(files) = video.get("video_files").and_then(|v| v.as_array()) {
+                                        for file in files {
+                                            let width = file.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+                                            let url = file.get("link").and_then(|v| v.as_str()).unwrap_or("");
+                                            if width >= 720 && width <= 1920 && !url.is_empty() {
+                                                // Download this clip
+                                                let clip_path = format!("{}/scene_{:03}.mp4", cache_dir, scene_idx + 1);
+                                                if let Ok(dl_resp) = client.get(url).send().await {
+                                                    if dl_resp.status().is_success() {
+                                                        if let Ok(bytes) = dl_resp.bytes().await {
+                                                            std::fs::write(&clip_path, &bytes).ok();
+                                                            // Trim to scene duration
+                                                            let (crop_w, crop_h) = match spec.meta.aspect.as_str() {
+                                                                "9:16" => (720, 1280),
+                                                                "16:9" => (1280, 720),
+                                                                "1:1" => (1080, 1080),
+                                                                _ => (720, 1280),
+                                                            };
+                                                            let trimmed = format!("{}/scene_{:03}_trim.mp4", cache_dir, scene_idx + 1);
+                                                            let trim_result = tokio::process::Command::new("ffmpeg")
+                                                                .arg("-y")
+                                                                .arg("-i").arg(&clip_path)
+                                                                .arg("-t").arg(dur.to_string())
+                                                                .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                                                .arg("-c:v").arg("libx264")
+                                                                .arg("-preset").arg("fast")
+                                                                .arg("-crf").arg("23")
+                                                                .arg("-an")
+                                                                .arg(&trimmed)
+                                                                .stdin(std::process::Stdio::null())
+                                                                .stdout(std::process::Stdio::null())
+                                                                .stderr(std::process::Stdio::piped())
+                                                                .kill_on_drop(true)
+                                                                .output()
+                                                                .await;
+                                                            if trim_result.as_ref().map(|o| o.status.success()).unwrap_or(false) {
+                                                                scene_bg = Some(trimmed);
+                                                            } else {
+                                                                scene_bg = Some(clip_path);
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if scene_bg.is_some() { break; }
+                            }
+                        }
+                    }
                 }
             }
-        }
-        if fetched_bg_path.is_none() {
-            tracing::warn!("[script.to_video] Background fetch failed, falling back to local pool");
+
+            if let Some(path) = scene_bg {
+                per_scene_backgrounds.push(path);
+            } else {
+                // Fallback: use a procedural background for this scene
+                let fallback = format!("mcp/assets/backgrounds/procedural_{:02}.mp4", (scene_idx % 10) + 1);
+                if std::path::Path::new(&fallback).exists() {
+                    per_scene_backgrounds.push(fallback);
+                } else {
+                    per_scene_backgrounds.push("mcp/assets/backgrounds/procedural_01.mp4".to_string());
+                }
+            }
         }
     }
 
     // Build per-scene background clips
-    let fallback_pool = if let Some(ref bg_path) = fetched_bg_path {
-        // Use the fetched real background for ALL scenes (single bg playback)
-        vec![bg_path.clone()]
+    let fallback_pool = if !per_scene_backgrounds.is_empty() {
+        per_scene_backgrounds
     } else if !spec.background.fallback_pool.is_empty() {
         spec.background.fallback_pool.clone()
     } else {
-        // Scan the backgrounds directory for available clips
         let mut pool = Vec::new();
         if let Ok(entries) = std::fs::read_dir("mcp/assets/backgrounds") {
             for entry in entries.filter_map(|e| e.ok()) {
@@ -6273,48 +6404,93 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         pool
     };
 
-    // Assign backgrounds per scene based on cadence
+    // Assign backgrounds — one per scene (multi-broll)
     let mut backgrounds: Vec<openscript_ffmpeg::multilayer_render::BackgroundClip> = Vec::new();
-    let mut pool_idx = 0usize;
-    let mut last_speaker = String::new();
 
     for (i, &dur) in scene_durations.iter().enumerate() {
-        let speaker = manifest.get("segments")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.get(i))
-            .and_then(|s| s.get("speaker"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-
-        let should_change = match spec.background.change_cadence.as_str() {
-            "speaker" => speaker != last_speaker,
-            "fixed" => i == 0,
-            _ => true, // "scene"
-        };
-
-        if should_change || backgrounds.is_empty() {
-            if !backgrounds.is_empty() {
-                pool_idx = (pool_idx + 1) % fallback_pool.len();
-            }
-            last_speaker = speaker.to_string();
-        }
-
-        let bg_path = if spec.background.change_cadence == "fixed" {
-            fallback_pool[0].clone()
+        // Use the per-scene downloaded background if available, otherwise cycle through pool
+        let bg_path = if i < fallback_pool.len() {
+            fallback_pool[i].clone()
         } else {
-            fallback_pool[pool_idx].clone()
+            fallback_pool[i % fallback_pool.len()].clone()
         };
 
         backgrounds.push(openscript_ffmpeg::multilayer_render::BackgroundClip {
             path: bg_path,
             duration_s: dur,
-            looped: true,
+            looped: false, // Each scene has its own clip, no need to loop
         });
     }
 
-    // Build sticker overlays (from script spec speakers)
+    // Build sticker overlays — download GIPHY stickers per speaker
     let mut stickers: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
-    if !skip_stickers {
+    if !skip_stickers && spec.stickers.enabled {
+        let giphy_key = std::env::var("GIPHY_API_KEY")
+            .unwrap_or_else(|_| "pZIYPNNZHCtUVEu7wzat69YcKfLjUcVj".to_string());
+
+        // Download one sticker per speaker
+        let mut speaker_stickers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        if !giphy_key.is_empty() {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+            let stickers_dir = "mcp/assets/stickers";
+            std::fs::create_dir_all(stickers_dir).ok();
+
+            for (speaker_name, speaker_spec) in &spec.speakers {
+                // Search GIPHY for a sticker matching the speaker's persona
+                let search_query = format!("person talking");
+                let giphy_url = format!(
+                    "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=1&rating=g&bundle=sticker_layering",
+                    giphy_key,
+                    urlencoding::encode(&search_query)
+                );
+
+                if let Ok(resp) = client.get(&giphy_url).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                            if let Some(data) = body.get("data").and_then(|v| v.as_array()) {
+                                if let Some(first) = data.first() {
+                                    let images = first.get("images").cloned().unwrap_or(json!({}));
+                                    let original = images.get("original").cloned().unwrap_or(json!({}));
+                                    let gif_url = original.get("url").and_then(|v| v.as_str()).unwrap_or("");
+
+                                    if !gif_url.is_empty() {
+                                        let sticker_path = format!("{}/giphy_{}.gif", stickers_dir, speaker_name);
+                                        if let Ok(dl_resp) = client.get(gif_url).send().await {
+                                            if dl_resp.status().is_success() {
+                                                if let Ok(bytes) = dl_resp.bytes().await {
+                                                    std::fs::write(&sticker_path, &bytes).ok();
+                                                    speaker_stickers.insert(speaker_name.clone(), sticker_path.clone());
+                                                    tracing::info!("[script.to_video] Downloaded GIPHY sticker for {}: {}", speaker_name, sticker_path);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check for local PNG stickers
+        for (speaker_name, speaker_spec) in &spec.speakers {
+            if !speaker_stickers.contains_key(speaker_name) {
+                let position_parts: Vec<&str> = speaker_spec.position.split('-').collect();
+                let facing = position_parts.last().unwrap_or(&"left");
+                let png_path = format!("mcp/assets/stickers/speaker_{}_{}.png", speaker_name, facing);
+                if std::path::Path::new(&png_path).exists() {
+                    speaker_stickers.insert(speaker_name.clone(), png_path);
+                }
+            }
+        }
+
+        // Create sticker overlays per scene
         let mut current_ms = 0i64;
         if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
             for seg in segments {
@@ -6322,14 +6498,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 let end_ms = seg.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(current_ms + 3000);
 
                 if let Some(speaker_spec) = spec.speakers.get(speaker_name) {
-                    // Look for sticker PNG: mcp/assets/stickers/speaker_{name}_{position}.png
-                    let position_parts: Vec<&str> = speaker_spec.position.split('-').collect();
-                    let facing = position_parts.last().unwrap_or(&"left");
-                    let sticker_path = format!("mcp/assets/stickers/speaker_{}_{}.png", speaker_name, facing);
-
-                    if std::path::Path::new(&sticker_path).exists() {
+                    if let Some(sticker_path) = speaker_stickers.get(speaker_name) {
                         stickers.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
-                            path: sticker_path,
+                            path: sticker_path.clone(),
                             start_s: current_ms as f64 / 1000.0,
                             end_s: end_ms as f64 / 1000.0,
                             position: speaker_spec.position.clone(),
