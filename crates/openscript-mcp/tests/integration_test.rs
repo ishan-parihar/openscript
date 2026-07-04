@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // Should have 64 tools
+    // Should have 65 tools
     assert_eq!(
         tools.len(),
-        64,
-        "Expected 64 MCP tools, got {}",
+        65,
+        "Expected 65 MCP tools, got {}",
         tools.len()
     );
 

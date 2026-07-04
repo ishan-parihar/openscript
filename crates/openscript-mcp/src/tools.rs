@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (64 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline + 1 script.to_video + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search)
+// Tool definitions (65 tools: 64 + timeline.inspect)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -814,7 +814,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "script.to_video",
-            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. Calls script.to_timeline (which orchestrates TTS, captions, backgrounds, stickers) then renders via the from-scratch render path (background + voiceover + music + captions). This is the simplest entry point for AI agents — provide a script, get a video. Returns output_path + file_size + timeline_path + warnings. Use script.parse first to validate the script.",
+            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. THE GOLDEN TRAJECTORY — use this for all video creation. Automatically handles: Kokoro TTS per scene, whisper force-alignment for caption sync, multi-broll Pexels stock footage per scene, GIPHY sticker overlays, background music with ducking, word-highlight captions, and FFmpeg render. Returns: output_path, file_size, timeline_preview (token-efficient tree view of all layers), timeline_issues, warnings. PREVIOUS STEP: script.parse (validate first). NEXT STEP: verify.render (quality check).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -913,6 +913,19 @@ pub fn tool_definitions() -> serde_json::Value {
                     "rating": {"type": "string", "enum": ["g", "pg", "pg-13", "r"], "default": "g", "description": "Content rating filter"}
                 },
                 "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "timeline.inspect",
+            "description": "Deep-dive inspection of a specific layer in the timeline. Returns ALL events on that layer with full details (start_ms, end_ms, asset path, metadata). Use AFTER script.to_video to inspect a specific layer for restructuring. Layers: background, voiceover, music, captions, stickers. For a quick overview use the timeline_preview field from script.to_video instead.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_preview_path": {"type": "string", "description": "Path to the timeline_preview.txt file from script.to_video"},
+                    "layer": {"type": "string", "enum": ["background", "voiceover", "music", "captions", "stickers"], "description": "Which layer to inspect in detail"}
+                },
+                "required": ["timeline_preview_path", "layer"],
                 "additionalProperties": false
             }
         }
@@ -1025,6 +1038,7 @@ pub fn route_tool(
         "stock.search" => Box::pin(handle_stock_search(args)),
         "media.search" => Box::pin(handle_media_search(args)),
         "gif.search" => Box::pin(handle_gif_search(args)),
+        "timeline.inspect" => Box::pin(handle_timeline_inspect(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -7535,5 +7549,108 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
         "count": 0,
         "results": [],
         "message": "Set GIPHY_API_KEY env var for GIPHY sticker search. Get free key at https://developers.giphy.com",
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: timeline.inspect — deep-dive layer inspection
+// ---------------------------------------------------------------------------
+
+async fn handle_timeline_inspect(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let preview_path = extract_str(&args, "timeline_preview_path")?;
+    let layer = extract_str(&args, "layer")?;
+
+    // Read the timeline preview file
+    let preview = std::fs::read_to_string(sanitize_input_path(preview_path)?)
+        .map_err(|e| ToolError::NotFound(format!("Cannot read timeline preview: {}", e)))?;
+
+    // Also try to read the timeline JSON for full details
+    let timeline_dir = std::path::Path::new(preview_path).parent().unwrap_or(std::path::Path::new("."));
+    let timeline_json_path = timeline_dir.join("timeline.json");
+    let manifest_path = timeline_dir.join("voices").join("manifest.json");
+
+    let mut details = Vec::new();
+
+    match layer {
+        "background" => {
+            // Parse background events from the timeline JSON
+            if let Ok(tl_str) = std::fs::read_to_string(&timeline_json_path) {
+                if let Ok(tl) = serde_json::from_str::<serde_json::Value>(&tl_str) {
+                    if let Some(broll) = tl.get("assets").and_then(|a| a.get("broll")).and_then(|b| b.as_object()) {
+                        for (id, asset) in broll {
+                            let path = asset.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                            details.push(json!({
+                                "id": id,
+                                "path": path,
+                                "exists": std::path::Path::new(path).exists(),
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+        "voiceover" => {
+            if let Ok(m_str) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(m) = serde_json::from_str::<serde_json::Value>(&m_str) {
+                    if let Some(segments) = m.get("segments").and_then(|v| v.as_array()) {
+                        for seg in segments {
+                            details.push(json!({
+                                "scene_id": seg.get("scene_id"),
+                                "speaker": seg.get("speaker"),
+                                "text": seg.get("text"),
+                                "start_ms": seg.get("start_ms"),
+                                "end_ms": seg.get("end_ms"),
+                                "duration_ms": seg.get("duration_ms"),
+                                "wav_path": seg.get("wav_path"),
+                                "word_count": seg.get("words").and_then(|v| v.as_array()).map(|a| a.len()),
+                                "backend": seg.get("backend"),
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+        "music" => {
+            if let Ok(tl_str) = std::fs::read_to_string(&timeline_json_path) {
+                if let Ok(tl) = serde_json::from_str::<serde_json::Value>(&tl_str) {
+                    if let Some(music) = tl.get("assets").and_then(|a| a.get("music")).and_then(|m| m.as_object()) {
+                        for (id, asset) in music {
+                            details.push(json!({
+                                "id": id,
+                                "path": asset.get("path"),
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+        "captions" => {
+            let captions_path = timeline_dir.join("captions.ass");
+            if let Ok(content) = std::fs::read_to_string(&captions_path) {
+                let dialogue_count = content.matches("Dialogue:").count();
+                details.push(json!({
+                    "path": captions_path.to_string_lossy(),
+                    "dialogue_count": dialogue_count,
+                    "size_bytes": content.len(),
+                }));
+            }
+        }
+        "stickers" => {
+            // Stickers are in the script.to_video response, not stored separately
+            details.push(json!({
+                "message": "Sticker details are in the script.to_video response. Check the 'sticker_count' and 'timeline_preview' fields.",
+            }));
+        }
+        _ => {
+            return Err(ToolError::InvalidArg(format!("Unknown layer: {}. Use: background, voiceover, music, captions, stickers", layer)));
+        }
+    }
+
+    Ok(json!({
+        "status": "inspected",
+        "layer": layer,
+        "event_count": details.len(),
+        "events": details,
+        "preview_excerpt": preview.lines().take(5).collect::<Vec<_>>().join("\n"),
     }))
 }
