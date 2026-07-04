@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (62 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline + 1 script.to_video + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search)
+// Tool definitions (64 tools: 43 original + 5 HyperFrames hf.* tools + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 1 script.to_timeline + 1 script.to_video + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -887,10 +887,38 @@ pub fn tool_definitions() -> serde_json::Value {
                 "required": ["type", "query"],
                 "additionalProperties": false
             }
+        },
+        {
+            "name": "media.search",
+            "description": "Search for PNG images for use as sticker overlays. Uses Pexels Image API (requires PEXELS_API_KEY) and Openverse (free, no key). Returns image URLs, dimensions, and license info. Download with media.download. Use for finding transparent PNGs of people, objects, logos, etc. for video sticker overlays.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query (e.g. 'person talking', 'businessman portrait', 'cartoon character')"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results"},
+                    "source": {"type": "string", "enum": ["pexels", "openverse", "auto"], "default": "auto", "description": "Image source: pexels (requires API key), openverse (free), or auto (try pexels first)"}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "gif.search",
+            "description": "Search for animated GIF stickers (transparent background) from GIPHY. Returns GIF URLs, dimensions, and preview URLs. Download with gif.download. GIPHY stickers are transparent GIFs ideal for video overlays. Requires GIPHY_API_KEY env var (get free at https://developers.giphy.com). Falls back to Pexels video search if no GIPHY key.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query (e.g. 'person talking', 'thumbs up', 'applause')"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results"},
+                    "rating": {"type": "string", "enum": ["g", "pg", "pg-13", "r"], "default": "g", "description": "Content rating filter"}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
         }
     ]);
 
-    // Append HyperFrames tools (hf.*) — wrappers around `npx hyperframes` CLI
+    // Append HyperFrames tools (hf.*)
     if let Some(arr) = tools.as_array_mut() {
         arr.extend(crate::hf::tool_definitions());
     }
@@ -995,6 +1023,8 @@ pub fn route_tool(
         "youtube.download" => Box::pin(handle_youtube_download(args)),
         "youtube.search" => Box::pin(handle_youtube_search(args)),
         "stock.search" => Box::pin(handle_stock_search(args)),
+        "media.search" => Box::pin(handle_media_search(args)),
+        "gif.search" => Box::pin(handle_gif_search(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -5313,28 +5343,34 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
                 let videos = body.get("videos").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-                // Find a video with enough duration, prefer HD quality
+                // Find a video with enough duration — prefer longer videos
                 let mut best_video: Option<(String, i64)> = None;
+                let mut best_duration: i64 = 0;
                 for video in &videos {
                     let vid_duration = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
-                    if vid_duration >= (duration_s as i64).min(5) {
-                        // Get the best quality file that's 1080p or 720p
+                    // Prefer videos that are at least as long as what we need
+                    // But accept any video >= 5s — the renderer will loop it
+                    if vid_duration >= 5 {
+                        // Get the best quality file that's 720p-1080p
                         for file in video.get("video_files").and_then(|v| v.as_array()).unwrap_or(&Vec::new()) {
                             let width = file.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
                             let url = file.get("link").and_then(|v| v.as_str()).unwrap_or("");
                             if width >= 720 && width <= 1920 && !url.is_empty() {
-                                best_video = Some((url.to_string(), vid_duration));
+                                // Prefer the longest video
+                                if vid_duration > best_duration {
+                                    best_video = Some((url.to_string(), vid_duration));
+                                    best_duration = vid_duration;
+                                }
                                 break;
                             }
                         }
-                        if best_video.is_some() { break; }
                     }
                 }
 
                 if let Some((video_url, source_duration)) = best_video {
                     report_progress(40.0, 100.0, "Downloading stock footage...").await.ok();
 
-                    // Download the video
+                    // Download the full video
                     match client.get(&video_url).send().await {
                         Ok(resp) if resp.status().is_success() => {
                             let bytes = resp.bytes().await
@@ -5342,69 +5378,105 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                             let full_path = format!("{}/{}_full.mp4", cache_dir, cache_key);
                             std::fs::write(&full_path, &bytes)?;
 
-                            report_progress(70.0, 100.0, "Extracting clip...").await.ok();
+                            report_progress(70.0, 100.0, "Processing clip...").await.ok();
 
-                            // Pick random start time
-                            let max_start = (source_duration as f64 - duration_s).max(0.0);
-                            let start_s = if max_start > 0.0 {
+                            // If the source video is long enough, extract the requested duration
+                            // If it's shorter, use the full video (renderer will loop it)
+                            let (output_path, actual_duration_s, start_s) = if source_duration as f64 >= duration_s {
+                                // Extract a clip of duration_s from a random start point
+                                let max_start = (source_duration as f64 - duration_s).max(0.0);
                                 let seed = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .map(|d| d.as_nanos()).unwrap_or(0) as u64;
-                                (seed as f64 / u64::MAX as f64) * max_start
-                            } else { 0.0 };
+                                let start = if max_start > 0.0 {
+                                    (seed as f64 / u64::MAX as f64) * max_start
+                                } else { 0.0 };
 
-                            // Crop to aspect ratio
-                            let (crop_w, crop_h) = match aspect.as_str() {
-                                "9:16" => (720, 1280),
-                                "16:9" => (1280, 720),
-                                "1:1" => (1080, 1080),
-                                _ => (720, 1280),
+                                // Crop to aspect ratio
+                                let (crop_w, crop_h) = match aspect.as_str() {
+                                    "9:16" => (720, 1280),
+                                    "16:9" => (1280, 720),
+                                    "1:1" => (1080, 1080),
+                                    _ => (720, 1280),
+                                };
+
+                                let crop_result = tokio::process::Command::new("ffmpeg")
+                                    .arg("-y")
+                                    .arg("-ss").arg(start.to_string())
+                                    .arg("-i").arg(&full_path)
+                                    .arg("-t").arg(duration_s.to_string())
+                                    .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                    .arg("-c:v").arg("libx264")
+                                    .arg("-preset").arg("fast")
+                                    .arg("-crf").arg("23")
+                                    .arg("-an")
+                                    .arg(&clip_path)
+                                    .stdin(std::process::Stdio::null())
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::piped())
+                                    .kill_on_drop(true)
+                                    .output()
+                                    .await;
+
+                                if let Ok(o) = crop_result {
+                                    if o.status.success() {
+                                        (clip_path.clone(), duration_s, start)
+                                    } else {
+                                        (full_path.clone(), source_duration as f64, 0.0)
+                                    }
+                                } else {
+                                    (full_path.clone(), source_duration as f64, 0.0)
+                                }
+                            } else {
+                                // Source is shorter than needed — use full video, renderer will loop
+                                // Still crop to aspect ratio
+                                let (crop_w, crop_h) = match aspect.as_str() {
+                                    "9:16" => (720, 1280),
+                                    "16:9" => (1280, 720),
+                                    "1:1" => (1080, 1080),
+                                    _ => (720, 1280),
+                                };
+
+                                let crop_result = tokio::process::Command::new("ffmpeg")
+                                    .arg("-y")
+                                    .arg("-i").arg(&full_path)
+                                    .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                    .arg("-c:v").arg("libx264")
+                                    .arg("-preset").arg("fast")
+                                    .arg("-crf").arg("23")
+                                    .arg("-an")
+                                    .arg(&clip_path)
+                                    .stdin(std::process::Stdio::null())
+                                    .stdout(std::process::Stdio::null())
+                                    .stderr(std::process::Stdio::piped())
+                                    .kill_on_drop(true)
+                                    .output()
+                                    .await;
+
+                                if let Ok(o) = crop_result {
+                                    if o.status.success() {
+                                        (clip_path.clone(), source_duration as f64, 0.0)
+                                    } else {
+                                        (full_path.clone(), source_duration as f64, 0.0)
+                                    }
+                                } else {
+                                    (full_path.clone(), source_duration as f64, 0.0)
+                                }
                             };
 
-                            let crop_result = tokio::process::Command::new("ffmpeg")
-                                .arg("-y")
-                                .arg("-ss").arg(start_s.to_string())
-                                .arg("-i").arg(&full_path)
-                                .arg("-t").arg(duration_s.to_string())
-                                .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
-                                .arg("-c:v").arg("libx264")
-                                .arg("-preset").arg("fast")
-                                .arg("-crf").arg("23")
-                                .arg("-an")
-                                .arg(&clip_path)
-                                .stdin(std::process::Stdio::null())
-                                .stdout(std::process::Stdio::null())
-                                .stderr(std::process::Stdio::piped())
-                                .kill_on_drop(true)
-                                .output()
-                                .await;
-
-                            if let Ok(o) = crop_result {
-                                if o.status.success() {
-                                    report_progress(100.0, 100.0, "Stock footage ready").await.ok();
-                                    return Ok(json!({
-                                        "status": "fetched",
-                                        "clip_path": clip_path,
-                                        "source": "pexels",
-                                        "source_duration_s": source_duration,
-                                        "start_s": start_s,
-                                        "duration_s": duration_s,
-                                        "cached": false,
-                                    }));
-                                }
-                            }
-                            // If crop failed, use the full video
-                            if Path::new(&full_path).exists() {
-                                return Ok(json!({
-                                    "status": "fetched",
-                                    "clip_path": full_path,
-                                    "source": "pexels",
-                                    "source_duration_s": source_duration,
-                                    "duration_s": source_duration,
-                                    "cached": false,
-                                    "warning": "Crop failed, using full video"
-                                }));
-                            }
+                            report_progress(100.0, 100.0, "Stock footage ready").await.ok();
+                            let needs_looping = (source_duration as f64) < duration_s;
+                            let result = json!({
+                                "status": "fetched",
+                                "clip_path": output_path,
+                                "source": "pexels",
+                                "source_duration_s": source_duration,
+                                "start_s": start_s,
+                                "duration_s": actual_duration_s,
+                                "needs_looping": needs_looping,
+                                "cached": false
+                            });
+                            return Ok(result);
                         }
                         _ => tracing::warn!("[background.fetch] Pexels download failed"),
                     }
@@ -7036,5 +7108,261 @@ async fn handle_stock_search(args: serde_json::Value) -> Result<serde_json::Valu
         "count": results.len(),
         "results": results,
         "message": "Set PIXABAY_API_KEY to search Pixabay. Showing local library.",
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: media.search — PNG image search (Pexels Images + Openverse)
+// ---------------------------------------------------------------------------
+
+async fn handle_media_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let limit = default_u32(&args, "limit", 10) as usize;
+    let source = default_str(&args, "source", "auto");
+
+    report_progress(0.0, 100.0, &format!("Searching for images: {}...", query)).await.ok();
+
+    let pexels_key = std::env::var("PEXELS_API_KEY")
+        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+    // Try Pexels Images API first (if key available and source allows)
+    if source != "openverse" && !pexels_key.is_empty() {
+        let url = format!(
+            "https://api.pexels.com/v1/search?query={}&per_page={}&orientation=portrait",
+            urlencoding::encode(query),
+            limit
+        );
+
+        match client.get(&url).header("Authorization", &pexels_key).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let body: serde_json::Value = resp.json().await
+                    .map_err(|e| ToolError::Asset(format!("Pexels parse error: {}", e)))?;
+
+                let results: Vec<serde_json::Value> = body.get("photos")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().take(limit).map(|p| {
+                        let src = p.get("src").cloned().unwrap_or(json!({}));
+                        json!({
+                            "id": p.get("id"),
+                            "title": format!("Photo by {}", p.get("photographer").and_then(|v| v.as_str()).unwrap_or("Unknown")),
+                            "url": src.get("original").and_then(|v| v.as_str()).unwrap_or(""),
+                            "medium_url": src.get("medium").and_then(|v| v.as_str()).unwrap_or(""),
+                            "large_url": src.get("large").and_then(|v| v.as_str()).unwrap_or(""),
+                            "width": p.get("width"),
+                            "height": p.get("height"),
+                            "source": "pexels",
+                            "license": "pexels-license",
+                        })
+                    }).collect())
+                    .unwrap_or_default();
+
+                if !results.is_empty() {
+                    report_progress(100.0, 100.0, &format!("Found {} images", results.len())).await.ok();
+                    return Ok(json!({
+                        "status": "searched",
+                        "query": query,
+                        "source": "pexels",
+                        "count": results.len(),
+                        "results": results,
+                    }));
+                }
+            }
+            _ => tracing::warn!("[media.search] Pexels API failed, trying Openverse"),
+        }
+    }
+
+    // Fallback: Openverse API (free, no key needed)
+    if source != "pexels" {
+        let url = format!(
+            "https://api.openverse.org/v1/images/?q={}&page_size={}",
+            urlencoding::encode(query),
+            limit
+        );
+
+        match client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let body: serde_json::Value = resp.json().await
+                    .map_err(|e| ToolError::Asset(format!("Openverse parse error: {}", e)))?;
+
+                let results: Vec<serde_json::Value> = body.get("results")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().take(limit).map(|r| {
+                        json!({
+                            "id": r.get("id"),
+                            "title": r.get("title"),
+                            "url": r.get("url"),
+                            "thumbnail": r.get("thumbnail"),
+                            "width": r.get("width"),
+                            "height": r.get("height"),
+                            "source": "openverse",
+                            "license": r.get("license"),
+                            "creator": r.get("creator"),
+                        })
+                    }).collect())
+                    .unwrap_or_default();
+
+                report_progress(100.0, 100.0, &format!("Found {} images", results.len())).await.ok();
+                return Ok(json!({
+                    "status": "searched",
+                    "query": query,
+                    "source": "openverse",
+                    "count": results.len(),
+                    "results": results,
+                }));
+            }
+            _ => tracing::warn!("[media.search] Openverse API failed"),
+        }
+    }
+
+    Ok(json!({
+        "status": "no_results",
+        "query": query,
+        "count": 0,
+        "results": [],
+        "message": "No images found. Try a different query.",
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: gif.search — GIPHY sticker search
+// ---------------------------------------------------------------------------
+
+async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let limit = default_u32(&args, "limit", 10) as usize;
+    let rating = default_str(&args, "rating", "g");
+
+    report_progress(0.0, 100.0, &format!("Searching GIPHY for: {}...", query)).await.ok();
+
+    let giphy_key = std::env::var("GIPHY_API_KEY").ok();
+
+    if let Some(key) = giphy_key {
+        if !key.is_empty() {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+            // Search GIPHY stickers (transparent GIFs)
+            let url = format!(
+                "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit={}&rating={}&bundle=sticker_layering",
+                key,
+                urlencoding::encode(query),
+                limit,
+                rating
+            );
+
+            match client.get(&url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let body: serde_json::Value = resp.json().await
+                        .map_err(|e| ToolError::Asset(format!("GIPHY parse error: {}", e)))?;
+
+                    let results: Vec<serde_json::Value> = body.get("data")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().take(limit).map(|g| {
+                            let images = g.get("images").cloned().unwrap_or(json!({}));
+                            let original = images.get("original").cloned().unwrap_or(json!({}));
+                            let downsized = images.get("downsized").cloned().unwrap_or(json!({}));
+                            json!({
+                                "id": g.get("id"),
+                                "title": g.get("title"),
+                                "url": g.get("url"),
+                                "gif_url": original.get("url"),
+                                "webp_url": original.get("webp"),
+                                "preview_url": downsized.get("url"),
+                                "width": original.get("width"),
+                                "height": original.get("height"),
+                                "size_bytes": original.get("size"),
+                                "source": "giphy",
+                                "transparent": true,
+                            })
+                        }).collect())
+                        .unwrap_or_default();
+
+                    report_progress(100.0, 100.0, &format!("Found {} stickers", results.len())).await.ok();
+                    return Ok(json!({
+                        "status": "searched",
+                        "query": query,
+                        "source": "giphy",
+                        "count": results.len(),
+                        "results": results,
+                    }));
+                }
+                _ => tracing::warn!("[gif.search] GIPHY API failed"),
+            }
+        }
+    }
+
+    // Fallback: Pexels video search for short clips
+    report_progress(50.0, 100.0, "GIPHY key not set, searching Pexels for short clips...").await.ok();
+    let pexels_key = std::env::var("PEXELS_API_KEY")
+        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
+
+    let url = format!(
+        "https://api.pexels.com/videos/search?query={}&per_page={}&orientation=square",
+        urlencoding::encode(query),
+        limit
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+    match client.get(&url).header("Authorization", &pexels_key).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await
+                .map_err(|e| ToolError::Asset(format!("Pexels parse error: {}", e)))?;
+
+            let results: Vec<serde_json::Value> = body.get("videos")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().take(limit).filter_map(|v| {
+                    let duration = v.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+                    if duration > 10 { return None; } // Only short clips
+                    let video_files = v.get("video_files").and_then(|v| v.as_array())?;
+                    let best = video_files.iter()
+                        .filter(|f| {
+                            let w = f.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+                            w >= 360 && w <= 720
+                        })
+                        .next()?;
+                    Some(json!({
+                        "id": v.get("id"),
+                        "title": format!("Pexels video {}", v.get("id").and_then(|v| v.as_u64()).unwrap_or(0)),
+                        "url": v.get("url"),
+                        "video_url": best.get("link"),
+                        "width": best.get("width"),
+                        "height": best.get("height"),
+                        "duration_s": duration,
+                        "source": "pexels",
+                        "transparent": false,
+                    }))
+                }).collect())
+                .unwrap_or_default();
+
+            report_progress(100.0, 100.0, &format!("Found {} clips", results.len())).await.ok();
+            return Ok(json!({
+                "status": "searched",
+                "query": query,
+                "source": "pexels",
+                "count": results.len(),
+                "results": results,
+                "message": "GIPHY_API_KEY not set. Set it to search GIPHY stickers. Showing Pexels short clips instead.",
+            }));
+        }
+        _ => {}
+    }
+
+    Ok(json!({
+        "status": "no_results",
+        "query": query,
+        "count": 0,
+        "results": [],
+        "message": "Set GIPHY_API_KEY env var for GIPHY sticker search. Get free key at https://developers.giphy.com",
     }))
 }

@@ -117,15 +117,30 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut cmd = Command::new("ffmpeg");
     cmd.arg("-y");
 
-    // Inputs: one per background clip
-    let bg_count = spec.backgrounds.len();
-    for bg in &spec.backgrounds {
+    // Check if all backgrounds are the same file (single-background playback)
+    let all_same_bg = spec.backgrounds.len() > 1 && spec.backgrounds.windows(2).all(|w| w[0].path == w[1].path);
+
+    let bg_count = if all_same_bg {
+        // Single background — use ONE input, looped for the full duration
+        let bg = &spec.backgrounds[0];
         if bg.looped {
             cmd.arg("-stream_loop").arg("-1");
         }
-        cmd.arg("-t").arg(bg.duration_s.to_string());
+        cmd.arg("-t").arg(spec.total_duration_s.to_string());
         cmd.arg("-i").arg(&bg.path);
-    }
+        1
+    } else {
+        // Multiple different backgrounds — one input per clip
+        let count = spec.backgrounds.len();
+        for bg in &spec.backgrounds {
+            if bg.looped {
+                cmd.arg("-stream_loop").arg("-1");
+            }
+            cmd.arg("-t").arg(bg.duration_s.to_string());
+            cmd.arg("-i").arg(&bg.path);
+        }
+        count
+    };
 
     // Input: voiceover concat
     let vo_input_idx = bg_count;
