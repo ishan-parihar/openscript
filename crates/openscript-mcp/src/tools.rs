@@ -6154,8 +6154,35 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
-    // Build per-scene background clips using change_cadence
-    let fallback_pool = if !spec.background.fallback_pool.is_empty() {
+    // Fetch a real background from Pexels/YouTube if the script requests it
+    let mut fetched_bg_path: Option<String> = None;
+    if !skip_background && spec.background.r#type == "gameplay" && !spec.background.query.is_empty() {
+        report_progress(35.0, 100.0, &format!("Fetching background from Pexels: {}...", spec.background.query)).await.ok();
+        let fetch_result = handle_background_fetch(json!({
+            "query": spec.background.query,
+            "duration_s": total_duration_s,
+            "aspect": spec.meta.aspect,
+        })).await;
+
+        if let Ok(ref result) = fetch_result {
+            if let Some(path) = result.get("clip_path").and_then(|v| v.as_str()) {
+                if std::path::Path::new(path).exists() {
+                    fetched_bg_path = Some(path.to_string());
+                    tracing::info!("[script.to_video] Using fetched background: {} (source: {})",
+                        path, result.get("source").and_then(|v| v.as_str()).unwrap_or("unknown"));
+                }
+            }
+        }
+        if fetched_bg_path.is_none() {
+            tracing::warn!("[script.to_video] Background fetch failed, falling back to local pool");
+        }
+    }
+
+    // Build per-scene background clips
+    let fallback_pool = if let Some(ref bg_path) = fetched_bg_path {
+        // Use the fetched real background for ALL scenes (single bg playback)
+        vec![bg_path.clone()]
+    } else if !spec.background.fallback_pool.is_empty() {
         spec.background.fallback_pool.clone()
     } else {
         // Scan the backgrounds directory for available clips

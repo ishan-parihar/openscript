@@ -1,0 +1,139 @@
+{
+  "cadence": "scene",
+  "clips": [
+    {
+      "duration_s": 1.664,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_001",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 3.157,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_002",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 4.181,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_003",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.837,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_004",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.987,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_005",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.197,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_006",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.347,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_007",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 1.6,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_008",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 4.629,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_009",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 3.413,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_010",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 1.515,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_011",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 3.584,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_012",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 1.899,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_013",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.325,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_014",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.112,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_015",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.816,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_016",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.475,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_017",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 3.712,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_018",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 3.947,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c3f3f4c757234476d052d701ef42ff99_clip.mp4",
+      "scene_id": "scene_019",
+      "source_start_s": 0.0
+    }
+  ],
+  "pool_size": 1
+}
