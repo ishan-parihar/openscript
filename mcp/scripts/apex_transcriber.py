@@ -73,6 +73,7 @@ def run_apex_transcription(
     script = (
         """
 import sys
+import os
 import time
 import torch
 import whisper_timestamped as whisper

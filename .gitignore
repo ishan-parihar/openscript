@@ -20,3 +20,5 @@ __pycache__/
 .idea/
 *.swp
 artifacts_test/
+artifacts_*/
+artifacts/

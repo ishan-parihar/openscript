@@ -128,13 +128,6 @@ def scrape_youtube_channel(channel_url, source_name, media_type, max_videos=50):
         return []
 
 
-def search_pixabay_music(query, limit=20):
-    """Search Pixabay for free music (no API key needed for basic search)."""
-    print(f"Searching Pixabay for: {query}...", file=sys.stderr)
-    # Pixabay doesn't have a public API for music without a key
-    # We'll use the web search URL and let yt-dlp handle it
-    return []  # Placeholder — Pixabay music API requires authentication
-
 
 def build_index(output_path="mcp/assets/music_library_index.json"):
     """Build the complete music/SFX library index."""

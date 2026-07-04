@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (68 tools: 65 + library.search + library.download + library.build)
+// Tool definitions (68 tools: 43 original + 5 hf.* + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -3400,7 +3400,7 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
         )));
     }
 
-    let timeline = Timeline::load(timeline_path)?;
+    let mut timeline = Timeline::load(timeline_path)?;
     let errors = timeline.validate();
     if !errors.is_empty() {
         return Err(ToolError::Timeline(format!(
@@ -3432,6 +3432,19 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
     .ok();
 
     report_progress(20.0, 100.0, "Building filter graph...").await.ok();
+
+    // Filter out placeholder b-roll events before rendering to prevent FFmpeg crash
+    if let Some(broll_events) = timeline.tracks.get_mut(&TrackType::Broll) {
+        let before = broll_events.len();
+        broll_events.retain(|e| {
+            e.asset_id != "placeholder" &&
+            !e.asset_id.is_empty()
+        });
+        let removed = before - broll_events.len();
+        if removed > 0 {
+            tracing::warn!("[timeline.render] Filtered {} placeholder b-roll events", removed);
+        }
+    }
 
     let result = render_from_timeline(&timeline, &source, output_path.as_deref(), crf).await;
 
@@ -5366,7 +5379,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
     // === PRIORITY 1: Pexels API (most reliable) ===
     let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
+        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
 
     if !pexels_key.is_empty() {
         report_progress(0.0, 100.0, "Searching Pexels for stock footage...").await.ok();
@@ -5447,10 +5460,10 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
                                 // Crop to aspect ratio
                                 let (crop_w, crop_h) = match aspect.as_str() {
-                                    "9:16" => (720, 1280),
-                                    "16:9" => (1280, 720),
+                                    "9:16" => (1080, 1920),
+                                    "16:9" => (1920, 1080),
                                     "1:1" => (1080, 1080),
-                                    _ => (720, 1280),
+                                    _ => (1080, 1920),
                                 };
 
                                 let crop_result = tokio::process::Command::new("ffmpeg")
@@ -5484,10 +5497,10 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                                 // Source is shorter than needed — use full video, renderer will loop
                                 // Still crop to aspect ratio
                                 let (crop_w, crop_h) = match aspect.as_str() {
-                                    "9:16" => (720, 1280),
-                                    "16:9" => (1280, 720),
+                                    "9:16" => (1080, 1920),
+                                    "16:9" => (1920, 1080),
                                     "1:1" => (1080, 1080),
-                                    _ => (720, 1280),
+                                    _ => (1080, 1920),
                                 };
 
                                 let crop_result = tokio::process::Command::new("ffmpeg")
@@ -5617,10 +5630,10 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
     // Crop dimensions based on aspect
     let (crop_w, crop_h) = match aspect.as_str() {
-        "9:16" => (720, 1280),   // vertical
-        "16:9" => (1280, 720),   // horizontal
+        "9:16" => (1080, 1920),   // vertical
+        "16:9" => (1920, 1080),   // horizontal
         "1:1" => (1080, 1080),   // square
-        _ => (720, 1280),
+        _ => (1080, 1920),
     };
 
     // Extract clip with crop
@@ -6316,7 +6329,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // for each scene based on keywords extracted from the scene text.
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
     let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
+        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
 
     if !skip_background && !pexels_key.is_empty() && spec.background.r#type == "gameplay" {
         report_progress(35.0, 60.0, "Fetching multi-broll backgrounds from Pexels...").await.ok();
@@ -6380,10 +6393,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                             std::fs::write(&clip_path, &bytes).ok();
                                                             // Trim to scene duration
                                                             let (crop_w, crop_h) = match spec.meta.aspect.as_str() {
-                                                                "9:16" => (720, 1280),
-                                                                "16:9" => (1280, 720),
+                                                                "9:16" => (1080, 1920),
+                                                                "16:9" => (1920, 1080),
                                                                 "1:1" => (1080, 1080),
-                                                                _ => (720, 1280),
+                                                                _ => (1080, 1920),
                                                             };
                                                             let trimmed = format!("{}/scene_{:03}_trim.mp4", cache_dir, scene_idx + 1);
                                                             let trim_result = tokio::process::Command::new("ffmpeg")
@@ -6479,7 +6492,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let mut stickers: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
     if !skip_stickers && spec.stickers.enabled {
         let giphy_key = std::env::var("GIPHY_API_KEY")
-            .unwrap_or_else(|_| "pZIYPNNZHCtUVEu7wzat69YcKfLjUcVj".to_string());
+            .unwrap_or_else(|_| std::env::var("GIPHY_API_KEY").unwrap_or_default());
 
         // Download one sticker per speaker
         let mut speaker_stickers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -6494,13 +6507,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             std::fs::create_dir_all(stickers_dir).ok();
 
             for (speaker_name, speaker_spec) in &spec.speakers {
-                // Search GIPHY for a sticker matching the speaker's persona
-                // Search GIPHY for a sticker matching the speaker's voice gender
-                let search_query = if speaker_spec.voice.contains("af_") || speaker_spec.voice.contains("bf_") {
-                    "woman talking animated".to_string()
-                } else {
-                    "man talking animated".to_string()
-                };
+                // Search GIPHY for a sticker matching the speaker's name and persona
+                let search_query = format!("{} talking", speaker_name);
                 let giphy_url = format!(
                     "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=1&rating=g&bundle=sticker_layering",
                     giphy_key,
@@ -6938,10 +6946,10 @@ async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::
                 // Clip is already the right duration — just crop to aspect
                 report_progress(70.0, 100.0, "Cropping to aspect ratio...").await.ok();
                 let (crop_w, crop_h) = match aspect.as_str() {
-                    "9:16" => (720, 1280),
-                    "16:9" => (1280, 720),
+                    "9:16" => (1080, 1920),
+                    "16:9" => (1920, 1080),
                     "1:1" => (1080, 1080),
-                    _ => (720, 1280),
+                    _ => (1080, 1920),
                 };
 
                 let cropped_path = format!("{}/{}_cropped.mp4", cache_dir, cache_key);
@@ -7094,10 +7102,10 @@ async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::
 
     // Crop dimensions
     let (crop_w, crop_h) = match aspect.as_str() {
-        "9:16" => (720, 1280),
-        "16:9" => (1280, 720),
+        "9:16" => (1080, 1920),
+        "16:9" => (1920, 1080),
         "1:1" => (1080, 1080),
-        _ => (720, 1280),
+        _ => (1080, 1920),
     };
 
     // Extract clip with crop
@@ -7378,7 +7386,7 @@ async fn handle_media_search(args: serde_json::Value) -> Result<serde_json::Valu
     report_progress(0.0, 100.0, &format!("Searching for images: {}...", query)).await.ok();
 
     let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
+        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -7556,7 +7564,7 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
     // Fallback: Pexels video search for short clips
     report_progress(50.0, 100.0, "GIPHY key not set, searching Pexels for short clips...").await.ok();
     let pexels_key = std::env::var("PEXELS_API_KEY")
-        .unwrap_or_else(|_| "b8HxbUpUvi7G7jV9S85pGuh8gLvHXDcm2VguWXXHn7oUAEUVmQLjUEts".to_string());
+        .unwrap_or_else(|_| std::env::var("PEXELS_API_KEY").unwrap_or_default());
 
     let url = format!(
         "https://api.pexels.com/videos/search?query={}&per_page={}&orientation=square",
@@ -7643,17 +7651,46 @@ async fn handle_timeline_inspect(args: serde_json::Value) -> Result<serde_json::
 
     match layer {
         "background" => {
-            // Parse background events from the timeline JSON
+            // Read from timeline tracks, not assets (the schema stores events in tracks)
             if let Ok(tl_str) = std::fs::read_to_string(&timeline_json_path) {
                 if let Ok(tl) = serde_json::from_str::<serde_json::Value>(&tl_str) {
-                    if let Some(broll) = tl.get("assets").and_then(|a| a.get("broll")).and_then(|b| b.as_object()) {
-                        for (id, asset) in broll {
-                            let path = asset.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                            details.push(json!({
-                                "id": id,
-                                "path": path,
-                                "exists": std::path::Path::new(path).exists(),
-                            }));
+                    // Try tracks.broll first (EDL v2 schema)
+                    if let Some(tracks) = tl.get("tracks").and_then(|t| t.as_object()) {
+                        if let Some(broll_events) = tracks.get("broll").and_then(|b| b.as_array()) {
+                            for event in broll_events {
+                                let id = event.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let start_ms = event.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let end_ms = event.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let asset_id = event.get("asset_id").and_then(|v| v.as_str()).unwrap_or("");
+                                // Look up the actual file path from assets
+                                let path = tl.get("assets")
+                                    .and_then(|a| a.get("broll"))
+                                    .and_then(|b| b.as_object())
+                                    .and_then(|b| b.get(asset_id))
+                                    .and_then(|p| p.get("path"))
+                                    .and_then(|p| p.as_str())
+                                    .unwrap_or(asset_id);
+                                details.push(json!({
+                                    "id": id,
+                                    "start_ms": start_ms,
+                                    "end_ms": end_ms,
+                                    "path": path,
+                                    "exists": std::path::Path::new(path).exists(),
+                                }));
+                            }
+                        }
+                    }
+                    // Also check assets.broll as fallback
+                    if details.is_empty() {
+                        if let Some(broll) = tl.get("assets").and_then(|a| a.get("broll")).and_then(|b| b.as_object()) {
+                            for (id, asset) in broll {
+                                let path = asset.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                details.push(json!({
+                                    "id": id,
+                                    "path": path,
+                                    "exists": std::path::Path::new(path).exists(),
+                                }));
+                            }
                         }
                     }
                 }
@@ -7683,12 +7720,39 @@ async fn handle_timeline_inspect(args: serde_json::Value) -> Result<serde_json::
         "music" => {
             if let Ok(tl_str) = std::fs::read_to_string(&timeline_json_path) {
                 if let Ok(tl) = serde_json::from_str::<serde_json::Value>(&tl_str) {
-                    if let Some(music) = tl.get("assets").and_then(|a| a.get("music")).and_then(|m| m.as_object()) {
-                        for (id, asset) in music {
-                            details.push(json!({
-                                "id": id,
-                                "path": asset.get("path"),
-                            }));
+                    // Try tracks.music first (EDL v2 schema)
+                    if let Some(tracks) = tl.get("tracks").and_then(|t| t.as_object()) {
+                        if let Some(music_events) = tracks.get("music").and_then(|m| m.as_array()) {
+                            for event in music_events {
+                                let id = event.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let start_ms = event.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let end_ms = event.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let asset_id = event.get("asset_id").and_then(|v| v.as_str()).unwrap_or("");
+                                let path = tl.get("assets")
+                                    .and_then(|a| a.get("music"))
+                                    .and_then(|m| m.as_object())
+                                    .and_then(|m| m.get(asset_id))
+                                    .and_then(|p| p.get("path"))
+                                    .and_then(|p| p.as_str())
+                                    .unwrap_or(asset_id);
+                                details.push(json!({
+                                    "id": id,
+                                    "start_ms": start_ms,
+                                    "end_ms": end_ms,
+                                    "path": path,
+                                }));
+                            }
+                        }
+                    }
+                    // Fallback to assets.music
+                    if details.is_empty() {
+                        if let Some(music) = tl.get("assets").and_then(|a| a.get("music")).and_then(|m| m.as_object()) {
+                            for (id, asset) in music {
+                                details.push(json!({
+                                    "id": id,
+                                    "path": asset.get("path"),
+                                }));
+                            }
                         }
                     }
                 }
@@ -7867,7 +7931,7 @@ async fn handle_library_download(args: serde_json::Value) -> Result<serde_json::
         }));
     }
 
-    // Download with yt-dlp
+    // Download with yt-dlp (include bot-detection evasion)
     report_progress(0.0, 100.0, &format!("Downloading: {}", filename)).await.ok();
 
     let result = tokio::process::Command::new("yt-dlp")
@@ -7876,6 +7940,8 @@ async fn handle_library_download(args: serde_json::Value) -> Result<serde_json::
         .arg("-o").arg(&output_path)
         .arg("--no-playlist")
         .arg("--quiet")
+        .arg("--cookies-from-browser").arg("chrome")
+        .arg("--user-agent").arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .arg(&download_url)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
