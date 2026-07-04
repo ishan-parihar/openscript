@@ -47,7 +47,7 @@ impl LayeredTimeline {
     /// Generate a compact text preview for AI agents (token-efficient).
     ///
     /// Example output:
-    /// ```
+    /// ```text
     /// Timeline (25.1s, 1080x1920, 30fps)
     /// ├── BACKGROUND
     /// │   ├── [0.0s - 5.0s] minecraft_01.mp4
