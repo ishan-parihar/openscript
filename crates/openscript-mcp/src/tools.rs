@@ -6518,12 +6518,17 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
                 if let Some(speaker_spec) = spec.speakers.get(speaker_name) {
                     if let Some(sticker_path) = speaker_stickers.get(speaker_name) {
+                        let sticker_w = (spec.meta.width as f64 * speaker_spec.scale) as u32;
                         stickers.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
                             path: sticker_path.clone(),
                             start_s: current_ms as f64 / 1000.0,
                             end_s: end_ms as f64 / 1000.0,
                             position: speaker_spec.position.clone(),
                             scale: speaker_spec.scale,
+                            center_x: 0,  // Will be computed in renderer
+                            center_y: 0,
+                            sticker_width: sticker_w,
+                            sticker_height: sticker_w,
                         });
                     }
                 }
@@ -6555,13 +6560,34 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .collect();
 
     let sticker_assignments: Vec<openscript_core::timeline_preview::StickerAssignment> = stickers.iter()
-        .map(|s| openscript_core::timeline_preview::StickerAssignment {
-            start_ms: (s.start_s * 1000.0) as i64,
-            end_ms: (s.end_s * 1000.0) as i64,
-            path: s.path.clone(),
-            position: s.position.clone(),
-            scale: s.scale,
-            speaker: String::new(),
+        .map(|s| {
+            // Calculate sticker dimensions and center-based coordinates
+            let sticker_w = (spec.meta.width as f64 * s.scale) as u32;
+            let sticker_h = sticker_w; // Approximate square; actual aspect ratio varies
+            let margin = 40i32;
+            let (tl_x, tl_y): (i32, i32) = match s.position.as_str() {
+                "top-left" => (margin, margin),
+                "top-right" => (spec.meta.width as i32 - sticker_w as i32 - margin, margin),
+                "bottom-left" => (margin, spec.meta.height as i32 - sticker_h as i32 - margin),
+                "bottom-right" => (spec.meta.width as i32 - sticker_w as i32 - margin, spec.meta.height as i32 - sticker_h as i32 - margin),
+                "center" => ((spec.meta.width as i32 - sticker_w as i32) / 2, (spec.meta.height as i32 - sticker_h as i32) / 2),
+                _ => (margin, margin),
+            };
+            let center_x = tl_x + sticker_w as i32 / 2 - spec.meta.width as i32 / 2;
+            let center_y = tl_y + sticker_h as i32 / 2 - spec.meta.height as i32 / 2;
+
+            openscript_core::timeline_preview::StickerAssignment {
+                start_ms: (s.start_s * 1000.0) as i64,
+                end_ms: (s.end_s * 1000.0) as i64,
+                path: s.path.clone(),
+                position: s.position.clone(),
+                scale: s.scale,
+                speaker: String::new(),
+                center_x,
+                center_y,
+                sticker_width: sticker_w,
+                sticker_height: sticker_h,
+            }
         })
         .collect();
 

@@ -1,0 +1,427 @@
+{
+  "version": "2.0",
+  "created_at": "2026-07-04T18:31:20.780368043Z",
+  "updated_at": "2026-07-04T18:31:20.780476535Z",
+  "source": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+  "target": {
+    "aspect": "9:16",
+    "fps": 30,
+    "max_duration": null
+  },
+  "segments": [
+    {
+      "id": "scene_001",
+      "start": 0.0,
+      "end": 1.984,
+      "caption": "What does the future of AI look like?",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_002",
+      "start": 1.984,
+      "end": 4.672,
+      "caption": "It is not just about smarter models.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_003",
+      "start": 4.672,
+      "end": 7.573,
+      "caption": "It is about AI that can reason, plan, and act.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_004",
+      "start": 7.573,
+      "end": 11.477,
+      "caption": "Imagine AI agents that can use tools autonomously.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_005",
+      "start": 11.477,
+      "end": 14.442,
+      "caption": "They could write code, design systems, and create art.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_006",
+      "start": 14.442,
+      "end": 17.343,
+      "caption": "But with great power comes great responsibility.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_007",
+      "start": 17.343,
+      "end": 20.266,
+      "caption": "We need alignment. We need safety. We need trust.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_008",
+      "start": 20.266,
+      "end": 23.167,
+      "caption": "The future is not AI versus humans.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_009",
+      "start": 23.167,
+      "end": 25.642,
+      "caption": "It is humans and AI, working together.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    },
+    {
+      "id": "scene_010",
+      "start": 25.642,
+      "end": 27.519,
+      "caption": "That is the future worth building.",
+      "crossfade_ms": 0,
+      "semantic_role": null
+    }
+  ],
+  "tracks": {
+    "sfx": [],
+    "voiceover": [
+      {
+        "id": "vo_scene_001",
+        "asset_id": "scene_001",
+        "start_ms": 0,
+        "end_ms": 1984,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "What does the future of AI look like?",
+        "estimated_duration_ms": 1984
+      },
+      {
+        "id": "vo_scene_002",
+        "asset_id": "scene_002",
+        "start_ms": 1984,
+        "end_ms": 4672,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "It is not just about smarter models.",
+        "estimated_duration_ms": 2688
+      },
+      {
+        "id": "vo_scene_003",
+        "asset_id": "scene_003",
+        "start_ms": 4672,
+        "end_ms": 7573,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "It is about AI that can reason, plan, and act.",
+        "estimated_duration_ms": 2901
+      },
+      {
+        "id": "vo_scene_004",
+        "asset_id": "scene_004",
+        "start_ms": 7573,
+        "end_ms": 11477,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "Imagine AI agents that can use tools autonomously.",
+        "estimated_duration_ms": 3904
+      },
+      {
+        "id": "vo_scene_005",
+        "asset_id": "scene_005",
+        "start_ms": 11477,
+        "end_ms": 14442,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "They could write code, design systems, and create art.",
+        "estimated_duration_ms": 2965
+      },
+      {
+        "id": "vo_scene_006",
+        "asset_id": "scene_006",
+        "start_ms": 14442,
+        "end_ms": 17343,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "But with great power comes great responsibility.",
+        "estimated_duration_ms": 2901
+      },
+      {
+        "id": "vo_scene_007",
+        "asset_id": "scene_007",
+        "start_ms": 17343,
+        "end_ms": 20266,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "We need alignment. We need safety. We need trust.",
+        "estimated_duration_ms": 2923
+      },
+      {
+        "id": "vo_scene_008",
+        "asset_id": "scene_008",
+        "start_ms": 20266,
+        "end_ms": 23167,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "The future is not AI versus humans.",
+        "estimated_duration_ms": 2901
+      },
+      {
+        "id": "vo_scene_009",
+        "asset_id": "scene_009",
+        "start_ms": 23167,
+        "end_ms": 25642,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "alice",
+        "text": "It is humans and AI, working together.",
+        "estimated_duration_ms": 2475
+      },
+      {
+        "id": "vo_scene_010",
+        "asset_id": "scene_010",
+        "start_ms": 25642,
+        "end_ms": 27519,
+        "offset_ms": 0,
+        "gain_db": -6.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "voiceover",
+        "voice_profile_id": "bob",
+        "text": "That is the future worth building.",
+        "estimated_duration_ms": 1877
+      }
+    ],
+    "broll": [
+      {
+        "id": "broll_bg",
+        "asset_id": "broll_bg",
+        "start_ms": 0,
+        "end_ms": 27519,
+        "offset_ms": 0,
+        "gain_db": -20.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": "background"
+        },
+        "event_type": "broll",
+        "concept": "background",
+        "source_provider": "youtube",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      }
+    ],
+    "dialogue": [],
+    "captions": [],
+    "music": [
+      {
+        "id": "music_bg",
+        "asset_id": "music_bg",
+        "start_ms": 0,
+        "end_ms": 27519,
+        "offset_ms": 0,
+        "gain_db": -22.0,
+        "fade_in_ms": 500,
+        "fade_out_ms": 500,
+        "tags": [],
+        "provenance": {
+          "tool": "script.to_timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "music",
+        "mood": "neutral",
+        "energy": "medium",
+        "bpm": null,
+        "loopability": true,
+        "intro_friendly": true,
+        "cta_friendly": false,
+        "loudness_target_lufs": -14.0,
+        "loop_mode": "loop",
+        "ducking_policy": "auto"
+      }
+    ]
+  },
+  "directives": {
+    "ducking": [
+      {
+        "when": "voiceover",
+        "target_track": "music",
+        "reduction_db": 15.0,
+        "attack_ms": 50,
+        "release_ms": 200
+      }
+    ],
+    "transitions": [],
+    "mix": {
+      "master_gain_db": 0.0,
+      "limiter_threshold_db": -1.0,
+      "normalize_to_lufs": -14.0
+    },
+    "render_backend": "auto"
+  },
+  "assets": {
+    "voices": {
+      "scene_007": {
+        "path": "artifacts_audit2/voices/scene_007_alice.wav"
+      },
+      "scene_004": {
+        "path": "artifacts_audit2/voices/scene_004_bob.wav"
+      },
+      "scene_008": {
+        "path": "artifacts_audit2/voices/scene_008_bob.wav"
+      },
+      "scene_009": {
+        "path": "artifacts_audit2/voices/scene_009_alice.wav"
+      },
+      "scene_002": {
+        "path": "artifacts_audit2/voices/scene_002_bob.wav"
+      },
+      "scene_003": {
+        "path": "artifacts_audit2/voices/scene_003_alice.wav"
+      },
+      "scene_005": {
+        "path": "artifacts_audit2/voices/scene_005_alice.wav"
+      },
+      "scene_006": {
+        "path": "artifacts_audit2/voices/scene_006_bob.wav"
+      },
+      "scene_010": {
+        "path": "artifacts_audit2/voices/scene_010_bob.wav"
+      },
+      "scene_001": {
+        "path": "artifacts_audit2/voices/scene_001_alice.wav"
+      }
+    },
+    "broll": {
+      "broll_bg": {
+        "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4"
+      }
+    },
+    "music": {
+      "music_bg": {
+        "path": "mcp/assets/music/electronic_dance.mp3"
+      }
+    },
+    "sfx": {},
+    "captions": {
+      "ass": {
+        "path": "artifacts_audit2/captions.ass"
+      }
+    }
+  },
+  "effects": {
+    "burn_captions": true,
+    "audio": {
+      "loudnorm": true
+    }
+  }
+}

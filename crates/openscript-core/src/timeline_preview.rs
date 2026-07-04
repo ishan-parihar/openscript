@@ -137,7 +137,27 @@ impl LayeredTimeline {
                 let scale = event.metadata.get("scale")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.25);
-                format!("{} ({}, {:.0}%)", event.asset, position, scale * 100.0)
+                let cx = event.metadata.get("center_x")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let cy = event.metadata.get("center_y")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let sw = event.metadata.get("sticker_width")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let sh = event.metadata.get("sticker_height")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let filename = std::path::Path::new(&event.asset)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&event.asset);
+                // Format: giphy_alice.gif (bottom-left, 20%, 216x216px, center=[-432, 920])
+                format!(
+                    "{} ({}, {:.0}%, {}x{}px, center=[{}, {}])",
+                    filename, position, scale * 100.0, sw, sh, cx, cy
+                )
             }
             "music" => {
                 let ducked = event.metadata.get("ducked")
@@ -336,7 +356,7 @@ pub fn build_layered_timeline(
         });
     }
 
-    // Layer 4: Stickers
+    // Layer 4: Stickers (with center-based coordinates and dimensions)
     let mut sticker_events = Vec::new();
     for sticker in sticker_assignments {
         sticker_events.push(LayerEvent {
@@ -347,6 +367,10 @@ pub fn build_layered_timeline(
                 "position": sticker.position,
                 "scale": sticker.scale,
                 "speaker": sticker.speaker,
+                "center_x": sticker.center_x,
+                "center_y": sticker.center_y,
+                "sticker_width": sticker.sticker_width,
+                "sticker_height": sticker.sticker_height,
             }),
         });
     }
@@ -408,6 +432,10 @@ pub struct StickerAssignment {
     pub position: String,
     pub scale: f64,
     pub speaker: String,
+    pub center_x: i32,
+    pub center_y: i32,
+    pub sticker_width: u32,
+    pub sticker_height: u32,
 }
 
 #[cfg(test)]

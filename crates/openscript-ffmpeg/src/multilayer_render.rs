@@ -25,13 +25,22 @@ pub struct BackgroundClip {
 }
 
 /// A sticker overlay with its time range and position.
+///
+/// Coordinates use CENTER-BASED system: [0,0] = center of canvas.
+/// Negative X = left of center, positive X = right of center.
+/// Negative Y = above center, positive Y = below center.
+/// This makes it intuitive for AI agents to reason about placement.
 #[derive(Debug, Clone)]
 pub struct StickerOverlay {
     pub path: String,
     pub start_s: f64,
     pub end_s: f64,
-    pub position: String, // "top-left", "bottom-right", "center", etc.
-    pub scale: f64,       // 0.0-1.0 relative to canvas width
+    pub position: String,       // Named position ("bottom-left", etc.) — converted to x/y
+    pub scale: f64,             // 0.0-1.0 relative to canvas width
+    pub center_x: i32,          // Pixel offset from canvas center (0 = centered). Positive = right.
+    pub center_y: i32,          // Pixel offset from canvas center (0 = centered). Positive = down.
+    pub sticker_width: u32,     // Calculated pixel width after scaling
+    pub sticker_height: u32,    // Calculated pixel height after scaling
 }
 
 /// Multi-layer render specification.
@@ -68,19 +77,43 @@ pub struct MultiLayerRenderSpec {
     pub total_duration_s: f64,
 }
 
-/// Parse a position string to (x, y) coordinates.
-fn parse_position(position: &str, canvas_w: u32, canvas_h: u32, sticker_w: u32, sticker_h: u32) -> (i32, i32) {
+/// Parse a position string to:
+/// - (top_left_x, top_left_y): FFmpeg overlay coordinates (top-left origin)
+/// - (center_x, center_y): Agent-friendly center-based coordinates [0,0] = canvas center
+///
+/// Center-based system:
+///   [0, 0] = exact center of canvas
+///   Negative X = left of center, Positive X = right of center
+///   Negative Y = above center, Positive Y = below center
+///
+/// This allows agents to reason: "put sticker at [-300, 400] = 300px left, 400px down from center"
+fn parse_position(position: &str, canvas_w: u32, canvas_h: u32, sticker_w: u32, sticker_h: u32) -> (i32, i32, i32, i32) {
     let margin = 40i32;
-    match position {
+    let cw = canvas_w as i32;
+    let ch = canvas_h as i32;
+    let sw = sticker_w as i32;
+    let sh = sticker_h as i32;
+
+    // Top-left coordinates for FFmpeg overlay filter
+    let (tl_x, tl_y) = match position {
         "top-left" => (margin, margin),
-        "top-right" => (canvas_w as i32 - sticker_w as i32 - margin, margin),
-        "top-center" => ((canvas_w as i32 - sticker_w as i32) / 2, margin),
-        "bottom-left" => (margin, canvas_h as i32 - sticker_h as i32 - margin),
-        "bottom-right" => (canvas_w as i32 - sticker_w as i32 - margin, canvas_h as i32 - sticker_h as i32 - margin),
-        "bottom-center" => ((canvas_w as i32 - sticker_w as i32) / 2, canvas_h as i32 - sticker_h as i32 - margin),
-        "center" => ((canvas_w as i32 - sticker_w as i32) / 2, (canvas_h as i32 - sticker_h as i32) / 2),
+        "top-right" => (cw - sw - margin, margin),
+        "top-center" => ((cw - sw) / 2, margin),
+        "bottom-left" => (margin, ch - sh - margin),
+        "bottom-right" => (cw - sw - margin, ch - sh - margin),
+        "bottom-center" => ((cw - sw) / 2, ch - sh - margin),
+        "center" => ((cw - sw) / 2, (ch - sh) / 2),
         _ => (margin, margin),
-    }
+    };
+
+    // Center-based coordinates: offset of sticker CENTER from canvas CENTER
+    // sticker_center_x = tl_x + sw/2
+    // canvas_center_x = cw/2
+    // center_x = sticker_center_x - canvas_center_x = tl_x + sw/2 - cw/2
+    let center_x = tl_x + sw / 2 - cw / 2;
+    let center_y = tl_y + sh / 2 - ch / 2;
+
+    (tl_x, tl_y, center_x, center_y)
 }
 
 /// Render a multi-layer video composition.
@@ -225,7 +258,14 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut video_label = current_video_label.to_string();
     for (idx, (input_idx, sticker)) in sticker_inputs.iter().enumerate() {
         let sticker_size = (spec.width as f64 * sticker.scale) as u32;
-        let (x, y) = parse_position(&sticker.position, spec.width, spec.height, sticker_size, sticker_size);
+        let (tl_x, tl_y, cx, cy) = parse_position(&sticker.position, spec.width, spec.height, sticker_size, sticker_size);
+
+        // Log sticker placement for agent debugging
+        tracing::info!(
+            "[render] Sticker {} ({}): scale={:.0}%, size={}x{}, center=({}, {}), top_left=({}, {})",
+            idx, sticker.path, sticker.scale * 100.0, sticker_size, sticker_size,
+            cx, cy, tl_x, tl_y
+        );
 
         let st_label = format!("[st{}]", idx);
         let out_label = if idx == sticker_inputs.len() - 1 {
@@ -234,16 +274,16 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             format!("[vst{}]", idx)
         };
 
-        // Scale sticker
+        // Scale sticker — use -1 for height to preserve aspect ratio
         filters.push(format!(
-            "[{}:v]scale={}:{}[st{}]",
-            input_idx, sticker_size, sticker_size, idx
+            "[{}:v]scale={}:-1[st{}]",
+            input_idx, sticker_size, idx
         ));
 
         // Overlay with time-based enable
         filters.push(format!(
             "{}{}overlay={}:{}:enable='between(t,{},{})'{}",
-            video_label, st_label, x, y, sticker.start_s, sticker.end_s, out_label
+            video_label, st_label, tl_x, tl_y, sticker.start_s, sticker.end_s, out_label
         ));
 
         video_label = out_label;

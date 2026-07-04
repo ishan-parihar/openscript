@@ -1,0 +1,76 @@
+{
+  "cadence": "scene",
+  "clips": [
+    {
+      "duration_s": 1.984,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_001",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.688,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_002",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.901,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_003",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 3.904,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_004",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.965,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_005",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.901,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_006",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.923,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_007",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.901,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_008",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 2.475,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_009",
+      "source_start_s": 0.0
+    },
+    {
+      "duration_s": 1.877,
+      "loop_": true,
+      "path": "mcp/assets/background_cache/c0602c5d6d20e99bca88eb91bdcd8506_clip.mp4",
+      "scene_id": "scene_010",
+      "source_start_s": 0.0
+    }
+  ],
+  "pool_size": 1
+}
