@@ -117,8 +117,8 @@ impl LayeredTimeline {
                     .get("text")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                let truncated = if text.len() > 40 {
-                    format!("{}...", &text[..37])
+                let truncated = if text.chars().count() > 40 {
+                    format!("{}...", text.chars().take(37).collect::<String>())
                 } else {
                     text.to_string()
                 };
