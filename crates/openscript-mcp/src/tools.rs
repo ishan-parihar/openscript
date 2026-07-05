@@ -780,7 +780,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "sticker.render",
-            "description": "Render an animated sticker overlay (HyperFrames HTML composition) for a speaker's voiceover. Extracts per-frame amplitude from the WAV, generates GSAP timeline that animates the SVG puppet's mouth scaleY in sync with audio. Produces an HTML file that can be rendered via hf.render to a transparent WebM. Use AFTER script.generate_voices and sticker.load_preset.",
+            "description": "Render an animated sticker overlay (HyperFrames HTML composition) for a speaker's voiceover. Extracts per-frame amplitude from the WAV, generates GSAP timeline that animates the SVG puppet's mouth scaleY in sync with audio. Produces an HTML file. When render_to_video=true, also renders the HTML to a transparent WebM via hf.render — the WebM can be used directly as a StickerOverlay in multilayer_render or overlay.assign. Use AFTER script.generate_voices and sticker.load_preset.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -791,7 +791,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "canvas_width": {"type": "integer", "default": 1080},
                     "canvas_height": {"type": "integer", "default": 1920},
                     "fps": {"type": "integer", "default": 30},
-                    "output_path": {"type": "string", "default": "artifacts/sticker.html", "description": "Output HTML composition path"}
+                    "output_path": {"type": "string", "default": "artifacts/sticker.html", "description": "Output HTML composition path"},
+                    "render_to_video": {"type": "boolean", "default": false, "description": "When true, also render the HTML to a transparent WebM via hf.render. Returns video_path in the response. Slower (~30s per sticker) but produces a compositable video file."}
                 },
                 "required": ["wav_path", "preset_name"],
                 "additionalProperties": false
@@ -6828,6 +6829,7 @@ async fn handle_sticker_render(args: serde_json::Value) -> Result<serde_json::Va
     let canvas_height = default_u32(&args, "canvas_height", 1920);
     let fps = default_u32(&args, "fps", 30);
     let output_path = default_str(&args, "output_path", "artifacts/sticker.html");
+    let render_to_video = default_bool(&args, "render_to_video", false);
 
     report_progress(0.0, 100.0, "Loading preset...").await.ok();
 
@@ -6876,6 +6878,47 @@ async fn handle_sticker_render(args: serde_json::Value) -> Result<serde_json::Va
     }
     std::fs::write(&output_path, html)?;
 
+    // Phase K: Optionally render the HTML to a transparent WebM via hf.render.
+    // This produces a video file that multilayer_render can composite as a
+    // StickerOverlay. The WebM format preserves alpha transparency.
+    let mut video_path: Option<String> = None;
+    if render_to_video {
+        report_progress(80.0, 100.0, "Rendering sticker to WebM via HyperFrames...")
+            .await
+            .ok();
+
+        let sticker_dir = std::path::Path::new(&output_path)
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf();
+        let webm_path = sticker_dir
+            .join(format!(
+                "sticker_{}.webm",
+                std::path::Path::new(&output_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("sticker")
+            ))
+            .to_string_lossy()
+            .to_string();
+
+        match crate::hf::handle_hf_render(json!({
+            "project_dir": sticker_dir.to_string_lossy().to_string(),
+            "output_path": webm_path,
+            "quality": "draft",
+        }))
+        .await
+        {
+            Ok(_) => {
+                video_path = Some(webm_path);
+            }
+            Err(e) => {
+                tracing::warn!("[sticker.render] HF render to WebM failed: {}", e);
+                // Non-fatal — the HTML is still usable; the agent can render manually
+            }
+        }
+    }
+
     report_progress(100.0, 100.0, "Sticker composition generated")
         .await
         .ok();
@@ -6883,11 +6926,17 @@ async fn handle_sticker_render(args: serde_json::Value) -> Result<serde_json::Va
     Ok(json!({
         "status": "generated",
         "output_path": output_path,
+        "video_path": video_path,
         "preset_name": preset_name,
         "position": position,
         "scale": scale,
         "frame_count": amplitude.frames.len(),
         "duration_ms": amplitude.duration_ms,
+        "next_step": if video_path.is_some() {
+            "Sticker rendered to WebM. Use the video_path as a StickerOverlay in multilayer_render or overlay.assign."
+        } else {
+            "Sticker HTML generated. Call sticker.render with render_to_video=true to produce a compositable WebM, or use the HTML with hf.render manually."
+        },
     }))
 }
 
