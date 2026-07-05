@@ -146,8 +146,11 @@ in a new environment** — it tells you which downstream tools will work.
 - **`subprocess.run(..., shell=False)`** always. If you must use `shell=True`,
   `shlex.quote` every interpolation.
 - **Stdin/stdout JSON protocol** for long-lived sidecars. Fresh-process-per-call
-  is acceptable for one-shot tools (e.g. `music_library_indexer.py --build`)
-  but NEVER for per-segment TTS or alignment.
+  is acceptable for one-shot tools but NEVER for per-segment TTS or alignment.
+  (Note: `music_library_indexer.py` was deleted in Phase C — its `--build` path
+  is now a native Rust module at `crates/openscript-mcp/src/library_indexer.rs`.
+  The 3 remaining Python sidecars — `apex_transcriber.py`, `kokoro_tts_sidecar.py`,
+  `whisper_align.py` — all wrap Python-only ML models and must stay Python.)
 - **No `os.system`**, no `eval`, no `exec`.
 
 ---
@@ -443,7 +446,7 @@ a comment listing all the candidates.
 - **Procedural backgrounds** (`mcp/assets/backgrounds/*.mp4`) —
   `generate_procedural_background` in `tools.rs` produces them on demand.
 - **Fetched stock music** (`mcp/assets/music/*.mp3`) — fetch on first run via
-  Pixabay (integration exists in `music_library_indexer.py`).
+  Pixabay (the Rust `library_indexer.rs` module includes the local-music scan).
 - **`target/`**, **`node_modules/`**, **`.env`**
 
 The `.gitignore` enforces this. If you add a new generated artifact, add it

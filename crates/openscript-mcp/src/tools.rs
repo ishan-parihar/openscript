@@ -7852,7 +7852,7 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
 
     if !Path::new(&index_path).exists() {
         return Err(ToolError::NotFound(format!(
-            "Music library index not found at {}. Run: python3 mcp/scripts/music_library_indexer.py --build",
+            "Music library index not found at {}. Run the library.build MCP tool to generate it (requires yt-dlp on PATH).",
             index_path
         )));
     }
