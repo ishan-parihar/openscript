@@ -3037,54 +3037,9 @@ async fn handle_tts_commentary(
 
     if do_intro {
         let text = intro_text.unwrap_or_else(|| "Welcome to this video.".to_string());
-        let event_id = format!(
-            "voiceover_{:03}",
-            track_count(&timeline, &TrackType::Voiceover) + 1
-        );
-        let output_path = timeline_dir
-            .join(format!("voiceover_{}.wav", event_id))
-            .to_string_lossy()
-            .to_string();
-
-        if let Some(parent) = Path::new(&output_path).parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-
-        let result = tts_generate_routed(
-            voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile
+        let (event_id, _dur) = generate_commentary_segment(
+            &mut timeline, &timeline_dir, voice_profile_id, &text, 0, "intro", speed, &profile
         ).await?;
-
-        let duration_ms = result.duration_ms;
-
-        timeline.add_asset("voices", event_id.clone(), json!({
-            "path": output_path.clone(),
-            "voice_profile_id": voice_profile_id,
-            "text": text.clone(),
-        }));
-
-        let event = openscript_core::timeline::TimelineEvent {
-            id: event_id.clone(),
-            asset_id: output_path.clone(),
-            start_ms: 0,
-            end_ms: duration_ms,
-            offset_ms: 0,
-            gain_db: -6.0,
-            fade_in_ms: 50,
-            fade_out_ms: 50,
-            tags: vec!["commentary".to_string(), "intro".to_string()],
-            provenance: Some(openscript_core::timeline::Provenance {
-                tool: "tts.commentary".into(),
-                editorial_role: None,
-                concept: Some("intro".to_string()),
-            }),
-            kind: openscript_core::timeline::EventKind::Voiceover {
-                voice_profile_id: voice_profile_id.to_string(),
-                text,
-                estimated_duration_ms: duration_ms,
-            },
-        };
-
-        timeline.add_track_event(TrackType::Voiceover, event);
         generated.push(event_id);
         positions.push(0);
     }
@@ -3106,54 +3061,9 @@ async fn handle_tts_commentary(
             }
             let concept = seg.caption.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
             let text = format!("Now, let's look at {}.", concept);
-            let event_id = format!(
-                "voiceover_{:03}",
-                track_count(&timeline, &TrackType::Voiceover) + generated.len() + 1
-            );
-            let output_path = timeline_dir
-                .join(format!("voiceover_{}.wav", event_id))
-                .to_string_lossy()
-                .to_string();
-
-            if let Some(parent) = Path::new(&output_path).parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-
-            let result = tts_generate_routed(
-                voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile
+            let (event_id, _dur) = generate_commentary_segment(
+                &mut timeline, &timeline_dir, voice_profile_id, &text, seg_start_ms, "transition", speed, &profile
             ).await?;
-
-            let duration_ms = result.duration_ms;
-
-            timeline.add_asset("voices", event_id.clone(), json!({
-                "path": output_path.clone(),
-                "voice_profile_id": voice_profile_id,
-                "text": text.clone(),
-            }));
-
-            let event = openscript_core::timeline::TimelineEvent {
-                id: event_id.clone(),
-                asset_id: output_path.clone(),
-                start_ms: seg_start_ms,
-                end_ms: seg_start_ms + duration_ms,
-                offset_ms: 0,
-                gain_db: -6.0,
-                fade_in_ms: 50,
-                fade_out_ms: 50,
-                tags: vec!["commentary".to_string(), "transition".to_string()],
-                provenance: Some(openscript_core::timeline::Provenance {
-                    tool: "tts.commentary".into(),
-                    editorial_role: None,
-                    concept: Some("transition".to_string()),
-                }),
-                kind: openscript_core::timeline::EventKind::Voiceover {
-                    voice_profile_id: voice_profile_id.to_string(),
-                    text,
-                    estimated_duration_ms: duration_ms,
-                },
-            };
-
-            timeline.add_track_event(TrackType::Voiceover, event);
             generated.push(event_id);
             positions.push(seg_start_ms);
         }
@@ -3161,54 +3071,9 @@ async fn handle_tts_commentary(
 
     if do_outro {
         let text = outro_text.unwrap_or_else(|| "Thanks for watching!".to_string());
-        let event_id = format!(
-            "voiceover_{:03}",
-            track_count(&timeline, &TrackType::Voiceover) + 1
-        );
-        let output_path = timeline_dir
-            .join(format!("voiceover_{}.wav", event_id))
-            .to_string_lossy()
-            .to_string();
-
-        if let Some(parent) = Path::new(&output_path).parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-
-        let result = tts_generate_routed(
-            voice_profile_id, &text, &output_path, speed, 1.0, 1.0, "wav", &profile
+        let (event_id, _dur) = generate_commentary_segment(
+            &mut timeline, &timeline_dir, voice_profile_id, &text, total_ms, "outro", speed, &profile
         ).await?;
-
-        let duration_ms = result.duration_ms;
-
-        timeline.add_asset("voices", event_id.clone(), json!({
-            "path": output_path.clone(),
-            "voice_profile_id": voice_profile_id,
-            "text": text.clone(),
-        }));
-
-        let event = openscript_core::timeline::TimelineEvent {
-            id: event_id.clone(),
-            asset_id: output_path.clone(),
-            start_ms: total_ms,
-            end_ms: total_ms + duration_ms,
-            offset_ms: 0,
-            gain_db: -6.0,
-            fade_in_ms: 50,
-            fade_out_ms: 50,
-            tags: vec!["commentary".to_string(), "outro".to_string()],
-            provenance: Some(openscript_core::timeline::Provenance {
-                tool: "tts.commentary".into(),
-                editorial_role: None,
-                concept: Some("outro".to_string()),
-            }),
-            kind: openscript_core::timeline::EventKind::Voiceover {
-                voice_profile_id: voice_profile_id.to_string(),
-                text,
-                estimated_duration_ms: duration_ms,
-            },
-        };
-
-        timeline.add_track_event(TrackType::Voiceover, event);
         generated.push(event_id);
         positions.push(total_ms);
     }
@@ -3221,6 +3086,73 @@ async fn handle_tts_commentary(
         "positions": positions,
         "count": generated.len(),
     }))
+}
+
+/// Generate a single commentary voiceover segment: TTS synthesis + asset
+/// registration + timeline event creation. Used by `handle_tts_commentary`
+/// for intro / transition / outro segments. Prior versions had 3 near-identical
+/// 50-line blocks; consolidated into this helper.
+///
+/// Returns `(event_id, duration_ms)` on success.
+async fn generate_commentary_segment(
+    timeline: &mut Timeline,
+    timeline_dir: &std::path::Path,
+    voice_profile_id: &str,
+    text: &str,
+    position_ms: i64,
+    concept: &str,
+    speed: f64,
+    profile: &openscript_tts::profiles::VoiceProfile,
+) -> Result<(String, i64), ToolError> {
+    let event_id = format!(
+        "voiceover_{:03}",
+        track_count(timeline, &TrackType::Voiceover) + 1
+    );
+    let output_path = timeline_dir
+        .join(format!("voiceover_{}.wav", event_id))
+        .to_string_lossy()
+        .to_string();
+
+    if let Some(parent) = std::path::Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
+    let result = tts_generate_routed(
+        voice_profile_id, text, &output_path, speed, 1.0, 1.0, "wav", profile
+    ).await?;
+
+    let duration_ms = result.duration_ms;
+
+    timeline.add_asset("voices", event_id.clone(), json!({
+        "path": output_path.clone(),
+        "voice_profile_id": voice_profile_id,
+        "text": text,
+    }));
+
+    let event = openscript_core::timeline::TimelineEvent {
+        id: event_id.clone(),
+        asset_id: output_path.clone(),
+        start_ms: position_ms,
+        end_ms: position_ms + duration_ms,
+        offset_ms: 0,
+        gain_db: -6.0,
+        fade_in_ms: 50,
+        fade_out_ms: 50,
+        tags: vec!["commentary".to_string(), concept.to_string()],
+        provenance: Some(openscript_core::timeline::Provenance {
+            tool: "tts.commentary".into(),
+            editorial_role: None,
+            concept: Some(concept.to_string()),
+        }),
+        kind: openscript_core::timeline::EventKind::Voiceover {
+            voice_profile_id: voice_profile_id.to_string(),
+            text: text.to_string(),
+            estimated_duration_ms: duration_ms,
+        },
+    };
+
+    timeline.add_track_event(TrackType::Voiceover, event);
+    Ok((event_id, duration_ms))
 }
 
 // ---------------------------------------------------------------------------
