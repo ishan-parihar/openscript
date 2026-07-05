@@ -2559,6 +2559,9 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
     let query = default_str(&args, "query", "");
     let position_ms = default_i64(&args, "position_ms", 0);
     let gain_db = default_f64(&args, "gain_db", -10.0);
+    // Expose fade_in_ms / fade_out_ms as parameters (were hardcoded to 50).
+    let fade_in_ms = default_u32(&args, "fade_in_ms", 50);
+    let fade_out_ms = default_u32(&args, "fade_out_ms", 50);
 
     // P1-1 fix: map "hook" -> "intro". The SFX index uses "intro" for opening
     // effects, but the tool documentation and `reelize.timeline` refer to the
@@ -2575,21 +2578,35 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
 
     let index_path = std::env::var("OPENSCRIPT_SFX_INDEX")
         .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
-    let sfx_path = SfxIndex::load(Some(&index_path)).ok().and_then(|idx| {
-        idx.search(&query, Some(mapped_role), None, 1)
-            .first()
-            .map(|a| a.path.clone())
-    });
+    // Capture the full matched asset (not just the path) so we can read its
+    // actual duration_ms instead of hardcoding 1000.
+    let sfx_index = SfxIndex::load(Some(&index_path)).ok();
+    let matched_asset: Option<openscript_assets::sfx::SfxAsset> = sfx_index
+        .as_ref()
+        .and_then(|idx| {
+            idx.search(&query, Some(mapped_role), None, 1)
+                .into_iter()
+                .next()
+                .cloned()
+        });
+    let sfx_path = matched_asset.as_ref().map(|a| a.path.clone());
+    // Fix: read the actual duration from the matched asset. Prior versions
+    // hardcoded 1000ms, so a 3.3s SFX was reported as 1s on the timeline
+    // and the render could cut it short.
+    let actual_duration_ms = matched_asset
+        .as_ref()
+        .map(|a| a.duration_ms)
+        .unwrap_or(1000);
 
     let event = openscript_core::timeline::TimelineEvent {
         id: event_id.clone(),
         asset_id: sfx_path.clone().unwrap_or_else(|| query.to_string()),
         start_ms: position_ms,
-        end_ms: position_ms + 1000,
+        end_ms: position_ms + actual_duration_ms,
         offset_ms: 0,
         gain_db,
-        fade_in_ms: 50,
-        fade_out_ms: 50,
+        fade_in_ms,
+        fade_out_ms,
         tags: vec![editorial_role.to_string()],
         provenance: Some(openscript_core::timeline::Provenance {
             tool: "sfx.assign".into(),
@@ -2600,7 +2617,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
             editorial_role: editorial_role.to_string(),
             category: query.to_string(),
             subcategory: String::new(),
-            duration_ms: 1000,
+            duration_ms: actual_duration_ms,
             sample_rate: 44100,
             peak_db: 0.0,
             loudness_lufs: -14.0,
@@ -2792,6 +2809,9 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
     let end_ms = default_opt_i64(&args, "end_ms");
     let gain_db = default_f64(&args, "gain_db", -12.0);
     let ducking = default_bool(&args, "ducking", true);
+    // Expose fade_in_ms / fade_out_ms as parameters (were hardcoded to 500).
+    let fade_in_ms = default_u32(&args, "fade_in_ms", 500);
+    let fade_out_ms = default_u32(&args, "fade_out_ms", 500);
 
     // Validate the music file exists
     if !Path::new(music_path).exists() {
@@ -2827,8 +2847,8 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
         end_ms: end,
         offset_ms: 0,
         gain_db,
-        fade_in_ms: 500,
-        fade_out_ms: 500,
+        fade_in_ms,
+        fade_out_ms,
         tags: vec![mood.clone(), energy.clone()],
         provenance: Some(openscript_core::timeline::Provenance {
             tool: "music.assign".into(),
@@ -2890,6 +2910,22 @@ async fn handle_broll_suggest(args: serde_json::Value) -> Result<serde_json::Val
         let start = seg.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let end = seg.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let duration_ms = ((end - start) * 1000.0) as i64;
+        // Derive concept from the segment caption instead of hardcoding "b-roll".
+        // Use the first 3 words of the caption as the concept — this gives the
+        // agent real keywords to search Pexels/YouTube for relevant footage.
+        let caption = seg
+            .get("caption")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let concept = if caption.is_empty() {
+            "b-roll".to_string()
+        } else {
+            caption
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
 
         if duration_ms > cadence_ms * 2 {
             let mut t = 0i64;
@@ -2898,7 +2934,7 @@ async fn handle_broll_suggest(args: serde_json::Value) -> Result<serde_json::Val
                 suggestions.push(json!({
                     "position_ms": position_ms + t,
                     "duration_ms": slot_duration,
-                    "concept": "b-roll",
+                    "concept": concept,
                 }));
                 t += cadence_ms;
             }
@@ -3025,6 +3061,9 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
     let asset_path = default_opt_str(&args, "asset_path");
     let transition_style = default_str(&args, "transition_style", "cut");
     let crop_mode = default_str(&args, "crop_mode", "center");
+    // Expose fade_in_ms / fade_out_ms as parameters (were hardcoded to 0).
+    let fade_in_ms = default_u32(&args, "fade_in_ms", 0);
+    let fade_out_ms = default_u32(&args, "fade_out_ms", 0);
 
     let mut timeline = Timeline::load(timeline_path)?;
     let event_id = format!("broll_{:03}", track_count(&timeline, &TrackType::Broll) + 1);
@@ -3046,13 +3085,13 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
     // If the resolved path doesn't exist on disk, use "placeholder" so the
     // render pipeline skips this event instead of crashing ffmpeg with a
     // glob pattern or non-existent path.
-    let (asset_id, asset_registry_path) = if resolved_path.is_empty()
+    let (asset_id, asset_registry_path, matched) = if resolved_path.is_empty()
         || resolved_path.contains("placeholder")
         || !std::path::Path::new(&resolved_path).exists()
     {
-        ("placeholder".to_string(), "placeholder".to_string())
+        ("placeholder".to_string(), "placeholder".to_string(), false)
     } else {
-        (resolved_path.clone(), resolved_path.clone())
+        (resolved_path.clone(), resolved_path.clone(), true)
     };
 
     let event = openscript_core::timeline::TimelineEvent {
@@ -3062,8 +3101,8 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
         end_ms: position_ms + duration_ms,
         offset_ms: 0,
         gain_db: 0.0,
-        fade_in_ms: 0,
-        fade_out_ms: 0,
+        fade_in_ms,
+        fade_out_ms,
         tags: vec![concept.to_string()],
         provenance: Some(openscript_core::timeline::Provenance {
             tool: "broll.assign".into(),
@@ -3088,8 +3127,30 @@ async fn handle_broll_assign(args: serde_json::Value) -> Result<serde_json::Valu
     );
     timeline.save(timeline_path)?;
 
+    // Fix: return status "warning" (not "assigned") when no asset matched,
+    // mirroring sfx.assign's pattern. Prior versions returned "assigned" with
+    // asset_id:"placeholder", silently losing the agent's intent — the render
+    // pipeline drops placeholder events, so the agent never knew the b-roll
+    // slot was empty.
+    let (status, message) = if matched {
+        (
+            "assigned",
+            format!("B-roll assigned for concept '{}' at {} ms", concept, position_ms),
+        )
+    } else {
+        (
+            "warning",
+            format!(
+                "No b-roll asset found for concept '{}' at {} ms. Placeholder event created — render will skip this event. Use broll.fetch or background.fetch to download a real asset, then re-assign.",
+                concept, position_ms
+            ),
+        )
+    };
+
     Ok(json!({
-        "status": "assigned",
+        "status": status,
+        "matched": matched,
+        "message": message,
         "event_id": event_id,
         "asset_id": asset_id,
         "asset_path": asset_registry_path,
