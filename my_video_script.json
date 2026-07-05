@@ -1,0 +1,67 @@
+{
+  "title": "Octopus Facts in 12 Seconds",
+  "meta": {
+    "aspect": "9:16",
+    "fps": 30,
+    "width": 1080,
+    "height": 1920,
+    "resolution": "1080p"
+  },
+  "tts": {
+    "backend": "kokoro",
+    "default_speed": 1.05,
+    "default_pitch": 1.0
+  },
+  "speakers": {
+    "alice": {
+      "voice": "kokoro:af_heart",
+      "preset": "default_person",
+      "position": "top-left",
+      "scale": 0.25
+    }
+  },
+  "background": {
+    "type": "procedural",
+    "change_cadence": "scene"
+  },
+  "captions": {
+    "style": "word_highlight",
+    "font": "Bebas Neue",
+    "font_size": 72,
+    "color": "#ffffff",
+    "highlight_color": "#00ff88",
+    "position": "bottom",
+    "safe_zone": 0.85,
+    "max_words_per_line": 5
+  },
+  "stickers": {
+    "enabled": false,
+    "lip_sync": "none",
+    "blink": false,
+    "idle_bob": false
+  },
+  "scenes": [
+    {
+      "speaker": "alice",
+      "text": "Did you know octopuses have three hearts?",
+      "emote": "surprised"
+    },
+    {
+      "speaker": "alice",
+      "text": "Two pump blood to the gills, and one pumps it to the body.",
+      "emote": "neutral"
+    },
+    {
+      "speaker": "alice",
+      "text": "And their blood is blue, thanks to copper, not iron.",
+      "emote": "happy"
+    }
+  ],
+  "output": {
+    "format": "mp4",
+    "codec": "h264",
+    "crf": 20,
+    "preset": "fast",
+    "render_engine": "ffmpeg"
+  }
+}

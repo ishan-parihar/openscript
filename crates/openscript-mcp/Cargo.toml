@@ -8,10 +8,13 @@ name = "mcp-server"
 path = "src/bin/mcp-server.rs"
 
 [features]
-default = ["sidecar"]
+default = ["sidecar", "kokoro"]
 sidecar = []
 # Enables native Kokoro TTS backend (preset-voice, ONNX-based). When enabled,
 # the TTS tool layer routes requests to Kokoro for profiles with provider="kokoro".
+# Enabled by default — the golden trajectory (script.to_video) requires Kokoro
+# for TTS generation. Without this feature, script.to_video fails at the
+# TTS step with "rebuild with --features kokoro".
 kokoro = ["openscript-tts/kokoro"]
 
 [dependencies]

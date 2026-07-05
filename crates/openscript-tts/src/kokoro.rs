@@ -687,15 +687,21 @@ fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
-        let mut writer = hound::WavWriter::new(&mut out, spec)
-            .expect("hound WavWriter init on Vec<u8> cannot fail");
-        for &s in samples {
-            let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
-            writer
-                .write_sample(v)
-                .expect("write_sample on Vec cannot fail");
+        // hound::WavWriter requires Seek, which Vec<u8> doesn't implement.
+        // Use std::io::Cursor<Vec<u8>> as a seekable buffer.
+        let mut cursor = std::io::Cursor::new(std::mem::take(&mut out));
+        {
+            let mut writer = hound::WavWriter::new(&mut cursor, spec)
+                .expect("hound WavWriter init on Cursor<Vec<u8>> cannot fail");
+            for &s in samples {
+                let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
+                writer
+                    .write_sample(v)
+                    .expect("write_sample on Cursor cannot fail");
+            }
+            writer.finalize().expect("finalize on Cursor cannot fail");
         }
-        writer.finalize().expect("finalize on Vec cannot fail");
+        out = cursor.into_inner();
     }
     out
 }

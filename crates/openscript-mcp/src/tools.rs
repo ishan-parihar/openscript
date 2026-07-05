@@ -9955,6 +9955,35 @@ async fn handle_system_capabilities(
     use openscript_assets::music::MusicIndex;
     use openscript_assets::sfx::SfxIndex;
 
+    // Resolve the repo root for CWD-independent path checks.
+    // Priority: OPENSCRIPT_ROOT env var > CARGO_MANIFEST_DIR (compile-time) > CWD
+    // The fresh-agent UX audit found that system.capabilities returned false
+    // negatives when run from the wrong directory because all paths were
+    // relative. This helper resolves them to absolute paths.
+    let repo_root = std::env::var("OPENSCRIPT_ROOT")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            option_env!("CARGO_MANIFEST_DIR")
+                .map(std::path::PathBuf::from)
+                .and_then(|d| d.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
+        })
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+    let resolve = |rel: &str| -> std::path::PathBuf {
+        let p = std::path::Path::new(rel);
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            repo_root.join(rel)
+        }
+    };
+
+    let path_exists = |rel: &str| -> bool {
+        let p = resolve(rel);
+        p.exists()
+    };
+
     // Pexels API key
     let pexels_key = std::env::var("PEXELS_API_KEY")
         .ok()
@@ -10039,8 +10068,8 @@ async fn handle_system_capabilities(
         std::env::var("KOKORO_VOICES").unwrap_or_else(|_| "mcp/assets/voices.json".to_string());
     let kokoro_sidecar = std::env::var("KOKORO_SIDECAR")
         .unwrap_or_else(|_| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
-    let kokoro_available = std::path::Path::new(&kokoro_sidecar).exists()
-        && std::path::Path::new(&kokoro_voices).exists();
+    let kokoro_available = path_exists(&kokoro_sidecar)
+        && path_exists(&kokoro_voices);
     let kokoro = json!({
         "available": kokoro_available,
         "sidecar_path": kokoro_sidecar,
@@ -10057,10 +10086,10 @@ async fn handle_system_capabilities(
     let apex_wrapper = std::env::var("OPENSCRIPT_APEX_WRAPPER").ok();
     let transcription_available = apex_wrapper
         .as_ref()
-        .map(|p| std::path::Path::new(p).exists())
+        .map(|p| path_exists(p))
         .unwrap_or_else(|| {
             // Fall back to checking the relative path
-            std::path::Path::new("mcp/scripts/apex_transcriber.py").exists()
+            path_exists("mcp/scripts/apex_transcriber.py")
         });
     let transcription = json!({
         "available": transcription_available,
@@ -10074,7 +10103,7 @@ async fn handle_system_capabilities(
     });
 
     // HyperFrames (default render engine)
-    let hf_dir = std::path::Path::new("hyperframes");
+    let hf_dir = resolve("hyperframes");
     let hyperframes = json!({
         "available": hf_dir.exists(),
         "path": hf_dir.to_string_lossy(),
@@ -10117,7 +10146,7 @@ async fn handle_system_capabilities(
 
     // whisper_align.py (required for script.build_captions force alignment)
     let whisper_align_path = "mcp/scripts/whisper_align.py";
-    let whisper_align_available = std::path::Path::new(whisper_align_path).exists();
+    let whisper_align_available = path_exists(whisper_align_path);
     let whisper_align = json!({
         "available": whisper_align_available,
         "path": whisper_align_path,
@@ -10148,7 +10177,7 @@ async fn handle_system_capabilities(
 
     // ASS caption font (BebasNeue — required for burned-in captions)
     let font_path = "mcp/fonts/BebasNeue-Regular.ttf";
-    let font_available = std::path::Path::new(font_path).exists();
+    let font_available = path_exists(font_path);
     let ass_font = json!({
         "available": font_available,
         "path": font_path,
@@ -10161,7 +10190,7 @@ async fn handle_system_capabilities(
 
     // SVG sticker presets
     let presets_dir = "mcp/assets/svg_presets";
-    let preset_count = if std::path::Path::new(presets_dir).exists() {
+    let preset_count = if path_exists(presets_dir) {
         std::fs::read_dir(presets_dir)
             .map(|d| d.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
             .unwrap_or(0)
