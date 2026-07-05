@@ -1211,6 +1211,15 @@ fn aspect_to_orientation(aspect: &str) -> &'static str {
     }
 }
 
+/// Build an ffmpeg `-vf` filter string that scales + center-crops to the
+/// target aspect ratio. Consolidates the 3 duplicate
+/// `format!("scale={}:{},crop={}:{}", w, h, w, h)` patterns in
+/// handle_background_fetch / handle_script_to_video / handle_youtube_download.
+fn crop_filter_for_aspect(aspect: &str) -> String {
+    let (w, h) = aspect_to_crop_dims(aspect);
+    format!("scale={}:{},crop={}:{}", w, h, w, h)
+}
+
 fn sanitize_input_path<P: AsRef<std::path::Path>>(path: P) -> Result<std::path::PathBuf, ToolError> {
     let path = path.as_ref();
     for component in path.components() {
@@ -5543,14 +5552,14 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                                 } else { 0.0 };
 
                                 // Crop to aspect ratio
-                                let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
+                                let crop_filter = crop_filter_for_aspect(&aspect);
 
                                 let crop_result = tokio::process::Command::new("ffmpeg")
                                     .arg("-y")
                                     .arg("-ss").arg(start.to_string())
                                     .arg("-i").arg(&full_path)
                                     .arg("-t").arg(duration_s.to_string())
-                                    .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                    .arg("-vf").arg(&crop_filter)
                                     .arg("-c:v").arg("libx264")
                                     .arg("-preset").arg("fast")
                                     .arg("-crf").arg("23")
@@ -5575,12 +5584,12 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                             } else {
                                 // Source is shorter than needed — use full video, renderer will loop
                                 // Still crop to aspect ratio
-                                let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
+                                let crop_filter = crop_filter_for_aspect(&aspect);
 
                                 let crop_result = tokio::process::Command::new("ffmpeg")
                                     .arg("-y")
                                     .arg("-i").arg(&full_path)
-                                    .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                    .arg("-vf").arg(&crop_filter)
                                     .arg("-c:v").arg("libx264")
                                     .arg("-preset").arg("fast")
                                     .arg("-crf").arg("23")
@@ -6455,13 +6464,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                         if let Ok(bytes) = dl_resp.bytes().await {
                                                             std::fs::write(&clip_path, &bytes).ok();
                                                             // Trim to scene duration
-                                                            let (crop_w, crop_h) = aspect_to_crop_dims(&spec.meta.aspect);
+                                                            let crop_filter = crop_filter_for_aspect(&spec.meta.aspect);
                                                             let trimmed = format!("{}/scene_{:03}_trim.mp4", cache_dir, scene_idx + 1);
                                                             let trim_result = tokio::process::Command::new("ffmpeg")
                                                                 .arg("-y")
                                                                 .arg("-i").arg(&clip_path)
                                                                 .arg("-t").arg(dur.to_string())
-                                                                .arg("-vf").arg(format!("scale={}:{},crop={}:{}", crop_w, crop_h, crop_w, crop_h))
+                                                                .arg("-vf").arg(&crop_filter)
                                                                 .arg("-c:v").arg("libx264")
                                                                 .arg("-preset").arg("fast")
                                                                 .arg("-crf").arg("23")
