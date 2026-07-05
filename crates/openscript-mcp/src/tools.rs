@@ -991,6 +991,17 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "voices.list",
+            "description": "List all available TTS voices. Returns registered voice profiles from voices.json (named profiles with descriptions) plus the full list of Kokoro preset voice IDs (e.g. af_heart, am_michael, bf_emma) that can be used directly with script.generate_voices or tts.generate without registration. Use this to discover available voices before generating TTS.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "language": {"type": "string", "description": "Optional: filter by language code (e.g. 'en', 'es', 'fr', 'hi', 'it', 'ja', 'pt', 'zh')"}
+                },
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "library.search",
             "description": "Search the de-duplicated music/SFX library index. Index contains 500+ entries from NoCopyrightSounds, AudioLibrary, BreakingCopyright, VlogNoCopyrightMusic, MixtureOfficial, SoundLibrary1, and local stock. Each entry has filename, title, tags, download_url, source, duration, and license. Use library.download to fetch the audio file on demand. Use library.build to rebuild the index from YouTube channels.",
             "inputSchema": {
@@ -1164,6 +1175,7 @@ pub fn route_tool(
         "gif.download" => Box::pin(handle_gif_download(args)),
         "overlay.assign" => Box::pin(handle_overlay_assign(args)),
         "timeline.to_hyperframes" => Box::pin(handle_timeline_to_hyperframes(args)),
+        "voices.list" => Box::pin(handle_voices_list(args)),
         "timeline.inspect" => Box::pin(handle_timeline_inspect(args)),
         "library.search" => Box::pin(handle_library_search(args)),
         "library.download" => Box::pin(handle_library_download(args)),
@@ -9704,6 +9716,120 @@ async fn handle_overlay_assign(args: serde_json::Value) -> Result<serde_json::Va
         "position": position,
         "scale": scale,
         "timeline_path": timeline_path,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: voices.list — list all available TTS voices
+// ---------------------------------------------------------------------------
+
+/// List all available TTS voices: registered profiles from voices.json plus
+/// the full list of Kokoro preset voice IDs. Agents use this to discover
+/// available voices before generating TTS.
+async fn handle_voices_list(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let language_filter = default_opt_str(&args, "language");
+
+    // Load registered profiles from voices.json
+    let voices_path = std::env::var("OPENSCRIPT_VOICES_PATH")
+        .unwrap_or_else(|_| "mcp/assets/voices.json".to_string());
+
+    let mut registered: Vec<serde_json::Value> = Vec::new();
+    if let Ok(content) = std::fs::read_to_string(&voices_path) {
+        if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content) {
+            for (id, val) in &map {
+                let lang = val.get("language").and_then(|v| v.as_str()).unwrap_or("en");
+                if let Some(ref filter) = language_filter {
+                    if lang != filter {
+                        continue;
+                    }
+                }
+                registered.push(json!({
+                    "id": id,
+                    "provider": val.get("provider").and_then(|v| v.as_str()).unwrap_or("kokoro"),
+                    "language": lang,
+                    "description": val.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                    "mode": val.get("mode").and_then(|v| v.as_str()).unwrap_or("preset"),
+                }));
+            }
+        }
+    }
+
+    // Kokoro preset voice IDs (from the Kokoro v1.0 model).
+    // These can be used directly with script.generate_voices / tts.generate
+    // without registration in voices.json.
+    let kokoro_presets = [
+        // American English
+        ("af_heart", "en", "warm American female"),
+        ("af_bella", "en", "soft American female"),
+        ("af_nicole", "en", "American female"),
+        ("af_sky", "en", "American female, bright"),
+        ("am_michael", "en", "American male"),
+        ("am_adam", "en", "American male"),
+        ("am_eric", "en", "American male, deep"),
+        // British English
+        ("bf_emma", "en", "British female"),
+        ("bf_isabella", "en", "British female, warm"),
+        ("bm_george", "en", "British male"),
+        ("bm_lewis", "en", "British male, young"),
+        // Spanish
+        ("ef_dora", "es", "Spanish female"),
+        ("em_alex", "es", "Spanish male"),
+        // French
+        ("ff_evelyne", "fr", "French female"),
+        ("fm_pierre", "fr", "French male"),
+        // Hindi
+        ("hf_alpha", "hi", "Hindi female"),
+        ("hf_beta", "hi", "Hindi female, warm"),
+        ("hm_omega", "hi", "Hindi male"),
+        ("hm_psi", "hi", "Hindi male, deep"),
+        // Italian
+        ("if_sara", "it", "Italian female"),
+        ("im_nicola", "it", "Italian male"),
+        // Japanese
+        ("jf_alpha", "ja", "Japanese female"),
+        ("jf_gongitsune", "ja", "Japanese female, character"),
+        ("jf_nezumi", "ja", "Japanese female, mouse"),
+        ("jf_tebukuro", "ja", "Japanese female, warm"),
+        ("jf_tomoko", "ja", "Japanese female, neutral"),
+        ("jm_kumo", "ja", "Japanese male"),
+        // Portuguese (Brazilian)
+        ("pf_dora", "pt", "Portuguese female"),
+        ("pm_alex", "pt", "Portuguese male"),
+        // Chinese (Mandarin)
+        ("zf_xiaobei", "zh", "Chinese female, Beijing"),
+        ("zf_xiaoni", "zh", "Chinese female, neutral"),
+        ("zf_xiaoxiao", "zh", "Chinese female, bright"),
+        ("zf_xiaoyi", "zh", "Chinese female, Yi"),
+        ("zm_yunjian", "zh", "Chinese male, Jian"),
+        ("zm_yunxi", "zh", "Chinese male, Xi"),
+        ("zm_yunxia", "zh", "Chinese male, Xia"),
+        ("zm_yunyang", "zh", "Chinese male, Yang"),
+    ];
+
+    let mut presets: Vec<serde_json::Value> = Vec::new();
+    for (id, lang, desc) in &kokoro_presets {
+        if let Some(ref filter) = language_filter {
+            if *lang != filter {
+                continue;
+            }
+        }
+        presets.push(json!({
+            "id": id,
+            "provider": "kokoro",
+            "language": lang,
+            "description": desc,
+            "usage": format!("Use '{}' directly as the voice parameter in script.generate_voices or tts.generate", id),
+        }));
+    }
+
+    Ok(json!({
+        "status": "success",
+        "registered_profiles": registered,
+        "registered_count": registered.len(),
+        "kokoro_presets": presets,
+        "kokoro_preset_count": presets.len(),
+        "total_voices": registered.len() + presets.len(),
+        "note": "Kokoro preset IDs (e.g. 'af_heart') can be used directly without registration. Registered profiles in voices.json are named aliases that map to Kokoro presets.",
     }))
 }
 
