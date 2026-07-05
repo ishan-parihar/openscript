@@ -10370,7 +10370,7 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
             "query": query,
             "results": [],
             "count": 0,
-            "message": "No tools matched. Try tools/list to browse all 73 tools, or system.capabilities to probe available subsystems."
+            "message": "No tools matched. Try tools/list to browse all 75 tools, or system.capabilities to probe available subsystems."
         }));
     }
 
