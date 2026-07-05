@@ -26,13 +26,11 @@ interface TranscriptState {
 
   transcribe: (videoPath: string) => Promise<void>;
   loadTranscript: (srtPath: string) => Promise<void>;
-  prepareTranscript: (wordSrtPath: string, maxWords?: number, maxChars?: number) => Promise<void>;
   analyzeFillerWords: (srtPath: string) => Promise<void>;
-  removeFillerWords: () => Promise<void>;
   applyEdit: (videoPath: string, segments: unknown[]) => Promise<unknown>;
 }
 
-export const useTranscriptStore = create<TranscriptState>((set, get) => ({
+export const useTranscriptStore = create<TranscriptState>((set) => ({
   entries: [],
   isTranscribing: false,
   transcriptionProgress: 0,
@@ -64,28 +62,10 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
     set({ entries: data.segments ?? data.entries ?? [] });
   },
 
-  prepareTranscript: async (wordSrtPath: string, maxWords?: number, maxChars?: number) => {
-    await api.prepareTranscript(wordSrtPath, maxWords, maxChars);
-    await get().loadTranscript(wordSrtPath.replace("word", "phrase"));
-  },
-
   analyzeFillerWords: async (srtPath: string) => {
     const result = await api.analyzeTranscript(srtPath);
     const data = result as FillerAnalysis;
     set({ fillerAnalysis: data });
-  },
-
-  removeFillerWords: async () => {
-    const { entries } = get();
-    if (!entries.length) return;
-
-    const cleaned: TranscriptEntry[] = [];
-    for (const entry of entries) {
-      const result = await api.removeFillerWordsFromText(entry.text);
-      const data = result as { cleaned_text: string; removed_count: number };
-      cleaned.push({ ...entry, text: data.cleaned_text });
-    }
-    set({ entries: cleaned });
   },
 
   applyEdit: async (videoPath: string, segments: unknown[]) => {

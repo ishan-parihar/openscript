@@ -50,9 +50,6 @@ export interface AssetState {
   searchBroll: (concepts: string[], download?: boolean) => Promise<void>;
   searchMusic: (mood?: string, energy?: string) => Promise<void>;
   searchSFX: (query?: string, role?: string) => Promise<void>;
-  assignBroll: (concept: string, positionMs: number, durationMs: number) => Promise<void>;
-  assignMusic: (mood: string, energy: string) => Promise<void>;
-  assignSFX: (role: string, positionMs: number) => Promise<void>;
 }
 
 export const useAssetStore = create<AssetState>((set) => ({
@@ -92,17 +89,5 @@ export const useAssetStore = create<AssetState>((set) => ({
     } catch {
       set({ isSearching: false });
     }
-  },
-
-  assignBroll: async (concept: string, positionMs: number, durationMs: number) => {
-    await api.brollAssign(concept, positionMs, durationMs).catch(() => {});
-  },
-
-  assignMusic: async (mood: string, energy: string) => {
-    await api.musicAssign(mood, energy).catch(() => {});
-  },
-
-  assignSFX: async (role: string, positionMs: number) => {
-    await api.sfxAssign(role, positionMs).catch(() => {});
   },
 }));
