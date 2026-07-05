@@ -14,8 +14,11 @@ use serde_json::{json, Value};
 use std::process::Stdio;
 use tokio::process::Command;
 
-/// Default project directory if none is specified.
-const DEFAULT_HF_PROJECT_DIR: &str = "hyperframes";
+/// Default project directory if none is specified. Points at the
+/// `main-with-broll` composition which ships with an index.html.
+/// Prior versions defaulted to "hyperframes" which has no index.html
+/// at root, causing hf.lint/validate/render to fail.
+const DEFAULT_HF_PROJECT_DIR: &str = "hyperframes/compositions/main-with-broll";
 
 /// Timeout for CLI operations (lint/validate/snapshot). Render has its own longer timeout.
 const CLI_TIMEOUT_SECS: u64 = 120;
@@ -674,7 +677,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "project_dir": {
                         "type": "string",
-                        "default": "hyperframes",
+                        "default": "hyperframes/compositions/main-with-broll",
                         "description": "Path to the HyperFrames project directory (containing index.html)"
                     }
                 },
@@ -689,7 +692,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "project_dir": {
                         "type": "string",
-                        "default": "hyperframes",
+                        "default": "hyperframes/compositions/main-with-broll",
                         "description": "Path to the HyperFrames project directory"
                     }
                 },
@@ -704,7 +707,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "project_dir": {
                         "type": "string",
-                        "default": "hyperframes",
+                        "default": "hyperframes/compositions/main-with-broll",
                         "description": "Path to the HyperFrames project directory"
                     },
                     "frames": {
@@ -728,7 +731,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "project_dir": {
                         "type": "string",
-                        "default": "hyperframes",
+                        "default": "hyperframes/compositions/main-with-broll",
                         "description": "Path to the HyperFrames project directory"
                     },
                     "quality": {
@@ -779,7 +782,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "project_dir": {
                         "type": "string",
-                        "default": "hyperframes",
+                        "default": "hyperframes/compositions/main-with-broll",
                         "description": "Path to the composition project directory"
                     },
                     "output_path": {
