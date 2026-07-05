@@ -1188,6 +1188,29 @@ fn track_count(timeline: &Timeline, track_type: &TrackType) -> usize {
     timeline.tracks.get(track_type).map(|v: &Vec<openscript_core::timeline::TimelineEvent>| v.len()).unwrap_or(0)
 }
 
+/// Convert an aspect-ratio string ("9:16", "16:9", "1:1") to a (width, height)
+/// pixel tuple. Used by every tool that needs to crop/scale stock footage to
+/// the target aspect. Prior versions had 7+ duplicate match blocks for this;
+/// consolidated into one helper.
+fn aspect_to_crop_dims(aspect: &str) -> (u32, u32) {
+    match aspect {
+        "9:16" => (1080, 1920), // vertical
+        "16:9" => (1920, 1080), // horizontal
+        "1:1" => (1080, 1080),  // square
+        _ => (1080, 1920),      // unknown → portrait default
+    }
+}
+
+/// Convert an aspect-ratio string to a Pexels orientation keyword.
+fn aspect_to_orientation(aspect: &str) -> &'static str {
+    match aspect {
+        "9:16" => "portrait",
+        "16:9" => "landscape",
+        "1:1" => "square",
+        _ => "portrait",
+    }
+}
+
 fn sanitize_input_path<P: AsRef<std::path::Path>>(path: P) -> Result<std::path::PathBuf, ToolError> {
     let path = path.as_ref();
     for component in path.components() {
@@ -5518,12 +5541,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     if !pexels_key.is_empty() {
         report_progress(0.0, 100.0, "Searching Pexels for stock footage...").await.ok();
 
-        let orientation = match aspect.as_str() {
-            "9:16" => "portrait",
-            "16:9" => "landscape",
-            "1:1" => "square",
-            _ => "portrait",
-        };
+        let orientation = aspect_to_orientation(&aspect);
 
         let pexels_url = format!(
             "https://api.pexels.com/videos/search?query={}&per_page=15&orientation={}",
@@ -5593,12 +5611,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                                 } else { 0.0 };
 
                                 // Crop to aspect ratio
-                                let (crop_w, crop_h) = match aspect.as_str() {
-                                    "9:16" => (1080, 1920),
-                                    "16:9" => (1920, 1080),
-                                    "1:1" => (1080, 1080),
-                                    _ => (1080, 1920),
-                                };
+                                let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
 
                                 let crop_result = tokio::process::Command::new("ffmpeg")
                                     .arg("-y")
@@ -5630,12 +5643,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                             } else {
                                 // Source is shorter than needed — use full video, renderer will loop
                                 // Still crop to aspect ratio
-                                let (crop_w, crop_h) = match aspect.as_str() {
-                                    "9:16" => (1080, 1920),
-                                    "16:9" => (1920, 1080),
-                                    "1:1" => (1080, 1080),
-                                    _ => (1080, 1920),
-                                };
+                                let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
 
                                 let crop_result = tokio::process::Command::new("ffmpeg")
                                     .arg("-y")
@@ -5763,12 +5771,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     };
 
     // Crop dimensions based on aspect
-    let (crop_w, crop_h) = match aspect.as_str() {
-        "9:16" => (1080, 1920),   // vertical
-        "16:9" => (1920, 1080),   // horizontal
-        "1:1" => (1080, 1080),   // square
-        _ => (1080, 1920),
-    };
+    let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
 
     // Extract clip with crop
     let crop_filter = format!("crop={}:{}", crop_w, crop_h);
@@ -5817,12 +5820,7 @@ async fn generate_procedural_background(
     duration_s: f64,
     aspect: &str,
 ) -> Result<serde_json::Value, ToolError> {
-    let (w, h) = match aspect {
-        "9:16" => (1080, 1920),
-        "16:9" => (1920, 1080),
-        "1:1" => (1080, 1080),
-        _ => (1080, 1920),
-    };
+    let (w, h) = aspect_to_crop_dims(aspect);
     let clip_path = format!("{}/{}_procedural.mp4", cache_dir, cache_key);
 
     let filter = format!(
@@ -6525,12 +6523,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                         if let Ok(bytes) = dl_resp.bytes().await {
                                                             std::fs::write(&clip_path, &bytes).ok();
                                                             // Trim to scene duration
-                                                            let (crop_w, crop_h) = match spec.meta.aspect.as_str() {
-                                                                "9:16" => (1080, 1920),
-                                                                "16:9" => (1920, 1080),
-                                                                "1:1" => (1080, 1080),
-                                                                _ => (1080, 1920),
-                                                            };
+                                                            let (crop_w, crop_h) = aspect_to_crop_dims(&spec.meta.aspect);
                                                             let trimmed = format!("{}/scene_{:03}_trim.mp4", cache_dir, scene_idx + 1);
                                                             let trim_result = tokio::process::Command::new("ffmpeg")
                                                                 .arg("-y")
@@ -7081,12 +7074,7 @@ async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::
             Ok(output) if output.status.success() => {
                 // Clip is already the right duration — just crop to aspect
                 report_progress(70.0, 100.0, "Cropping to aspect ratio...").await.ok();
-                let (crop_w, crop_h) = match aspect.as_str() {
-                    "9:16" => (1080, 1920),
-                    "16:9" => (1920, 1080),
-                    "1:1" => (1080, 1080),
-                    _ => (1080, 1920),
-                };
+                let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
 
                 let cropped_path = format!("{}/{}_cropped.mp4", cache_dir, cache_key);
                 let crop_result = tokio::process::Command::new("ffmpeg")
@@ -7237,12 +7225,7 @@ async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::
     };
 
     // Crop dimensions
-    let (crop_w, crop_h) = match aspect.as_str() {
-        "9:16" => (1080, 1920),
-        "16:9" => (1920, 1080),
-        "1:1" => (1080, 1080),
-        _ => (1080, 1920),
-    };
+    let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
 
     // Extract clip with crop
     let extract_result = tokio::process::Command::new("ffmpeg")
