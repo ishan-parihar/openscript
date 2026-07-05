@@ -45,3 +45,5 @@ artifacts/
 # OS files
 .DS_Store
 Thumbs.db
+snapshots/
+renders/
