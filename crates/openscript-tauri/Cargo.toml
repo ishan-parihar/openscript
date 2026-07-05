@@ -26,6 +26,7 @@ openscript-ffmpeg = { path = "../openscript-ffmpeg" }
 openscript-transcribe = { path = "../openscript-transcribe" }
 openscript-tts = { path = "../openscript-tts" }
 openscript-assets = { path = "../openscript-assets" }
+openscript-mcp = { path = "../openscript-mcp" }
 
 [build-dependencies]
 tauri-build = { version = "2" }

@@ -2685,6 +2685,7 @@ dependencies = [
  "openscript-assets",
  "openscript-core",
  "openscript-ffmpeg",
+ "openscript-mcp",
  "openscript-transcribe",
  "openscript-tts",
  "reqwest 0.12.28",

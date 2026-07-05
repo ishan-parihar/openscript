@@ -201,6 +201,11 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Generic MCP dispatch (the "desktop as MCP client" pass-through)
+            commands::invoke_tool::invoke_tool,
+            commands::invoke_tool::list_mcp_tools,
+            commands::invoke_tool::get_mcp_tool,
+            // Legacy stateful commands (kept for backward compat + AppState management)
             commands::system::system_capabilities,
             // Project
             commands::project::create_project,
