@@ -6,6 +6,13 @@
 > for runtime agents; this document covers the *engineering* rules for development
 > agents.
 
+> ### ⚠️ IRON RULE — ALWAYS PUSH COMMITS AFTER EACH ITERATION
+>
+> **Every iteration MUST end with `git commit` AND `git push origin main`.**
+> No exceptions. No batching. No "I'll push at the end." If the session crashes
+> with unpushed commits, that work is gone. Push immediately after every
+> verified iteration. See [§7](#7-git-workflow) for the full protocol.
+
 ---
 
 ## 1. Repository Layout
@@ -282,13 +289,50 @@ inject a fake client in tests.
 
 ## 7. Git Workflow
 
-### Commit cadence
+> ### ⚠️ IRON RULE — ALWAYS PUSH COMMITS AFTER EACH ITERATION
+>
+> **Every iteration MUST end with a `git commit` AND a `git push`.**
+> No exceptions. No "I'll push at the end." No batching iterations into one commit.
+>
+> An *iteration* = one logical unit of work (a bug fix, a new tool, a refactor
+> phase, a docs update). The moment an iteration is verified (build + tests
+> pass), commit it and push it to `origin/main` immediately — before starting
+> the next iteration.
+>
+> This rule exists because:
+> 1. **Recoverability** — if your session crashes, your work is on the remote.
+> 2. **Reviewability** — small, pushed commits are reviewable in isolation.
+> 3. **No lost work** — unpushed local commits are a single `rm -rf` away from
+>    being gone forever.
+> 4. **User visibility** — the user can see progress on GitHub in real time.
+>
+> **Required sequence after every iteration:**
+> ```bash
+> cd /home/z/my-project/openscript
+> git add -A
+> git commit -m "<Phase>: <summary>"     # see §7.2 for format
+> git push origin main
+> ```
+>
+> If `git push` fails (network, auth, non-fast-forward), **stop and fix it
+> before starting the next iteration.** Do not continue with unpushed local
+> commits.
+
+### 7.1 Commit cadence
 
 **Push after every iteration.** An iteration = one logical unit of work
-(a bug fix, a new tool, a refactor phase). Do not accumulate multiple
-unrelated changes in one commit.
+(a bug fix, a new tool, a refactor phase, a docs update). Do not accumulate
+multiple unrelated changes in one commit.
 
-### Commit message format
+- One iteration → one commit → one push. Always.
+- If you find yourself writing "and also..." in a commit message, that's two
+  iterations. Split it.
+- If tests fail, you have NOT finished the iteration. Fix the tests, then
+  commit, then push.
+- If you're unsure whether to commit: commit. Small commits are cheap;
+  lost work is expensive.
+
+### 7.2 Commit message format
 
 ```
 <Phase>: <one-line summary>
@@ -307,14 +351,14 @@ Phase 3: Fix HIGH-severity render-path bugs
 Phase 7: Implement system.capabilities + help.tool meta-tools
 ```
 
-### Branch policy
+### 7.3 Branch policy
 
 - `main` is the integration branch. Push directly for small fixes.
 - For large changes (>500 LoC), create a branch `feature/<name>`, open a PR,
   and require at least one review.
 - Never force-push to `main`.
 
-### What NEVER to commit
+### 7.4 What NEVER to commit
 
 - API keys, tokens, passwords (use env vars; the `.env` file is gitignored)
 - Developer-specific paths (`/home/ishanp/...`, `/Users/yourname/...`)
