@@ -540,11 +540,49 @@ export async function mediaSearch(
   return invokeTool("media.search", { query, source, limit });
 }
 
+export async function mediaDownload(
+  url: string,
+  outputPath?: string,
+): Promise<{ status: string; path: string; url: string; size_bytes?: number }> {
+  return invokeTool("media.download", { url, output_path: outputPath });
+}
+
 export async function gifSearch(
   query: string,
   limit = 5,
 ): Promise<{ status: string; results: Array<{ url: string; width: number; height: number; size: string }>; count: number }> {
   return invokeTool("gif.search", { query, limit });
+}
+
+export async function gifDownload(
+  url: string,
+  outputPath?: string,
+): Promise<{ status: string; path: string; url: string; size_bytes?: number }> {
+  return invokeTool("gif.download", { url, output_path: outputPath });
+}
+
+export async function overlayAssign(
+  timelinePath: string,
+  assetPath: string,
+  startMs: number,
+  endMs: number,
+  position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center",
+  scale?: number,
+  fadeInMs?: number,
+  fadeOutMs?: number,
+  speakerName?: string,
+): Promise<{ status: string; event_id: string; asset_path: string; start_ms: number; end_ms: number; duration_ms: number; position: string; scale: number; timeline_path: string }> {
+  return invokeTool("overlay.assign", {
+    timeline_path: timelinePath,
+    asset_path: assetPath,
+    start_ms: startMs,
+    end_ms: endMs,
+    position,
+    scale,
+    fade_in_ms: fadeInMs,
+    fade_out_ms: fadeOutMs,
+    speaker_name: speakerName,
+  });
 }
 
 // ---------------------------------------------------------------------------

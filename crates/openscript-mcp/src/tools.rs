@@ -917,6 +917,32 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "media.download",
+            "description": "Download an image from a URL (from media.search results) to a local file. Returns the local path. Use after media.search to get a local PNG/JPG that can be placed on the timeline via overlay.assign. Caches downloads in mcp/assets/image_cache/ to avoid re-downloading.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Image URL from media.search results"},
+                    "output_path": {"type": "string", "description": "Optional output path. Auto-generated if omitted (mcp/assets/image_cache/<hash>.<ext>)."}
+                },
+                "required": ["url"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "gif.download",
+            "description": "Download a GIF from a URL (from gif.search results) to a local file. Returns the local path. Use after gif.search to get a local .gif that can be placed on the timeline via overlay.assign or used as a sticker in script.to_video. Caches downloads in mcp/assets/stickers/ to avoid re-downloading.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "GIF URL from gif.search results"},
+                    "output_path": {"type": "string", "description": "Optional output path. Auto-generated if omitted (mcp/assets/stickers/<hash>.gif)."}
+                },
+                "required": ["url"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "timeline.inspect",
             "description": "Deep-dive inspection of a specific layer in the timeline. Returns ALL events on that layer with full details (start_ms, end_ms, asset path, metadata). Use AFTER script.to_video to inspect a specific layer for restructuring. Layers: background, voiceover, music, captions, stickers. For a quick overview use the timeline_preview field from script.to_video instead.",
             "inputSchema": {
@@ -926,6 +952,26 @@ pub fn tool_definitions() -> serde_json::Value {
                     "layer": {"type": "string", "enum": ["background", "voiceover", "music", "captions", "stickers"], "description": "Which layer to inspect in detail"}
                 },
                 "required": ["timeline_preview_path", "layer"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "overlay.assign",
+            "description": "Place an image/GIF/PNG overlay on the timeline at a specific position and duration. Use after media.download or gif.download to place the local file as a sticker/overlay on the video. The overlay is composited via FFmpeg's overlay filter during render. Returns event_id. Supports position (top-left/top-right/bottom-left/bottom-right/center), scale (0.0-1.0 of canvas width), fade_in_ms, fade_out_ms.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to the timeline JSON file"},
+                    "asset_path": {"type": "string", "description": "Local path to the image/GIF/PNG file (from media.download or gif.download)"},
+                    "start_ms": {"type": "integer", "description": "Position in milliseconds where the overlay appears"},
+                    "end_ms": {"type": "integer", "description": "Position in milliseconds where the overlay disappears"},
+                    "position": {"type": "string", "enum": ["top-left", "top-right", "bottom-left", "bottom-right", "center"], "default": "bottom-right", "description": "Screen position of the overlay"},
+                    "scale": {"type": "number", "default": 0.2, "description": "Scale factor relative to canvas width (0.0-1.0, default 0.2 = 20% of width)"},
+                    "fade_in_ms": {"type": "integer", "default": 0, "description": "Fade-in duration in milliseconds"},
+                    "fade_out_ms": {"type": "integer", "default": 0, "description": "Fade-out duration in milliseconds"},
+                    "speaker_name": {"type": "string", "description": "Optional: speaker name this overlay is associated with (for provenance tracking)"}
+                },
+                "required": ["timeline_path", "asset_path", "start_ms", "end_ms"],
                 "additionalProperties": false
             }
         },
@@ -1098,7 +1144,10 @@ pub fn route_tool(
         "youtube.search" => Box::pin(handle_youtube_search(args)),
         "stock.search" => Box::pin(handle_stock_search(args)),
         "media.search" => Box::pin(handle_media_search(args)),
+        "media.download" => Box::pin(handle_media_download(args)),
         "gif.search" => Box::pin(handle_gif_search(args)),
+        "gif.download" => Box::pin(handle_gif_download(args)),
+        "overlay.assign" => Box::pin(handle_overlay_assign(args)),
         "timeline.inspect" => Box::pin(handle_timeline_inspect(args)),
         "library.search" => Box::pin(handle_library_search(args)),
         "library.download" => Box::pin(handle_library_download(args)),
@@ -9311,6 +9360,235 @@ async fn handle_library_build(_args: serde_json::Value) -> Result<serde_json::Va
         "music_count": index.get("music_count"),
         "sfx_count": index.get("sfx_count"),
         "sources": index.get("sources"),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: media.download (Phase I — unblock image workflow)
+// ---------------------------------------------------------------------------
+
+/// Download an image from a URL to a local file. Caches in
+/// mcp/assets/image_cache/ to avoid re-downloading.
+async fn handle_media_download(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let url = extract_str(&args, "url")?;
+    let output_path = default_opt_str(&args, "output_path");
+
+    // Determine cache dir + output path
+    let cache_dir = "mcp/assets/image_cache";
+    std::fs::create_dir_all(cache_dir).ok();
+
+    let resolved_path = if let Some(p) = output_path {
+        if !p.is_empty() {
+            p.to_string()
+        } else {
+            format!("{}/img_{}.{}", cache_dir, md5_hash(url.as_bytes()), url_extension(url))
+        }
+    } else {
+        format!("{}/img_{}.{}", cache_dir, md5_hash(url.as_bytes()), url_extension(url))
+    };
+
+    // Check cache
+    if std::path::Path::new(&resolved_path).exists() {
+        return Ok(json!({
+            "status": "cached",
+            "path": resolved_path,
+            "url": url,
+        }));
+    }
+
+    // Download
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+    let resp = client.get(url).send().await
+        .map_err(|e| ToolError::Asset(format!("Failed to download image: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(ToolError::Asset(format!(
+            "Image download failed: HTTP {} for {}",
+            resp.status(),
+            url
+        )));
+    }
+
+    let bytes = resp.bytes().await
+        .map_err(|e| ToolError::Asset(format!("Failed to read image bytes: {}", e)))?;
+
+    std::fs::write(&resolved_path, &bytes)
+        .map_err(|e| ToolError::Asset(format!("Failed to write image to {}: {}", resolved_path, e)))?;
+
+    Ok(json!({
+        "status": "downloaded",
+        "path": resolved_path,
+        "url": url,
+        "size_bytes": bytes.len(),
+    }))
+}
+
+/// Extract file extension from a URL (defaults to "png").
+fn url_extension(url: &str) -> String {
+    let path = url.split('?').next().unwrap_or(url);
+    if let Some(ext) = std::path::Path::new(path).extension() {
+        if let Some(s) = ext.to_str() {
+            let s = s.to_lowercase();
+            if matches!(s.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp") {
+                return s;
+            }
+        }
+    }
+    "png".to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Handler: gif.download (Phase I — unblock GIF workflow)
+// ---------------------------------------------------------------------------
+
+/// Download a GIF from a URL to a local file. Caches in mcp/assets/stickers/
+/// so it can be used directly by script.to_video's sticker pipeline.
+async fn handle_gif_download(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let url = extract_str(&args, "url")?;
+    let output_path = default_opt_str(&args, "output_path");
+
+    let cache_dir = "mcp/assets/stickers";
+    std::fs::create_dir_all(cache_dir).ok();
+
+    let resolved_path = if let Some(p) = output_path {
+        if !p.is_empty() {
+            p.to_string()
+        } else {
+            format!("{}/gif_{}.gif", cache_dir, md5_hash(url.as_bytes()))
+        }
+    } else {
+        format!("{}/gif_{}.gif", cache_dir, md5_hash(url.as_bytes()))
+    };
+
+    // Check cache
+    if std::path::Path::new(&resolved_path).exists() {
+        return Ok(json!({
+            "status": "cached",
+            "path": resolved_path,
+            "url": url,
+        }));
+    }
+
+    // Download
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+    let resp = client.get(url).send().await
+        .map_err(|e| ToolError::Asset(format!("Failed to download GIF: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(ToolError::Asset(format!(
+            "GIF download failed: HTTP {} for {}",
+            resp.status(),
+            url
+        )));
+    }
+
+    let bytes = resp.bytes().await
+        .map_err(|e| ToolError::Asset(format!("Failed to read GIF bytes: {}", e)))?;
+
+    std::fs::write(&resolved_path, &bytes)
+        .map_err(|e| ToolError::Asset(format!("Failed to write GIF to {}: {}", resolved_path, e)))?;
+
+    Ok(json!({
+        "status": "downloaded",
+        "path": resolved_path,
+        "url": url,
+        "size_bytes": bytes.len(),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: overlay.assign (Phase J — place images/GIFs/PNGs on the timeline)
+// ---------------------------------------------------------------------------
+
+/// Place an image/GIF/PNG overlay on the timeline at a specific position and
+/// duration. The overlay is stored as a b-roll track event with a special
+/// `overlay` tag, and the render pipeline composites it via FFmpeg's overlay
+/// filter. This closes the "search → download → assign" loop for stickers,
+/// GIFs, and images.
+async fn handle_overlay_assign(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let timeline_path = extract_str(&args, "timeline_path")?;
+    let asset_path = extract_str(&args, "asset_path")?;
+    let start_ms = extract_i64(&args, "start_ms")?;
+    let end_ms = extract_i64(&args, "end_ms")?;
+    let position = default_str(&args, "position", "bottom-right");
+    let scale = default_f64(&args, "scale", 0.2);
+    let fade_in_ms = default_u32(&args, "fade_in_ms", 0);
+    let fade_out_ms = default_u32(&args, "fade_out_ms", 0);
+    let speaker_name = default_opt_str(&args, "speaker_name");
+
+    // Validate the asset exists
+    if !std::path::Path::new(asset_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Overlay asset not found: {}. Use media.download or gif.download to fetch it first.",
+            asset_path
+        )));
+    }
+
+    let mut timeline = Timeline::load(timeline_path)?;
+    let event_id = format!("overlay_{:03}", track_count(&timeline, &TrackType::Broll) + 1);
+
+    let duration_ms = end_ms - start_ms;
+    let mut tags = vec!["overlay".to_string(), position.to_string()];
+    if let Some(ref speaker) = speaker_name {
+        tags.push(speaker.clone());
+    }
+
+    let event = openscript_core::timeline::TimelineEvent {
+        id: event_id.clone(),
+        asset_id: asset_path.to_string(),
+        start_ms,
+        end_ms,
+        offset_ms: 0,
+        gain_db: 0.0,
+        fade_in_ms,
+        fade_out_ms,
+        tags,
+        provenance: Some(openscript_core::timeline::Provenance {
+            tool: "overlay.assign".into(),
+            editorial_role: None,
+            concept: Some(format!("overlay:{}:{}", position, scale)),
+        }),
+        kind: openscript_core::timeline::EventKind::Broll {
+            concept: format!("overlay:{}", position),
+            source_provider: asset_path.to_string(),
+            transition_style: "overlay".into(),
+            crop_mode: "none".into(),
+            orientation: "9:16".into(),
+            motion_intensity: "static".into(),
+        },
+    };
+
+    timeline.add_track_event(TrackType::Broll, event);
+    timeline.add_asset(
+        "broll",
+        event_id.clone(),
+        json!({
+            "path": asset_path,
+            "overlay": true,
+            "position": position,
+            "scale": scale,
+        }),
+    );
+    timeline.save(timeline_path)?;
+
+    Ok(json!({
+        "status": "assigned",
+        "event_id": event_id,
+        "asset_path": asset_path,
+        "start_ms": start_ms,
+        "end_ms": end_ms,
+        "duration_ms": duration_ms,
+        "position": position,
+        "scale": scale,
+        "timeline_path": timeline_path,
     }))
 }
 
