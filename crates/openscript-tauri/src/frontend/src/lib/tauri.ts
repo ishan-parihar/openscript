@@ -449,27 +449,27 @@ export async function libraryBuild(): Promise<{ status: string; index_path: stri
 // HyperFrames (default render engine) + composition.render dispatcher
 // ---------------------------------------------------------------------------
 
-export async function hfLint(sourcePath: string): Promise<{ status: string; issues: Array<{ severity: string; rule: string; line: number; message: string }>; issue_count: number }> {
-  return invokeTool("hf.lint", { source_path: sourcePath });
+export async function hfLint(projectDir?: string): Promise<{ status: string; issues: Array<{ severity: string; rule: string; line: number; message: string }>; issue_count: number }> {
+  return invokeTool("hf.lint", { project_dir: projectDir });
 }
 
-export async function hfValidate(sourcePath: string): Promise<{ status: string; valid: boolean; errors: string[]; warnings: string[] }> {
-  return invokeTool("hf.validate", { source_path: sourcePath });
+export async function hfValidate(projectDir?: string): Promise<{ status: string; valid: boolean; errors: string[]; warnings: string[] }> {
+  return invokeTool("hf.validate", { project_dir: projectDir });
 }
 
 export async function hfSnapshot(
-  sourcePath: string,
-  frame = 0,
+  projectDir?: string,
+  frames = 5,
 ): Promise<{ status: string; snapshot_path: string; width: number; height: number }> {
-  return invokeTool("hf.snapshot", { source_path: sourcePath, frame });
+  return invokeTool("hf.snapshot", { project_dir: projectDir, frames });
 }
 
 export async function hfRender(
-  sourcePath: string,
-  outputPath: string,
+  projectDir?: string,
+  outputPath?: string,
   quality = "standard",
 ): Promise<{ status: string; output_path: string; file_size_bytes: number; duration_s: number }> {
-  return invokeTool("hf.render", { source_path: sourcePath, output_path: outputPath, quality });
+  return invokeTool("hf.render", { project_dir: projectDir, output_path: outputPath, quality });
 }
 
 export interface HfClassifyResult {
@@ -490,10 +490,22 @@ export async function hfClassify(sourcePath: string): Promise<HfClassifyResult> 
 export async function compositionRender(
   projectDir: string,
   outputPath: string,
-  renderHint?: "hf-native" | "interop" | "legacy-remotion",
+  renderHint?: "auto" | "hf" | "remotion" | "legacy",
   quality = "standard",
 ): Promise<{ status: string; output_path: string; engine: string; file_size_bytes: number }> {
   return invokeTool("composition.render", { project_dir: projectDir, output_path: outputPath, render_hint: renderHint, quality });
+}
+
+export async function voicesList(language?: string): Promise<{
+  status: string;
+  registered_profiles: Array<{ id: string; provider: string; language: string; description: string; mode: string }>;
+  registered_count: number;
+  kokoro_presets: Array<{ id: string; provider: string; language: string; description: string; usage: string }>;
+  kokoro_preset_count: number;
+  total_voices: number;
+  note: string;
+}> {
+  return invokeTool("voices.list", { language });
 }
 
 // ---------------------------------------------------------------------------
