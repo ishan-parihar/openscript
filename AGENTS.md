@@ -589,3 +589,160 @@ Until then, `main` is the release. Keep it green.
 - **Voicebox** — Optional TTS sidecar (faster-qwen3-tts) running at
   `OPENSCRIPT_TTS_URL` (default `http://127.0.0.1:17493`). Not required for
   Kokoro (the default).
+
+---
+
+## 18. UI Architecture Migration Plan (Stages 2 + 3)
+
+> **Status:** Stage 1 (desktop-as-MCP-client) is COMPLETE. Stages 2 + 3 are
+> documented here as a concrete implementation plan for when a Tauri-capable
+> build environment (with GDK dev headers) is available. The current
+> architecture is fully functional — the timeline just has a WebView ceiling.
+
+### Why migrate beyond the WebView
+
+The current Tauri + React frontend is the right *shell* but the wrong *media
+surface*. A `<video>` tag gives play/pause/seek and nothing else — no
+frame-accurate scrubbing (browsers round to keyframes), no multi-track overlay,
+no GPU compositing. The timeline is HTML/CSS divs, which works for 10 segments
+but jitters at 100+. Pro editors use libmpv or AVFoundation; the browser stack
+is fundamentally a document renderer.
+
+The migration keeps Tauri as the shell and splits the UI by what it's doing:
+
+| Panel | Current | Target | Why |
+|-------|---------|--------|-----|
+| Timeline + video preview | React `<video>` + divs | **egui + libmpv** (native) | Frame-accurate scrubbing, real ruler, GPU compositing |
+| AI command palette | React | React (keep) | Forms + text are web's strength |
+| Asset browser | React | React (keep) | Grid of thumbnails — web is fine |
+| Render queue | React | React (keep) | Progress bar + log — web is fine |
+| Caption editor | React | React (keep) | Text editor with timestamps — web is fine |
+
+### Stage 2: egui timeline (the hard part)
+
+**Goal:** Replace the React `TimelineEditor` + `VideoViewport` with a native
+egui panel that renders inside the Tauri window via a custom widget.
+
+**Steps:**
+
+1. **Add deps to `openscript-tauri/Cargo.toml`:**
+   ```toml
+   eframe = "0.29"        # egui framework
+   egui = "0.29"
+   ```
+
+2. **Create `crates/openscript-tauri/src/egui_panel/` module:**
+   - `mod.rs` — panel registration
+   - `timeline.rs` — the egui timeline widget (reads `Timeline` struct directly, no JSON serialization)
+   - `ruler.rs` — the time ruler (native, no PNG)
+   - `playhead.rs` — the playhead (drag-to-seek, frame-accurate)
+
+3. **Bridge egui into Tauri:** Use `tauri::WindowEvent` + a custom
+   `tauri::WebviewWindowBuilder` variant that hosts an egui `eframe::App`
+   alongside the React WebView. The `tauri-plugin-egui` community plugin is
+   the starting point; if it doesn't fit, a raw `wgpu` surface embedded via
+   `tauri::Manager::get_window` + `raw-window-handle` is the fallback.
+
+4. **Timeline widget contract:**
+   - Reads `openscript_core::timeline::Timeline` directly (no serialization)
+   - Renders 6 track lanes (dialogue, voiceover, captions, broll, music, sfx)
+   - Drag-to-move + drag-to-resize segment blocks
+   - Right-click context menu → calls `invoke_tool("timeline.add_track_event", {...})`
+   - J/K/L keyboard shuttle
+   - Zoom with scroll wheel
+
+5. **Delete the React timeline:** Once the egui timeline is stable, delete
+   `components/timeline/TimelineEditor.tsx`, `TrackRow.tsx`, `SegmentBlock.tsx`,
+   `Playhead.tsx`, `TimeRuler.tsx` (~400 LoC). Delete the hand-rolled media
+   server in `main.rs:38-176` (~138 LoC) — egui renders to a native surface,
+   no HTTP file server needed.
+
+**Estimated effort:** 2-3 weeks for the egui widget + Tauri bridge.
+
+### Stage 3: libmpv video preview (frame-accurate)
+
+**Goal:** Replace the React `<video>` tag with libmpv for frame-accurate
+scrubbing, multi-track audio, and hardware decode.
+
+**Steps:**
+
+1. **Add deps:**
+   ```toml
+   libmpv = "2.0"   # or mpv-rs = "0.7"
+   ```
+
+2. **System dependency:** libmpv must be installed (`libmpv-dev` on Debian,
+   `mpv` via Homebrew on macOS, `mpv.exe` on Windows). Document in README.
+
+3. **Create `crates/openscript-tauri/src/mpv_panel/` module:**
+   - Renders to a native window handle that Tauri exposes as a "native view"
+     alongside the egui timeline and the React WebView.
+   - Exposes `seek(frame)`, `play()`, `pause()`, `set_rate(f64)` to Rust.
+   - The egui timeline's playhead calls `mpv_panel.seek(frame)` on drag.
+
+4. **Delete the React video panel:** Once libmpv is stable, delete
+   `components/video/VideoViewport.tsx` + `PlaybackControls.tsx` (~130 LoC).
+
+**Estimated effort:** 1 week for libmpv integration + the Tauri native-view
+bridge (the riskiest piece — there are existing examples but it's not a
+batteries-included path).
+
+### What the final architecture looks like
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Tauri Window                                        │
+│  ┌────────────────────────────────────────────────┐  │
+│  │ Top bar: [Create from Script] [Transcribe] ... │  │
+│  ├──────────────┬──────────────────┬──────────────┤  │
+│  │              │                  │              │  │
+│  │  egui        │  libmpv          │  React       │  │
+│  │  Timeline    │  Video Preview   │  Command     │  │
+│  │  (native)    │  (native)        │  Palette     │  │
+│  │              │                  │  + Assets    │  │
+│  │  6 tracks    │  frame-accurate  │  + Render    │  │
+│  │  drag-move   │  GPU decode      │  + Captions  │  │
+│  │  J/K/L       │  multi-track     │              │  │
+│  │              │                  │              │  │
+│  ├──────────────┴──────────────────┴──────────────┤  │
+│  │ Bottom bar: [Capabilities ●] [Render Progress] │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────┘
+         │
+         ▼
+   openscript_mcp::tools::route_tool(name, args)
+   (single tool surface for agents + humans)
+```
+
+### What this buys
+
+- **Frame-accurate preview** (libmpv, not `<video>`)
+- **A real timeline** (native egui widget, no div jitter)
+- **~670 LoC deleted** (React timeline + video panel + media server)
+- **The AI command palette stays in React** (forms + text are web's strength)
+- **Cross-platform preserved** (Tauri + egui + libmpv all run on Linux/macOS/Windows)
+- **Rust stays the dominant language**
+
+### What this costs
+
+- ~2-3 weeks for the egui timeline widget (the hard part)
+- ~1 week for libmpv integration + the Tauri native-view bridge
+- A Tauri plugin to host egui alongside the WebView (riskiest piece)
+
+### When to do this
+
+Only when the WebView ceiling is actually felt — i.e. when users complain
+about timeline jitter or seek accuracy. For inspection-only use cases (the
+current primary use), the React timeline is adequate. The `invoke_tool`
+pass-through (Stage 1, complete) is the high-value piece that should be done
+regardless; Stages 2 + 3 are optimizations.
+
+### Bail-out ramps
+
+- If egui-in-Tauri proves too hard, fall back to a **standalone egui binary**
+  (`openscript-egui` crate) that talks to the MCP server via stdio (like an AI
+  agent). This loses the integrated window but proves the egui timeline concept
+  without the Tauri bridge risk.
+- If libmpv is too hard, keep the React `<video>` for preview and only migrate
+  the timeline to egui. The preview is "good enough" for inspection; the
+  timeline is the part that genuinely suffers from divs.
