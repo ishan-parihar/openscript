@@ -585,6 +585,18 @@ export async function overlayAssign(
   });
 }
 
+export async function timelineToHyperframes(
+  timelinePath: string,
+  outputDir?: string,
+  compositionId?: string,
+): Promise<{ status: string; project_dir: string; index_html_path: string; composition_id: string; file_size_bytes: number; next_step: string }> {
+  return invokeTool("timeline.to_hyperframes", {
+    timeline_path: timelinePath,
+    output_dir: outputDir,
+    composition_id: compositionId,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Missing timeline tools (add_track_event, diff, inspect, autofill_broll, upgrade)
 // ---------------------------------------------------------------------------

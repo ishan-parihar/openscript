@@ -976,6 +976,20 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "timeline.to_hyperframes",
+            "description": "Compile an EDL v2 timeline JSON into a HyperFrames HTML composition. Wraps the edl_v2_to_html.ts compiler — produces an index.html with GSAP timeline animations, video layers, and b-roll crossfades. After this, call composition.render or hf.render to produce the final MP4. This is the bridge between the NLE timeline and the HyperFrames motion-graphics render engine.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to the EDL v2 timeline JSON file"},
+                    "output_dir": {"type": "string", "default": "artifacts/hf_composition", "description": "Directory to write the HF composition (index.html will be created here)"},
+                    "composition_id": {"type": "string", "description": "Optional composition ID (default: auto-generated from timeline name)"}
+                },
+                "required": ["timeline_path"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "library.search",
             "description": "Search the de-duplicated music/SFX library index. Index contains 500+ entries from NoCopyrightSounds, AudioLibrary, BreakingCopyright, VlogNoCopyrightMusic, MixtureOfficial, SoundLibrary1, and local stock. Each entry has filename, title, tags, download_url, source, duration, and license. Use library.download to fetch the audio file on demand. Use library.build to rebuild the index from YouTube channels.",
             "inputSchema": {
@@ -1148,6 +1162,7 @@ pub fn route_tool(
         "gif.search" => Box::pin(handle_gif_search(args)),
         "gif.download" => Box::pin(handle_gif_download(args)),
         "overlay.assign" => Box::pin(handle_overlay_assign(args)),
+        "timeline.to_hyperframes" => Box::pin(handle_timeline_to_hyperframes(args)),
         "timeline.inspect" => Box::pin(handle_timeline_inspect(args)),
         "library.search" => Box::pin(handle_library_search(args)),
         "library.download" => Box::pin(handle_library_download(args)),
@@ -9589,6 +9604,117 @@ async fn handle_overlay_assign(args: serde_json::Value) -> Result<serde_json::Va
         "position": position,
         "scale": scale,
         "timeline_path": timeline_path,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: timeline.to_hyperframes (Phase M — bridge EDL v2 → HF HTML)
+// ---------------------------------------------------------------------------
+
+/// Compile an EDL v2 timeline JSON into a HyperFrames HTML composition by
+/// shelling out to `tsx hyperframes/src/edl_v2_to_html.ts`. The resulting
+/// index.html can then be rendered via `hf.render` or `composition.render`.
+///
+/// This is the bridge between the NLE timeline (EDL v2 JSON) and the
+/// HyperFrames motion-graphics render engine. Prior to this tool, the
+/// edl_v2_to_html.ts compiler was dead code — never called by any Rust
+/// handler. An agent had to run it manually, which broke the programmatic
+/// pipeline.
+async fn handle_timeline_to_hyperframes(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    let timeline_path = extract_str(&args, "timeline_path")?;
+    let output_dir = default_str(&args, "output_dir", "artifacts/hf_composition");
+    let composition_id = default_opt_str(&args, "composition_id");
+
+    // Validate timeline exists
+    if !std::path::Path::new(timeline_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Timeline file not found: {}",
+            timeline_path
+        )));
+    }
+
+    // Create output directory
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| ToolError::Asset(format!("Failed to create output dir: {}", e)))?;
+
+    let index_html_path = format!("{}/index.html", output_dir);
+
+    // Build the tsx command
+    let compiler_script = "hyperframes/src/edl_v2_to_html.ts";
+    if !std::path::Path::new(compiler_script).exists() {
+        return Err(ToolError::NotFound(format!(
+            "HyperFrames compiler not found: {}. Ensure the hyperframes/ directory is present.",
+            compiler_script
+        )));
+    }
+
+    let mut cmd = tokio::process::Command::new("npx");
+    cmd.arg("tsx")
+        .arg(compiler_script)
+        .arg("--timeline")
+        .arg(timeline_path)
+        .arg("--out")
+        .arg(&index_html_path);
+
+    if let Some(ref cid) = composition_id {
+        cmd.arg("--composition-id").arg(cid);
+    }
+
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    // Run with a 60s timeout — compilation should be fast
+    let child = cmd
+        .spawn()
+        .map_err(|e| ToolError::Asset(format!("Failed to spawn tsx: {}", e)))?;
+
+    let output = tokio::time::timeout(std::time::Duration::from_secs(60), child.wait_with_output())
+        .await
+        .map_err(|_| ToolError::Asset("tsx compilation timed out (60s)".to_string()))?
+        .map_err(|e| ToolError::Asset(format!("tsx execution failed: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ToolError::Asset(format!(
+            "HyperFrames compilation failed: {}",
+            stderr.trim()
+        )));
+    }
+
+    // Verify the output was created
+    if !std::path::Path::new(&index_html_path).exists() {
+        return Err(ToolError::Asset(format!(
+            "Compilation appeared to succeed but no index.html was written to {}",
+            index_html_path
+        )));
+    }
+
+    let file_size = std::fs::metadata(&index_html_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    // Extract composition ID from the HTML (data-composition-id attribute)
+    let html_content = std::fs::read_to_string(&index_html_path).unwrap_or_default();
+    let extracted_cid = html_content
+        .find("data-composition-id=\"")
+        .and_then(|pos| {
+            let start = pos + "data-composition-id=\"".len();
+            html_content[start..].find('"').map(|end| &html_content[start..start + end])
+        })
+        .unwrap_or("unknown")
+        .to_string();
+
+    Ok(json!({
+        "status": "compiled",
+        "project_dir": output_dir,
+        "index_html_path": index_html_path,
+        "composition_id": extracted_cid,
+        "file_size_bytes": file_size,
+        "next_step": "Call hf.render or composition.render with project_dir to produce the final MP4",
     }))
 }
 
