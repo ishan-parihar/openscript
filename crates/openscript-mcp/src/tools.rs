@@ -8027,25 +8027,14 @@ async fn handle_library_download(args: serde_json::Value) -> Result<serde_json::
 async fn handle_library_build(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     report_progress(0.0, 100.0, "Building music/SFX library index...").await.ok();
 
-    let result = tokio::process::Command::new("python3")
-        .arg("mcp/scripts/music_library_indexer.py")
-        .arg("--build")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .output()
-        .await?;
-
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        return Err(ToolError::Asset(format!("Index build failed: {}", stderr)));
-    }
-
-    // Read the built index
+    // C2 fix: prior versions shelled out to `python3 mcp/scripts/music_library_indexer.py --build`,
+    // which required Python + yt-dlp at runtime. Now uses the native Rust port
+    // in `library_indexer.rs`, which shells out to yt-dlp directly and builds
+    // the JSON index with serde_json. No Python dependency.
     let index_path = "mcp/assets/music_library_index.json";
-    let index_str = std::fs::read_to_string(index_path)?;
-    let index: serde_json::Value = serde_json::from_str(&index_str)?;
+    let index = crate::library_indexer::build_index(index_path)
+        .await
+        .map_err(|e| ToolError::Asset(format!("Index build failed: {}", e)))?;
 
     report_progress(100.0, 100.0, "Library index built").await.ok();
 
