@@ -1,0 +1,125 @@
+# workspace-lint.yaml — OpenScript project structure rules
+# See AGENTS.md §1 for the canonical repository layout.
+# Run: python3 scripts/workspace-lint/workspace_lint.py
+
+project:
+  name: OpenScript
+  type: rust-workspace + python-sidecars + tauri-frontend
+  version: "0.1.0"
+
+ignore_dirs:
+  - .git
+  - __pycache__
+  - node_modules       # npm deps — gitignored, installed at build time
+  - .venv
+  - target             # cargo build dir — gitignored
+  - ".openscript"      # runtime state (projects, voice profiles)
+  - artifacts
+  - artifacts_test
+  - "artifacts_*"
+  - gen                # Tauri generated schemas (build artifact)
+  - dist               # build output within node_modules packages
+  - build              # build output within node_modules packages
+
+structure:
+  canonical:
+    - path: crates
+      description: Rust workspace (8 crates)
+      children:
+        - openscript-core      # types, timeline schema, SRT, captions, amplitude
+        - openscript-ffmpeg    # ffmpeg filter graph, render, multilayer, subtitles
+        - openscript-tts       # Kokoro TTS client + voice profiles
+        - openscript-transcribe # Apex transcription
+        - openscript-assets    # Pexels, music index, SFX index
+        - openscript-mcp       # MCP server + 70 tool handlers
+        - openscript-cli       # CLI (clap) — thin wrapper over route_tool
+        - openscript-tauri     # Tauri desktop app
+        - openscript-ui        # Legacy TUI (ratatui)
+    - path: mcp
+      description: Python ML sidecars + committed assets
+      children:
+        - scripts    # Python sidecars (Kokoro, Whisper, Apex)
+        - assets     # Committed binary assets + generated JSON indices
+        - fonts      # BebasNeue for ASS captions
+        - styles     # PupCaps caption CSS
+    - path: hyperframes
+      description: Default render engine (HTML+GSAP) + interop template
+    - path: remotion
+      description: Escape-hatch render engine (React+Remotion v4)
+    - path: skills
+      description: Dev-reference docs for HyperFrames + Remotion translation
+    - path: scripts
+      description: Shell scripts (smoke_test, post-iteration gate, workspace-lint)
+
+root:
+  allowed_root_files:
+    - README.md
+    - AGENTS.md
+    - AGENT_GUIDE.md
+    - LICENSE
+    - .gitignore
+    - Cargo.toml
+    - Cargo.lock
+    - TOOL_AUDIT_REPORT.md
+    - workspace-lint.yaml
+  forbidden_files:
+    - "*.pyc"
+    - "*.pyo"
+    - "*.egg-info"
+    - "*.log"
+    - "*.tmp"
+    - ".DS_Store"
+    - "Thumbs.db"
+    - "*.swp"
+    - "*~"
+    - "*.bak"
+    - "*.reel.mp4"      # Render output — never commit
+    - "*.render.log"    # Render logs — never commit
+    - "*.concat.txt"    # FFmpeg concat lists — never commit
+    - "*.align.json"    # Whisper alignment output — never commit
+
+files:
+  "*.rs":
+    max_size_kb: 500
+  "*.py":
+    # Python lives in mcp/scripts (sidecars), skills/ (reference docs),
+    # and scripts/ (tooling). Do not enforce a single preferred_dir.
+    max_size_kb: 100
+  "*.ts":
+    # TS lives in multiple legitimate locations: frontend, hyperframes/,
+    # remotion/, skills/. Do not enforce a single preferred_dir.
+    max_size_kb: 200
+  "*.tsx":
+    # TSX lives in multiple legitimate locations: frontend, remotion/,
+    # skills/. Do not enforce a single preferred_dir.
+    max_size_kb: 100
+  "*.md":
+    max_size_kb: 200
+  "*.json":
+    max_size_kb: 500    # Generated indices can be large; warn if > 500KB
+  "*.mp4":
+    preferred_dir: mcp/assets/backgrounds
+    max_size_kb: 5000
+  "*.mp3":
+    preferred_dir: mcp/assets/music
+    max_size_kb: 2000
+  "*.svg":
+    preferred_dir: mcp/assets/svg_presets
+    max_size_kb: 50
+  "*.css":
+    # CSS lives in both mcp/styles (PupCaps) and frontend/src/styles (app CSS)
+    max_size_kb: 50
+  "*.ttf":
+    preferred_dir: mcp/fonts
+    max_size_kb: 500
+
+directories:
+  forbidden_patterns:
+    - ".*\\s.*"          # No spaces in directory names
+    - "^\\d+\\."         # No numeric prefixes
+    - "__pycache__"      # Python build artifacts
+    - "\\.DS_Store"      # macOS junk
+    - "^target$"         # Rust build dir (should be gitignored, not in repo)
+    - "^node_modules$"   # npm deps (should be gitignored)
+    - "^\\.venv$"        # Python venv (should be gitignored)
+  empty_allowed: false   # Empty directories are a violation

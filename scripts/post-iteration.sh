@@ -68,7 +68,7 @@ echo "Repo: $REPO_ROOT"
 echo ""
 
 # ---- Step 1: cargo build (zero warnings) ----
-echo -n "[1/6] cargo build (zero warnings)... "
+echo -n "[1/7] cargo build (zero warnings)... "
 BUILD_OUTPUT=$(cargo build --workspace --exclude openscript-tauri 2>&1) || {
   echo -e "${RED}FAILED${NC}"
   echo "$BUILD_OUTPUT" | tail -20
@@ -84,7 +84,7 @@ fi
 echo -e "${GREEN}OK${NC}"
 
 # ---- Step 2: cargo test (all pass, count >= baseline) ----
-echo -n "[2/6] cargo test (>= ${BASELINE_TEST_COUNT} tests)... "
+echo -n "[2/7] cargo test (>= ${BASELINE_TEST_COUNT} tests)... "
 TEST_OUTPUT=$(cargo test --workspace --exclude openscript-tauri --lib --bins --tests 2>&1) || {
   echo -e "${RED}FAILED${NC}"
   echo "$TEST_OUTPUT" | tail -30
@@ -110,11 +110,26 @@ if [ -d "$FRONTEND_DIR/node_modules" ]; then
   }
   echo -e "${GREEN}OK${NC}"
 else
-  echo -e "[3/6] npx tsc --noEmit... ${YELLOW}SKIPPED (no node_modules)${NC}"
+  echo -e "[3/7] npx tsc --noEmit... ${YELLOW}SKIPPED (no node_modules)${NC}"
 fi
 
-# ---- Step 4: git status (no uncommitted changes) ----
-echo -n "[4/6] git status (working tree clean)... "
+# ---- Step 4: workspace-lint (structure check, git-tracked files only) ----
+echo -n "[4/7] workspace-lint (structure check)... "
+if [ -f "workspace-lint.yaml" ]; then
+  LINT_OUTPUT=$(python3 scripts/workspace-lint/workspace_lint.py 2>&1)
+  LINT_WARNINGS=$(echo "$LINT_OUTPUT" | grep -c '\[warn\]' || true)
+  if [ "$LINT_WARNINGS" -gt 0 ]; then
+    echo -e "${RED}FAILED${NC}"
+    echo "$LINT_OUTPUT" | grep '\[warn\]' | head -10
+    FAIL "workspace-lint found ${LINT_WARNINGS} structure violations"
+  fi
+  echo -e "${GREEN}OK${NC}"
+else
+  echo -e "${YELLOW}SKIPPED (no workspace-lint.yaml)${NC}"
+fi
+
+# ---- Step 5: git status (no uncommitted changes) ----
+echo -n "[5/7] git status (working tree clean)... "
 UNCOMMITTED=$(git status --porcelain 2>&1)
 if [ -n "$UNCOMMITTED" ]; then
   echo -e "${RED}FAILED${NC}"
@@ -123,8 +138,8 @@ if [ -n "$UNCOMMITTED" ]; then
 fi
 echo -e "${GREEN}OK${NC}"
 
-# ---- Step 5: git push origin main ----
-echo -n "[5/6] git push origin main... "
+# ---- Step 6: git push origin main ----
+echo -n "[6/7] git push origin main... "
 PUSH_OUTPUT=$(git push origin main 2>&1) || {
   echo -e "${RED}FAILED${NC}"
   echo "$PUSH_OUTPUT"
@@ -132,8 +147,8 @@ PUSH_OUTPUT=$(git push origin main 2>&1) || {
 }
 echo -e "${GREEN}OK${NC}"
 
-# ---- Step 6: git log origin/main..HEAD (nothing unpushed) ----
-echo -n "[6/6] git log origin/main..HEAD (nothing unpushed)... "
+# ---- Step 7: git log origin/main..HEAD (nothing unpushed) ----
+echo -n "[7/7] git log origin/main..HEAD (nothing unpushed)... "
 UNPUSHED=$(git log origin/main..HEAD --oneline 2>&1)
 if [ -n "$UNPUSHED" ]; then
   echo -e "${RED}FAILED${NC}"
