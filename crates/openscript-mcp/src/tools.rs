@@ -10097,17 +10097,99 @@ async fn handle_system_capabilities(
         },
     });
 
+    // yt-dlp (required for youtube.search, youtube.download, library.download,
+    // and background.fetch YouTube fallback)
+    let ytdlp_available = std::process::Command::new("yt-dlp")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let yt_dlp = json!({
+        "available": ytdlp_available,
+        "reason": if ytdlp_available {
+            serde_json::Value::Null
+        } else {
+            "yt-dlp binary not found on PATH. Required for youtube.search, youtube.download, library.download, and background.fetch YouTube fallback.".into()
+        },
+    });
+
+    // whisper_align.py (required for script.build_captions force alignment)
+    let whisper_align_path = "mcp/scripts/whisper_align.py";
+    let whisper_align_available = std::path::Path::new(whisper_align_path).exists();
+    let whisper_align = json!({
+        "available": whisper_align_available,
+        "path": whisper_align_path,
+        "reason": if whisper_align_available {
+            serde_json::Value::Null
+        } else {
+            "whisper_align.py not found. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
+        },
+    });
+
+    // tsx (required for timeline.to_hyperframes — compiles EDL v2 to HF HTML)
+    let tsx_available = std::process::Command::new("npx")
+        .arg("tsx")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let tsx = json!({
+        "available": tsx_available,
+        "reason": if tsx_available {
+            serde_json::Value::Null
+        } else {
+            "tsx not found (npx tsx --version failed). Required for timeline.to_hyperframes.".into()
+        },
+    });
+
+    // ASS caption font (BebasNeue — required for burned-in captions)
+    let font_path = "mcp/fonts/BebasNeue-Regular.ttf";
+    let font_available = std::path::Path::new(font_path).exists();
+    let ass_font = json!({
+        "available": font_available,
+        "path": font_path,
+        "reason": if font_available {
+            serde_json::Value::Null
+        } else {
+            "BebasNeue-Regular.ttf not found. Caption burning will use ffmpeg's default font.".into()
+        },
+    });
+
+    // SVG sticker presets
+    let presets_dir = "mcp/assets/svg_presets";
+    let preset_count = if std::path::Path::new(presets_dir).exists() {
+        std::fs::read_dir(presets_dir)
+            .map(|d| d.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let svg_presets = json!({
+        "available": preset_count > 0,
+        "preset_count": preset_count,
+        "path": presets_dir,
+    });
+
     Ok(json!({
         "status": "success",
         "voicebox": voicebox,
         "kokoro": kokoro,
         "transcription": transcription,
+        "whisper_align": whisper_align,
         "pexels": pexels,
         "giphy": giphy,
         "pixabay": pixabay,
         "sfx_library": sfx,
         "music_library": music,
         "ffmpeg": ffmpeg,
+        "yt_dlp": yt_dlp,
+        "tsx": tsx,
+        "ass_font": ass_font,
+        "svg_presets": svg_presets,
         "hyperframes": hyperframes,
     }))
 }
