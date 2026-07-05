@@ -29,21 +29,22 @@ pub fn evict_cache_if_needed(cache_dir: &std::path::Path) {
 /// Internal: evict oldest files by mtime until total size <= max_bytes.
 pub(crate) fn evict_cache_to_limit(cache_dir: &std::path::Path, max_bytes: u64) {
     // Collect all files in the cache dir with their sizes and mtimes
-    let entries: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> = match std::fs::read_dir(cache_dir) {
-        Ok(rd) => rd
-            .filter_map(|e| e.ok())
-            .filter_map(|e| {
-                let path = e.path();
-                let meta = std::fs::metadata(&path).ok()?;
-                if !meta.is_file() {
-                    return None;
-                }
-                let mtime = meta.modified().ok()?;
-                Some((path, meta.len(), mtime))
-            })
-            .collect(),
-        Err(_) => return,
-    };
+    let entries: Vec<(std::path::PathBuf, u64, std::time::SystemTime)> =
+        match std::fs::read_dir(cache_dir) {
+            Ok(rd) => rd
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let path = e.path();
+                    let meta = std::fs::metadata(&path).ok()?;
+                    if !meta.is_file() {
+                        return None;
+                    }
+                    let mtime = meta.modified().ok()?;
+                    Some((path, meta.len(), mtime))
+                })
+                .collect(),
+            Err(_) => return,
+        };
 
     // Calculate total size
     let total: u64 = entries.iter().map(|(_, size, _)| *size).sum();
@@ -103,11 +104,17 @@ mod tests {
         // Write 3 files, 1KB each. Set old mtimes to control eviction order.
         fs::write(dir.join("old.wav"), vec![0u8; 1024]).unwrap();
         let old_time = SystemTime::now() - std::time::Duration::from_secs(3600);
-        let _ = filetime::set_file_mtime(&dir.join("old.wav"), filetime::FileTime::from_system_time(old_time));
+        let _ = filetime::set_file_mtime(
+            &dir.join("old.wav"),
+            filetime::FileTime::from_system_time(old_time),
+        );
 
         fs::write(dir.join("mid.wav"), vec![0u8; 1024]).unwrap();
         let mid_time = SystemTime::now() - std::time::Duration::from_secs(1800);
-        let _ = filetime::set_file_mtime(&dir.join("mid.wav"), filetime::FileTime::from_system_time(mid_time));
+        let _ = filetime::set_file_mtime(
+            &dir.join("mid.wav"),
+            filetime::FileTime::from_system_time(mid_time),
+        );
 
         fs::write(dir.join("new.wav"), vec![0u8; 1024]).unwrap();
         // new.wav has the newest mtime (now)

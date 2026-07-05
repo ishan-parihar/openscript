@@ -46,9 +46,7 @@ pub async fn invoke_tool(
     name: String,
     args: Value,
 ) -> Result<Value, String> {
-    route_tool(&name, args)
-        .await
-        .map_err(|e| format!("{}", e))
+    route_tool(&name, args).await.map_err(|e| format!("{}", e))
 }
 
 /// List all registered MCP tools (name + description + inputSchema).
@@ -62,10 +60,7 @@ pub async fn list_mcp_tools(_state: State<'_, AppState>) -> Result<Value, String
 /// Get a single tool's definition (name + description + inputSchema).
 /// Returns `null` if the tool name is not registered.
 #[tauri::command]
-pub async fn get_mcp_tool(
-    _state: State<'_, AppState>,
-    name: String,
-) -> Result<Value, String> {
+pub async fn get_mcp_tool(_state: State<'_, AppState>, name: String) -> Result<Value, String> {
     let tools = openscript_mcp::tools::tool_definitions();
     if let Some(arr) = tools.as_array() {
         for tool in arr {

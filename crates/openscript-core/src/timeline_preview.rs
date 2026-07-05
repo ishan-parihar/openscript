@@ -83,7 +83,11 @@ impl LayeredTimeline {
 
             for (j, event) in layer.events.iter().enumerate() {
                 let is_last_event = j == layer.events.len() - 1;
-                let event_prefix = if is_last_event { "└── " } else { "├── " };
+                let event_prefix = if is_last_event {
+                    "└── "
+                } else {
+                    "├── "
+                };
 
                 let start_s = event.start_ms as f64 / 1000.0;
                 let end_s = event.end_ms as f64 / 1000.0;
@@ -103,10 +107,14 @@ impl LayeredTimeline {
     fn format_event_desc(&self, layer: &TimelineLayer, event: &LayerEvent) -> String {
         match layer.layer_type.as_str() {
             "voiceover" => {
-                let speaker = event.metadata.get("speaker")
+                let speaker = event
+                    .metadata
+                    .get("speaker")
                     .and_then(|v| v.as_str())
                     .unwrap_or("?");
-                let text = event.metadata.get("text")
+                let text = event
+                    .metadata
+                    .get("text")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 let truncated = if text.len() > 40 {
@@ -117,10 +125,14 @@ impl LayeredTimeline {
                 format!("{}: \"{}\"", speaker, truncated)
             }
             "captions" => {
-                let word_count = event.metadata.get("word_count")
+                let word_count = event
+                    .metadata
+                    .get("word_count")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                let style = event.metadata.get("style")
+                let style = event
+                    .metadata
+                    .get("style")
                     .and_then(|v| v.as_str())
                     .unwrap_or("word_highlight");
                 let filename = std::path::Path::new(&event.asset)
@@ -130,22 +142,34 @@ impl LayeredTimeline {
                 format!("{} ({} words, {} style)", filename, word_count, style)
             }
             "stickers" => {
-                let position = event.metadata.get("position")
+                let position = event
+                    .metadata
+                    .get("position")
                     .and_then(|v| v.as_str())
                     .unwrap_or("?");
-                let scale = event.metadata.get("scale")
+                let scale = event
+                    .metadata
+                    .get("scale")
                     .and_then(|v| v.as_f64())
                     .unwrap_or(0.25);
-                let cx = event.metadata.get("center_x")
+                let cx = event
+                    .metadata
+                    .get("center_x")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
-                let cy = event.metadata.get("center_y")
+                let cy = event
+                    .metadata
+                    .get("center_y")
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
-                let sw = event.metadata.get("sticker_width")
+                let sw = event
+                    .metadata
+                    .get("sticker_width")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                let sh = event.metadata.get("sticker_height")
+                let sh = event
+                    .metadata
+                    .get("sticker_height")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
                 let filename = std::path::Path::new(&event.asset)
@@ -155,15 +179,25 @@ impl LayeredTimeline {
                 // Format: giphy_alice.gif (bottom-left, 20%, 216x216px, center=[-432, 920])
                 format!(
                     "{} ({}, {:.0}%, {}x{}px, center=[{}, {}])",
-                    filename, position, scale * 100.0, sw, sh, cx, cy
+                    filename,
+                    position,
+                    scale * 100.0,
+                    sw,
+                    sh,
+                    cx,
+                    cy
                 )
             }
             "music" => {
-                let ducked = event.metadata.get("ducked")
+                let ducked = event
+                    .metadata
+                    .get("ducked")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 if ducked {
-                    let depth = event.metadata.get("ducking_depth_db")
+                    let depth = event
+                        .metadata
+                        .get("ducking_depth_db")
                         .and_then(|v| v.as_f64())
                         .unwrap_or(12.0);
                     format!("{} (ducked -{:.0}dB)", event.asset, depth)
@@ -172,7 +206,9 @@ impl LayeredTimeline {
                 }
             }
             "background" => {
-                let looped = event.metadata.get("looped")
+                let looped = event
+                    .metadata
+                    .get("looped")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 if looped {
@@ -287,7 +323,8 @@ pub fn build_layered_timeline(
     let mut total_duration_ms = 0i64;
 
     // Extract segments from manifest
-    let segments = manifest.get("segments")
+    let segments = manifest
+        .get("segments")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -496,16 +533,16 @@ mod tests {
             width: 1080,
             height: 1920,
             fps: 30,
-            layers: vec![
-                TimelineLayer {
-                    layer_type: "background".into(),
-                    name: "Background".into(),
-                    events: vec![LayerEvent {
-                        start_ms: 0, end_ms: 10000, asset: "bg.mp4".into(),
-                        metadata: json!({}),
-                    }],
-                },
-            ],
+            layers: vec![TimelineLayer {
+                layer_type: "background".into(),
+                name: "Background".into(),
+                events: vec![LayerEvent {
+                    start_ms: 0,
+                    end_ms: 10000,
+                    asset: "bg.mp4".into(),
+                    metadata: json!({}),
+                }],
+            }],
         };
 
         let issues = tl.validate();
@@ -516,13 +553,25 @@ mod tests {
     fn test_timeline_validate_overlap() {
         let tl = LayeredTimeline {
             total_duration_ms: 10000,
-            width: 1080, height: 1920, fps: 30,
+            width: 1080,
+            height: 1920,
+            fps: 30,
             layers: vec![TimelineLayer {
                 layer_type: "voiceover".into(),
                 name: "Voiceover".into(),
                 events: vec![
-                    LayerEvent { start_ms: 0, end_ms: 5000, asset: "a.wav".into(), metadata: json!({}) },
-                    LayerEvent { start_ms: 4000, end_ms: 8000, asset: "b.wav".into(), metadata: json!({}) },
+                    LayerEvent {
+                        start_ms: 0,
+                        end_ms: 5000,
+                        asset: "a.wav".into(),
+                        metadata: json!({}),
+                    },
+                    LayerEvent {
+                        start_ms: 4000,
+                        end_ms: 8000,
+                        asset: "b.wav".into(),
+                        metadata: json!({}),
+                    },
                 ],
             }],
         };
@@ -535,12 +584,16 @@ mod tests {
     fn test_timeline_summary() {
         let tl = LayeredTimeline {
             total_duration_ms: 5000,
-            width: 1080, height: 1920, fps: 30,
+            width: 1080,
+            height: 1920,
+            fps: 30,
             layers: vec![TimelineLayer {
                 layer_type: "voiceover".into(),
                 name: "Voiceover".into(),
                 events: vec![LayerEvent {
-                    start_ms: 0, end_ms: 5000, asset: "a.wav".into(),
+                    start_ms: 0,
+                    end_ms: 5000,
+                    asset: "a.wav".into(),
                     metadata: json!({"speaker": "alice", "text": "Hello"}),
                 }],
             }],

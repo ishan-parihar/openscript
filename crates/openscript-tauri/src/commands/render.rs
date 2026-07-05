@@ -43,11 +43,18 @@ fn resolve_output_path(output_path: Option<String>) -> Result<String, String> {
             return Ok(p);
         }
     }
-    let home = std::env::var("HOME").map_err(|_| "HOME not set; cannot generate output path".to_string())?;
-    let renders_dir = std::path::Path::new(&home).join("openscript").join("renders");
-    std::fs::create_dir_all(&renders_dir).map_err(|e| format!("Failed to create renders dir: {}", e))?;
+    let home = std::env::var("HOME")
+        .map_err(|_| "HOME not set; cannot generate output path".to_string())?;
+    let renders_dir = std::path::Path::new(&home)
+        .join("openscript")
+        .join("renders");
+    std::fs::create_dir_all(&renders_dir)
+        .map_err(|e| format!("Failed to create renders dir: {}", e))?;
     let ts = chrono::Utc::now().format("%Y%m%dT%H%M%S");
-    Ok(renders_dir.join(format!("render-{}.mp4", ts)).to_string_lossy().to_string())
+    Ok(renders_dir
+        .join(format!("render-{}.mp4", ts))
+        .to_string_lossy()
+        .to_string())
 }
 
 #[tauri::command]

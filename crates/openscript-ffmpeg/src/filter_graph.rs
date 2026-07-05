@@ -194,9 +194,7 @@ impl FilterGraphBuilder {
             .into_iter()
             .filter(|e| {
                 if e.path == "placeholder" || e.path.is_empty() {
-                    tracing::warn!(
-                        "[filter_graph] Skipping placeholder/empty b-roll path"
-                    );
+                    tracing::warn!("[filter_graph] Skipping placeholder/empty b-roll path");
                     false
                 } else {
                     true
@@ -600,7 +598,8 @@ impl FilterGraphBuilder {
                 ));
                 parts.push(format!(
                     "[broll_src_{}]scale={w}:{h}[broll_scaled_{}]",
-                    i, i,
+                    i,
+                    i,
                     w = self.width,
                     h = self.height,
                 ));

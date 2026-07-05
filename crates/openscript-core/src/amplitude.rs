@@ -254,9 +254,14 @@ mod tests {
         let amplitudes = vec![0.0, 1.0, 0.0, 1.0, 0.0];
         let smoothed = smooth_amplitudes(&amplitudes, 3);
         // Smoothing should reduce the variance
-        let original_var: f32 = amplitudes.iter().map(|a| (a - 0.5).powi(2)).sum::<f32>() / amplitudes.len() as f32;
-        let smoothed_var: f32 = smoothed.iter().map(|a| (a - 0.5).powi(2)).sum::<f32>() / smoothed.len() as f32;
-        assert!(smoothed_var <= original_var, "Smoothing should reduce variance");
+        let original_var: f32 =
+            amplitudes.iter().map(|a| (a - 0.5).powi(2)).sum::<f32>() / amplitudes.len() as f32;
+        let smoothed_var: f32 =
+            smoothed.iter().map(|a| (a - 0.5).powi(2)).sum::<f32>() / smoothed.len() as f32;
+        assert!(
+            smoothed_var <= original_var,
+            "Smoothing should reduce variance"
+        );
     }
 
     #[test]

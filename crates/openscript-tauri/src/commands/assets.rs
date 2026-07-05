@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
 use openscript_assets::music::MusicIndex;
+use openscript_assets::pexels::{match_concept, PexelsClient};
 use openscript_assets::sfx::SfxIndex;
-use openscript_assets::pexels::{PexelsClient, match_concept};
 
-use openscript_core::timeline::{TimelineEvent, EventKind, Provenance};
+use openscript_core::timeline::{EventKind, Provenance, TimelineEvent};
 use openscript_core::types::TrackType;
 use serde_json::{json, Value};
 use tauri::State;
@@ -66,10 +66,7 @@ pub async fn broll_fetch(
                         entry["cached_path"] = json!(cached_path);
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Failed to download video {} for '{}': {}",
-                            v.id, concept, e
-                        );
+                        eprintln!("Failed to download video {} for '{}': {}", v.id, concept, e);
                     }
                 }
             }
@@ -97,40 +94,39 @@ pub async fn broll_assign(
     let event_id = generate_event_id();
     let end_ms = position_ms + duration_ms;
 
-    state
-        .with_active_project_mut(|project| {
-            let event = TimelineEvent {
-                id: event_id.clone(),
-                asset_id: format!("broll_{}", concept.replace(' ', "_")),
-                start_ms: position_ms,
-                end_ms,
-                offset_ms: 0,
-                gain_db: 0.0,
-                fade_in_ms: 0,
-                fade_out_ms: 0,
-                tags: vec![concept.clone()],
-                provenance: Some(Provenance {
-                    tool: "broll_assign".to_string(),
-                    editorial_role: None,
-                    concept: Some(concept.clone()),
-                }),
-                kind: EventKind::Broll {
-                    concept: concept.clone(),
-                    source_provider: "pexels".to_string(),
-                    transition_style: "crossfade".to_string(),
-                    crop_mode: "smart".to_string(),
-                    orientation: "portrait".to_string(),
-                    motion_intensity: "medium".to_string(),
-                },
-            };
+    state.with_active_project_mut(|project| {
+        let event = TimelineEvent {
+            id: event_id.clone(),
+            asset_id: format!("broll_{}", concept.replace(' ', "_")),
+            start_ms: position_ms,
+            end_ms,
+            offset_ms: 0,
+            gain_db: 0.0,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+            tags: vec![concept.clone()],
+            provenance: Some(Provenance {
+                tool: "broll_assign".to_string(),
+                editorial_role: None,
+                concept: Some(concept.clone()),
+            }),
+            kind: EventKind::Broll {
+                concept: concept.clone(),
+                source_provider: "pexels".to_string(),
+                transition_style: "crossfade".to_string(),
+                crop_mode: "smart".to_string(),
+                orientation: "portrait".to_string(),
+                motion_intensity: "medium".to_string(),
+            },
+        };
 
-            project
-                .timeline
-                .tracks
-                .entry(TrackType::Broll)
-                .or_default()
-                .push(event);
-        });
+        project
+            .timeline
+            .tracks
+            .entry(TrackType::Broll)
+            .or_default()
+            .push(event);
+    });
 
     let _ = save_project_inner(&state);
 
@@ -192,15 +188,7 @@ pub async fn music_search(
 ) -> Result<Value, String> {
     let index = load_music_index(&state.assets_base_path)?;
 
-    let results = index.search(
-        "",
-        mood.as_deref(),
-        energy.as_deref(),
-        None,
-        None,
-        None,
-        50,
-    );
+    let results = index.search("", mood.as_deref(), energy.as_deref(), None, None, None, 50);
 
     let tracks: Vec<Value> = results
         .iter()
@@ -265,59 +253,55 @@ pub async fn music_assign(
 
     let event_id = generate_event_id();
 
-    state
-        .with_active_project_mut(|project| {
-            let event = TimelineEvent {
-                id: event_id.clone(),
-                asset_id: asset_id.clone(),
-                start_ms: 0,
-                end_ms: if timeline_duration_ms > 0 {
-                    timeline_duration_ms
-                } else {
-                    duration_ms
-                },
-                offset_ms: 0,
-                gain_db: -6.0,
-                fade_in_ms: 500,
-                fade_out_ms: 500,
-                tags: vec![mood.clone(), energy.clone()],
-                provenance: Some(Provenance {
-                    tool: "music_assign".to_string(),
-                    editorial_role: None,
-                    concept: None,
-                }),
-                kind: EventKind::Music {
-                    mood: mood.clone(),
-                    energy: energy.clone(),
-                    bpm: first_track.as_ref().and_then(|t| t.bpm),
-                    loopability: first_track
-                        .as_ref()
-                        .map(|t| t.loopability)
-                        .unwrap_or(false),
-                    intro_friendly: first_track
-                        .as_ref()
-                        .map(|t| t.intro_friendly)
-                        .unwrap_or(false),
-                    cta_friendly: first_track
-                        .as_ref()
-                        .map(|t| t.cta_friendly)
-                        .unwrap_or(false),
-                    loudness_target_lufs: first_track
-                        .as_ref()
-                        .map(|t| t.loudness_target_lufs)
-                        .unwrap_or(-14.0),
-                    loop_mode: "seamless".to_string(),
-                    ducking_policy: "on_voice".to_string(),
-                },
-            };
+    state.with_active_project_mut(|project| {
+        let event = TimelineEvent {
+            id: event_id.clone(),
+            asset_id: asset_id.clone(),
+            start_ms: 0,
+            end_ms: if timeline_duration_ms > 0 {
+                timeline_duration_ms
+            } else {
+                duration_ms
+            },
+            offset_ms: 0,
+            gain_db: -6.0,
+            fade_in_ms: 500,
+            fade_out_ms: 500,
+            tags: vec![mood.clone(), energy.clone()],
+            provenance: Some(Provenance {
+                tool: "music_assign".to_string(),
+                editorial_role: None,
+                concept: None,
+            }),
+            kind: EventKind::Music {
+                mood: mood.clone(),
+                energy: energy.clone(),
+                bpm: first_track.as_ref().and_then(|t| t.bpm),
+                loopability: first_track.as_ref().map(|t| t.loopability).unwrap_or(false),
+                intro_friendly: first_track
+                    .as_ref()
+                    .map(|t| t.intro_friendly)
+                    .unwrap_or(false),
+                cta_friendly: first_track
+                    .as_ref()
+                    .map(|t| t.cta_friendly)
+                    .unwrap_or(false),
+                loudness_target_lufs: first_track
+                    .as_ref()
+                    .map(|t| t.loudness_target_lufs)
+                    .unwrap_or(-14.0),
+                loop_mode: "seamless".to_string(),
+                ducking_policy: "on_voice".to_string(),
+            },
+        };
 
-            project
-                .timeline
-                .tracks
-                .entry(TrackType::Music)
-                .or_default()
-                .push(event);
-        });
+        project
+            .timeline
+            .tracks
+            .entry(TrackType::Music)
+            .or_default()
+            .push(event);
+    });
 
     let _ = save_project_inner(&state);
 
@@ -425,44 +409,43 @@ pub async fn sfx_assign(
     let event_id = generate_event_id();
     let end_ms = position_ms + duration_ms;
 
-    state
-        .with_active_project_mut(|project| {
-            let event = TimelineEvent {
-                id: event_id.clone(),
-                asset_id: asset_id.clone(),
-                start_ms: position_ms,
-                end_ms,
-                offset_ms: 0,
-                gain_db: recommended_gain_db,
-                fade_in_ms: 0,
-                fade_out_ms: 50,
-                tags: vec![editorial_role.clone()],
-                provenance: Some(Provenance {
-                    tool: "sfx_assign".to_string(),
-                    editorial_role: Some(editorial_role.clone()),
-                    concept: None,
-                }),
-                kind: EventKind::Sfx {
-                    editorial_role: editorial_role.clone(),
-                    category,
-                    subcategory,
-                    duration_ms,
-                    sample_rate: 48000,
-                    peak_db,
-                    loudness_lufs,
-                    recommended_gain_db,
-                    recommended_use,
-                    safe_overlay,
-                },
-            };
+    state.with_active_project_mut(|project| {
+        let event = TimelineEvent {
+            id: event_id.clone(),
+            asset_id: asset_id.clone(),
+            start_ms: position_ms,
+            end_ms,
+            offset_ms: 0,
+            gain_db: recommended_gain_db,
+            fade_in_ms: 0,
+            fade_out_ms: 50,
+            tags: vec![editorial_role.clone()],
+            provenance: Some(Provenance {
+                tool: "sfx_assign".to_string(),
+                editorial_role: Some(editorial_role.clone()),
+                concept: None,
+            }),
+            kind: EventKind::Sfx {
+                editorial_role: editorial_role.clone(),
+                category,
+                subcategory,
+                duration_ms,
+                sample_rate: 48000,
+                peak_db,
+                loudness_lufs,
+                recommended_gain_db,
+                recommended_use,
+                safe_overlay,
+            },
+        };
 
-            project
-                .timeline
-                .tracks
-                .entry(TrackType::Sfx)
-                .or_default()
-                .push(event);
-        });
+        project
+            .timeline
+            .tracks
+            .entry(TrackType::Sfx)
+            .or_default()
+            .push(event);
+    });
 
     let _ = save_project_inner(&state);
 

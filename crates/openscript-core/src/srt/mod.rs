@@ -346,9 +346,7 @@ pub fn build_edl(
             // Re-sort selected segments by start time so the output is
             // chronological, not in score order. Without this, the rendered
             // video jumps around chronologically.
-            segments.sort_by(|a, b| {
-                a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            segments.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         }
         "remove" => {
             for entry in analysis {
@@ -546,8 +544,8 @@ mod tests {
         let segments = build_edl(&analysis, "keep", Some(10.0), 120);
         assert_eq!(segments.len(), 3);
         // Output must be sorted by start time, not by score
-        assert_eq!(segments[0].0, 0.0);  // start=0
-        assert_eq!(segments[1].0, 5.0);  // start=5
+        assert_eq!(segments[0].0, 0.0); // start=0
+        assert_eq!(segments[1].0, 5.0); // start=5
         assert_eq!(segments[2].0, 10.0); // start=10
     }
 

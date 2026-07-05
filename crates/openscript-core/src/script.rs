@@ -627,10 +627,7 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
         if !spec.speakers.contains_key(&scene.speaker) {
             errors.push(ScriptValidationError {
                 field: format!("scenes[{}].speaker", i),
-                message: format!(
-                    "Speaker '{}' not defined in speakers map",
-                    scene.speaker
-                ),
+                message: format!("Speaker '{}' not defined in speakers map", scene.speaker),
             });
         }
         if scene.text.trim().is_empty() {
@@ -663,13 +660,22 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
             message: format!(
                 "Invalid fps '{}'. Must be one of: {}",
                 spec.meta.fps,
-                valid_fps.iter().map(|f| f.to_string()).collect::<Vec<_>>().join(", ")
+                valid_fps
+                    .iter()
+                    .map(|f| f.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         });
     }
 
     // Validate caption style
-    let valid_caption_styles = ["word_highlight", "sentence_fade", "karaoke_fill", "subtitle_rail"];
+    let valid_caption_styles = [
+        "word_highlight",
+        "sentence_fade",
+        "karaoke_fill",
+        "subtitle_rail",
+    ];
     if !valid_caption_styles.contains(&spec.captions.style.as_str()) {
         errors.push(ScriptValidationError {
             field: "captions.style".into(),
@@ -827,32 +833,47 @@ mod tests {
 
     #[test]
     fn test_validate_valid_script() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hello!"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
-        assert!(errors.is_empty(), "Expected no validation errors, got: {:?}", errors);
+        assert!(
+            errors.is_empty(),
+            "Expected no validation errors, got: {:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_validate_missing_speakers() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {},
             "scenes": [{"speaker": "alice", "text": "Hello!"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
-        assert!(errors.iter().any(|e| e.field == "speakers" && e.message.contains("At least one speaker")));
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "speakers" && e.message.contains("At least one speaker")));
     }
 
     #[test]
     fn test_validate_missing_scenes() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": []
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "scenes"));
@@ -860,21 +881,29 @@ mod tests {
 
     #[test]
     fn test_validate_undefined_speaker_in_scene() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "bob", "text": "Hello!"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
-        assert!(errors.iter().any(|e| e.field == "scenes[0].speaker" && e.message.contains("not defined")));
+        assert!(errors
+            .iter()
+            .any(|e| e.field == "scenes[0].speaker" && e.message.contains("not defined")));
     }
 
     #[test]
     fn test_validate_empty_scene_text() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "  "}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "scenes[0].text"));
@@ -882,11 +911,14 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_aspect() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "meta": {"aspect": "4:3"},
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "meta.aspect"));
@@ -894,11 +926,14 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_fps() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "meta": {"fps": 25},
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "meta.fps"));
@@ -906,11 +941,14 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_caption_style() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "captions": {"style": "fancy"},
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "captions.style"));
@@ -918,11 +956,14 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_lip_sync() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "stickers": {"lip_sync": "ml-powered"},
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "stickers.lip_sync"));
@@ -930,11 +971,14 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_tts_backend() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "tts": {"backend": "elevenlabs"},
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "tts.backend"));
@@ -942,11 +986,14 @@ mod tests {
 
     #[test]
     fn test_validate_invalid_background_type() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "background": {"type": "stock_footage"},
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "background.type"));
@@ -970,14 +1017,17 @@ mod tests {
 
     #[test]
     fn test_auto_assign_scene_ids() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [
                 {"speaker": "alice", "text": "First"},
                 {"speaker": "alice", "text": "Second"},
                 {"id": "custom", "speaker": "alice", "text": "Third"}
             ]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         assert_eq!(spec.scenes[0].id, "scene_001");
         assert_eq!(spec.scenes[1].id, "scene_002");
@@ -986,10 +1036,13 @@ mod tests {
 
     #[test]
     fn test_defaults_applied_for_missing_sections() {
-        let spec = parse_script(r#"{
+        let spec = parse_script(
+            r#"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Hi"}]
-        }"#).unwrap();
+        }"#,
+        )
+        .unwrap();
 
         // All optional sections get defaults
         assert_eq!(spec.meta.width, 1080);

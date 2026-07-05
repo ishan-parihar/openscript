@@ -1,6 +1,6 @@
-pub mod sfx;
 pub mod music;
 pub mod pexels;
+pub mod sfx;
 
 /// Shared utility: probe media duration in milliseconds via ffprobe.
 /// Returns None if ffprobe is unavailable or the file cannot be probed.

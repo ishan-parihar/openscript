@@ -124,13 +124,21 @@ pub fn generate_ass(
 
     // Events
     out.push_str("[Events]\n");
-    out.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
+    out.push_str(
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+    );
 
     match spec.style.as_str() {
-        "word_highlight" => generate_word_highlight(&mut out, segments, &spec, primary_color, highlight_color),
+        "word_highlight" => {
+            generate_word_highlight(&mut out, segments, &spec, primary_color, highlight_color)
+        }
         "sentence_fade" => generate_sentence_fade(&mut out, segments, &spec),
-        "karaoke_fill" => generate_karaoke_fill(&mut out, segments, &spec, primary_color, highlight_color),
-        "subtitle_rail" => generate_subtitle_rail(&mut out, segments, &spec, canvas_width, canvas_height),
+        "karaoke_fill" => {
+            generate_karaoke_fill(&mut out, segments, &spec, primary_color, highlight_color)
+        }
+        "subtitle_rail" => {
+            generate_subtitle_rail(&mut out, segments, &spec, canvas_width, canvas_height)
+        }
         _ => generate_word_highlight(&mut out, segments, &spec, primary_color, highlight_color),
     }
 
@@ -178,7 +186,8 @@ fn generate_word_highlight(
                 // For each word in the sentence, show the full sentence with
                 // the current word highlighted
                 for (i, word) in sentence.iter().enumerate() {
-                    let text = build_highlighted_line(sentence, i, &primary_color, &highlight_color);
+                    let text =
+                        build_highlighted_line(sentence, i, &primary_color, &highlight_color);
                     out.push_str(&format!(
                         "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
                         ass_time(word.start_ms),
@@ -190,7 +199,8 @@ fn generate_word_highlight(
                 // Sentence is longer than max_per_line — split into chunks
                 for chunk in sentence.chunks(max_per_line) {
                     for (i, word) in chunk.iter().enumerate() {
-                        let text = build_highlighted_line(chunk, i, &primary_color, &highlight_color);
+                        let text =
+                            build_highlighted_line(chunk, i, &primary_color, &highlight_color);
                         out.push_str(&format!(
                             "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
                             ass_time(word.start_ms),
@@ -255,7 +265,10 @@ fn build_highlighted_line(
             let escaped_word = ass_escape(&w.word);
             if i == highlight_idx {
                 // Highlight: change color + scale up slightly for emphasis
-                format!("{{\\c{}\\fscx110\\fscy110}}{}{{\\c{}\\fscx100\\fscy100}}", highlight_color, escaped_word, primary_color)
+                format!(
+                    "{{\\c{}\\fscx110\\fscy110}}{}{{\\c{}\\fscx100\\fscy100}}",
+                    highlight_color, escaped_word, primary_color
+                )
             } else {
                 escaped_word
             }
@@ -292,7 +305,11 @@ fn generate_karaoke_fill(
 
         for (i, word) in seg.words.iter().enumerate() {
             let dur_cs = (word.end_ms - word.start_ms) / 10;
-            text.push_str(&format!("{{\\k{}}}{}", dur_cs.max(1), ass_escape(&word.word)));
+            text.push_str(&format!(
+                "{{\\k{}}}{}",
+                dur_cs.max(1),
+                ass_escape(&word.word)
+            ));
             if i < seg.words.len() - 1 {
                 text.push(' ');
             }
@@ -427,10 +444,19 @@ mod tests {
         assert!(ass.contains("world"));
         // BUG FIX: ASS override tags should NOT be escaped
         // The old code was escaping { and } which broke the tags
-        assert!(!ass.contains("\\{\\c"), "ASS override tags must not be escaped");
-        assert!(ass.contains("{\\c"), "Should contain valid ASS color override tags");
+        assert!(
+            !ass.contains("\\{\\c"),
+            "ASS override tags must not be escaped"
+        );
+        assert!(
+            ass.contains("{\\c"),
+            "Should contain valid ASS color override tags"
+        );
         // Should use center alignment (Alignment=5)
-        assert!(ass.contains(",5,"), "Should use center alignment (Alignment=5)");
+        assert!(
+            ass.contains(",5,"),
+            "Should use center alignment (Alignment=5)"
+        );
     }
 
     #[test]
@@ -496,12 +522,21 @@ mod tests {
         let word_refs: Vec<&WordTiming> = words.iter().collect();
         let line = build_highlighted_line(&word_refs, 1, "&H00ffffff", "&H0088ff00");
         // Word at index 1 ("two") should have the highlight color + scale
-        assert!(line.contains("&H0088ff00"), "Should contain highlight color");
+        assert!(
+            line.contains("&H0088ff00"),
+            "Should contain highlight color"
+        );
         assert!(line.contains("two"), "Should contain highlighted word");
         assert!(line.contains("one"), "Should contain non-highlighted word");
-        assert!(line.contains("three"), "Should contain non-highlighted word");
+        assert!(
+            line.contains("three"),
+            "Should contain non-highlighted word"
+        );
         // Should contain scale override for the highlighted word
-        assert!(line.contains("fscx110"), "Should contain scale-up for highlighted word");
+        assert!(
+            line.contains("fscx110"),
+            "Should contain scale-up for highlighted word"
+        );
     }
 
     #[test]
@@ -518,6 +553,10 @@ mod tests {
         // Should have dialogue lines for 2 chunks of 2 words each
         let dialogue_count = ass.matches("Dialogue:").count();
         // 2 words in line 1 + 2 words in line 2 = 4 dialogue events
-        assert!(dialogue_count >= 4, "Expected at least 4 dialogue events, got {}", dialogue_count);
+        assert!(
+            dialogue_count >= 4,
+            "Expected at least 4 dialogue events, got {}",
+            dialogue_count
+        );
     }
 }

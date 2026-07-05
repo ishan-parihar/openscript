@@ -198,8 +198,7 @@ pub async fn handle_hf_render(args: Value) -> Result<Value, HfError> {
         extra_args.push("--docker");
     }
 
-    let output =
-        run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
+    let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
 
     // Render doesn't support --json; return structured result
     let success = output.exit_code == 0;
@@ -261,11 +260,31 @@ impl serde::Serialize for HfError {
 /// If any of these are found, the composition should use the PR #214 interop
 /// escape hatch instead of a native HF translation.
 const BLOCKER_PATTERNS: &[(&str, &str, &str)] = &[
-    ("useState", "r2hf/use-state", "useState drives animation — not deterministic in HF's seek-driven model"),
-    ("useReducer", "r2hf/use-reducer", "useReducer drives animation — not deterministic in HF's seek-driven model"),
-    ("useEffect", "r2hf/use-effect-deps", "useEffect with deps — side effects break seek-driven determinism"),
-    ("useLayoutEffect", "r2hf/use-effect-deps", "useLayoutEffect with deps — side effects break seek-driven determinism"),
-    ("calculateMetadata", "r2hf/async-metadata", "calculateMetadata may be async — HF can't resolve at seek time"),
+    (
+        "useState",
+        "r2hf/use-state",
+        "useState drives animation — not deterministic in HF's seek-driven model",
+    ),
+    (
+        "useReducer",
+        "r2hf/use-reducer",
+        "useReducer drives animation — not deterministic in HF's seek-driven model",
+    ),
+    (
+        "useEffect",
+        "r2hf/use-effect-deps",
+        "useEffect with deps — side effects break seek-driven determinism",
+    ),
+    (
+        "useLayoutEffect",
+        "r2hf/use-effect-deps",
+        "useLayoutEffect with deps — side effects break seek-driven determinism",
+    ),
+    (
+        "calculateMetadata",
+        "r2hf/async-metadata",
+        "calculateMetadata may be async — HF can't resolve at seek time",
+    ),
 ];
 
 /// Third-party React UI libraries that are blockers for HF translation.
@@ -282,10 +301,26 @@ const BLOCKER_IMPORTS: &[(&str, &str)] = &[
 
 /// Warning patterns — translate after dropping the construct.
 const WARNING_PATTERNS: &[(&str, &str, &str)] = &[
-    ("@remotion/lambda", "r2hf/lambda-import", "Lambda config — drop, HF is single-machine"),
-    ("delayRender", "r2hf/delay-render", "delayRender — HF handles asset loading differently"),
-    ("useCallback", "r2hf/use-callback", "useCallback — decorative, drop and inline"),
-    ("useMemo", "r2hf/use-memo", "useMemo — decorative, drop and inline"),
+    (
+        "@remotion/lambda",
+        "r2hf/lambda-import",
+        "Lambda config — drop, HF is single-machine",
+    ),
+    (
+        "delayRender",
+        "r2hf/delay-render",
+        "delayRender — HF handles asset loading differently",
+    ),
+    (
+        "useCallback",
+        "r2hf/use-callback",
+        "useCallback — decorative, drop and inline",
+    ),
+    (
+        "useMemo",
+        "r2hf/use-memo",
+        "useMemo — decorative, drop and inline",
+    ),
 ];
 
 /// A lint finding.
@@ -338,7 +373,9 @@ pub fn lint_remotion_source(src: &str) -> Vec<Finding> {
                     rule: rule.to_string(),
                     message: message.to_string(),
                     line: line_num + 1,
-                    recommendation: "Use the PR #214 interop escape hatch (see hyperframes/interop/)".to_string(),
+                    recommendation:
+                        "Use the PR #214 interop escape hatch (see hyperframes/interop/)"
+                            .to_string(),
                 });
             }
         }
@@ -473,7 +510,11 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
                 .map_err(|e| HfError::Io(format!("Cannot read {}: {}", sp, e)))?;
             let findings = lint_remotion_source(&src);
             let has_blockers = findings.iter().any(|f| f.severity == "blocker");
-            let recommendation = if has_blockers { "remotion-interop" } else { "hf-native" };
+            let recommendation = if has_blockers {
+                "remotion-interop"
+            } else {
+                "hf-native"
+            };
             (
                 recommendation.to_string(),
                 Some(json!({
@@ -493,10 +534,15 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
     match engine.as_str() {
         "hf-native" => {
             let mut extra_args = vec!["--quality", quality, "--output", output_path];
-            if args.get("strict").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if args
+                .get("strict")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 extra_args.push("--strict");
             }
-            let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
+            let output =
+                run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
             let success = output.exit_code == 0;
             let (file_exists, file_size) = if success {
                 match std::fs::metadata(output_path) {
@@ -523,7 +569,9 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
             // The interop path: the project_dir should contain an index.html
             // that loads dist/bundle.js (the esbuild-bundled Remotion Player).
             // Check that the bundle exists before rendering.
-            let bundle_path = std::path::Path::new(project_dir).join("dist").join("bundle.js");
+            let bundle_path = std::path::Path::new(project_dir)
+                .join("dist")
+                .join("bundle.js");
             if !bundle_path.exists() {
                 return Err(HfError::InvalidArg(format!(
                     "Interop bundle not found at {}. Run: npx esbuild <entry>.tsx --bundle --format=iife --outfile=dist/bundle.js --jsx=automatic",
@@ -531,7 +579,8 @@ pub async fn handle_composition_render(args: Value) -> Result<Value, HfError> {
                 )));
             }
             let extra_args = vec!["--quality", quality, "--output", output_path];
-            let output = run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
+            let output =
+                run_hf_cli("render", project_dir, &extra_args, RENDER_TIMEOUT_SECS).await?;
             let success = output.exit_code == 0;
             let (file_exists, file_size) = if success {
                 match std::fs::metadata(output_path) {
@@ -821,7 +870,9 @@ mod tests {
             const [count, setCount] = useState(0);
         "#;
         let findings = lint_remotion_source(src);
-        assert!(findings.iter().any(|f| f.rule == "r2hf/use-state" && f.severity == "blocker"));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == "r2hf/use-state" && f.severity == "blocker"));
     }
 
     #[test]
@@ -831,7 +882,9 @@ mod tests {
             useEffect(() => fetchData(), [id]);
         "#;
         let findings = lint_remotion_source(src);
-        assert!(findings.iter().any(|f| f.rule == "r2hf/use-effect-deps" && f.severity == "blocker"));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == "r2hf/use-effect-deps" && f.severity == "blocker"));
     }
 
     #[test]
@@ -851,7 +904,9 @@ mod tests {
             import { Button } from "@mui/material";
         "#;
         let findings = lint_remotion_source(src);
-        assert!(findings.iter().any(|f| f.rule == "r2hf/third-party-react-ui" && f.severity == "blocker"));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == "r2hf/third-party-react-ui" && f.severity == "blocker"));
     }
 
     #[test]
@@ -860,6 +915,8 @@ mod tests {
             const value = useMemo(() => compute(), [deps]);
         "#;
         let findings = lint_remotion_source(src);
-        assert!(findings.iter().any(|f| f.rule == "r2hf/use-memo" && f.severity == "warning"));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == "r2hf/use-memo" && f.severity == "warning"));
     }
 }

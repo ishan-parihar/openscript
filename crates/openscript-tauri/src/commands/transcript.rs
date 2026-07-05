@@ -1,9 +1,9 @@
 #![allow(dead_code)] // Some helpers used by future tasks
 
 use openscript_core::srt;
-use openscript_core::transcript::analysis::{detect_filler_words, remove_filler_words};
-use openscript_core::timeline::Timeline;
 use openscript_core::timeline::Segment;
+use openscript_core::timeline::Timeline;
+use openscript_core::transcript::analysis::{detect_filler_words, remove_filler_words};
 use openscript_ffmpeg::render::render_from_timeline;
 use openscript_transcribe::transcriber::transcribe;
 use serde_json::{json, Value};
@@ -39,17 +39,19 @@ pub async fn transcribe_video(
 /// Read and parse an SRT file into segments.
 #[tauri::command]
 pub async fn read_transcript(srt_path: String) -> Result<Value, String> {
-    let entries = srt::parse_srt(&srt_path)
-        .map_err(|e| format!("Failed to parse SRT: {}", e))?;
+    let entries = srt::parse_srt(&srt_path).map_err(|e| format!("Failed to parse SRT: {}", e))?;
 
-    let segments: Vec<Value> = entries.iter().map(|e| {
-        json!({
-            "index": e.idx,
-            "start": e.start,
-            "end": e.end,
-            "text": e.text,
+    let segments: Vec<Value> = entries
+        .iter()
+        .map(|e| {
+            json!({
+                "index": e.idx,
+                "start": e.start,
+                "end": e.end,
+                "text": e.text,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(json!({ "count": segments.len(), "segments": segments }))
 }
@@ -61,18 +63,26 @@ pub async fn prepare_transcript(
     max_words: Option<usize>,
     max_chars: Option<usize>,
 ) -> Result<Value, String> {
-    let entries = srt::parse_srt(&word_srt_path)
-        .map_err(|e| format!("Failed to parse word SRT: {}", e))?;
+    let entries =
+        srt::parse_srt(&word_srt_path).map_err(|e| format!("Failed to parse word SRT: {}", e))?;
 
-    let groups = srt::group_entries(&entries, max_words.unwrap_or(10), max_chars.unwrap_or(64), 0.6);
+    let groups = srt::group_entries(
+        &entries,
+        max_words.unwrap_or(10),
+        max_chars.unwrap_or(64),
+        0.6,
+    );
 
-    let segments: Vec<Value> = groups.iter().map(|(text, start, end)| {
-        json!({
-            "start": start,
-            "end": end,
-            "text": text,
+    let segments: Vec<Value> = groups
+        .iter()
+        .map(|(text, start, end)| {
+            json!({
+                "start": start,
+                "end": end,
+                "text": text,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(json!({ "count": segments.len(), "segments": segments }))
 }
@@ -80,11 +90,18 @@ pub async fn prepare_transcript(
 /// Analyze transcript for filler words.
 #[tauri::command]
 pub async fn analyze_transcript(srt_path: String) -> Result<Value, String> {
-    let entries = srt::parse_srt(&srt_path)
-        .map_err(|e| format!("Failed to parse SRT: {}", e))?;
+    let entries = srt::parse_srt(&srt_path).map_err(|e| format!("Failed to parse SRT: {}", e))?;
 
-    let segments: Vec<_> = entries.iter()
-        .map(|e| (e.idx.to_string(), (e.start * 1000.0) as u64, (e.end * 1000.0) as u64, e.text.clone()))
+    let segments: Vec<_> = entries
+        .iter()
+        .map(|e| {
+            (
+                e.idx.to_string(),
+                (e.start * 1000.0) as u64,
+                (e.end * 1000.0) as u64,
+                e.text.clone(),
+            )
+        })
         .collect();
 
     let analysis = detect_filler_words(&segments);
@@ -119,40 +136,36 @@ pub async fn apply_transcript_edit(
     }
 
     // Build segments from edited data
-    let segments: Vec<Segment> = edited_segments.iter().enumerate().filter_map(|(i, seg)| {
-        let start = seg["start"].as_f64()?;
-        let end = seg["end"].as_f64()?;
-        let caption = seg["text"].as_str()?.to_string();
-        Some(Segment {
-            id: format!("seg_{:03}", i + 1),
-            start,
-            end,
-            caption,
-            crossfade_ms: 120,
-            semantic_role: None,
+    let segments: Vec<Segment> = edited_segments
+        .iter()
+        .enumerate()
+        .filter_map(|(i, seg)| {
+            let start = seg["start"].as_f64()?;
+            let end = seg["end"].as_f64()?;
+            let caption = seg["text"].as_str()?.to_string();
+            Some(Segment {
+                id: format!("seg_{:03}", i + 1),
+                start,
+                end,
+                caption,
+                crossfade_ms: 120,
+                semantic_role: None,
+            })
         })
-    }).collect();
+        .collect();
 
     if segments.is_empty() {
         return Err("No valid segments provided".to_string());
     }
 
     // Build a minimal timeline
-    let mut timeline = Timeline::new(
-        PathBuf::from(&video_path),
-        "9:16",
-        30,
-        None,
-    );
+    let mut timeline = Timeline::new(PathBuf::from(&video_path), "9:16", 30, None);
     timeline.segments = segments;
 
     // Render using FFmpeg (no cancel token for transcript-edit renders)
-    let output = render_from_timeline(
-        &timeline,
-        &video_path,
-        Some(&output_path),
-        Some(20),
-    ).await.map_err(|e| format!("Render failed: {}", e))?;
+    let output = render_from_timeline(&timeline, &video_path, Some(&output_path), Some(20))
+        .await
+        .map_err(|e| format!("Render failed: {}", e))?;
 
     Ok(json!({
         "output_path": output,

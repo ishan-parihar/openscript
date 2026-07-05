@@ -4,31 +4,237 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub const CONCEPT_ALIASES: &[(&str, &[&str])] = &[
-    ("technology", &["technology", "computer", "digital", "tech", "AI", "software", "coding"]),
-    ("city", &["city", "urban", "street", "buildings", "skyline", "downtown"]),
-    ("people", &["people", "person", "human", "crowd", "team", "group", "community"]),
-    ("money", &["money", "cash", "finance", "payment", "bank", "investment", "crypto"]),
-    ("nature", &["nature", "forest", "trees", "outdoor", "mountain", "ocean", "river"]),
-    ("business", &["business", "office", "meeting", "work", "corporate", "conference"]),
-    ("food", &["food", "cooking", "kitchen", "restaurant", "meal", "dining"]),
-    ("travel", &["travel", "airport", "hotel", "vacation", "adventure", "exploring"]),
-    ("health", &["health", "fitness", "gym", "exercise", "wellness", "medical"]),
-    ("education", &["education", "school", "learning", "study", "teaching", "classroom"]),
-    ("emotion", &["happy", "sad", "excited", "worried", "joy", "fear", "love", "anger"]),
-    ("action", &["running", "walking", "talking", "working", "exercise", "sports"]),
-    ("growth", &["growth", "success", "progress", "innovation", "startup", "business growth"]),
-    ("failure", &["failure", "crisis", "problem", "challenge", "risk", "danger"]),
-    ("communication", &["communication", "phone", "email", "message", "social media", "networking"]),
-    ("time", &["time", "clock", "deadline", "schedule", "calendar", "planning"]),
-    ("data", &["data", "analytics", "chart", "graph", "statistics", "report"]),
-    ("security", &["security", "privacy", "protection", "lock", "shield", "safe"]),
-    ("creativity", &["creativity", "art", "design", "music", "painting", "drawing"]),
-    ("home", &["home", "house", "living room", "family", "interior", "furniture"]),
-    ("car", &["car", "vehicle", "driving", "transportation", "traffic", "road"]),
-    ("weather", &["weather", "rain", "sun", "cloud", "storm", "snow", "wind"]),
-    ("science", &["science", "laboratory", "experiment", "research", "discovery"]),
-    ("shopping", &["shopping", "store", "mall", "buy", "purchase", "ecommerce"]),
-    ("celebration", &["celebration", "party", "birthday", "wedding", "festival", "holiday"]),
+    (
+        "technology",
+        &[
+            "technology",
+            "computer",
+            "digital",
+            "tech",
+            "AI",
+            "software",
+            "coding",
+        ],
+    ),
+    (
+        "city",
+        &[
+            "city",
+            "urban",
+            "street",
+            "buildings",
+            "skyline",
+            "downtown",
+        ],
+    ),
+    (
+        "people",
+        &[
+            "people",
+            "person",
+            "human",
+            "crowd",
+            "team",
+            "group",
+            "community",
+        ],
+    ),
+    (
+        "money",
+        &[
+            "money",
+            "cash",
+            "finance",
+            "payment",
+            "bank",
+            "investment",
+            "crypto",
+        ],
+    ),
+    (
+        "nature",
+        &[
+            "nature", "forest", "trees", "outdoor", "mountain", "ocean", "river",
+        ],
+    ),
+    (
+        "business",
+        &[
+            "business",
+            "office",
+            "meeting",
+            "work",
+            "corporate",
+            "conference",
+        ],
+    ),
+    (
+        "food",
+        &["food", "cooking", "kitchen", "restaurant", "meal", "dining"],
+    ),
+    (
+        "travel",
+        &[
+            "travel",
+            "airport",
+            "hotel",
+            "vacation",
+            "adventure",
+            "exploring",
+        ],
+    ),
+    (
+        "health",
+        &[
+            "health", "fitness", "gym", "exercise", "wellness", "medical",
+        ],
+    ),
+    (
+        "education",
+        &[
+            "education",
+            "school",
+            "learning",
+            "study",
+            "teaching",
+            "classroom",
+        ],
+    ),
+    (
+        "emotion",
+        &[
+            "happy", "sad", "excited", "worried", "joy", "fear", "love", "anger",
+        ],
+    ),
+    (
+        "action",
+        &[
+            "running", "walking", "talking", "working", "exercise", "sports",
+        ],
+    ),
+    (
+        "growth",
+        &[
+            "growth",
+            "success",
+            "progress",
+            "innovation",
+            "startup",
+            "business growth",
+        ],
+    ),
+    (
+        "failure",
+        &[
+            "failure",
+            "crisis",
+            "problem",
+            "challenge",
+            "risk",
+            "danger",
+        ],
+    ),
+    (
+        "communication",
+        &[
+            "communication",
+            "phone",
+            "email",
+            "message",
+            "social media",
+            "networking",
+        ],
+    ),
+    (
+        "time",
+        &[
+            "time", "clock", "deadline", "schedule", "calendar", "planning",
+        ],
+    ),
+    (
+        "data",
+        &[
+            "data",
+            "analytics",
+            "chart",
+            "graph",
+            "statistics",
+            "report",
+        ],
+    ),
+    (
+        "security",
+        &[
+            "security",
+            "privacy",
+            "protection",
+            "lock",
+            "shield",
+            "safe",
+        ],
+    ),
+    (
+        "creativity",
+        &[
+            "creativity",
+            "art",
+            "design",
+            "music",
+            "painting",
+            "drawing",
+        ],
+    ),
+    (
+        "home",
+        &[
+            "home",
+            "house",
+            "living room",
+            "family",
+            "interior",
+            "furniture",
+        ],
+    ),
+    (
+        "car",
+        &[
+            "car",
+            "vehicle",
+            "driving",
+            "transportation",
+            "traffic",
+            "road",
+        ],
+    ),
+    (
+        "weather",
+        &["weather", "rain", "sun", "cloud", "storm", "snow", "wind"],
+    ),
+    (
+        "science",
+        &[
+            "science",
+            "laboratory",
+            "experiment",
+            "research",
+            "discovery",
+        ],
+    ),
+    (
+        "shopping",
+        &["shopping", "store", "mall", "buy", "purchase", "ecommerce"],
+    ),
+    (
+        "celebration",
+        &[
+            "celebration",
+            "party",
+            "birthday",
+            "wedding",
+            "festival",
+            "holiday",
+        ],
+    ),
 ];
 
 /// Match text against CONCEPT_ALIASES and return the best matching concept key.
@@ -195,7 +401,9 @@ impl PexelsClient {
             self.fetch_page(concept, orientation, 1, quality).await?
         };
 
-        let cache_key_file = self.cache_dir.join(format!("{}.json", cache_key.replace(' ', "_")));
+        let cache_key_file = self
+            .cache_dir
+            .join(format!("{}.json", cache_key.replace(' ', "_")));
         if let Some(parent) = cache_key_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -244,9 +452,12 @@ impl PexelsClient {
             .split('?')
             .next()
             .unwrap_or("mp4");
-        let dest = self
-            .cache_dir
-            .join(format!("{}_{}.{}", concept.replace(' ', "_"), video.id, ext));
+        let dest = self.cache_dir.join(format!(
+            "{}_{}.{}",
+            concept.replace(' ', "_"),
+            video.id,
+            ext
+        ));
         let dest_str = dest.to_string_lossy().to_string();
 
         if dest.exists() {
@@ -348,7 +559,11 @@ impl PexelsClient {
                             .to_string(),
                         width: f.get("width").and_then(|x| x.as_i64()).unwrap_or(0),
                         height: f.get("height").and_then(|x| x.as_i64()).unwrap_or(0),
-                        link: f.get("link").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                        link: f
+                            .get("link")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         size: f.get("size").and_then(|x| x.as_i64()).unwrap_or(0),
                     })
                 })

@@ -17,16 +17,34 @@ use tokio::process::Command;
 /// Source channel definitions (mirrors MUSIC_SOURCES + SFX_SOURCES in the
 /// Python script).
 const MUSIC_SOURCES: &[(&str, &str)] = &[
-    ("NoCopyrightSounds", "https://www.youtube.com/@NoCopyrightSounds"),
-    ("AudioLibrary", "https://www.youtube.com/channel/UCQsBfyc5eOobgCzeY8bBzFg"),
-    ("BreakingCopyright", "https://www.youtube.com/@BreakingCopyright"),
-    ("VlogNoCopyrightMusic", "https://www.youtube.com/@VlogNoCopyrightMusic"),
-    ("MixtureOfficial", "https://www.youtube.com/channel/UCkRrhwhJ2Ia_ZlkTQ4XFWJA"),
+    (
+        "NoCopyrightSounds",
+        "https://www.youtube.com/@NoCopyrightSounds",
+    ),
+    (
+        "AudioLibrary",
+        "https://www.youtube.com/channel/UCQsBfyc5eOobgCzeY8bBzFg",
+    ),
+    (
+        "BreakingCopyright",
+        "https://www.youtube.com/@BreakingCopyright",
+    ),
+    (
+        "VlogNoCopyrightMusic",
+        "https://www.youtube.com/@VlogNoCopyrightMusic",
+    ),
+    (
+        "MixtureOfficial",
+        "https://www.youtube.com/channel/UCkRrhwhJ2Ia_ZlkTQ4XFWJA",
+    ),
 ];
 
 const SFX_SOURCES: &[(&str, &str)] = &[
     ("SoundLibrary1", "https://www.youtube.com/@SoundLibrary1"),
-    ("YouTubeSoundEffects", "https://www.youtube.com/@youtubesoundeffects2692/videos"),
+    (
+        "YouTubeSoundEffects",
+        "https://www.youtube.com/@youtubesoundeffects2692/videos",
+    ),
 ];
 
 /// Sanitise a video title into a filesystem-safe filename (mirrors the Python
@@ -53,7 +71,12 @@ fn sanitize_filename(title: &str) -> String {
             prev_was_underscore = true;
         }
     }
-    result.chars().take(80).collect::<String>().trim_matches('_').to_string()
+    result
+        .chars()
+        .take(80)
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
 }
 
 /// Extract search tags from a video title (mirrors the Python `extract_tags`
@@ -73,12 +96,15 @@ fn extract_tags(title: &str, source_name: &str) -> Vec<String> {
     }
 
     let stopwords = [
-        "the", "and", "for", "with", "your", "you", "are", "but", "not", "all",
-        "can", "has", "this", "that",
+        "the", "and", "for", "with", "your", "you", "are", "but", "not", "all", "can", "has",
+        "this", "that",
     ];
     let mut tags: Vec<String> = cleaned
         .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
         .filter(|w| w.len() > 2 && !stopwords.contains(&w.as_str()))
         .collect();
 
@@ -114,7 +140,11 @@ async fn scrape_youtube_channel(
     media_type: &str,
     max_videos: u32,
 ) -> Vec<Value> {
-    tracing::info!("[library_indexer] Scraping {} ({})", source_name, channel_url);
+    tracing::info!(
+        "[library_indexer] Scraping {} ({})",
+        source_name,
+        channel_url
+    );
 
     let result = Command::new("yt-dlp")
         .arg("--flat-playlist")
@@ -134,17 +164,32 @@ async fn scrape_youtube_channel(
         Ok(o) if o.status.success() => o,
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
-            tracing::warn!("[library_indexer] yt-dlp failed for {}: {}", source_name, stderr.trim());
+            tracing::warn!(
+                "[library_indexer] yt-dlp failed for {}: {}",
+                source_name,
+                stderr.trim()
+            );
             return Vec::new();
         }
         Err(e) => {
-            tracing::warn!("[library_indexer] Failed to spawn yt-dlp for {}: {}", source_name, e);
+            tracing::warn!(
+                "[library_indexer] Failed to spawn yt-dlp for {}: {}",
+                source_name,
+                e
+            );
             return Vec::new();
         }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let skip_words = ["interview", "announcement", "q&a", "faq", "subscribe", "follow me"];
+    let skip_words = [
+        "interview",
+        "announcement",
+        "q&a",
+        "faq",
+        "subscribe",
+        "follow me",
+    ];
     let mut entries = Vec::new();
 
     for line in stdout.lines() {
@@ -158,7 +203,10 @@ async fn scrape_youtube_channel(
 
         let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("");
         let video_id = entry.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let duration = entry.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let duration = entry
+            .get("duration")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
 
         if title.is_empty() || video_id.is_empty() {
             continue;
@@ -192,7 +240,11 @@ async fn scrape_youtube_channel(
         }));
     }
 
-    tracing::info!("[library_indexer]   Found {} entries from {}", entries.len(), source_name);
+    tracing::info!(
+        "[library_indexer]   Found {} entries from {}",
+        entries.len(),
+        source_name
+    );
     entries
 }
 
@@ -294,12 +346,12 @@ pub async fn build_index(output_path: &str) -> Result<Value, String> {
 
     // Write to disk
     if let Some(parent) = Path::new(output_path).parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create index dir: {}", e))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create index dir: {}", e))?;
     }
     let json_str = serde_json::to_string_pretty(&index)
         .map_err(|e| format!("Failed to serialise index: {}", e))?;
-    std::fs::write(output_path, json_str)
-        .map_err(|e| format!("Failed to write index: {}", e))?;
+    std::fs::write(output_path, json_str).map_err(|e| format!("Failed to write index: {}", e))?;
 
     tracing::info!(
         "[library_indexer] Index built: {} entries ({} music, {} SFX) → {}",
@@ -319,7 +371,10 @@ mod tests {
     #[test]
     fn test_sanitize_filename_basic() {
         assert_eq!(sanitize_filename("Hello World!"), "Hello_World");
-        assert_eq!(sanitize_filename("Song (Official Video)"), "Song_Official_Video");
+        assert_eq!(
+            sanitize_filename("Song (Official Video)"),
+            "Song_Official_Video"
+        );
         assert_eq!(sanitize_filename("Track-01.mp3"), "Track-01_mp3");
     }
 
@@ -354,7 +409,10 @@ mod tests {
     fn test_strip_between() {
         assert_eq!(strip_between("Hello [World]!", '[', ']'), "Hello !");
         assert_eq!(strip_between("Hello (World)!", '(', ')'), "Hello !");
-        assert_eq!(strip_between("No brackets here", '[', ']'), "No brackets here");
+        assert_eq!(
+            strip_between("No brackets here", '[', ']'),
+            "No brackets here"
+        );
         // Nested brackets: the nested implementation strips from the outer '['
         // to the outer ']', removing all inner content.
         assert_eq!(strip_between("Nested [a [b] c]", '[', ']'), "Nested ");

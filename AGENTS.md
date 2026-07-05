@@ -290,36 +290,40 @@ inject a fake client in tests.
 
 ---
 
-## 7. Git Workflow
+## 7. Git Workflow & Post-Iteration Protocol
 
-> ### ⚠️ IRON RULE — ALWAYS PUSH COMMITS AFTER EACH ITERATION
+> ### ⚠️ IRON RULE — AN ITERATION IS NOT DONE UNTIL THE COMMIT IS PUSHED
 >
-> **Every iteration MUST end with a `git commit` AND a `git push`.**
-> No exceptions. No "I'll push at the end." No batching iterations into one commit.
+> **Definition of Done for every iteration:**
+> 1. Code written
+> 2. `cargo build --workspace --exclude openscript-tauri` passes with zero warnings
+> 3. `cargo test --workspace --exclude openscript-tauri --lib --bins --tests` passes (baseline: 216 tests)
+> 4. `npx tsc --noEmit` passes (if frontend changed)
+> 5. `git commit` with a message following §7.2
+> 6. **`git push origin main` succeeds** ← the iteration is NOT done until this prints `-> main`
+> 7. `git status` shows "working tree clean" and `git log origin/main..HEAD` shows nothing
 >
-> An *iteration* = one logical unit of work (a bug fix, a new tool, a refactor
-> phase, a docs update). The moment an iteration is verified (build + tests
-> pass), commit it and push it to `origin/main` immediately — before starting
-> the next iteration.
->
-> This rule exists because:
-> 1. **Recoverability** — if your session crashes, your work is on the remote.
-> 2. **Reviewability** — small, pushed commits are reviewable in isolation.
-> 3. **No lost work** — unpushed local commits are a single `rm -rf` away from
->    being gone forever.
-> 4. **User visibility** — the user can see progress on GitHub in real time.
->
-> **Required sequence after every iteration:**
-> ```bash
-> cd /home/z/my-project/openscript
-> git add -A
-> git commit -m "<Phase>: <summary>"     # see §7.2 for format
-> git push origin main
-> ```
->
-> If `git push` fails (network, auth, non-fast-forward), **stop and fix it
-> before starting the next iteration.** Do not continue with unpushed local
-> commits.
+> If ANY of steps 2-6 fail, the iteration is NOT done. Fix it before moving on.
+> If step 6 fails, **STOP. Do not start the next iteration.** See §7.5.
+
+### 7.0 The automated post-iteration gate
+
+Run this after every iteration. It enforces steps 2-7 above automatically:
+
+```bash
+cd /home/z/my-project/openscript && bash scripts/post-iteration.sh
+```
+
+The script:
+1. Runs `cargo build` — fails on any warning
+2. Runs `cargo test` — fails if any test fails or the count drops below the baseline (216)
+3. Runs `npx tsc --noEmit` — fails on any TS error
+4. Runs `git status` — fails if there are uncommitted changes (you forgot to commit)
+5. Runs `git push origin main` — fails if push fails
+6. Runs `git log origin/main..HEAD` — fails if there are unpushed commits
+
+If the script prints `✓ POST-ITERATION GATE PASSED`, your iteration is truly done.
+If it prints `✗ POST-ITERATION GATE FAILED`, you have unfinished work — fix it.
 
 ### 7.1 Commit cadence
 
@@ -370,6 +374,36 @@ Phase 7: Implement system.capabilities + help.tool meta-tools
   fetched stock music) — see §10 for the .gitignore policy
 - `console.log` debug statements
 - `TODO` / `FIXME` without a linked issue
+
+### 7.5 Push-failure hard-stop protocol
+
+**If `git push` fails for ANY reason, STOP.** Do not make another commit.
+Do not write another line of code. Resolve the push first:
+
+| Failure mode | Fix |
+|-------------|-----|
+| `Invalid username or token` | (1) Check `/home/z/my-project/.git-credentials` exists. (2) If missing, ask the user for a token. (3) Store it: `echo "https://ishan-parihar:TOKEN@github.com" > /home/z/my-project/.git-credentials && chmod 600 /home/z/my-project/.git-credentials`. (4) Verify: `git config --global credential.helper "store --file=/home/z/my-project/.git-credentials"`. (5) Retry push. |
+| `Updates were rejected` (non-fast-forward) | `git pull --rebase origin main`, resolve conflicts, `git push origin main`. |
+| `Could not resolve host` / network | Retry 3 times with `sleep 5` between. If still failing, tell the user and wait. |
+| `error: file: ... cannot be pushed` (protected branch) | Tell the user; do not force-push. |
+
+**Never have more than ONE unpushed commit on local disk.** The moment you
+have an unpushed commit, the next action is either pushing it or fixing
+whatever blocked the push. No new work until the push succeeds.
+
+### 7.6 The "definition of done" checklist (print this)
+
+```
+[ ] 1. cargo build --workspace --exclude openscript-tauri  →  zero warnings
+[ ] 2. cargo test --workspace --exclude openscript-tauri --lib --bins --tests  →  216+ pass
+[ ] 3. (if frontend changed) npx tsc --noEmit  →  clean
+[ ] 4. git add -A && git commit -m "<Phase>: <summary>"
+[ ] 5. git push origin main  →  prints "main -> main"
+[ ] 6. git status  →  "working tree clean"
+[ ] 7. git log origin/main..HEAD  →  (empty — nothing unpushed)
+```
+
+If all 7 boxes are checked, the iteration is done. If not, you're not done.
 
 ---
 

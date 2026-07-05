@@ -56,7 +56,7 @@ async fn spawn_ffmpeg_with_progress(
     let mut child = cmd
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)  // Prevent orphaned ffmpeg on MCP client disconnect
+        .kill_on_drop(true) // Prevent orphaned ffmpeg on MCP client disconnect
         .spawn()?;
 
     let stderr = child.stderr.take().expect("stderr was piped above");
@@ -72,10 +72,7 @@ async fn spawn_ffmpeg_with_progress(
                 // Best-effort kill; ignore the result because the child may have exited already.
                 let _ = child.start_kill();
                 let _ = child.wait().await;
-                std::fs::write(
-                    log_path,
-                    "Render cancelled by user\n".to_string(),
-                )?;
+                std::fs::write(log_path, "Render cancelled by user\n".to_string())?;
                 return Err(FfmpegError::RenderFailed("cancelled by user".to_string()));
             }
         }
@@ -89,7 +86,7 @@ async fn spawn_ffmpeg_with_progress(
         .await;
 
         match read_result {
-            Ok(Ok(0)) => break,              // EOF
+            Ok(Ok(0)) => break, // EOF
             Ok(Ok(_n)) => {
                 // Collect stderr for error reporting
                 full_stderr.extend_from_slice(line.as_bytes());
@@ -99,8 +96,9 @@ async fn spawn_ffmpeg_with_progress(
                     if let Some(time_str) = rest.split_whitespace().next() {
                         if let Some(current_ms) = parse_ffmpeg_time_to_ms(time_str) {
                             if total_duration_ms > 0 {
-                                last_progress =
-                                    (current_ms as f64 / total_duration_ms as f64 * 100.0).min(100.0);
+                                last_progress = (current_ms as f64 / total_duration_ms as f64
+                                    * 100.0)
+                                    .min(100.0);
                             }
                         }
                     }
@@ -164,7 +162,8 @@ pub async fn render_with_cancel(
 
     // Build filter graph (handles xfade, subtitles, overlay, loudnorm internally)
     let loudnorm = true;
-    let mut builder = FilterGraphBuilder::new(segments.clone(), config.fps, &config.aspect, loudnorm);
+    let mut builder =
+        FilterGraphBuilder::new(segments.clone(), config.fps, &config.aspect, loudnorm);
     if config.burn_captions {
         if let Some(ass) = &config.ass_path {
             builder = builder.with_ass(ass.clone());

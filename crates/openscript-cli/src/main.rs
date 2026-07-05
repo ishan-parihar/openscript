@@ -146,7 +146,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("script.generate_voices", args).await;
             print_cli_result("script.generate_voices", result);
         }
-        Commands::ScriptBuildCaptions { script, voiceover_manifest, output_path } => {
+        Commands::ScriptBuildCaptions {
+            script,
+            voiceover_manifest,
+            output_path,
+        } => {
             let args = serde_json::json!({
                 "script": script,
                 "voiceover_manifest": voiceover_manifest,
@@ -155,7 +159,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("script.build_captions", args).await;
             print_cli_result("script.build_captions", result);
         }
-        Commands::BackgroundFetch { query, duration_s, aspect } => {
+        Commands::BackgroundFetch {
+            query,
+            duration_s,
+            aspect,
+        } => {
             let args = serde_json::json!({
                 "query": query,
                 "duration_s": duration_s,
@@ -169,7 +177,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("sticker.load_preset", args).await;
             print_cli_result("sticker.load_preset", result);
         }
-        Commands::StickerRender { wav_path, preset_name, position, scale, output_path } => {
+        Commands::StickerRender {
+            wav_path,
+            preset_name,
+            position,
+            scale,
+            output_path,
+        } => {
             let args = serde_json::json!({
                 "wav_path": wav_path,
                 "preset_name": preset_name,
@@ -180,7 +194,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("sticker.render", args).await;
             print_cli_result("sticker.render", result);
         }
-        Commands::ScriptToTimeline { script, output_dir, skip_background, skip_stickers } => {
+        Commands::ScriptToTimeline {
+            script,
+            output_dir,
+            skip_background,
+            skip_stickers,
+        } => {
             let args = serde_json::json!({
                 "script": script,
                 "output_dir": output_dir,
@@ -190,7 +209,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("script.to_timeline", args).await;
             print_cli_result("script.to_timeline", result);
         }
-        Commands::ScriptToVideo { script, output_path, output_dir, skip_background, skip_stickers, preview_mode } => {
+        Commands::ScriptToVideo {
+            script,
+            output_path,
+            output_dir,
+            skip_background,
+            skip_stickers,
+            preview_mode,
+        } => {
             let args = serde_json::json!({
                 "script": script,
                 "output_path": output_path,
@@ -212,9 +238,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Print a CLI tool result as JSON, or the error message.
-fn print_cli_result(tool_name: &str, result: Result<serde_json::Value, openscript_mcp::error::ToolError>) {
+fn print_cli_result(
+    tool_name: &str,
+    result: Result<serde_json::Value, openscript_mcp::error::ToolError>,
+) {
     match result {
-        Ok(val) => println!("{}", serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string())),
+        Ok(val) => println!(
+            "{}",
+            serde_json::to_string_pretty(&val).unwrap_or_else(|_| val.to_string())
+        ),
         Err(e) => {
             eprintln!("Error ({}): {}", tool_name, e);
             std::process::exit(1);
@@ -264,7 +296,9 @@ async fn run_tui(
 
     let mut running = true;
     let tick_rate = std::time::Duration::from_millis(50);
-    let mut render_rx: Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>> = None;
+    let mut render_rx: Option<
+        tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>,
+    > = None;
 
     while running {
         app.process_file_events();
@@ -309,13 +343,18 @@ fn handle_normal_mode(
     app: &mut App,
     key: crossterm::event::KeyCode,
     running: &mut bool,
-    render_rx: &mut Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>>,
+    render_rx: &mut Option<
+        tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>,
+    >,
 ) {
     use crossterm::event::KeyCode;
     use openscript_ui::app::StatusType;
 
     if app.is_rendering {
-        app.set_status("Render in progress... press Esc to cancel", StatusType::Info);
+        app.set_status(
+            "Render in progress... press Esc to cancel",
+            StatusType::Info,
+        );
         if key == KeyCode::Esc {
             *render_rx = None;
             app.is_rendering = false;
@@ -351,7 +390,10 @@ fn handle_normal_mode(
             if has_segments {
                 app.start_caption_edit();
             } else {
-                app.set_status("No segments to edit. Add one first with 'a'", StatusType::Info);
+                app.set_status(
+                    "No segments to edit. Add one first with 'a'",
+                    StatusType::Info,
+                );
             }
         }
 
@@ -381,19 +423,17 @@ fn handle_normal_mode(
             );
         }
 
-        KeyCode::Char('l') => {
-            match Timeline::load(&app.timeline_path) {
-                Ok(tl) => {
-                    if let Ok(mut guard) = app.timeline.try_write() {
-                        *guard = tl;
-                    }
-                    app.timeline_revision += 1;
-                    app.invalidate_preview();
-                    app.set_status("Timeline reloaded from disk", StatusType::Success);
+        KeyCode::Char('l') => match Timeline::load(&app.timeline_path) {
+            Ok(tl) => {
+                if let Ok(mut guard) = app.timeline.try_write() {
+                    *guard = tl;
                 }
-                Err(e) => app.set_status(&format!("Reload failed: {e}"), StatusType::Error),
+                app.timeline_revision += 1;
+                app.invalidate_preview();
+                app.set_status("Timeline reloaded from disk", StatusType::Success);
             }
-        }
+            Err(e) => app.set_status(&format!("Reload failed: {e}"), StatusType::Error),
+        },
 
         KeyCode::Char('q') => *running = false,
 
@@ -431,7 +471,8 @@ fn handle_adding_mode(app: &mut App, key: crossterm::event::KeyEvent) {
 
 fn spawn_render_task(
     app: &mut App,
-) -> Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>> {
+) -> Option<tokio::sync::oneshot::Receiver<Result<String, Box<dyn std::error::Error + Send + Sync>>>>
+{
     use openscript_ui::app::StatusType;
 
     let render_data = match extract_render_data(app) {
@@ -443,7 +484,10 @@ fn spawn_render_task(
     };
 
     let edl_path = render_data.edl_path.clone();
-    if let Err(e) = std::fs::write(&edl_path, serde_json::to_string_pretty(&render_data.edl_data).unwrap_or_default()) {
+    if let Err(e) = std::fs::write(
+        &edl_path,
+        serde_json::to_string_pretty(&render_data.edl_data).unwrap_or_default(),
+    ) {
         app.set_status(&format!("Failed to write EDL: {e}"), StatusType::Error);
         return None;
     }
@@ -485,7 +529,10 @@ struct RenderData {
 }
 
 fn extract_render_data(app: &App) -> Result<RenderData, String> {
-    let guard = app.timeline.try_read().map_err(|_| "Timeline locked".to_string())?;
+    let guard = app
+        .timeline
+        .try_read()
+        .map_err(|_| "Timeline locked".to_string())?;
 
     if guard.segments.is_empty() {
         return Err("No segments to render".to_string());
@@ -567,10 +614,14 @@ async fn setup_file_watcher(app: &mut App) -> Result<(), Box<dyn std::error::Err
                     if fname == basename || fname.ends_with(".timeline.json") {
                         match event.kind {
                             EventKind::Modify(_) => {
-                                let _ = watcher_tx.send(openscript_ui::app::FileWatchEvent::Modified).await;
+                                let _ = watcher_tx
+                                    .send(openscript_ui::app::FileWatchEvent::Modified)
+                                    .await;
                             }
                             EventKind::Remove(_) => {
-                                let _ = watcher_tx.send(openscript_ui::app::FileWatchEvent::Deleted).await;
+                                let _ = watcher_tx
+                                    .send(openscript_ui::app::FileWatchEvent::Deleted)
+                                    .await;
                             }
                             _ => {}
                         }

@@ -155,12 +155,18 @@ impl KokoroEngine {
 
         let output = std::process::Command::new("python3")
             .arg(&sidecar_script)
-            .arg("--text").arg(text)
-            .arg("--voice").arg(voice)
-            .arg("--speed").arg(speed.to_string())
-            .arg("--model").arg(&model_path)
-            .arg("--voices").arg(&voices_file)
-            .arg("--output").arg(&tmp)
+            .arg("--text")
+            .arg(text)
+            .arg("--voice")
+            .arg(voice)
+            .arg("--speed")
+            .arg(speed.to_string())
+            .arg("--model")
+            .arg(&model_path)
+            .arg("--voices")
+            .arg(&voices_file)
+            .arg("--output")
+            .arg(&tmp)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -186,21 +192,22 @@ impl KokoroEngine {
                 match spec.sample_format {
                     hound::SampleFormat::Int => {
                         let max_val = (1u64 << (spec.bits_per_sample - 1)) as f32;
-                        reader.into_samples::<i32>()
+                        reader
+                            .into_samples::<i32>()
                             .map(|s| s.map(|v| v as f32 / max_val).unwrap_or(0.0))
                             .collect::<Vec<f32>>()
                     }
-                    hound::SampleFormat::Float => {
-                        reader.into_samples::<f32>()
-                            .map(|s| s.unwrap_or(0.0))
-                            .collect::<Vec<f32>>()
-                    }
+                    hound::SampleFormat::Float => reader
+                        .into_samples::<f32>()
+                        .map(|s| s.unwrap_or(0.0))
+                        .collect::<Vec<f32>>(),
                 }
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&tmp);
                 return Err(KokoroError::Engine(format!(
-                    "Failed to parse sidecar WAV output: {}", e
+                    "Failed to parse sidecar WAV output: {}",
+                    e
                 )));
             }
         };
@@ -347,12 +354,18 @@ fn split_sentences(text: &str) -> Vec<String> {
     if !current.is_empty() {
         sentences.push(current);
     }
-    sentences.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+    sentences
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// Split a too-long sentence on `,`, `;`, `、`, `，` to stay under `max_words`.
 fn split_on_punctuation(sentence: &str, max_words: usize) -> Vec<String> {
-    let parts: Vec<&str> = sentence.split(|c: char| matches!(c, ',' | ';' | '、' | '，')).collect();
+    let parts: Vec<&str> = sentence
+        .split(|c: char| matches!(c, ',' | ';' | '、' | '，'))
+        .collect();
     let mut chunks = Vec::new();
     let mut current = String::new();
     let mut current_words = 0usize;
@@ -477,10 +490,17 @@ mod tests {
         // 100 CJK characters, max_words=10 → max_chars=15 → ~7 chunks
         let text: String = "你好世界。".repeat(20);
         let chunks = chunk_text(&text, 10);
-        assert!(chunks.len() > 1, "CJK text should be split into multiple chunks");
+        assert!(
+            chunks.len() > 1,
+            "CJK text should be split into multiple chunks"
+        );
         for chunk in &chunks {
             // Each chunk should be under the char budget (with some tolerance)
-            assert!(chunk.chars().count() <= 20, "Chunk too long: {} chars", chunk.chars().count());
+            assert!(
+                chunk.chars().count() <= 20,
+                "Chunk too long: {} chars",
+                chunk.chars().count()
+            );
         }
     }
 
@@ -540,7 +560,11 @@ impl KokoroClient {
     ) -> Result<KokoroResult, KokoroError> {
         let voice = if !profile.model.is_empty() && profile.model.starts_with("kokoro") {
             // model field convention: "kokoro:af_heart"
-            profile.model.split(':').nth(1).unwrap_or(&self.cfg.default_voice)
+            profile
+                .model
+                .split(':')
+                .nth(1)
+                .unwrap_or(&self.cfg.default_voice)
         } else {
             &self.cfg.default_voice
         };
@@ -577,11 +601,10 @@ impl KokoroClient {
         // 3. Synthesise on a blocking thread (ONNX inference is CPU-bound).
         let text = text.to_string();
         let voice = voice.to_string();
-        let samples = tokio::task::spawn_blocking(move || {
-            engine.synth(&text, &voice, speed as f32)
-        })
-        .await
-        .map_err(|e| KokoroError::Engine(e.to_string()))??;
+        let samples =
+            tokio::task::spawn_blocking(move || engine.synth(&text, &voice, speed as f32))
+                .await
+                .map_err(|e| KokoroError::Engine(e.to_string()))??;
 
         // 4. Encode f32 PCM -> 16-bit PCM WAV at 24 kHz.
         let wav_bytes = encode_wav_pcm16(&samples, 24_000);
@@ -621,7 +644,10 @@ impl KokoroClient {
     }
 
     fn cache_key(voice_id: &str, text: &str, speed: f64, pitch: f64, volume: f64) -> String {
-        let input = format!("kokoro|{}|{}|{}|{}|{}", voice_id, text, speed, pitch, volume);
+        let input = format!(
+            "kokoro|{}|{}|{}|{}|{}",
+            voice_id, text, speed, pitch, volume
+        );
         let mut h = Sha256::new();
         h.update(input.as_bytes());
         hex::encode(h.finalize())[..16].to_string()
@@ -665,7 +691,9 @@ fn encode_wav_pcm16(samples: &[f32], sample_rate: u32) -> Vec<u8> {
             .expect("hound WavWriter init on Vec<u8> cannot fail");
         for &s in samples {
             let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
-            writer.write_sample(v).expect("write_sample on Vec cannot fail");
+            writer
+                .write_sample(v)
+                .expect("write_sample on Vec cannot fail");
         }
         writer.finalize().expect("finalize on Vec cannot fail");
     }

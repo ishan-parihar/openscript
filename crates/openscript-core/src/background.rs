@@ -50,7 +50,7 @@ pub fn assign_backgrounds(
         let should_change = match cadence {
             "speaker" => speaker != last_speaker,
             "fixed" => i == 0, // only first scene picks, rest reuse
-            _ => true, // "scene" — always change
+            _ => true,         // "scene" — always change
         };
 
         if should_change || clips.is_empty() {

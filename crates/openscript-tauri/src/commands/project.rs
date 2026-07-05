@@ -58,10 +58,7 @@ pub async fn create_project(
 
 /// Load an existing project by ID.
 #[tauri::command]
-pub async fn load_project(
-    state: State<'_, AppState>,
-    project_id: String,
-) -> Result<Value, String> {
+pub async fn load_project(state: State<'_, AppState>, project_id: String) -> Result<Value, String> {
     // Try in-memory first
     {
         let projects = state.projects.read().map_err(|_| "Lock poisoned")?;
@@ -86,8 +83,8 @@ pub async fn load_project(
 
     let content = std::fs::read_to_string(&timeline_path)
         .map_err(|e| format!("Failed to read timeline: {}", e))?;
-    let timeline: Timeline = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse timeline: {}", e))?;
+    let timeline: Timeline =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse timeline: {}", e))?;
 
     let project = crate::state::app_state::Project::new(
         project_id.clone(),
@@ -128,6 +125,5 @@ pub async fn list_projects(state: State<'_, AppState>) -> Result<Value, String> 
 /// Save the active project's timeline to disk.
 #[tauri::command]
 pub async fn save_project(state: State<'_, AppState>) -> Result<Value, String> {
-    crate::commands::timeline::save_project_inner(&state)
-        .map(|_| json!({ "saved": true }))
+    crate::commands::timeline::save_project_inner(&state).map(|_| json!({ "saved": true }))
 }

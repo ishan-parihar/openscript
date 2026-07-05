@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::OnceLock;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::io::{stdin, stdout};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 
 use crate::error::ToolError;
@@ -117,15 +117,24 @@ pub fn set_progress_token(token: String) {
 pub fn get_progress_token() -> Option<String> {
     CURRENT_PROGRESS_TOKEN.get().and_then(|m| {
         let s = m.lock().unwrap();
-        if s.is_empty() { None } else { Some(s.clone()) }
+        if s.is_empty() {
+            None
+        } else {
+            Some(s.clone())
+        }
     })
 }
 
 /// Report progress for the current tool call.
-pub async fn report_progress(progress: f64, total: f64, message: &str) -> Result<(), std::io::Error> {
+pub async fn report_progress(
+    progress: f64,
+    total: f64,
+    message: &str,
+) -> Result<(), std::io::Error> {
     if let Some(token) = get_progress_token() {
         if let Some(pw) = PROGRESS_WRITER.get() {
-            pw.report_progress(&token, progress, Some(total), Some(message)).await
+            pw.report_progress(&token, progress, Some(total), Some(message))
+                .await
         } else {
             Ok(())
         }
@@ -220,7 +229,9 @@ async fn handle_tools_call(
 /// - Content-Length framing (MCP spec): `Content-Length: N\r\n\r\n{json}`
 /// - Line-delimited JSON (TypeScript SDK): `{json}\n`
 /// Returns None on EOF.
-async fn read_message(reader: &mut BufReader<tokio::io::Stdin>) -> Option<Result<(String, bool), std::io::Error>> {
+async fn read_message(
+    reader: &mut BufReader<tokio::io::Stdin>,
+) -> Option<Result<(String, bool), std::io::Error>> {
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line).await {
@@ -377,7 +388,10 @@ pub async fn run() -> Result<(), std::io::Error> {
     let writer_task = tokio::spawn(async move {
         let mut stdout_writer = stdout();
         while let Some((response, use_content_length)) = rx.recv().await {
-            if write_response(&mut stdout_writer, &response, use_content_length).await.is_err() {
+            if write_response(&mut stdout_writer, &response, use_content_length)
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -416,10 +430,7 @@ pub async fn run() -> Result<(), std::io::Error> {
 
         match msg {
             JsonRpcMessage::Request {
-                id,
-                method,
-                params,
-                ..
+                id, method, params, ..
             } => {
                 // Fast-path: initialize, tools/list, ping are synchronous (no spawn)
                 let is_fast = matches!(method.as_str(), "initialize" | "tools/list" | "ping");
@@ -463,9 +474,13 @@ pub async fn run() -> Result<(), std::io::Error> {
                     });
 
                     // Track for cancellation
-                    in_flight.lock().await.insert(id.clone(), task.abort_handle());
+                    in_flight
+                        .lock()
+                        .await
+                        .insert(id.clone(), task.abort_handle());
                 } else {
-                    let response = make_error_response(id, &ToolError::MethodNotFound(method.clone()));
+                    let response =
+                        make_error_response(id, &ToolError::MethodNotFound(method.clone()));
                     let _ = tx.send((response, use_content_length)).await;
                 }
             }
@@ -474,11 +489,7 @@ pub async fn run() -> Result<(), std::io::Error> {
                     tracing::info!("client initialized");
                 } else if method == "notifications/cancelled" {
                     // Cancel the in-flight task for the given request ID
-                    if let Some(id) = params
-                        .as_ref()
-                        .and_then(|p| p.get("requestId"))
-                        .cloned()
-                    {
+                    if let Some(id) = params.as_ref().and_then(|p| p.get("requestId")).cloned() {
                         if let Some(handle) = in_flight.lock().await.remove(&id) {
                             handle.abort();
                             tracing::info!("Cancelled request {:?}", id);

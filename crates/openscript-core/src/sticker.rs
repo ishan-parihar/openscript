@@ -119,7 +119,7 @@ pub fn generate_sticker_composition(
     let duration_s = amplitude.duration_ms as f64 / 1000.0;
 
     format!(
-r#"<!DOCTYPE html>
+        r#"<!DOCTYPE html>
 <html lang="en"
   data-composition-id="sticker"
   data-start="0"
@@ -190,7 +190,7 @@ r#"<!DOCTYPE html>
         canvas_height = canvas_height,
         pos_x = pos_x,
         pos_y = pos_y,
-        sticker_size = 400,  // unscaled — the container handles scaling
+        sticker_size = 400, // unscaled — the container handles scaling
         scale_factor = scale_factor,
         mouth_id = preset.mouth_element_id,
         left_eye = preset.left_eye_id,
@@ -211,10 +211,19 @@ fn parse_position(position: &str, canvas_width: u32, canvas_height: u32, scale: 
         "top-left" => (margin, margin),
         "top-right" => (canvas_width as f64 - sticker_size - margin, margin),
         "bottom-left" => (margin, canvas_height as f64 - sticker_size - margin),
-        "bottom-right" => (canvas_width as f64 - sticker_size - margin, canvas_height as f64 - sticker_size - margin),
+        "bottom-right" => (
+            canvas_width as f64 - sticker_size - margin,
+            canvas_height as f64 - sticker_size - margin,
+        ),
         "top-center" => ((canvas_width as f64 - sticker_size) / 2.0, margin),
-        "bottom-center" => ((canvas_width as f64 - sticker_size) / 2.0, canvas_height as f64 - sticker_size - margin),
-        "center" => ((canvas_width as f64 - sticker_size) / 2.0, (canvas_height as f64 - sticker_size) / 2.0),
+        "bottom-center" => (
+            (canvas_width as f64 - sticker_size) / 2.0,
+            canvas_height as f64 - sticker_size - margin,
+        ),
+        "center" => (
+            (canvas_width as f64 - sticker_size) / 2.0,
+            (canvas_height as f64 - sticker_size) / 2.0,
+        ),
         _ => (margin, margin), // default to top-left
     }
 }
@@ -253,7 +262,8 @@ mod tests {
 
     #[test]
     fn test_generate_sticker_composition() {
-        let svg = r#"<svg viewBox="0 0 400 400"><circle id="head" cx="200" cy="180" r="120"/></svg>"#;
+        let svg =
+            r#"<svg viewBox="0 0 400 400"><circle id="head" cx="200" cy="180" r="120"/></svg>"#;
         let preset = test_preset();
         let amp = test_amplitude();
 
@@ -319,7 +329,11 @@ mod tests {
 
         // Should have 5 mouth tweens (one per amplitude frame)
         let mouth_tween_count = html.matches("#mouth").count();
-        assert!(mouth_tween_count >= 5, "Expected at least 5 mouth references, got {}", mouth_tween_count);
+        assert!(
+            mouth_tween_count >= 5,
+            "Expected at least 5 mouth references, got {}",
+            mouth_tween_count
+        );
     }
 
     #[test]
@@ -335,6 +349,9 @@ mod tests {
         let html = generate_sticker_composition(svg, &preset, &amp, "center", 0.25, 1080, 1920);
 
         // Should have blink animations (4s / 4s blink rate = 1 blink = 2 tweens)
-        assert!(html.contains("scaleY: 0.1"), "Should have blink close tween");
+        assert!(
+            html.contains("scaleY: 0.1"),
+            "Should have blink close tween"
+        );
     }
 }

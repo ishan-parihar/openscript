@@ -39,7 +39,13 @@ fn start_media_server() -> std::thread::JoinHandle<()> {
     use std::io::{BufRead, BufReader, Read, Seek, Write};
     use std::net::TcpListener;
 
-    fn send_response<W: Write>(writer: &mut W, status: u16, reason: &str, headers: &[(String, String)], body: &[u8]) {
+    fn send_response<W: Write>(
+        writer: &mut W,
+        status: u16,
+        reason: &str,
+        headers: &[(String, String)],
+        body: &[u8],
+    ) {
         let _ = write!(writer, "HTTP/1.1 {} {}\r\n", status, reason);
         for (k, v) in headers {
             let _ = write!(writer, "{}: {}\r\n", k, v);
@@ -107,7 +113,13 @@ fn start_media_server() -> std::thread::JoinHandle<()> {
             }
 
             let Ok(mut file) = std::fs::File::open(&file_path) else {
-                send_response(&mut stream, 500, "Internal Server Error", &[], b"Cannot open file");
+                send_response(
+                    &mut stream,
+                    500,
+                    "Internal Server Error",
+                    &[],
+                    b"Cannot open file",
+                );
                 continue;
             };
 
@@ -119,7 +131,12 @@ fn start_media_server() -> std::thread::JoinHandle<()> {
                 .to_string();
             let total_size = file.metadata().map(|m| m.len()).unwrap_or(0);
 
-            tracing::debug!("Media server: serving {:?} ({} bytes, {})", file_path, total_size, mime);
+            tracing::debug!(
+                "Media server: serving {:?} ({} bytes, {})",
+                file_path,
+                total_size,
+                mime
+            );
 
             if let Some(range_str) = range {
                 if let Some(bytes_str) = range_str.strip_prefix("bytes=") {
@@ -143,18 +160,38 @@ fn start_media_server() -> std::thread::JoinHandle<()> {
                             let headers = vec![
                                 ("Content-Type".to_string(), mime.clone()),
                                 ("Accept-Ranges".to_string(), "bytes".to_string()),
-                                ("Content-Range".to_string(), format!("bytes {}-{}/{}", start, end, total_size)),
+                                (
+                                    "Content-Range".to_string(),
+                                    format!("bytes {}-{}/{}", start, end, total_size),
+                                ),
                                 ("Content-Length".to_string(), chunk_size.to_string()),
                             ];
                             send_response(&mut stream, 206, "Partial Content", &headers, &buffer);
-                            tracing::debug!("Media server: 206 bytes {}-{}/{}", start, end, total_size);
+                            tracing::debug!(
+                                "Media server: 206 bytes {}-{}/{}",
+                                start,
+                                end,
+                                total_size
+                            );
                         } else {
-                            send_response(&mut stream, 500, "Internal Server Error", &[], b"Read failed");
+                            send_response(
+                                &mut stream,
+                                500,
+                                "Internal Server Error",
+                                &[],
+                                b"Read failed",
+                            );
                         }
                         continue;
                     }
                 }
-                send_response(&mut stream, 400, "Bad Request", &[], b"Invalid Range header");
+                send_response(
+                    &mut stream,
+                    400,
+                    "Bad Request",
+                    &[],
+                    b"Invalid Range header",
+                );
                 continue;
             }
 
@@ -169,7 +206,13 @@ fn start_media_server() -> std::thread::JoinHandle<()> {
                 send_response(&mut stream, 200, "OK", &headers, &buffer);
                 tracing::debug!("Media server: 200 {} bytes", buffer.len());
             } else {
-                send_response(&mut stream, 500, "Internal Server Error", &[], b"Read failed");
+                send_response(
+                    &mut stream,
+                    500,
+                    "Internal Server Error",
+                    &[],
+                    b"Read failed",
+                );
             }
         }
     })

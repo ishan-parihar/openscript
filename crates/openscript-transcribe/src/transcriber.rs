@@ -93,14 +93,15 @@ pub enum TranscribeError {
 /// Returns `Ok(())` if the content looks like Latin-script Hinglish,
 /// or `Err(reason)` if it appears to be in a different script.
 pub fn validate_hinglish_output(content: &str) -> Result<(), String> {
-    let latin_chars: usize = content
-        .chars()
-        .filter(|c| c.is_ascii_alphabetic())
-        .count();
+    let latin_chars: usize = content.chars().filter(|c| c.is_ascii_alphabetic()).count();
     let non_latin_text_chars: usize = content
         .chars()
         .filter(|c| {
-            c.is_alphabetic() && !c.is_ascii() && !c.is_ascii_digit() && *c != '\n' && *c != '\r'
+            c.is_alphabetic()
+                && !c.is_ascii()
+                && !c.is_ascii_digit()
+                && *c != '\n'
+                && *c != '\r'
                 && *c != '\t'
         })
         .count();
@@ -156,8 +157,7 @@ pub async fn check_apex_health() -> ApexHealth {
 
     // Check that whisper_timestamped and the Apex model are importable.
     let mut cmd = Command::new(&conda_python);
-    cmd.arg("-c")
-        .arg("import whisper_timestamped; print('ok')");
+    cmd.arg("-c").arg("import whisper_timestamped; print('ok')");
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
@@ -175,7 +175,10 @@ pub async fn check_apex_health() -> ApexHealth {
         return ApexHealth::PythonOkModelBroken {
             detail: format!(
                 "whisper_timestamped import failed: {}",
-                String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or("")
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
             ),
         };
     }
@@ -194,7 +197,10 @@ pub async fn check_apex_health() -> ApexHealth {
         Ok(o) => ApexHealth::PythonOkModelBroken {
             detail: format!(
                 "Apex model load failed: {}",
-                String::from_utf8_lossy(&o.stderr).lines().last().unwrap_or("")
+                String::from_utf8_lossy(&o.stderr)
+                    .lines()
+                    .last()
+                    .unwrap_or("")
             ),
         },
         Err(e) => ApexHealth::PythonOkModelBroken {
@@ -226,8 +232,7 @@ fn find_apex_script() -> Option<PathBuf> {
 
     // 2. CARGO_MANIFEST_DIR (compile-time workspace path; works in dev)
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let p = Path::new(&manifest_dir)
-            .join("../../mcp/scripts/apex_transcriber.py");
+        let p = Path::new(&manifest_dir).join("../../mcp/scripts/apex_transcriber.py");
         if p.exists() {
             return Some(p);
         }
@@ -471,7 +476,10 @@ mod tests {
         let without_fake = find_conda_python();
         assert_eq!(with_fake.is_some(), without_fake.is_some());
         if let (Some(a), Some(b)) = (&with_fake, &without_fake) {
-            assert_eq!(a, b, "Fake env var should be ignored, both should resolve to same conda path");
+            assert_eq!(
+                a, b,
+                "Fake env var should be ignored, both should resolve to same conda path"
+            );
         }
     }
 
@@ -485,14 +493,20 @@ mod tests {
     fn test_validate_hinglish_arabic_fails() {
         let srt = "1\n00:00:01,000 --> 00:00:03,000\nأنا مهندس\n\n";
         let err = validate_hinglish_output(srt).unwrap_err();
-        assert!(err.contains("Arabic"), "Expected Arabic detection, got: {err}");
+        assert!(
+            err.contains("Arabic"),
+            "Expected Arabic detection, got: {err}"
+        );
     }
 
     #[test]
     fn test_validate_hinglish_devanagari_fails() {
         let srt = "1\n00:00:01,000 --> 00:00:03,000\nमैं एक इंजीनियर हूँ\n\n";
         let err = validate_hinglish_output(srt).unwrap_err();
-        assert!(err.contains("Devanagari"), "Expected Devanagari detection, got: {err}");
+        assert!(
+            err.contains("Devanagari"),
+            "Expected Devanagari detection, got: {err}"
+        );
     }
 
     #[test]

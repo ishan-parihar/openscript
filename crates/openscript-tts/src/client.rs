@@ -1,7 +1,7 @@
 use crate::profiles::VoiceProfile;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use reqwest::Client;
 use reqwest::multipart::{Form, Part};
+use reqwest::Client;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -102,7 +102,10 @@ impl TtsClient {
         };
 
         let ref_bytes = std::fs::read(&profile.ref_audio).map_err(|e| {
-            TtsError::Sidecar(format!("Cannot read ref audio {}: {}", profile.ref_audio, e))
+            TtsError::Sidecar(format!(
+                "Cannot read ref audio {}: {}",
+                profile.ref_audio, e
+            ))
         })?;
 
         let multipart = Form::new()
@@ -111,12 +114,20 @@ impl TtsClient {
             .text("language", form.language)
             .text("mode", form.mode)
             .text("xvec_only", if form.xvec_only { "true" } else { "false" })
-            .text("non_streaming_mode", if form.non_streaming_mode { "true" } else { "false" })
+            .text(
+                "non_streaming_mode",
+                if form.non_streaming_mode {
+                    "true"
+                } else {
+                    "false"
+                },
+            )
             .part(
                 "ref_audio",
-                Part::bytes(ref_bytes).file_name("ref.wav").mime_str("audio/wav").map_err(|e| {
-                    TtsError::Sidecar(format!("Failed to build ref part: {}", e))
-                })?,
+                Part::bytes(ref_bytes)
+                    .file_name("ref.wav")
+                    .mime_str("audio/wav")
+                    .map_err(|e| TtsError::Sidecar(format!("Failed to build ref part: {}", e)))?,
             );
 
         let response = self
@@ -129,27 +140,25 @@ impl TtsClient {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(TtsError::Sidecar(format!(
-                "HTTP {}: {}",
-                status, body
-            )));
+            return Err(TtsError::Sidecar(format!("HTTP {}: {}", status, body)));
         }
 
-        let json_resp: GenerateResponse = response.json().await.map_err(|e| {
-            TtsError::Sidecar(format!("Failed to parse TTS response: {}", e))
-        })?;
+        let json_resp: GenerateResponse = response
+            .json()
+            .await
+            .map_err(|e| TtsError::Sidecar(format!("Failed to parse TTS response: {}", e)))?;
 
         if let Some(err) = json_resp.error {
             return Err(TtsError::Sidecar(err));
         }
 
-        let audio_b64 = json_resp.audio_b64.ok_or_else(|| {
-            TtsError::Sidecar("TTS response missing audio_b64 field".to_string())
-        })?;
+        let audio_b64 = json_resp
+            .audio_b64
+            .ok_or_else(|| TtsError::Sidecar("TTS response missing audio_b64 field".to_string()))?;
 
-        let bytes = STANDARD.decode(&audio_b64).map_err(|e| {
-            TtsError::Sidecar(format!("Failed to decode base64 audio: {}", e))
-        })?;
+        let bytes = STANDARD
+            .decode(&audio_b64)
+            .map_err(|e| TtsError::Sidecar(format!("Failed to decode base64 audio: {}", e)))?;
 
         let output = PathBuf::from(output_path);
         if let Some(parent) = output.parent() {
@@ -166,9 +175,9 @@ impl TtsClient {
         // Best-effort cache eviction — prevents unbounded growth
         crate::evict_cache_if_needed(&self.cache_dir);
 
-        let duration_ms = json_resp.duration_ms.unwrap_or_else(|| {
-            Self::extract_audio_duration(&output).unwrap_or(0)
-        });
+        let duration_ms = json_resp
+            .duration_ms
+            .unwrap_or_else(|| Self::extract_audio_duration(&output).unwrap_or(0));
 
         Ok(TtsResult {
             output_path: output_path.to_string(),
@@ -182,9 +191,12 @@ impl TtsClient {
     fn extract_audio_duration(path: &Path) -> Option<i64> {
         let output = std::process::Command::new("ffprobe")
             .args([
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 path.to_str()?,
             ])
             .output()
@@ -192,7 +204,10 @@ impl TtsClient {
 
         if output.status.success() {
             let dur_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            dur_str.parse::<f64>().ok().map(|d| (d * 1000.0).round() as i64)
+            dur_str
+                .parse::<f64>()
+                .ok()
+                .map(|d| (d * 1000.0).round() as i64)
         } else {
             None
         }

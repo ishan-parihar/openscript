@@ -35,12 +35,12 @@ pub struct StickerOverlay {
     pub path: String,
     pub start_s: f64,
     pub end_s: f64,
-    pub position: String,       // Named position ("bottom-left", etc.) — converted to x/y
-    pub scale: f64,             // 0.0-1.0 relative to canvas width
-    pub center_x: i32,          // Pixel offset from canvas center (0 = centered). Positive = right.
-    pub center_y: i32,          // Pixel offset from canvas center (0 = centered). Positive = down.
-    pub sticker_width: u32,     // Calculated pixel width after scaling
-    pub sticker_height: u32,    // Calculated pixel height after scaling
+    pub position: String, // Named position ("bottom-left", etc.) — converted to x/y
+    pub scale: f64,       // 0.0-1.0 relative to canvas width
+    pub center_x: i32,    // Pixel offset from canvas center (0 = centered). Positive = right.
+    pub center_y: i32,    // Pixel offset from canvas center (0 = centered). Positive = down.
+    pub sticker_width: u32, // Calculated pixel width after scaling
+    pub sticker_height: u32, // Calculated pixel height after scaling
 }
 
 /// Multi-layer render specification.
@@ -87,7 +87,13 @@ pub struct MultiLayerRenderSpec {
 ///   Negative Y = above center, Positive Y = below center
 ///
 /// This allows agents to reason: "put sticker at [-300, 400] = 300px left, 400px down from center"
-fn parse_position(position: &str, canvas_w: u32, canvas_h: u32, sticker_w: u32, sticker_h: u32) -> (i32, i32, i32, i32) {
+fn parse_position(
+    position: &str,
+    canvas_w: u32,
+    canvas_h: u32,
+    sticker_w: u32,
+    sticker_h: u32,
+) -> (i32, i32, i32, i32) {
     let margin = 40i32;
     let cw = canvas_w as i32;
     let ch = canvas_h as i32;
@@ -150,9 +156,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         .iter()
         .filter(|bg| {
             if bg.path == "placeholder" || bg.path.is_empty() {
-                tracing::warn!(
-                    "[multilayer_render] Skipping placeholder/empty background path"
-                );
+                tracing::warn!("[multilayer_render] Skipping placeholder/empty background path");
                 false
             } else {
                 true
@@ -170,8 +174,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         .voiceover_paths
         .iter()
         .map(|p| {
-            let abs = std::fs::canonicalize(p)
-                .unwrap_or_else(|_| std::path::PathBuf::from(p));
+            let abs = std::fs::canonicalize(p).unwrap_or_else(|_| std::path::PathBuf::from(p));
             format!("file '{}'\n", abs.to_string_lossy().replace('\'', "'\\''"))
         })
         .collect();
@@ -181,7 +184,8 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     cmd.arg("-y");
 
     // Check if all backgrounds are the same file (single-background playback)
-    let all_same_bg = filtered_bgs.len() > 1 && filtered_bgs.windows(2).all(|w| w[0].path == w[1].path);
+    let all_same_bg =
+        filtered_bgs.len() > 1 && filtered_bgs.windows(2).all(|w| w[0].path == w[1].path);
 
     let bg_count = if all_same_bg {
         // Single background — use ONE input, looped for the full duration
@@ -213,7 +217,8 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
 
     // Input: music
     let music_input_idx = vo_input_idx + 1;
-    let has_music = spec.music_path.is_some() && std::path::Path::new(spec.music_path.as_ref().unwrap()).exists();
+    let has_music = spec.music_path.is_some()
+        && std::path::Path::new(spec.music_path.as_ref().unwrap()).exists();
     if has_music {
         cmd.arg("-stream_loop").arg("-1");
         cmd.arg("-t").arg(spec.total_duration_s.to_string());
@@ -243,23 +248,24 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         ));
     } else {
         // Multiple backgrounds — concat then scale
-        let bg_durations: Vec<String> = filtered_bgs.iter()
+        let bg_durations: Vec<String> = filtered_bgs
+            .iter()
             .map(|bg| format!("trim=duration={}", bg.duration_s))
             .collect();
 
         // Trim each background to its scene duration
         for (i, dur_filter) in bg_durations.iter().enumerate() {
-            filters.push(format!("[{}:v]{},setpts=PTS-STARTPTS[bg{}]", i, dur_filter, i));
+            filters.push(format!(
+                "[{}:v]{},setpts=PTS-STARTPTS[bg{}]",
+                i, dur_filter, i
+            ));
         }
 
         // Concat all trimmed backgrounds
         let concat_labels: String = (0..bg_count)
             .map(|i| format!("[bg{}]", i))
             .collect::<String>();
-        filters.push(format!(
-            "{}concat=n={}[vcat]",
-            concat_labels, bg_count
-        ));
+        filters.push(format!("{}concat=n={}[vcat]", concat_labels, bg_count));
 
         // Scale the concatenated video
         filters.push(format!(
@@ -285,7 +291,13 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut video_label = current_video_label.to_string();
     for (idx, (input_idx, sticker)) in sticker_inputs.iter().enumerate() {
         let sticker_size = (spec.width as f64 * sticker.scale) as u32;
-        let (tl_x, tl_y, cx, cy) = parse_position(&sticker.position, spec.width, spec.height, sticker_size, sticker_size);
+        let (tl_x, tl_y, cx, cy) = parse_position(
+            &sticker.position,
+            spec.width,
+            spec.height,
+            sticker_size,
+            sticker_size,
+        );
 
         // Log sticker placement for agent debugging
         tracing::info!(
@@ -325,10 +337,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     if has_music {
         // Duck music during voiceover
         let threshold = 0.001_f64.powf(1.0 - spec.ducking_depth_db / 20.0);
-        filters.push(format!(
-            "[{}:a]asplit=2[vo_out][vo_sc]",
-            vo_input_idx
-        ));
+        filters.push(format!("[{}:a]asplit=2[vo_out][vo_sc]", vo_input_idx));
         filters.push(format!(
             "[{}:a]volume={}[music_vol]",
             music_input_idx, spec.music_volume
@@ -405,7 +414,12 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         return Err(FfmpegError::RenderFailed(format!(
             "Render failed, see log: {}\nLast 5 lines: {}",
             log_path,
-            stderr_str.lines().rev().take(5).collect::<Vec<_>>().join("\n")
+            stderr_str
+                .lines()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .join("\n")
         )));
     }
 

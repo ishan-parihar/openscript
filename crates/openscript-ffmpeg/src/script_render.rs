@@ -66,8 +66,7 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
         .voiceover_paths
         .iter()
         .map(|p| {
-            let abs = std::fs::canonicalize(p)
-                .unwrap_or_else(|_| std::path::PathBuf::from(p));
+            let abs = std::fs::canonicalize(p).unwrap_or_else(|_| std::path::PathBuf::from(p));
             format!("file '{}'\n", abs.to_string_lossy().replace('\'', "'\\''"))
         })
         .collect();
@@ -111,10 +110,7 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
     if let Some(ref captions) = spec.captions_path {
         if std::path::Path::new(captions).exists() {
             let escaped = captions.replace('\\', "/").replace('\'', "'\\''");
-            filters.push(format!(
-                "[vbg]subtitles='{}'[vcap]",
-                escaped
-            ));
+            filters.push(format!("[vbg]subtitles='{}'[vcap]", escaped));
         } else {
             filters.push("[vbg]copy[vcap]".to_string());
         }
@@ -127,13 +123,8 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
         // Duck music during voiceover using sidechaincompress
         let music_vol = spec.music_volume;
         let threshold = 0.001_f64.powf(1.0 - spec.ducking_depth_db / 20.0);
-        filters.push(format!(
-            "[1:a]asplit=2[vo_out][vo_sc]"
-        ));
-        filters.push(format!(
-            "[2:a]volume={}[music_vol]",
-            music_vol
-        ));
+        filters.push(format!("[1:a]asplit=2[vo_out][vo_sc]"));
+        filters.push(format!("[2:a]volume={}[music_vol]", music_vol));
         filters.push(format!(
             "[music_vol][vo_sc]sidechaincompress=threshold={}:ratio=4:attack=50:release=200:makeup=1:level_sc=1[music_ducked]",
             threshold
@@ -211,7 +202,12 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
         return Err(FfmpegError::RenderFailed(format!(
             "Render failed, see log: {}\nLast 5 lines: {}",
             log_path,
-            stderr_str.lines().rev().take(5).collect::<Vec<_>>().join("\n")
+            stderr_str
+                .lines()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .join("\n")
         )));
     }
 

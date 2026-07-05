@@ -9,9 +9,7 @@ use tauri::State;
 use crate::state::AppState;
 
 fn get_registry_path(state: &State<'_, AppState>) -> PathBuf {
-    state
-        .assets_base_path
-        .join("voice_profiles.json")
+    state.assets_base_path.join("voice_profiles.json")
 }
 
 fn load_registry(state: &State<'_, AppState>) -> Result<VoiceProfileRegistry, String> {
@@ -63,7 +61,8 @@ pub async fn tts_generate(
         .clone();
 
     let cache_dir = "/tmp/openscript-tts-cache";
-    std::fs::create_dir_all(cache_dir).map_err(|e| format!("Failed to create TTS cache dir: {}", e))?;
+    std::fs::create_dir_all(cache_dir)
+        .map_err(|e| format!("Failed to create TTS cache dir: {}", e))?;
     let resolved_output_path = output_path
         .filter(|p| !p.is_empty())
         .unwrap_or_else(|| format!("{}/{}.wav", cache_dir, uuid::Uuid::new_v4()));

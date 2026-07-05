@@ -484,7 +484,11 @@ fn test_mcp_sfx_search() {
     if response.get("result").is_some() {
         let result = response.get("result").unwrap();
         // Check if it's an error result (isError: true) per MCP spec
-        if result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if result
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             // Execution error returned as result.isError:true — acceptable
             let content = result.get("content").unwrap().as_array().unwrap();
             let text = content[0].get("text").unwrap().as_str().unwrap();
