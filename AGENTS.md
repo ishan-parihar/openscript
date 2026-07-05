@@ -793,3 +793,63 @@ regardless; Stages 2 + 3 are optimizations.
 - If libmpv is too hard, keep the React `<video>` for preview and only migrate
   the timeline to egui. The preview is "good enough" for inspection; the
   timeline is the part that genuinely suffers from divs.
+
+---
+
+## 19. Environment Recovery Protocol
+
+> **This section exists because the development container was wiped between
+> sessions, causing a protocol violation (3 commits were made locally without
+> being pushed). This section prevents it from happening again.**
+
+### What gets wiped
+
+The container's filesystem can be reclaimed between sessions. Everything in
+`/home/z/` except `/home/z/my-project/` may be gone. This includes:
+- The openscript repo clone (if it was at `/home/z/my-project/openscript`)
+- The Rust toolchain (`~/.cargo`, `~/.rustup`)
+- The git remote URL with any embedded token
+- Any unpushed local commits
+
+### What survives
+
+`/home/z/my-project/` survives container resets. It contains (or will contain
+after the first recovery):
+- `.git-credentials` — the GitHub token for pushing
+- `.github-token` — backup copy of the token
+- `openscript/` — the repo clone (re-created on recovery if missing)
+
+### Recovery steps — run these FIRST in any new session
+
+```bash
+# 1. Verify the persistent dir exists
+ls /home/z/my-project/.git-credentials 2>/dev/null || echo "NO TOKEN — ask user"
+
+# 2. Re-clone the repo if missing
+cd /home/z/my-project
+[ -d openscript ] || git clone https://github.com/ishan-parihar/openscript.git
+
+# 3. Restore the git credential helper (global config is wiped)
+git config --global credential.helper "store --file=/home/z/my-project/.git-credentials"
+
+# 4. Verify push works
+cd openscript && git push origin main --dry-run 2>&1 | tail -1
+
+# 5. If push fails, STOP and ask the user for a token before making any commits.
+```
+
+### Iron rule reinforcement — push failure = hard stop
+
+**If `git push` fails for ANY reason, STOP.** Do not make another commit.
+Do not write another line of code. Resolve the push first:
+
+1. If auth failure → ask the user for a token, store it in
+   `/home/z/my-project/.git-credentials`, retry.
+2. If non-fast-forward → `git pull --rebase origin main`, resolve conflicts,
+   retry.
+3. If network failure → retry up to 3 times with 5s sleep. If still failing,
+   tell the user and wait.
+
+**Never have more than ONE unpushed commit on local disk.** The moment you
+have an unpushed commit, the next action is either pushing it or fixing
+whatever blocked the push. No new work until the push succeeds.
