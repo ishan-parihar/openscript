@@ -890,7 +890,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "media.search",
-            "description": "Search for PNG images for use as sticker overlays. Uses Pexels Image API (requires PEXELS_API_KEY) and Openverse (free, no key). Returns image URLs, dimensions, and license info. Download with media.download. Use for finding transparent PNGs of people, objects, logos, etc. for video sticker overlays.",
+            "description": "Search for PNG images for use as sticker overlays. Uses Pexels Image API (requires PEXELS_API_KEY) and Openverse (free, no key). Returns image URLs, dimensions, and license info. To use a result: download the URL (via curl/wget/reqwest) to a local path, then place it on the timeline via timeline.add_track_event with track_type='broll' and the local path as asset_id. NOTE: media.download does not exist yet — download manually. Use for finding transparent PNGs of people, objects, logos, etc. for video sticker overlays.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -904,7 +904,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "gif.search",
-            "description": "Search for animated GIF stickers (transparent background) from GIPHY. Returns GIF URLs, dimensions, and preview URLs. Download with gif.download. GIPHY stickers are transparent GIFs ideal for video overlays. Requires GIPHY_API_KEY env var (get free at https://developers.giphy.com). Falls back to Pexels video search if no GIPHY key.",
+            "description": "Search for animated GIF stickers (transparent background) from GIPHY. Returns GIF URLs, dimensions, and preview URLs. To use a result: download the URL to a local .gif file, then pass the path to script.to_video (which auto-downloads GIPHY stickers per speaker) or use multilayer_render's sticker overlay. NOTE: gif.download does not exist yet — download manually. GIPHY stickers are transparent GIFs ideal for video overlays. Requires GIPHY_API_KEY env var (get free at https://developers.giphy.com). Falls back to Pexels video search if no GIPHY key.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2784,6 +2784,22 @@ async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Valu
                 loopable, intro_friendly, cta_friendly, total_indexed
             ));
         }
+    }
+
+    // Fallback-purity fix: detect synthetic placeholder tracks (all 20 committed
+    // mcp/assets/music/*.mp3 files are 481,114 bytes, 30s, artist="OpenScript Stock").
+    // Warn the agent that these are synthetic fallbacks, not real licensed music,
+    // and point them to library.search / stock.search for real music.
+    let synthetic_count = results
+        .iter()
+        .filter(|m| m.artist == "OpenScript Stock" && m.duration_ms == 30000)
+        .count();
+    if synthetic_count > 0 {
+        warnings.push(format!(
+            "{} of {} results are SYNTHETIC PLACEHOLDER tracks (committed mcp/assets/music/*.mp3, all 30s, artist='OpenScript Stock'). These are FALLBACKS, not real licensed music. For production video, use library.search (500+ YouTube-scraped tracks via library.build) or stock.search (Pixabay, requires PIXABAY_API_KEY) to find real music.",
+            synthetic_count,
+            results.len()
+        ));
     }
 
     let mut response = serde_json::Map::new();
@@ -7211,6 +7227,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .get("warnings")
         .cloned()
         .unwrap_or(serde_json::Value::Null);
+    // Collect additional warnings from the render phase (procedural fallbacks, etc.)
+    let mut render_warnings: Vec<String> = Vec::new();
 
     report_progress(40.0, 100.0, "Phase 2/3: Building layered composition...")
         .await
@@ -7410,17 +7428,25 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             if let Some(path) = scene_bg {
                 per_scene_backgrounds.push(path);
             } else {
-                // Fallback: use a procedural background for this scene
+                // Fallback: use a procedural background for this scene.
+                // These are SYNTHETIC fallbacks (committed mcp/assets/backgrounds/*.mp4),
+                // not real stock footage. Warn the agent so they know the quality is
+                // lower and can retry with different search queries or a Pexels API key.
                 let fallback = format!(
                     "mcp/assets/backgrounds/procedural_{:02}.mp4",
                     (scene_idx % 10) + 1
                 );
-                if std::path::Path::new(&fallback).exists() {
-                    per_scene_backgrounds.push(fallback);
+                let procedural_path = if std::path::Path::new(&fallback).exists() {
+                    fallback
                 } else {
-                    per_scene_backgrounds
-                        .push("mcp/assets/backgrounds/procedural_01.mp4".to_string());
-                }
+                    "mcp/assets/backgrounds/procedural_01.mp4".to_string()
+                };
+                per_scene_backgrounds.push(procedural_path.clone());
+                render_warnings.push(format!(
+                    "Scene {}: no Pexels/YouTube background found — using SYNTHETIC procedural fallback ({}). Set PEXELS_API_KEY for real stock footage, or provide background.fallback_pool in the script.",
+                    scene_idx + 1,
+                    procedural_path
+                ));
             }
         }
     }
@@ -7699,6 +7725,25 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
     let render_result = render_multilayer(&render_spec).await;
 
+    // Merge timeline-phase warnings (Value) with render-phase warnings (Vec<String>)
+    // into a single JSON value for the response.
+    let merged_warnings: serde_json::Value = {
+        let mut all_warnings: Vec<String> = Vec::new();
+        if let Some(arr) = warnings.as_array() {
+            for w in arr {
+                if let Some(s) = w.as_str() {
+                    all_warnings.push(s.to_string());
+                }
+            }
+        }
+        all_warnings.extend(render_warnings);
+        if all_warnings.is_empty() {
+            serde_json::Value::Null
+        } else {
+            json!(all_warnings)
+        }
+    };
+
     match render_result {
         Ok(out_path) => {
             let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
@@ -7721,7 +7766,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 "speaker_count": timeline_result.get("speaker_count"),
                 "background_count": render_spec.backgrounds.len(),
                 "sticker_count": render_spec.stickers.len(),
-                "warnings": warnings,
+                "warnings": merged_warnings,
             }))
         }
         Err(e) => Err(ToolError::Ffmpeg(format!("Render failed: {}", e))),
