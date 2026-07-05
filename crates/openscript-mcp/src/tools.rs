@@ -9790,11 +9790,44 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         "are", "be", "do", "does", "how", "i", "my", "me", "want", "need", "please", "can",
         "could", "would", "should",
     ];
+
+    // Synonym map: expand query tokens with common synonyms so "burn" matches
+    // "burned-in", "footage" matches "broll", "VO" matches "voiceover", etc.
+    // This fixes the 3/4 broken example queries from the UX audit.
+    let synonyms: &[(&str, &[&str])] = &[
+        ("burn", &["burned", "burning", "burn-in", "burned-in"]),
+        ("footage", &["broll", "b-roll", "background", "clip", "video"]),
+        ("vo", &["voiceover", "voice", "narration"]),
+        ("subtitles", &["captions", "subtitle", "caption", "srt"]),
+        ("sidechain", &["ducking", "duck", "compress"]),
+        ("render", &["rendered", "rendering", "render"]),
+        ("music", &["audio", "track", "song", "background"]),
+        ("sfx", &["sound", "effect", "effects", " Foley"]),
+        ("sticker", &["overlay", "gif", "png", "image", "sticker"]),
+        ("transcribe", &["transcription", "transcribe", "whisper", "speech"]),
+        ("voice", &["tts", "voiceover", "kokoro", "speech", "voice"]),
+        ("animate", &["animation", "animated", "motion", "gsap", "hyperframes"]),
+    ];
+
+    let expand_token = |t: &str| -> Vec<String> {
+        let mut expanded = vec![t.to_string()];
+        for (key, vals) in synonyms {
+            if t == *key {
+                expanded.extend(vals.iter().map(|v| v.to_string()));
+            }
+            // Also check reverse: if t is a synonym, add the key
+            if vals.contains(&t) {
+                expanded.push(key.to_string());
+            }
+        }
+        expanded
+    };
+
     let query_tokens: std::collections::HashSet<String> = query
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty() && !stop.contains(t))
-        .map(String::from)
+        .flat_map(|t| expand_token(t))
         .collect();
 
     if query_tokens.is_empty() {
@@ -9806,6 +9839,36 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
             "message": "Query contained no searchable keywords. Try describing the task, e.g. 'add voiceover to a timeline'."
         }));
     }
+
+    // Tool weight table: golden-path tools get a base boost, orchestrators get
+    // a medium boost, primitives get no boost. This replaces the alphabetical
+    // tie-breaking that routinely demoted script.to_video below script.parse.
+    let tool_weight = |name: &str| -> f64 {
+        // Golden-path: the tools an agent should reach for first
+        if matches!(name,
+            "script.to_video" | "script.parse" | "transcribe" | "timeline.render"
+            | "system.capabilities" | "help.tool"
+        ) {
+            0.15
+        // Orchestrators: one-call or multi-step pipelines
+        } else if matches!(name,
+            "reelize.timeline" | "reelize.direct" | "broll.director"
+            | "composition.render" | "tts.commentary" | "script.to_timeline"
+            | "script.generate_voices" | "script.build_captions"
+        ) {
+            0.10
+        // Common operations
+        } else if matches!(name,
+            "music.assign" | "sfx.assign" | "broll.assign" | "overlay.assign"
+            | "voiceover.generate" | "tts.generate" | "background.fetch"
+            | "music.search" | "sfx.search" | "broll.fetch" | "gif.search"
+            | "media.search" | "library.search" | "stock.search"
+        ) {
+            0.05
+        } else {
+            0.0
+        }
+    };
 
     // Iterate all tool definitions, score each by token overlap with name + description.
     let all_tools = tool_definitions();
@@ -9826,7 +9889,7 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
                 .filter(|t| !t.is_empty())
                 .collect();
 
-            // Score = (matching tokens) / (query tokens). Boost exact name-token matches.
+            // Score = (matching tokens) / (query tokens) + name_boost + tool_weight.
             let mut matches = 0usize;
             let mut name_boost = 0.0;
             for qt in &query_tokens {
@@ -9838,7 +9901,8 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
                 }
             }
             let coverage = matches as f64 / query_tokens.len() as f64;
-            let score = (coverage + name_boost).min(1.0);
+            let weight = tool_weight(name);
+            let score = (coverage + name_boost + weight).min(1.0);
 
             if score > 0.0 {
                 // Short description = first sentence of the description, capped at 180 chars.
@@ -9858,21 +9922,25 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         }
     }
 
-    // Sort by relevance desc, then name asc
+    // Sort by relevance desc (tool-weight table breaks ties instead of alphabet)
     scored.sort_by(|a, b| {
         let ra = a.get("relevance").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let rb = b.get("relevance").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        rb.partial_cmp(&ra)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                let na = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let nb = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                na.cmp(nb)
-            })
+        rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
     });
     scored.truncate(limit);
 
     let count = scored.len();
+    if count == 0 {
+        return Ok(json!({
+            "status": "success",
+            "query": query,
+            "results": [],
+            "count": 0,
+            "message": "No tools matched. Try tools/list to browse all 73 tools, or system.capabilities to probe available subsystems."
+        }));
+    }
+
     Ok(json!({
         "status": "success",
         "query": query,
