@@ -52,10 +52,6 @@ pub struct ScriptSpec {
     #[serde(default)]
     pub captions: CaptionsSpec,
 
-    /// Speaker sticker layout on screen.
-    #[serde(default = "default_speaker_layout")]
-    pub speaker_layout: SpeakerLayout,
-
     /// Sticker behavior configuration.
     #[serde(default)]
     pub stickers: StickersSpec,
@@ -78,10 +74,6 @@ pub struct ScriptSpec {
 
 fn default_schema() -> String {
     "openscript-video/v1".to_string()
-}
-
-fn default_speaker_layout() -> SpeakerLayout {
-    SpeakerLayout::SplitTop
 }
 
 // ---------------------------------------------------------------------------
@@ -203,10 +195,6 @@ pub struct SpeakerSpec {
     /// Sticker scale relative to canvas width (0.0–1.0).
     #[serde(default = "default_scale")]
     pub scale: f64,
-
-    /// Default emote when scene doesn't specify one.
-    #[serde(default = "default_emote")]
-    pub emote_default: String,
 }
 
 fn default_preset() -> String {
@@ -217,9 +205,6 @@ fn default_position() -> String {
 }
 fn default_scale() -> f64 {
     0.25
-}
-fn default_emote() -> String {
-    "neutral".to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -413,22 +398,6 @@ impl Default for CaptionsSpec {
 // Speaker Layout
 // ---------------------------------------------------------------------------
 
-/// Where speaker stickers appear on screen.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum SpeakerLayout {
-    /// One sticker, centered (solo narration).
-    SingleCenter,
-    /// Two stickers top-left + top-right (podcast duet).
-    SplitTop,
-    /// Two stickers left + right (debate style).
-    SplitSide,
-    /// One large sticker, swaps to current speaker.
-    ActiveSpeaker,
-    /// Small sticker in corner, gameplay fills frame.
-    PipCorner,
-}
-
 // ---------------------------------------------------------------------------
 // Stickers
 // ---------------------------------------------------------------------------
@@ -495,7 +464,6 @@ pub struct SceneSpec {
     pub text: String,
 
     /// Emote for this scene (e.g. "neutral", "happy", "surprised", "thinking").
-    /// Falls back to speaker's emote_default if absent.
     #[serde(default)]
     pub emote: Option<String>,
 
@@ -506,14 +474,6 @@ pub struct SceneSpec {
     /// Override scene duration in ms (null = use TTS duration).
     #[serde(default)]
     pub duration_override_ms: Option<i64>,
-
-    /// Whether the speaker's sticker is visible in this scene.
-    #[serde(default = "default_sticker_visible")]
-    pub sticker_visible: bool,
-}
-
-fn default_sticker_visible() -> bool {
-    true
 }
 
 // ---------------------------------------------------------------------------
@@ -816,7 +776,6 @@ mod tests {
         assert_eq!(spec.meta.fps, 30);
         assert_eq!(spec.tts.backend, "kokoro");
         assert_eq!(spec.captions.style, "word_highlight");
-        assert_eq!(spec.speaker_layout, SpeakerLayout::SplitTop);
         assert!(spec.stickers.enabled);
         assert_eq!(spec.stickers.lip_sync, "amplitude");
     }
@@ -833,7 +792,6 @@ mod tests {
             },
             "background": {"type": "procedural", "change_cadence": "speaker"},
             "captions": {"style": "karaoke_fill", "font": "Inter", "font_size": 64},
-            "speaker_layout": "split_side",
             "stickers": {"enabled": true, "lip_sync": "viseme"},
             "scenes": [
                 {"id": "s1", "speaker": "alice", "text": "Welcome!", "emote": "happy"},
@@ -851,7 +809,6 @@ mod tests {
         assert_eq!(spec.tts.default_speed, 1.2);
         assert_eq!(spec.speakers.len(), 2);
         assert_eq!(spec.captions.style, "karaoke_fill");
-        assert_eq!(spec.speaker_layout, SpeakerLayout::SplitSide);
         assert_eq!(spec.stickers.lip_sync, "viseme");
         assert_eq!(spec.scenes.len(), 2);
         assert_eq!(spec.scenes[0].id, "s1"); // preserves explicit ID
@@ -1026,22 +983,6 @@ mod tests {
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "background.type"));
-    }
-
-    #[test]
-    fn test_speaker_layout_serialization() {
-        // Verify snake_case serialization
-        let json = r#""split_top""#;
-        let layout: SpeakerLayout = serde_json::from_str(json).unwrap();
-        assert_eq!(layout, SpeakerLayout::SplitTop);
-
-        let json = r#""active_speaker""#;
-        let layout: SpeakerLayout = serde_json::from_str(json).unwrap();
-        assert_eq!(layout, SpeakerLayout::ActiveSpeaker);
-
-        let json = r#""pip_corner""#;
-        let layout: SpeakerLayout = serde_json::from_str(json).unwrap();
-        assert_eq!(layout, SpeakerLayout::PipCorner);
     }
 
     #[test]

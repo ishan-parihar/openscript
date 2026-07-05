@@ -5924,7 +5924,6 @@ async fn handle_script_parse(args: serde_json::Value) -> Result<serde_json::Valu
             "fps": spec.meta.fps,
             "tts_backend": spec.tts.backend,
             "caption_style": spec.captions.style,
-            "speaker_layout": format!("{:?}", spec.speaker_layout).to_lowercase(),
             "background_type": spec.background.r#type,
             "stickers_enabled": spec.stickers.enabled,
             "lip_sync_mode": spec.stickers.lip_sync,
