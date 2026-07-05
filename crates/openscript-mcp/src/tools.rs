@@ -7787,7 +7787,58 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         total_duration_s,
     };
 
-    let render_result = render_multilayer(&render_spec).await;
+    // Phase L: Branch on render_engine. When "hyperframes", compile the
+    // timeline to HF HTML and render via hf.render instead of render_multilayer.
+    // This connects HyperFrames to the golden trajectory — agents can now
+    // choose the render engine via output.render_engine in the script JSON.
+    let render_engine = spec.output.render_engine.as_str();
+    let render_result = if render_engine == "hyperframes" {
+        report_progress(70.0, 100.0, "Compiling timeline to HyperFrames HTML...")
+            .await
+            .ok();
+
+        // Compile the timeline JSON to HF HTML via timeline.to_hyperframes
+        let hf_compilation = handle_timeline_to_hyperframes(json!({
+            "timeline_path": timeline_path,
+            "output_dir": format!("{}/hf_composition", output_dir),
+        }))
+        .await?;
+
+        let hf_project_dir = hf_compilation
+            .get("project_dir")
+            .and_then(|v| v.as_str())
+            .unwrap_or("artifacts/hf_composition")
+            .to_string();
+
+        report_progress(80.0, 100.0, "Rendering via HyperFrames...")
+            .await
+            .ok();
+
+        // Render via hf.render
+        let hf_render_args = json!({
+            "project_dir": hf_project_dir,
+            "output_path": output_path,
+            "quality": if preview_mode { "draft" } else { "standard" },
+        });
+
+        match crate::hf::handle_hf_render(hf_render_args).await {
+            Ok(result) => {
+                let out = result
+                    .get("output_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&output_path)
+                    .to_string();
+                Ok(out)
+            }
+            Err(e) => Err(openscript_ffmpeg::FfmpegError::RenderFailed(format!(
+                "HyperFrames render failed: {}",
+                e
+            ))),
+        }
+    } else {
+        // Default: FFmpeg multilayer render
+        render_multilayer(&render_spec).await
+    };
 
     // Merge timeline-phase warnings (Value) with render-phase warnings (Vec<String>)
     // into a single JSON value for the response.

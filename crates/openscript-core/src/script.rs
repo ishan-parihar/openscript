@@ -565,6 +565,21 @@ pub struct OutputSpec {
     /// preset ("slow").
     #[serde(default = "default_ffmpeg_preset")]
     pub preset: String,
+
+    /// Render engine: "ffmpeg" (default, multilayer FFmpeg render) or
+    /// "hyperframes" (HTML+GSAP motion graphics via hf.render).
+    /// When "hyperframes", script.to_video will:
+    ///   1. Build the timeline via script.to_timeline
+    ///   2. Compile it to HF HTML via timeline.to_hyperframes
+    ///   3. Render via hf.render
+    /// This gives agents programmatic control over the render engine,
+    /// connecting HyperFrames to the golden trajectory.
+    #[serde(default = "default_render_engine")]
+    pub render_engine: String,
+}
+
+fn default_render_engine() -> String {
+    "ffmpeg".to_string()
 }
 
 fn default_format() -> String {
@@ -587,6 +602,7 @@ impl Default for OutputSpec {
             codec: default_codec(),
             crf: default_crf(),
             preset: default_ffmpeg_preset(),
+            render_engine: default_render_engine(),
         }
     }
 }
@@ -735,6 +751,19 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
                 "Invalid TTS backend '{}'. Must be one of: {}",
                 spec.tts.backend,
                 valid_tts_backends.join(", ")
+            ),
+        });
+    }
+
+    // Validate render_engine
+    let valid_engines = ["ffmpeg", "hyperframes"];
+    if !valid_engines.contains(&spec.output.render_engine.as_str()) {
+        errors.push(ScriptValidationError {
+            field: "output.render_engine".into(),
+            message: format!(
+                "Invalid render_engine '{}'. Must be one of: {}",
+                spec.output.render_engine,
+                valid_engines.join(", ")
             ),
         });
     }
