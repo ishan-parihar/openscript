@@ -206,22 +206,22 @@ fn main() {
             commands::invoke_tool::list_mcp_tools,
             commands::invoke_tool::get_mcp_tool,
             // Legacy stateful commands (kept for backward compat + AppState management)
-            commands::system::system_capabilities,
+            // Note: system_capabilities, split_segment, validate_timeline,
+            // timeline_preview, voice_profile_add/remove, verify_audio/captions
+            // were deleted — they are superseded by invoke_tool(name, args)
+            // which dispatches to the MCP route_tool() directly.
             // Project
             commands::project::create_project,
             commands::project::load_project,
             commands::project::list_projects,
             commands::project::save_project,
             // Timeline
-            commands::timeline::split_segment,
             commands::timeline::add_segment,
             commands::timeline::get_timeline,
-            commands::timeline::timeline_preview,
             commands::timeline::undo,
             commands::timeline::redo,
             commands::timeline::remove_segment,
             commands::timeline::update_segment,
-            commands::timeline::validate_timeline,
             // Transcript
             commands::transcript::transcribe_video,
             commands::transcript::read_transcript,
@@ -243,13 +243,8 @@ fn main() {
             commands::render::cancel_render,
             // TTS
             commands::tts::voice_profile_list,
-            commands::tts::voice_profile_add,
-            commands::tts::voice_profile_remove,
             commands::tts::tts_generate,
             commands::tts::tts_estimate_duration,
-            // Verification
-            commands::verify::verify_audio,
-            commands::verify::verify_captions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

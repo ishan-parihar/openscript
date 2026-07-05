@@ -41,14 +41,6 @@ export async function getTimeline() {
   return invoke("get_timeline");
 }
 
-export async function timelinePreview() {
-  return invoke<{
-    total_duration_ms: number;
-    segment_count: number;
-    render_ready: boolean;
-  }>("timeline_preview");
-}
-
 export async function undoAction() {
   return invoke<{ undone: string }>("undo");
 }
@@ -215,20 +207,6 @@ export async function voiceProfileList() {
   );
 }
 
-export async function voiceProfileAdd(name: string, language: string, audioFilePath: string) {
-  return invoke<{ profile_id: string }>(
-    "voice_profile_add",
-    { name, language, audioFilePath }
-  );
-}
-
-export async function voiceProfileRemove(profileId: string) {
-  return invoke<{ removed: boolean }>(
-    "voice_profile_remove",
-    { profileId }
-  );
-}
-
 export async function ttsGenerate(text: string, voiceProfileId?: string, outputPath?: string) {
   return invoke<{ output_path: string; duration_ms: number }>(
     "tts_generate",
@@ -265,28 +243,6 @@ export async function getRenderProgress() {
 
 export async function cancelRender() {
   return invoke<{ cancelled: boolean }>("cancel_render");
-}
-
-// Verification commands
-export async function verifyAudio(filePath: string) {
-  return invoke<{ passed: boolean; issues: string[]; loudness_lufs: number }>(
-    "verify_audio",
-    { filePath }
-  );
-}
-
-export async function verifyCaptions(filePath: string) {
-  return invoke<{ passed: boolean; issues: string[]; caption_count: number }>(
-    "verify_captions",
-    { filePath }
-  );
-}
-
-// Timeline validation
-export async function validateTimeline() {
-  return invoke<{ valid: boolean; issues: string[]; segment_count: number }>(
-    "validate_timeline"
-  );
 }
 
 // Segment manipulation

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use openscript_tts::client::TtsClient;
-use openscript_tts::profiles::{VoiceProfile, VoiceProfileRegistry};
+use openscript_tts::profiles::VoiceProfileRegistry;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use tauri::State;
@@ -39,61 +39,6 @@ pub async fn voice_profile_list(state: State<'_, AppState>) -> Result<Value, Str
     Ok(json!({
         "profiles": profiles,
         "count": profiles.len(),
-    }))
-}
-
-/// Add a new voice profile to the registry.
-#[tauri::command]
-pub async fn voice_profile_add(
-    state: State<'_, AppState>,
-    name: String,
-    language: String,
-    audio_file_path: String,
-) -> Result<Value, String> {
-    let profile_id = format!("voice_{}", name.to_lowercase().replace(' ', "_"));
-
-    if !std::path::Path::new(&audio_file_path).exists() {
-        return Err(format!("Reference audio file not found: {}", audio_file_path));
-    }
-
-    let ref_text = name.clone();
-
-    let profile = VoiceProfile {
-        id: profile_id.clone(),
-        provider: "qwen3".to_string(),
-        mode: "voice_clone".to_string(),
-        model: "faster-qwen3-tts".to_string(),
-        ref_audio: audio_file_path,
-        ref_text,
-        language,
-        description: Some(name),
-        sample_rate: 22050,
-        created_at: chrono::Utc::now().to_rfc3339(),
-    };
-
-    let mut registry = load_registry(&state)?;
-    registry
-        .add(profile)
-        .map_err(|e| format!("Failed to save voice profile: {}", e))?;
-
-    Ok(json!({
-        "profile_id": profile_id,
-    }))
-}
-
-/// Remove a voice profile from the registry.
-#[tauri::command]
-pub async fn voice_profile_remove(
-    state: State<'_, AppState>,
-    profile_id: String,
-) -> Result<Value, String> {
-    let mut registry = load_registry(&state)?;
-    let removed = registry
-        .remove(&profile_id)
-        .map_err(|e| format!("Failed to remove voice profile: {}", e))?;
-
-    Ok(json!({
-        "removed": removed.is_some(),
     }))
 }
 

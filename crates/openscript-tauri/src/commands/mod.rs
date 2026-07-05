@@ -6,7 +6,5 @@ pub mod transcript;
 pub mod timeline;
 pub mod render;
 pub mod assets;
-pub mod system;
 pub mod tts;
-pub mod verify;
 pub mod invoke_tool;
