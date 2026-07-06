@@ -123,12 +123,19 @@ pub async fn remove_filler_words_from_text(text: String) -> Result<Value, String
 }
 
 /// Apply edited SRT to video: build timeline and render.
+///
+/// `aspect` and `fps` were previously hardcoded to "9:16" and 30 — that
+/// broke renders of landscape source footage (16:9) and footage with a
+/// non-30 fps cadence (audit bug #21). Both now have sensible defaults
+/// but accept caller overrides.
 #[tauri::command]
 pub async fn apply_transcript_edit(
     _state: State<'_, AppState>,
     video_path: String,
     edited_segments: Vec<Value>,
     output_path: String,
+    aspect: Option<String>,
+    fps: Option<u32>,
 ) -> Result<Value, String> {
     // Validate source video exists
     if !PathBuf::from(&video_path).exists() {
@@ -158,8 +165,27 @@ pub async fn apply_transcript_edit(
         return Err("No valid segments provided".to_string());
     }
 
+    // Resolve aspect ratio: explicit param > "16:9" if the source is landscape
+    // (width > height) > "9:16" (the historical default for vertical video).
+    // We probe ffprobe-like metadata by asking openscript-ffmpeg for the
+    // source video's width/height; if that fails, fall back to "9:16".
+    let resolved_aspect = aspect.unwrap_or_else(|| {
+        // Cheap heuristic: open the file's first packet to get width/height.
+        // If probing fails, assume vertical (the prior default).
+        match probe_video_dimensions(&video_path) {
+            Some((w, h)) if w > h => "16:9".to_string(),
+            _ => "9:16".to_string(),
+        }
+    });
+    let resolved_fps = fps.unwrap_or(30);
+
     // Build a minimal timeline
-    let mut timeline = Timeline::new(PathBuf::from(&video_path), "9:16", 30, None);
+    let mut timeline = Timeline::new(
+        PathBuf::from(&video_path),
+        &resolved_aspect,
+        resolved_fps,
+        None,
+    );
     timeline.segments = segments;
 
     // Render using FFmpeg (no cancel token for transcript-edit renders)
@@ -170,5 +196,31 @@ pub async fn apply_transcript_edit(
     Ok(json!({
         "output_path": output,
         "segments_count": timeline.segments.len(),
+        "aspect": resolved_aspect,
+        "fps": resolved_fps,
     }))
+}
+
+/// Probe a video file's dimensions (width, height) using ffprobe.
+/// Returns None if ffprobe is unavailable or the file cannot be probed;
+/// callers fall back to the historical default in that case.
+fn probe_video_dimensions(video_path: &str) -> Option<(u32, u32)> {
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "csv=p=0",
+            video_path,
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut parts = stdout.trim().split(',');
+    let w: u32 = parts.next()?.parse().ok()?;
+    let h: u32 = parts.next()?.parse().ok()?;
+    Some((w, h))
 }

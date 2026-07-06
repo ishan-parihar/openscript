@@ -415,7 +415,15 @@ fn build_result(
     let content = std::fs::read_to_string(output_srt_path).map_err(|e| TranscribeError::Io(e))?;
 
     if let Err(reason) = validate_hinglish_output(&content) {
-        eprintln!("[transcribe] Output validation warning ({engine}): {reason}");
+        // Bug #22 fix: previously eprintln!-only (no-op in production, since
+        // logs go to stderr and are usually discarded). Use tracing::warn!
+        // so the validation warning surfaces in whatever log sink the host
+        // (Tauri / MCP server / CLI) has wired up.
+        tracing::warn!(
+            engine = %engine,
+            "Hinglish output validation warning: {}",
+            reason
+        );
     }
 
     let entry_count = content

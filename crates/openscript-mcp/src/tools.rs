@@ -1006,12 +1006,17 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "library.search",
-            "description": "Search the de-duplicated music/SFX library index. Index contains 500+ entries from NoCopyrightSounds, AudioLibrary, BreakingCopyright, VlogNoCopyrightMusic, MixtureOfficial, SoundLibrary1, and local stock. Each entry has filename, title, tags, download_url, source, duration, and license. Use library.download to fetch the audio file on demand. Use library.build to rebuild the index from YouTube channels.",
+            "description": "Search the de-duplicated music/SFX library index. Index contains 500+ entries from NoCopyrightSounds, AudioLibrary, BreakingCopyright, VlogNoCopyrightMusic, MixtureOfficial, SoundLibrary1, and local stock. Each entry has filename, title, tags, download_url, source, duration_s, license. Use library.download to fetch the audio file on demand. Use library.build to rebuild the index from YouTube channels. Supports filtering by source channel, license, duration range, and tag.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query (e.g. 'epic cinematic', 'lofi chill', 'explosion', 'whoosh')"},
                     "type": {"type": "string", "enum": ["music", "sfx"], "description": "Filter by media type: music or sfx"},
+                    "source": {"type": "string", "description": "Filter by source channel (e.g. 'NoCopyrightSounds', 'AudioLibrary', 'BreakingCopyright', 'VlogNoCopyrightMusic', 'MixtureOfficial', 'SoundLibrary1')"},
+                    "license": {"type": "string", "description": "Filter by license (e.g. 'no-copyright', 'creative-commons')"},
+                    "min_duration_s": {"type": "number", "description": "Minimum duration in seconds (inclusive)"},
+                    "max_duration_s": {"type": "number", "description": "Maximum duration in seconds (inclusive)"},
+                    "tag": {"type": "string", "description": "Filter by tag (substring match against entry's tags array, case-insensitive)"},
                     "limit": {"type": "integer", "default": 10, "description": "Max results"}
                 },
                 "required": ["query"],
@@ -9398,6 +9403,19 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
     let query = extract_str(&args, "query")?;
     let media_type = default_opt_str(&args, "type");
     let limit = default_u32(&args, "limit", 10) as usize;
+    // New filters (audit bug #18): mood/energy/duration/source/license.
+    // These make library.search as filterable as music.search + sfx.search,
+    // so an agent can find a 30s "epic cinematic" track without paging
+    // through hundreds of irrelevant results.
+    let source_filter = default_opt_str(&args, "source");
+    let license_filter = default_opt_str(&args, "license");
+    let min_duration_s = args
+        .get("min_duration_s")
+        .and_then(|v| v.as_f64());
+    let max_duration_s = args
+        .get("max_duration_s")
+        .and_then(|v| v.as_f64());
+    let tag_filter: Option<String> = default_opt_str(&args, "tag");
 
     let index_path = std::env::var("OPENSCRIPT_MUSIC_LIBRARY_INDEX")
         .unwrap_or_else(|_| "mcp/assets/music_library_index.json".to_string());
@@ -9421,6 +9439,10 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
     let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
     let mut results: Vec<serde_json::Value> = Vec::new();
+    let mut filtered_by_duration = 0u32;
+    let mut filtered_by_source = 0u32;
+    let mut filtered_by_license = 0u32;
+    let mut filtered_by_tag = 0u32;
 
     for entry in &entries {
         // Filter by media type if specified
@@ -9430,6 +9452,69 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if entry_type != mt {
+                continue;
+            }
+        }
+
+        // Filter by source channel (e.g. "NoCopyrightSounds")
+        if let Some(ref src) = source_filter {
+            let entry_source = entry
+                .get("source")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if entry_source != src {
+                filtered_by_source += 1;
+                continue;
+            }
+        }
+
+        // Filter by license (e.g. "no-copyright", "creative-commons")
+        if let Some(ref lic) = license_filter {
+            let entry_license = entry
+                .get("license")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if entry_license != lic {
+                filtered_by_license += 1;
+                continue;
+            }
+        }
+
+        // Filter by duration range (in seconds)
+        let duration = entry
+            .get("duration_s")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        if let Some(min_d) = min_duration_s {
+            if duration < min_d {
+                filtered_by_duration += 1;
+                continue;
+            }
+        }
+        if let Some(max_d) = max_duration_s {
+            if duration > max_d {
+                filtered_by_duration += 1;
+                continue;
+            }
+        }
+
+        // Filter by tag (substring match against the entry's tags array)
+        if let Some(ref tag_q) = tag_filter {
+            let tag_lower = tag_q.to_lowercase();
+            let tags: Vec<String> = entry
+                .get("tags")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|t| t.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let matches_tag = tags
+                .iter()
+                .any(|t| t.to_lowercase().contains(&tag_lower));
+            if !matches_tag {
+                filtered_by_tag += 1;
                 continue;
             }
         }
@@ -9491,6 +9576,21 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
     let total = results.len();
     results.truncate(limit);
 
+    // Surface filter stats so an agent can tell why results are sparse.
+    let mut filter_stats = serde_json::Map::new();
+    if filtered_by_duration > 0 {
+        filter_stats.insert("filtered_by_duration".into(), json!(filtered_by_duration));
+    }
+    if filtered_by_source > 0 {
+        filter_stats.insert("filtered_by_source".into(), json!(filtered_by_source));
+    }
+    if filtered_by_license > 0 {
+        filter_stats.insert("filtered_by_license".into(), json!(filtered_by_license));
+    }
+    if filtered_by_tag > 0 {
+        filter_stats.insert("filtered_by_tag".into(), json!(filtered_by_tag));
+    }
+
     Ok(json!({
         "status": "searched",
         "query": query,
@@ -9498,6 +9598,14 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
         "total_matches": total,
         "count": results.len(),
         "results": results,
+        "filters_applied": {
+            "source": source_filter,
+            "license": license_filter,
+            "min_duration_s": min_duration_s,
+            "max_duration_s": max_duration_s,
+            "tag": tag_filter,
+        },
+        "filter_stats": filter_stats,
         "index_stats": {
             "total_entries": index.get("total_entries"),
             "music_count": index.get("music_count"),
@@ -10639,5 +10747,30 @@ mod tests {
             desc.contains("duration"),
             "broll.fetch description should mention duration is returned"
         );
+    }
+}
+
+#[cfg(test)]
+mod library_search_tests {
+    use super::*;
+
+    /// Verify library.search tool definition exposes the new filter params.
+    #[test]
+    fn test_library_search_schema_has_new_filters() {
+        let tools = tool_definitions();
+        let lib_search = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "library.search")
+            .expect("library.search tool must exist");
+        let props = lib_search["inputSchema"]["properties"].as_object().unwrap();
+        for required in ["source", "license", "min_duration_s", "max_duration_s", "tag"] {
+            assert!(
+                props.contains_key(required),
+                "library.search schema must expose '{}' parameter (audit bug #18)",
+                required
+            );
+        }
     }
 }

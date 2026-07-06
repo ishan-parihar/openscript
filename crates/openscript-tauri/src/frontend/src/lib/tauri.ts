@@ -96,15 +96,26 @@ export async function applyTranscriptEdit(
   videoPath: string,
   editedSegments: unknown[],
   outputPath?: string,
+  aspect?: string,
+  fps?: number,
 ) {
   // Auto-generate an output path if the caller did not supply one. Prior
   // versions sent { segments } which the Rust backend rejected because it
   // expects { edited_segments, output_path }. This is a CRITICAL bug fix.
+  //
+  // `aspect` and `fps` are optional — when omitted the Rust backend probes
+  // the source video with ffprobe and picks "16:9" for landscape footage
+  // or "9:16" for portrait (audit bug #21 fix). Callers can override.
   const resolvedOutputPath = outputPath
     ?? `${videoPath.replace(/\.[^.]+$/, "")}.edited.mp4`;
-  return invoke<{ output_path: string; segments_count: number; total_duration_s: number }>(
+  return invoke<{
+    output_path: string;
+    segments_count: number;
+    aspect: string;
+    fps: number;
+  }>(
     "apply_transcript_edit",
-    { videoPath, editedSegments, outputPath: resolvedOutputPath }
+    { videoPath, editedSegments, outputPath: resolvedOutputPath, aspect, fps }
   );
 }
 
