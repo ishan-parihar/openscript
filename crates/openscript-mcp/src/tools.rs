@@ -7179,6 +7179,89 @@ fn build_sticker_query(
 
 /// Extract the first salient noun from a text string.
 /// Simple heuristic: skip stopwords, return the first word > 4 characters.
+/// Extract an emotional reaction query from scene text for GIPHY meme b-rolls.
+///
+/// Detects the emotional beat of the scene and returns a GIPHY-friendly
+/// query that will produce a relevant reaction GIF. Uses keyword matching
+/// in the scene text + the scene's emote field + the overall theme.
+fn extract_emotion_query(text: &str, emote: Option<&str>, theme: &str) -> String {
+    let lower = text.to_lowercase();
+
+    // Emotion detection priority:
+    // 1. Explicit scene emote field
+    // 2. Keyword-based detection in scene text
+    // 3. Theme-based default
+
+    // 1. Check scene emote
+    if let Some(e) = emote {
+        if !e.is_empty() {
+            return match e.to_lowercase().as_str() {
+                "happy" | "joy" | "excited" => "happy reaction".to_string(),
+                "sad" | "emotional" => "sad reaction".to_string(),
+                "surprised" | "shocked" => "mind blown reaction".to_string(),
+                "angry" | "frustrated" => "angry reaction".to_string(),
+                "thinking" | "confused" => "confused reaction".to_string(),
+                "neutral" | "calm" => "calm reaction".to_string(),
+                _ => format!("{} reaction", e.to_lowercase()),
+            };
+        }
+    }
+
+    // 2. Keyword-based detection
+    let emotion_pairs: &[(&str, &str)] = &[
+        ("surprising", "mind blown reaction"),
+        ("surprise", "mind blown reaction"),
+        ("shocking", "shocked reaction"),
+        ("amazing", "amazing reaction"),
+        ("incredible", "mind blown reaction"),
+        ("did you know", "mind blown reaction"),
+        ("fact", "mind blown reaction"),
+        ("funny", "laughing reaction"),
+        ("joke", "laughing reaction"),
+        ("hilarious", "laughing reaction"),
+        ("lol", "laughing reaction"),
+        ("motivat", "hype reaction"),
+        ("inspire", "motivated reaction"),
+        ("start today", "let's go reaction"),
+        ("you can", "hype reaction"),
+        ("sad", "sad reaction"),
+        ("depress", "sad reaction"),
+        ("grief", "sad reaction"),
+        ("angry", "angry reaction"),
+        ("frustrat", "frustrated reaction"),
+        ("confus", "confused reaction"),
+        ("what", "confused reaction"),
+        ("important", "attention reaction"),
+        ("warning", "warning reaction"),
+        ("danger", "warning reaction"),
+        ("love", "love reaction"),
+        ("heart", "love reaction"),
+        ("success", "success reaction"),
+        ("win", "celebration reaction"),
+        ("celebrate", "celebration reaction"),
+        ("fail", "fail reaction"),
+        ("error", "error reaction"),
+        ("money", "money reaction"),
+        ("rich", "money reaction"),
+        ("scared", "scared reaction"),
+        ("afraid", "scared reaction"),
+        ("fear", "scared reaction"),
+    ];
+
+    for (keyword, query) in emotion_pairs {
+        if lower.contains(keyword) {
+            return query.to_string();
+        }
+    }
+
+    // 3. Theme-based default
+    match theme {
+        "calm" => "calm peaceful reaction".to_string(),
+        "energetic" => "hype reaction".to_string(),
+        _ => "reaction".to_string(),
+    }
+}
+
 fn extract_salient_noun(text: &str) -> Option<String> {
     let stopwords = [
         "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has", "had",
@@ -8487,6 +8570,116 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         auto_select_music(&spec.output.theme)
     };
 
+    // === MEME B-ROLLS: Download contextual reaction GIFs per scene ===
+    // Unlike stickers (persistent per-speaker overlays), meme b-rolls are
+    // brief (2-3s) emotional reaction GIFs that pop in at a specific moment
+    // in each scene, like TikTok reaction videos.
+    let mut meme_brolls: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
+    if spec.meme_brolls.enabled && !skip_stickers {
+        let giphy_key_val = giphy_key();
+        if !giphy_key_val.is_empty() {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
+
+            let meme_dir = "mcp/assets/stickers";
+            std::fs::create_dir_all(meme_dir).ok();
+
+            // Track scene start times for positioning the meme within the scene
+            let mut scene_start_s: f64 = 0.0;
+
+            for (scene_idx, scene) in spec.scenes.iter().enumerate() {
+                let scene_dur_s = scene_durations.get(scene_idx).copied().unwrap_or(3.0);
+
+                // Extract the emotional beat from the scene text
+                let emotion_query = extract_emotion_query(&scene.text, scene.emote.as_deref(), &spec.output.theme);
+                tracing::info!(
+                    "[script.to_video] Meme b-roll scene {}: emotion='{}'",
+                    scene_idx + 1,
+                    emotion_query
+                );
+
+                // Use GIPHY translate (best single match) or search
+                let giphy_url = if spec.meme_brolls.query_strategy == "search" {
+                    format!(
+                        "https://api.giphy.com/v1/gifs/search?api_key={}&q={}&limit=3&rating=pg&lang=en",
+                        giphy_key_val,
+                        urlencoding::encode(&emotion_query)
+                    )
+                } else {
+                    // translate endpoint returns 1 best match
+                    format!(
+                        "https://api.giphy.com/v1/gifs/translate?api_key={}&s={}",
+                        giphy_key_val,
+                        urlencoding::encode(&emotion_query)
+                    )
+                };
+
+                if let Ok(resp) = client.get(&giphy_url).send().await {
+                    if resp.status().is_success() {
+                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                            // Translate returns a single object; search returns an array
+                            let gif_data = if spec.meme_brolls.query_strategy == "search" {
+                                body.get("data")
+                                    .and_then(|v| v.as_array())
+                                    .and_then(|arr| arr.first())
+                                    .cloned()
+                            } else {
+                                body.get("data").cloned()
+                            };
+
+                            if let Some(gif) = gif_data {
+                                let images = gif.get("images").cloned().unwrap_or(json!({}));
+                                let original = images.get("original").cloned().unwrap_or(json!({}));
+                                let gif_url = original
+                                    .get("url")
+                                    .and_then(|v| v.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or("");
+
+                                if !gif_url.is_empty() {
+                                    let meme_path = format!("{}/meme_scene_{}.gif", meme_dir, scene_idx + 1);
+                                    if let Ok(dl_resp) = client.get(gif_url).send().await {
+                                        if dl_resp.status().is_success() {
+                                            if let Ok(bytes) = dl_resp.bytes().await {
+                                                std::fs::write(&meme_path, &bytes).ok();
+                                                let meme_start_s = scene_start_s + spec.meme_brolls.offset_s;
+                                                let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
+                                                let sticker_w = (spec.meta.width as f64 * spec.meme_brolls.scale) as u32;
+                                                meme_brolls.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
+                                                    path: meme_path.clone(),
+                                                    start_s: meme_start_s,
+                                                    end_s: meme_end_s,
+                                                    position: spec.meme_brolls.position.clone(),
+                                                    scale: spec.meme_brolls.scale,
+                                                    center_x: 0,
+                                                    center_y: 0,
+                                                    sticker_width: sticker_w,
+                                                    sticker_height: sticker_w,
+                                                });
+                                                tracing::info!(
+                                                    "[script.to_video] Downloaded meme b-roll for scene {}: {} ({} bytes, {:.1}s-{:.1}s)",
+                                                    scene_idx + 1,
+                                                    meme_path,
+                                                    bytes.len(),
+                                                    meme_start_s,
+                                                    meme_end_s
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                scene_start_s += scene_dur_s;
+            }
+        }
+    }
+
     // Build timeline preview for agent inspection
     let bg_assignments: Vec<openscript_core::timeline_preview::BackgroundClipAssignment> =
         backgrounds
@@ -8567,6 +8760,11 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     report_progress(60.0, 100.0, "Phase 3/3: Rendering multi-layer video...")
         .await
         .ok();
+
+    // Merge meme b-rolls into the stickers vector — they use the same
+    // StickerOverlay type and FFmpeg overlay path, just with different
+    // timing (brief pop-in vs persistent overlay) and position.
+    stickers.extend(meme_brolls);
 
     // Build multi-layer render spec
     use openscript_ffmpeg::multilayer_render::{render_multilayer, MultiLayerRenderSpec};

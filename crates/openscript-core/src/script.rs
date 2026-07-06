@@ -56,6 +56,12 @@ pub struct ScriptSpec {
     #[serde(default)]
     pub stickers: StickersSpec,
 
+    /// Meme b-roll configuration (GIPHY reaction GIFs per scene).
+    /// When enabled, each scene gets a short contextual reaction GIF
+    /// that pops in briefly (2-3s) and disappears.
+    #[serde(default)]
+    pub meme_brolls: MemeBrollSpec,
+
     /// The ordered list of scenes (the script content).
     pub scenes: Vec<SceneSpec>,
 
@@ -452,6 +458,67 @@ impl Default for StickersSpec {
             lip_sync: default_lip_sync(),
             blink: default_blink(),
             idle_bob: default_idle_bob(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Meme B-Rolls (GIPHY reaction GIFs per scene)
+// ---------------------------------------------------------------------------
+
+/// Meme b-roll configuration. When enabled, each scene gets a short
+/// contextual reaction GIF from GIPHY that pops in briefly (2-3s) and
+/// then disappears — like TikTok reaction videos.
+///
+/// Unlike stickers (which persist for the whole speaker segment as a
+/// speaker identifier), meme b-rolls are **brief**, **emotional**, and
+/// **dynamic** (pop-in + fade-out animation).
+///
+/// Set `"meme_brolls": {"enabled": true}` in the script to activate.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MemeBrollSpec {
+    /// Whether meme b-rolls are enabled.
+    #[serde(default = "default_meme_enabled")]
+    pub enabled: bool,
+
+    /// Position on screen: "center", "center-bottom", "center-top".
+    #[serde(default = "default_meme_position")]
+    pub position: String,
+
+    /// Scale as fraction of canvas width (0.35 = 35%).
+    #[serde(default = "default_meme_scale")]
+    pub scale: f64,
+
+    /// How long each meme plays in seconds.
+    #[serde(default = "default_meme_duration")]
+    pub duration_s: f64,
+
+    /// Delay after scene start before meme appears (seconds).
+    #[serde(default = "default_meme_offset")]
+    pub offset_s: f64,
+
+    /// Query strategy: "translate" (GIPHY translate, 1 best match) or
+    /// "search" (GIPHY search, pick from results).
+    #[serde(default = "default_meme_strategy")]
+    pub query_strategy: String,
+}
+
+fn default_meme_enabled() -> bool { false }
+fn default_meme_position() -> String { "center-bottom".to_string() }
+fn default_meme_scale() -> f64 { 0.35 }
+fn default_meme_duration() -> f64 { 2.5 }
+fn default_meme_offset() -> f64 { 0.3 }
+fn default_meme_strategy() -> String { "translate".to_string() }
+
+impl Default for MemeBrollSpec {
+    fn default() -> Self {
+        Self {
+            enabled: default_meme_enabled(),
+            position: default_meme_position(),
+            scale: default_meme_scale(),
+            duration_s: default_meme_duration(),
+            offset_s: default_meme_offset(),
+            query_strategy: default_meme_strategy(),
         }
     }
 }
