@@ -34,94 +34,43 @@ import onnxruntime as ort
 def compute_mel_spectrogram(wav_path: str, sample_rate: int = 16000,
                             n_mels: int = 128, n_fft: int = 512,
                             hop_length: int = 160, win_length: int = 512) -> np.ndarray:
-    """Compute log-mel spectrogram from a WAV file.
+    """Compute log-mel spectrogram using librosa.
+
+    Parakeet TDT expects 128-bin log-mel features at 16kHz with:
+      - n_fft=512 (32ms window)
+      - hop_length=160 (10ms hop)
+      - win_length=512
+      - Pre-normalized log-mel (no standardization — NeMo handles it differently)
 
     Returns array of shape [n_mels, time_frames] suitable for Parakeet encoder.
     """
-    import wave
-    import struct
+    import librosa
 
-    # Read WAV file (assume 16-bit PCM mono)
-    with wave.open(wav_path, 'r') as wav:
-        n_channels = wav.getnchannels()
-        sample_width = wav.getsampwidth()
-        n_frames = wav.getnframes()
-        raw = wav.readframes(n_frames)
+    # Load audio at 16kHz (librosa handles resampling automatically)
+    audio, sr = librosa.load(wav_path, sr=16000, mono=True)
 
-    # Convert to float32
-    if sample_width == 2:
-        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    elif sample_width == 4:
-        samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
-    else:
-        samples = np.frombuffer(raw, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+    # Compute mel spectrogram using librosa (handles window, FFT, mel filterbank)
+    mel = librosa.feature.melspectrogram(
+        y=audio,
+        sr=16000,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        win_length=win_length,
+        n_mels=n_mels,
+        window='hann',
+        center=True,
+    )
 
-    # If stereo, take first channel
-    if n_channels > 1:
-        samples = samples[::n_channels]
+    # NeMo uses log(power_mel + eps), NOT librosa.power_to_db
+    # power_to_db uses 10*log10(mel/ref), NeMo uses log(mel+eps)
+    log_mel = np.log(mel + 1e-10)
 
-    # Resample to 16kHz if needed (simple linear interpolation)
-    orig_sr = 24000  # Kokoro outputs 24kHz
-    if orig_sr != sample_rate:
-        # Read actual sample rate from WAV
-        pass  # We'll read it properly below
+    # Per-feature normalization (NeMo's default: normalize="per_feature")
+    mean = log_mel.mean(axis=1, keepdims=True)
+    std = log_mel.std(axis=1, keepdims=True)
+    log_mel = (log_mel - mean) / (std + 1e-10)
 
-    # Re-read with proper sample rate
-    with wave.open(wav_path, 'r') as wav:
-        actual_sr = wav.getframerate()
-        n_channels = wav.getnchannels()
-        n_frames = wav.getnframes()
-        raw = wav.readframes(n_frames)
-
-    if sample_width == 2:
-        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-    else:
-        samples = np.frombuffer(raw, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
-
-    if n_channels > 1:
-        samples = samples[::n_channels]
-
-    # Resample to 16kHz
-    if actual_sr != 16000:
-        n_out = int(len(samples) * 16000 / actual_sr)
-        indices = np.linspace(0, len(samples) - 1, n_out)
-        samples = np.interp(indices, np.arange(len(samples)), samples).astype(np.float32)
-
-    # Apply pre-emphasis
-    pre_emphasis = 0.97
-    emphasized = np.append(samples[0], samples[1:] - pre_emphasis * samples[:-1])
-
-    # Pad if too short
-    if len(emphasized) < n_fft:
-        emphasized = np.pad(emphasized, (0, n_fft - len(emphasized)))
-
-    # Frame the signal
-    n_frames = 1 + (len(emphasized) - n_fft) // hop_length
-    frames = np.zeros((n_frames, n_fft), dtype=np.float32)
-    for i in range(n_frames):
-        start = i * hop_length
-        frames[i] = emphasized[start:start + n_fft]
-
-    # Apply Hann window
-    window = np.hanning(n_fft).astype(np.float32)
-    frames *= window
-
-    # Compute FFT (power spectrum)
-    fft_result = np.fft.rfft(frames, n=n_fft, axis=1)
-    power_spec = (np.abs(fft_result) ** 2).astype(np.float32)
-
-    # Mel filterbank
-    mel_basis = _mel_filterbank(sample_rate=16000, n_fft=n_fft, n_mels=n_mels)
-    mel_spec = np.dot(power_spec, mel_basis.T)
-
-    # Log compression
-    mel_spec = np.log(mel_spec + 1e-10)
-
-    # Transpose to [n_mels, time] and normalize
-    mel_spec = mel_spec.T  # [n_mels, time]
-    mel_spec = (mel_spec - mel_spec.mean()) / (mel_spec.std() + 1e-10)
-
-    return mel_spec.astype(np.float32)
+    return log_mel.astype(np.float32)
 
 
 def _mel_filterbank(sample_rate: int, n_fft: int, n_mels: int) -> np.ndarray:
@@ -161,76 +110,110 @@ def _mel_filterbank(sample_rate: int, n_fft: int, n_mels: int) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def load_vocab(vocab_path: str) -> dict:
-    """Load vocabulary file. Returns {token_id: token_string}."""
+    """Load vocabulary file. Returns {token_id: token_string}.
+
+    The vocab.txt format has lines like: "token_string index"
+    e.g. "<unk> 0", "<|nospeech|> 1", "the 12"
+    """
     vocab = {}
     with open(vocab_path, 'r', encoding='utf-8') as f:
-        for i, line in enumerate(f):
-            token = line.strip()
-            vocab[i] = token
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Split on the last space — the index is the last token
+            parts = line.rsplit(' ', 1)
+            if len(parts) == 2:
+                token = parts[0]
+                try:
+                    idx = int(parts[1])
+                    vocab[idx] = token
+                except ValueError:
+                    # Not a valid index line — skip
+                    pass
+            else:
+                # No index — use line number
+                pass
     return vocab
 
 
 def greedy_decode(encoder_out, encoder_len, decoder_session, vocab):
-    """Greedy RNN-T decoding.
+    """Greedy RNN-T decoding for Parakeet TDT model.
 
-    encoder_out: [1, time, 1024] encoder output
-    encoder_len: [1] encoder output length
-    decoder_session: ONNX session for decoder_joint model
-    vocab: {token_id: token_string}
+    This model uses a stateful decoder with LSTM states. The decoder_joint
+    model takes:
+      - encoder_outputs: [1, time, 1024]
+      - targets: [1, seq_len] (token IDs)
+      - target_length: [1]
+      - input_states_1: [2, batch, 640] (LSTM state 1)
+      - input_states_2: [2, batch, 640] (LSTM state 2)
+
+    And outputs:
+      - outputs: [1, seq_len, 8198] (logits — 8193 vocab + 5 TDT tokens)
+      - prednet_lengths: [1]
+      - output_states_1: [2, batch, 640]
+      - output_states_2: [2, batch, 640]
     """
-    # RNN-T blank token is typically 0 or the last token
-    # For Parakeet TDT, check vocab for blank token
-    blank_id = None
-    for tid, token in vocab.items():
-        if token == '<blank>' or token == '<eos>' or token == '|':
-            blank_id = tid
-            break
-    if blank_id is None:
-        blank_id = 0  # Default
+    # Blank token for RNN-T is <|nospeech|> at index 1
+    blank_id = 1
+    # Start-of-transcript token — the model expects this as the initial
+    # decoder input, not blank. Without it, the model predicts only
+    # duration tokens (8193-8197) and no content.
+    start_token = 4  # <|startoftranscript|>
+
+    # TDT-specific tokens (8193-8197 are duration tokens, not content)
+    max_vocab_id = len(vocab)  # 8193
 
     max_len = int(encoder_len[0])
-    encoder_out_trimmed = encoder_out[0, :max_len, :]  # [time, 1024]
+    # Encoder output is [batch, 1024, time] (features × time, transposed)
+    encoder_out_trimmed = encoder_out[0, :, :max_len]  # [1024, time]
 
-    # RNN-T greedy decoding
-    # The decoder_joint model takes:
-    #   - encoder_output: [1, 1, 1024] (one frame at a time)
-    #   - decoder_input: [1, 1] (token IDs, starting with blank/sos)
-    # And outputs: [1, 1, vocab_size] logits
+    # Initialize decoder states (zeros for LSTM)
+    state_1 = np.zeros((2, 1, 640), dtype=np.float32)
+    state_2 = np.zeros((2, 1, 640), dtype=np.float32)
 
-    # Check decoder_joint inputs
-    dec_inputs = decoder_session.get_inputs()
-    dec_input_names = [i.name for i in dec_inputs]
-
-    # Initialize decoder state
     emitted_tokens = []
-    decoder_input = np.array([[blank_id]], dtype=np.int32)  # [1, 1]
-    decoder_state = None  # Will be populated based on model
+    # Start with start-of-transcript token (not blank)
+    current_token = start_token
 
     for t in range(max_len):
-        enc_frame = encoder_out_trimmed[t:t+1, :].reshape(1, 1, -1)  # [1, 1, 1024]
+        # Extract one time frame: [1024, 1] → reshape to [1, 1024, 1]
+        enc_frame = encoder_out_trimmed[:, t:t+1].reshape(1, 1024, 1)  # [1, 1024, 1]
 
-        # Prepare decoder inputs based on model's expected input names
-        feed = {}
-        for name in dec_input_names:
-            if 'encoder' in name.lower() or 'enc' in name.lower():
-                feed[name] = enc_frame
-            elif 'decoder' in name.lower() or 'tokens' in name.lower() or 'input' in name.lower():
-                feed[name] = decoder_input
-            elif 'length' in name.lower():
-                feed[name] = np.array([1], dtype=np.int64)
+        # Build feed dict with correct input names
+        targets = np.array([[current_token]], dtype=np.int32)
+        target_length = np.array([1], dtype=np.int32)
+
+        feed = {
+            'encoder_outputs': enc_frame,
+            'targets': targets,
+            'target_length': target_length,
+            'input_states_1': state_1,
+            'input_states_2': state_2,
+        }
 
         try:
             outputs = decoder_session.run(None, feed)
-            logits = outputs[0]  # [1, 1, vocab_size]
+            logits = outputs[0]  # [1, 1, 8198]
+            state_1 = outputs[2]  # [2, 1, 640]
+            state_2 = outputs[3]  # [2, 1, 640]
+
             # Get top token
             top_token = int(np.argmax(logits[0, -1, :]))
 
-            if top_token != blank_id and top_token < len(vocab):
+            # In TDT, tokens >= max_vocab_id are duration tokens (not content)
+            # Blank is also a "stay" token — advance to next encoder frame
+            if top_token < max_vocab_id and top_token != blank_id:
+                # Content token — emit it
                 emitted_tokens.append(top_token)
-                decoder_input = np.array([[top_token]], dtype=np.int32)
-            # If blank, don't advance decoder, just move to next encoder frame
+                current_token = top_token
+            else:
+                # Blank or duration token — advance encoder frame
+                current_token = blank_id
+
         except Exception as e:
-            # If decoding fails, stop
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             break
 
     return emitted_tokens
