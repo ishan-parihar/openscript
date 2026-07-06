@@ -313,7 +313,7 @@ fn chunk_by_chars(text: &str, max_chars: usize) -> Vec<String> {
                 chunks.push(std::mem::take(&mut current));
             }
             // Hard-split the long sentence by character count
-            let mut chars: Vec<char> = sentence.chars().collect();
+            let chars: Vec<char> = sentence.chars().collect();
             for chunk in chars.chunks(max_chars) {
                 let s: String = chunk.iter().collect();
                 let s = s.trim();

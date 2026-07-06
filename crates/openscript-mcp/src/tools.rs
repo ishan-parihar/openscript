@@ -807,7 +807,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "script": {"type": "string", "description": "The script JSON string or path to .json file"},
                     "output_dir": {"type": "string", "default": "artifacts", "description": "Directory for generated assets (voices, captions, stickers, timeline)"},
                     "skip_background": {"type": "boolean", "default": false, "description": "Skip background fetching (use fallback pool only)"},
-                    "skip_stickers": {"type": "boolean", "default": false, "description": "Skip sticker rendering (no animated overlays)"}
+                    "skip_stickers": {"type": "boolean", "default": false, "description": "Skip sticker rendering (no animated overlays)"},
+                    "voiceover_manifest_path": {"type": "string", "description": "Optional: path to a pre-existing voiceover manifest JSON. When provided, skips TTS generation and uses the supplied manifest. Manifest format: {total_duration_ms, segments: [{scene_id, speaker, text, start_ms, end_ms, duration_ms, wav_path, words: [{word, start_ms, end_ms}]}]}"}
                 },
                 "required": ["script"],
                 "additionalProperties": false
@@ -824,7 +825,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "output_dir": {"type": "string", "default": "artifacts", "description": "Directory for intermediate assets"},
                     "skip_background": {"type": "boolean", "default": false, "description": "Skip background fetching"},
                     "skip_stickers": {"type": "boolean", "default": false, "description": "Skip sticker rendering"},
-                    "preview_mode": {"type": "boolean", "default": false, "description": "If true, use draft quality for faster iteration"}
+                    "preview_mode": {"type": "boolean", "default": false, "description": "If true, use draft quality for faster iteration"},
+                    "voiceover_manifest_path": {"type": "string", "description": "Optional: path to a pre-existing voiceover manifest JSON. When provided, skips TTS generation (script.generate_voices) and uses the supplied manifest instead. Use this when you have pre-recorded WAV files and want to bypass TTS. Manifest format: {total_duration_ms, segments: [{scene_id, speaker, text, start_ms, end_ms, duration_ms, wav_path, words: [{word, start_ms, end_ms}]}]}"}
                 },
                 "required": ["script"],
                 "additionalProperties": false
@@ -6962,6 +6964,7 @@ async fn handle_script_to_timeline(
     let output_dir = default_str(&args, "output_dir", "artifacts");
     let skip_background = default_bool(&args, "skip_background", false);
     let skip_stickers = default_bool(&args, "skip_stickers", false);
+    let voiceover_manifest_path = default_opt_str(&args, "voiceover_manifest_path");
 
     // Parse script
     let json_str = read_script_input(script_input)?;
@@ -6982,25 +6985,56 @@ async fn handle_script_to_timeline(
 
     let mut warnings = Vec::new();
 
-    // Step 1: Generate voices
-    report_progress(0.0, 100.0, "Step 1/5: Generating voices...")
-        .await
-        .ok();
-    let voices_result = handle_script_generate_voices(json!({
-        "script": script_input,
-        "output_dir": voices_dir,
-    }))
-    .await?;
+    // Step 1: Generate voices (or use pre-supplied manifest)
+    let (manifest_path, total_duration_ms) = if let Some(ref path) = voiceover_manifest_path {
+        // Bring-your-own-audio mode: skip TTS, use the supplied manifest
+        if !std::path::Path::new(path).exists() {
+            return Err(ToolError::NotFound(format!(
+                "voiceover_manifest_path not found: {}",
+                path
+            )));
+        }
+        warnings.push(format!(
+            "Using pre-supplied voiceover manifest: {} (skipping TTS generation)",
+            path
+        ));
+        // Read total_duration_ms from the manifest
+        let manifest: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(path).unwrap_or_default()
+        ).unwrap_or(json!({}));
+        let dur = manifest.get("total_duration_ms")
+            .and_then(|v| v.as_i64())
+            .unwrap_or_else(|| {
+                // Sum segment durations if total not present
+                manifest.get("segments")
+                    .and_then(|v| v.as_array())
+                    .map(|segs| segs.iter()
+                        .filter_map(|s| s.get("duration_ms").and_then(|v| v.as_i64()))
+                        .sum::<i64>())
+                    .unwrap_or(0)
+            });
+        (path.clone(), dur)
+    } else {
+        report_progress(0.0, 100.0, "Step 1/5: Generating voices...")
+            .await
+            .ok();
+        let voices_result = handle_script_generate_voices(json!({
+            "script": script_input,
+            "output_dir": voices_dir,
+        }))
+        .await?;
 
-    let manifest_path = voices_result
-        .get("manifest_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ToolError::InvalidArg("No manifest_path in voices result".into()))?
-        .to_string();
-    let total_duration_ms = voices_result
-        .get("total_duration_ms")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+        let mp = voices_result
+            .get("manifest_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidArg("No manifest_path in voices result".into()))?
+            .to_string();
+        let dur = voices_result
+            .get("total_duration_ms")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        (mp, dur)
+    };
 
     // Step 2: Build captions
     report_progress(20.0, 100.0, "Step 2/5: Building captions...")
@@ -7323,6 +7357,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let skip_background = default_bool(&args, "skip_background", false);
     let skip_stickers = default_bool(&args, "skip_stickers", false);
     let preview_mode = default_bool(&args, "preview_mode", false);
+    let voiceover_manifest_path = default_opt_str(&args, "voiceover_manifest_path");
 
     // Parse script for render config
     let json_str = read_script_input(script_input)?;
@@ -7334,13 +7369,16 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .ok();
 
     // Step 1: Build the timeline
-    let timeline_result = handle_script_to_timeline(json!({
+    let mut timeline_args = json!({
         "script": script_input,
         "output_dir": output_dir,
         "skip_background": skip_background,
         "skip_stickers": skip_stickers,
-    }))
-    .await?;
+    });
+    if let Some(ref path) = voiceover_manifest_path {
+        timeline_args["voiceover_manifest_path"] = json!(path);
+    }
+    let timeline_result = handle_script_to_timeline(timeline_args).await?;
 
     let timeline_path = timeline_result
         .get("timeline_path")
