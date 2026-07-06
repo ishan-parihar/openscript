@@ -8301,17 +8301,17 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                     let original =
                                         images.get("original").cloned().unwrap_or(json!({}));
 
-                                    // Prefer WEBP (30-60% smaller, same transparency)
-                                    // Fall back to GIF if WEBP URL is missing
+                                    // Use GIF format (not WEBP) because FFmpeg's
+                                    // native WEBP decoder cannot handle animated
+                                    // WEBP stickers from GIPHY. GIF animation is
+                                    // well-supported by FFmpeg's GIF decoder.
+                                    // (Round-5 audit: animated WEBP caused
+                                    // "Terminating thread with return code
+                                    // -1145393733" in FFmpeg.)
                                     let sticker_url = original
-                                        .get("webp")
+                                        .get("url")
                                         .and_then(|v| v.as_str())
                                         .filter(|s| !s.is_empty())
-                                        .or_else(|| {
-                                            original
-                                                .get("url")
-                                                .and_then(|v| v.as_str())
-                                        })
                                         .unwrap_or("");
 
                                     if sticker_url.is_empty() {
@@ -8330,11 +8330,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                         continue;
                                     }
 
-                                    let ext = if sticker_url.contains(".webp") {
-                                        "webp"
-                                    } else {
-                                        "gif"
-                                    };
+                                    // Always GIF (FFmpeg can't decode animated WEBP)
+                                    let ext = "gif";
                                     let sticker_path = format!(
                                         "{}/giphy_{}.{}",
                                         stickers_dir, speaker_name, ext
