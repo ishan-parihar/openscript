@@ -153,6 +153,26 @@ enum Commands {
         #[arg(long, default_value = "9:16")]
         expected_aspect: String,
     },
+    /// Search YouTube for videos (mirrors youtube.search)
+    YoutubeSearch {
+        #[arg(short, long)]
+        query: String,
+        #[arg(long, default_value = "5")]
+        limit: u32,
+    },
+    /// Download a YouTube video clip (mirrors youtube.download)
+    YoutubeDownload {
+        #[arg(short, long)]
+        url: String,
+        #[arg(long)]
+        start_s: Option<f64>,
+        #[arg(long, default_value = "30")]
+        duration_s: f64,
+        #[arg(long, default_value = "9:16")]
+        aspect: String,
+        #[arg(long, default_value = "mcp/assets/background_cache")]
+        output_dir: String,
+    },
 }
 
 #[tokio::main]
@@ -324,6 +344,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let args = serde_json::json!({"video_path": video_path, "timeline_path": timeline_path, "expected_aspect": expected_aspect});
             let result = openscript_mcp::tools::route_tool("verify.render", args).await;
             print_cli_result("verify.render", result);
+        }
+        Commands::YoutubeSearch { query, limit } => {
+            let args = serde_json::json!({"query": query, "limit": limit});
+            let result = openscript_mcp::tools::route_tool("youtube.search", args).await;
+            print_cli_result("youtube.search", result);
+        }
+        Commands::YoutubeDownload { url, start_s, duration_s, aspect, output_dir } => {
+            let mut args = serde_json::json!({
+                "url": url,
+                "duration_s": duration_s,
+                "aspect": aspect,
+                "output_dir": output_dir
+            });
+            if let Some(s) = start_s { args["start_s"] = serde_json::json!(s); }
+            let result = openscript_mcp::tools::route_tool("youtube.download", args).await;
+            print_cli_result("youtube.download", result);
         }
     }
 
