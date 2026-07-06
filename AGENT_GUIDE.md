@@ -97,7 +97,7 @@ Post-render quality checks.
                            multi-broll backgrounds, GIPHY stickers, music)
 ```
 **That's it.** 2 tools. The `script.to_video` orchestrator handles everything:
-- Kokoro TTS per scene with whisper force-alignment
+- Kokoro TTS per scene with Parakeet force-alignment
 - Word-highlight captions (4 styles)
 - Multi-broll: unique Pexels stock footage per scene
 - GIPHY sticker overlays per speaker
@@ -107,7 +107,7 @@ Post-render quality checks.
 ### Trajectory B: From-Scratch with Manual Control
 ```
 1. script.parse             → Validate script
-2. script.generate_voices   → TTS + whisper alignment
+2. script.generate_voices   → TTS + Parakeet alignment
 3. media.search             → Find PNG sticker images (optional)
 4. gif.search               → Find GIPHY animated stickers (optional)
 5. background.fetch         → Download per-scene backgrounds (optional)

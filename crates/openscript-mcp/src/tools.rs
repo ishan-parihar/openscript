@@ -832,7 +832,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "script.to_video",
-            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. THE GOLDEN TRAJECTORY — use this for all video creation. Automatically handles: Kokoro TTS per scene, whisper force-alignment for caption sync, multi-broll Pexels stock footage per scene, GIPHY sticker overlays, background music with ducking, word-highlight captions, and FFmpeg render. Returns: output_path, file_size, timeline_preview (token-efficient tree view of all layers), timeline_issues, warnings. PREVIOUS STEP: script.parse (validate first). NEXT STEP: verify.render (quality check).",
+            "description": "ONE-CALL from-scratch video creation: script JSON → MP4. THE GOLDEN TRAJECTORY — use this for all video creation. Automatically handles: Kokoro TTS per scene, Parakeet force-alignment for caption sync, multi-broll Pexels stock footage per scene, GIPHY sticker overlays, background music with ducking, word-highlight captions, and FFmpeg render. Returns: output_path, file_size, timeline_preview (token-efficient tree view of all layers), timeline_issues, warnings. PREVIOUS STEP: script.parse (validate first). NEXT STEP: verify.render (quality check).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -6249,7 +6249,7 @@ async fn handle_script_generate_voices(
     let total_scenes = spec.scenes.len();
     let mut segments = Vec::new();
     let mut current_ms = 0i64;
-    // Collect per-scene warnings (e.g. whisper alignment failure) so callers
+    // Collect per-scene warnings (e.g. Parakeet alignment failure) so callers
     // (script.to_timeline → script.to_video) can surface them in their own
     // response. Without this, whisper failures were only visible via
     // tracing::warn! to stderr — the JSON response said "warnings: null"
@@ -6314,13 +6314,14 @@ async fn handle_script_generate_voices(
         )
         .await?;
 
-        // Calculate word timings for this scene using whisper force alignment
+        // Calculate word timings for this scene using Parakeet TDT force alignment.
+        // Falls back to even-spacing estimation if Parakeet is unavailable.
         let scene_end_ms = current_ms + result.duration_ms;
-        let words = run_whisper_alignment(&result.output_path, current_ms, scene_end_ms)
+        let words = run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms)
             .await
             .unwrap_or_else(|e| {
                 let msg = format!(
-                    "Scene {}: whisper force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
+                    "Scene {}: Parakeet force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
                     i + 1,
                     e
                 );
@@ -6457,9 +6458,14 @@ fn read_script_input(script_input: &str) -> Result<String, ToolError> {
     }
 }
 
-/// Run whisper force alignment on a TTS WAV file to get accurate word timestamps.
-/// Falls back to even-spacing estimation if whisper is unavailable.
-async fn run_whisper_alignment(
+/// Run Parakeet TDT force alignment on a TTS WAV file to get accurate word timestamps.
+/// Falls back to even-spacing estimation if Parakeet is unavailable.
+///
+/// This replaces the old whisper_align.py which depended on the `openai-whisper`
+/// Python package. Parakeet TDT is a faster, more accurate RNN-T model that
+/// runs via `onnxruntime` (no PyTorch dependency).
+/// (Whisper→Parakeet migration per user directive.)
+async fn run_parakeet_alignment(
     wav_path: &str,
     offset_ms: i64,
     _scene_end_ms: i64,
@@ -6467,27 +6473,40 @@ async fn run_whisper_alignment(
     // Write alignment to a temp JSON file
     let tmp_json = format!("{}.align.json", wav_path);
 
+    // Resolve Parakeet model paths CWD-independently
+    let parakeet_dir = resolve_repo_path("mcp/assets/parakeet");
+    let encoder_path = parakeet_dir.join("encoder-model.int8.onnx");
+    let decoder_path = parakeet_dir.join("decoder_joint-model.int8.onnx");
+    let vocab_path = parakeet_dir.join("vocab.txt");
+
+    // Resolve the sidecar script path
+    let sidecar_script = resolve_repo_path("mcp/scripts/parakeet_align.py");
+
     let output = tokio::process::Command::new("python3")
-        .arg("mcp/scripts/whisper_align.py")
+        .arg(&sidecar_script)
         .arg("--wav")
         .arg(wav_path)
         .arg("--output")
         .arg(&tmp_json)
-        .arg("--model")
-        .arg("tiny")
+        .arg("--encoder")
+        .arg(&encoder_path)
+        .arg("--decoder")
+        .arg(&decoder_path)
+        .arg("--vocab")
+        .arg(&vocab_path)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .output()
         .await
-        .map_err(|e| format!("Failed to spawn whisper: {}", e))?;
+        .map_err(|e| format!("Failed to spawn parakeet: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let _ = std::fs::remove_file(&tmp_json);
         return Err(format!(
-            "Whisper failed: {}",
+            "Parakeet failed: {}",
             stderr.lines().last().unwrap_or("unknown")
         ));
     }
@@ -6523,7 +6542,7 @@ async fn run_whisper_alignment(
     }
 
     if words.is_empty() {
-        return Err("Whisper returned no words".to_string());
+        return Err("Parakeet returned no words".to_string());
     }
 
     Ok(words)
@@ -7456,7 +7475,7 @@ async fn handle_script_to_timeline(
         }))
         .await?;
 
-        // Collect voice-generation warnings (e.g. whisper alignment failure)
+        // Collect voice-generation warnings (e.g. Parakeet alignment failure)
         // into our own warnings array so they propagate to script.to_video's
         // final response. Without this, the warnings were returned in
         // voices_result but never read by the caller. (UX audit GAP #1 fix.)
@@ -10755,34 +10774,39 @@ async fn handle_system_capabilities(
         },
     });
 
-    // whisper_align.py + the `whisper` Python module (required for
-    // script.build_captions force alignment). The fresh-agent UX audit
-    // (round 2, GAP #7) found that system.capabilities reported
-    // whisper_align as available when the .py file existed but the
-    // `whisper` Python module was not installed — causing silent
-    // fallback to estimated timings on every scene. Now we actually
-    // test that Python can import the module.
-    let whisper_align_path = "mcp/scripts/whisper_align.py";
-    let script_exists = path_exists(whisper_align_path);
-    let whisper_module_importable = std::process::Command::new("python3")
-        .args(["-c", "import whisper; print('ok')"])
+    // Parakeet TDT force-alignment (required for script.build_captions
+    // word-level timing). Replaces the old whisper_align.py which depended
+    // on the `openai-whisper` Python package. Parakeet TDT runs via
+    // `onnxruntime` and the model is at mcp/assets/parakeet/.
+    // We check: (1) the script exists, (2) onnxruntime is importable,
+    // (3) the encoder/decoder ONNX model files exist.
+    let parakeet_script_path = "mcp/scripts/parakeet_align.py";
+    let parakeet_script_exists = path_exists(parakeet_script_path);
+    let onnxruntime_importable = std::process::Command::new("python3")
+        .args(["-c", "import onnxruntime; print('ok')"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    let whisper_align_available = script_exists && whisper_module_importable;
-    let whisper_align = json!({
-        "available": whisper_align_available,
-        "path": whisper_align_path,
-        "script_exists": script_exists,
-        "module_importable": whisper_module_importable,
-        "reason": if whisper_align_available {
+    let parakeet_encoder = resolve("mcp/assets/parakeet/encoder-model.int8.onnx");
+    let parakeet_decoder = resolve("mcp/assets/parakeet/decoder_joint-model.int8.onnx");
+    let parakeet_models_exist = parakeet_encoder.exists() && parakeet_decoder.exists();
+    let parakeet_align_available = parakeet_script_exists && onnxruntime_importable && parakeet_models_exist;
+    let parakeet_align = json!({
+        "available": parakeet_align_available,
+        "path": parakeet_script_path,
+        "script_exists": parakeet_script_exists,
+        "onnxruntime_importable": onnxruntime_importable,
+        "models_exist": parakeet_models_exist,
+        "reason": if parakeet_align_available {
             serde_json::Value::Null
-        } else if !script_exists {
-            "whisper_align.py not found. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
+        } else if !parakeet_script_exists {
+            "parakeet_align.py not found. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
+        } else if !onnxruntime_importable {
+            "parakeet_align.py exists but the Python `onnxruntime` module is not installed. Install with: pip3 install --user onnxruntime. script.build_captions will fall back to even-spacing estimation.".into()
         } else {
-            "whisper_align.py exists but the Python `whisper` module is not installed. Install with: pip3 install --user openai-whisper. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
+            "Parakeet ONNX model files not found at mcp/assets/parakeet/. Download from https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx. script.build_captions will fall back to even-spacing estimation.".into()
         },
     });
 
@@ -10837,7 +10861,7 @@ async fn handle_system_capabilities(
         "voicebox": voicebox,
         "kokoro": kokoro,
         "transcription": transcription,
-        "whisper_align": whisper_align,
+        "parakeet_align": parakeet_align,
         "pexels": pexels,
         "giphy": giphy,
         "pixabay": pixabay,

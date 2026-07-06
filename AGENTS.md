@@ -23,7 +23,7 @@ openscript/
 │   ├── openscript-core/        #   types, timeline schema, SRT, captions, amplitude, transcript analysis
 │   ├── openscript-ffmpeg/      #   ffmpeg filter graph, render, multilayer render, subtitles
 │   ├── openscript-tts/         #   Kokoro TTS client + voice profile registry
-│   ├── openscript-transcribe/  #   Apex transcription (whisper_timestamped wrapper)
+│   ├── openscript-transcribe/  #   Apex transcription (whisper_timestamped wrapper (Apex transcription — stays))
 │   ├── openscript-assets/      #   Pexels client, music index, SFX index
 │   ├── openscript-mcp/         #   MCP server + 70 tool handlers (tools.rs + hf.rs)
 │   ├── openscript-cli/         #   CLI (clap) — thin wrapper over route_tool()
