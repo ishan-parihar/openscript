@@ -870,6 +870,11 @@ git config --global credential.helper "store --file=/home/z/my-project/.git-cred
 cd openscript && git push origin main --dry-run 2>&1 | tail -1
 
 # 5. If push fails, STOP and ask the user for a token before making any commits.
+
+# 6. Run setup.sh to restore the toolchain (Rust, Python deps, Kokoro model,
+#    build artifacts). Idempotent — skips what's already done.
+#    See setup.sh --help for options.
+bash setup.sh
 ```
 
 ### Iron rule reinforcement — push failure = hard stop
