@@ -442,7 +442,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "broll.fetch",
-            "description": "Search Pexels for b-roll videos matching given concepts. Set download=true to actually download videos to the cache directory. Use BEFORE broll.assign — this finds the footage, broll.assign places it on the timeline. Requires PEXELS_API_KEY env var. Returns: results with concept, videos (id, width, height, url), cached_path if downloaded.",
+            "description": "Search Pexels for b-roll videos matching given concepts. Set download=true to actually download videos to the cache directory. Use BEFORE broll.assign — this finds the footage, broll.assign places it on the timeline. Requires PEXELS_API_KEY (in mcp/assets/.openscript_config.json or env var); without a key, returns status:warning with fallback_pool results if provided. Returns: results with concept, videos (id, width, height, duration, url), cached_path if downloaded.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -450,7 +450,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "asset_dir": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Cache directory for downloaded videos"},
                     "orientation": {"type": "string", "default": "9:16", "description": "Video orientation: '9:16' (vertical), '16:9' (horizontal)"},
                     "quality": {"type": "string", "default": "sd", "description": "Video quality: 'sd', 'hd', '4k'"},
-                    "download": {"type": "boolean", "default": false, "description": "Actually download the top result to cache"}
+                    "download": {"type": "boolean", "default": false, "description": "Actually download the top result to cache"},
+                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local video file paths used when Pexels returns 0 results for a concept (or when PEXELS_API_KEY is missing). Mirrors background.fetch fallback semantics."}
                 },
                 "required": ["concepts"],
                 "additionalProperties": false
@@ -3091,10 +3092,66 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         .get("download")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    // Local fallback clips used when Pexels returns nothing for a concept
+    // (mirrors background.fetch's fallback_pool semantics).
+    let fallback_pool: Vec<String> = args
+        .get("fallback_pool")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
 
     let api_key = pexels_key();
     if api_key.is_empty() {
-        return Err(ToolError::Asset("PEXELS_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var.".to_string()));
+        // Bug #16 fix: do not hard-fail when PEXELS_API_KEY is missing.
+        // Return status:warning with actionable guidance so an agent can
+        // fall back to background.fetch (which has its own fallback chain)
+        // or supply a fallback_pool.
+        if fallback_pool.is_empty() {
+            return Ok(json!({
+                "status": "warning",
+                "message": "PEXELS_API_KEY not set and no fallback_pool provided. Set the key in mcp/assets/.openscript_config.json, or provide a fallback_pool of local clip paths, or use background.fetch which has its own fallback chain.",
+                "results": [],
+                "total_concepts": concepts.len(),
+                "missing_key": true,
+            }));
+        }
+        // No key but caller supplied fallback_pool — return one fallback
+        // entry per concept so downstream tools (broll.assign) can still
+        // place something on the timeline.
+        let results: Vec<serde_json::Value> = concepts
+            .iter()
+            .enumerate()
+            .map(|(i, concept)| {
+                let path = fallback_pool[i % fallback_pool.len()].clone();
+                json!({
+                    "concept": concept,
+                    "videos": [],
+                    "count": 0,
+                    "cached_path": path,
+                    "source": "fallback_pool",
+                })
+            })
+            .collect();
+        let mut downloaded: Vec<serde_json::Value> = Vec::new();
+        for (i, concept) in concepts.iter().enumerate() {
+            downloaded.push(json!({
+                "concept": concept,
+                "path": fallback_pool[i % fallback_pool.len()],
+                "source": "fallback_pool",
+            }));
+        }
+        return Ok(json!({
+            "status": "warning",
+            "message": "PEXELS_API_KEY not set; using fallback_pool only.",
+            "results": results,
+            "downloaded": downloaded,
+            "total_concepts": concepts.len(),
+            "missing_key": true,
+        }));
     }
 
     let total = concepts.len();
@@ -3105,6 +3162,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
     let mut client = PexelsClient::new(&api_key, &asset_dir);
     let mut all_results = Vec::new();
     let mut downloaded = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
 
     for (i, concept) in concepts.iter().enumerate() {
         report_progress(i as f64, total as f64, &format!("Searching: {}", concept))
@@ -3140,6 +3198,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                     "id": v.id,
                     "width": v.width,
                     "height": v.height,
+                    "duration": v.duration,
                     "image": v.image,
                     "url": v.url,
                 })
@@ -3154,6 +3213,21 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         if let Some(path) = &cached_path {
             result["cached_path"] = json!(path);
         }
+
+        // Per-concept fallback: if Pexels returned nothing, try fallback_pool
+        // so downstream tools (broll.assign) still have a path to use.
+        if video_json.is_empty() && !fallback_pool.is_empty() {
+            let fallback_path = fallback_pool[i % fallback_pool.len()].clone();
+            result["cached_path"] = json!(&fallback_path);
+            result["source"] = json!("fallback_pool");
+            warnings.push(format!(
+                "concept '{}' returned 0 Pexels results — using fallback_pool entry",
+                concept
+            ));
+            if download {
+                downloaded.push((concept.clone(), fallback_path));
+            }
+        }
         all_results.push(result);
     }
 
@@ -3161,8 +3235,15 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         .await
         .ok();
 
+    // Status is "warning" if any concept returned 0 videos (mirrors
+    // background.fetch's behaviour of warning when falling back).
+    let any_empty = all_results
+        .iter()
+        .any(|r| r.get("count").and_then(|v| v.as_u64()).unwrap_or(0) == 0);
+    let status = if any_empty { "warning" } else { "fetched" };
+
     let mut resp = json!({
-        "status": "fetched",
+        "status": status,
         "results": all_results,
         "total_concepts": concepts.len(),
     });
@@ -3171,6 +3252,9 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
             .iter()
             .map(|(c, p)| json!({"concept": c, "path": p}))
             .collect::<Vec<_>>());
+    }
+    if !warnings.is_empty() {
+        resp["warnings"] = json!(warnings);
     }
     Ok(resp)
 }
@@ -10476,4 +10560,84 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         "results": scored,
         "count": count,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// broll.fetch with no API key and no fallback_pool should return
+    /// status:warning with missing_key:true (NOT hard-fail with an Err).
+    /// This is the bug #16 regression test.
+    #[tokio::test]
+    async fn test_broll_fetch_no_key_no_fallback_returns_warning() {
+        // Ensure no Pexels key is set for this test.
+        std::env::remove_var("PEXELS_API_KEY");
+
+        let args = json!({
+            "concepts": ["technology", "city"],
+        });
+
+        let result = handle_broll_fetch(args).await;
+        assert!(result.is_ok(), "broll.fetch should not hard-fail without PEXELS_API_KEY");
+        let resp = result.unwrap();
+        assert_eq!(resp["status"], "warning");
+        assert_eq!(resp["missing_key"], true);
+        assert_eq!(resp["results"].as_array().unwrap().len(), 0);
+    }
+
+    /// broll.fetch with no API key but WITH a fallback_pool should return
+    /// one fallback entry per concept with status:warning.
+    #[tokio::test]
+    async fn test_broll_fetch_no_key_with_fallback_uses_fallback_pool() {
+        std::env::remove_var("PEXELS_API_KEY");
+
+        let args = json!({
+            "concepts": ["technology", "city"],
+            "fallback_pool": ["/tmp/clip1.mp4", "/tmp/clip2.mp4"],
+            "download": true,
+        });
+
+        let result = handle_broll_fetch(args).await;
+        assert!(result.is_ok());
+        let resp = result.unwrap();
+        assert_eq!(resp["status"], "warning");
+        assert_eq!(resp["missing_key"], true);
+        let results = resp["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2, "one fallback entry per concept");
+        assert_eq!(results[0]["cached_path"], "/tmp/clip1.mp4");
+        assert_eq!(results[0]["source"], "fallback_pool");
+        assert_eq!(results[1]["cached_path"], "/tmp/clip2.mp4");
+    }
+
+    /// broll.fetch with no concepts should fail (required arg).
+    #[tokio::test]
+    async fn test_broll_fetch_missing_concepts_fails() {
+        let args = json!({});
+        let result = handle_broll_fetch(args).await;
+        assert!(result.is_err(), "broll.fetch without concepts must fail");
+    }
+
+    /// Verify broll.fetch tool definition exposes fallback_pool in its schema.
+    #[test]
+    fn test_broll_fetch_schema_has_fallback_pool() {
+        let tools = tool_definitions();
+        let broll_fetch = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "broll.fetch")
+            .expect("broll.fetch tool must exist");
+        let props = broll_fetch["inputSchema"]["properties"].as_object().unwrap();
+        assert!(
+            props.contains_key("fallback_pool"),
+            "broll.fetch schema must expose fallback_pool parameter"
+        );
+        // Description should mention duration is now returned.
+        let desc = broll_fetch["description"].as_str().unwrap();
+        assert!(
+            desc.contains("duration"),
+            "broll.fetch description should mention duration is returned"
+        );
+    }
 }

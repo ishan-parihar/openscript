@@ -283,6 +283,11 @@ pub struct PexelsVideo {
     pub url: String,
     pub image: String,
     pub video_files: Vec<PexelsVideoFile>,
+    /// Video duration in seconds, as reported by the Pexels API.
+    /// Captured so callers (e.g. broll.fetch) can expose it without a second
+    /// API round-trip. Defaults to 0 when the API omits the field.
+    #[serde(default)]
+    pub duration: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -569,6 +574,8 @@ impl PexelsClient {
                 })
                 .collect();
 
+            let duration = v.get("duration").and_then(|x| x.as_i64()).unwrap_or(0);
+
             results.push(PexelsVideo {
                 id,
                 width,
@@ -576,6 +583,7 @@ impl PexelsClient {
                 url,
                 image,
                 video_files,
+                duration,
             });
         }
 

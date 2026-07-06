@@ -136,13 +136,24 @@ def check_root_forbidden(files: list[Path], root: Path, rules: dict) -> list[Vio
     return violations
 
 
-def check_dir_naming(root: Path, rules: dict) -> list[Violation]:
-    """Check directory naming rules: no leading/trailing whitespace, no duplicates."""
+def check_dir_naming(root: Path, rules: dict, ignore_dirs: set | None = None) -> list[Violation]:
+    """Check directory naming rules: no leading/trailing whitespace, no duplicates.
+
+    The `ignore_dirs` set is honored via os.walk's top-down pruning: when we
+    encounter a directory whose name is in `ignore_dirs`, we remove it from
+    `dirnames` in place so os.walk does not descend into it. This prevents
+    false-positive violations on ignored trees like `node_modules`, `target`,
+    and `.venv` (without this, every nested `node_modules` inside npm
+    packages would trip `directories.forbidden_patterns`).
+    """
     violations = []
     forbidden_patterns = rules.get("directories", {}).get("forbidden_patterns", [])
+    ignore = ignore_dirs or set()
 
     seen_dirs = {}
     for dirpath, dirnames, filenames in os.walk(root):
+        # Prune ignored directories in place so os.walk does not descend.
+        dirnames[:] = [d for d in dirnames if d not in ignore and not d.startswith(".")]
         for d in dirnames:
             full = Path(dirpath) / d
             rel = _relpath(full, root)
@@ -276,12 +287,22 @@ def check_file_placement(files: list[Path], root: Path, rules: dict) -> list[Vio
     return violations
 
 
-def check_build_artifacts(root: Path, rules: dict) -> list[Violation]:
-    """Check for __pycache__ and other build artifacts that should not exist."""
+def check_build_artifacts(root: Path, rules: dict, ignore_dirs: set | None = None) -> list[Violation]:
+    """Check for __pycache__ and other build artifacts that should not exist.
+
+    Honors `ignore_dirs` so we do not flag `node_modules/dist` inside an
+    already-ignored `node_modules` tree, or `target/build` inside the
+    already-ignored `target` tree. Without this, every npm package's local
+    `dist/` would trip the rule, even though the parent `node_modules` is
+    already gitignored and irrelevant to the project's own structure.
+    """
     violations = []
     artifact_dirs = ["__pycache__", "node_modules", ".pytest_cache", ".mypy_cache", "dist", "build"]
+    ignore = ignore_dirs or set()
 
     for dirpath, dirnames, _ in os.walk(root):
+        # Prune ignored dirs in place so we don't descend into node_modules/target/etc.
+        dirnames[:] = [d for d in dirnames if d not in ignore]
         for d in dirnames:
             if d in artifact_dirs:
                 full = Path(dirpath) / d
@@ -359,8 +380,8 @@ def main():
 
     files = _collect_files(root, ignore_dirs)
     violations = []
-    violations.extend(check_dir_naming(root, config))
-    violations.extend(check_build_artifacts(root, config))
+    violations.extend(check_dir_naming(root, config, ignore_dirs))
+    violations.extend(check_build_artifacts(root, config, ignore_dirs))
     violations.extend(check_root_forbidden(files, root, config))
     violations.extend(check_empty_dirs(root, config))
     violations.extend(check_file_placement(files, root, config))
@@ -371,8 +392,8 @@ def main():
             print(f"\nApplied {fixes} fixes.")
             files = _collect_files(root, ignore_dirs)
             violations = []
-            violations.extend(check_dir_naming(root, config))
-            violations.extend(check_build_artifacts(root, config))
+            violations.extend(check_dir_naming(root, config, ignore_dirs))
+            violations.extend(check_build_artifacts(root, config, ignore_dirs))
             violations.extend(check_root_forbidden(files, root, config))
             violations.extend(check_empty_dirs(root, config))
             violations.extend(check_file_placement(files, root, config))

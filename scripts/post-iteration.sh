@@ -39,7 +39,7 @@ if [ -f /home/z/my-project/.git-credentials ]; then
 fi
 
 # Test baseline — must never decrease. Update when adding new tests.
-BASELINE_TEST_COUNT=215
+BASELINE_TEST_COUNT=229
 
 FAIL() {
   echo ""
