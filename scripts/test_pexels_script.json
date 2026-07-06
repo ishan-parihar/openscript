@@ -1,0 +1,64 @@
+{
+  "title": "AI News Brief",
+  "meta": {
+    "aspect": "9:16",
+    "fps": 30,
+    "width": 1080,
+    "height": 1920,
+    "resolution": "1080p"
+  },
+  "tts": {
+    "backend": "kokoro",
+    "default_speed": 1.05,
+    "default_pitch": 1.0
+  },
+  "speakers": {
+    "alice": {
+      "voice": "kokoro:af_heart",
+      "preset": "default_person",
+      "position": "top-left",
+      "scale": 0.25
+    }
+  },
+  "background": {
+    "type": "gameplay",
+    "query": "technology",
+    "change_cadence": "scene",
+    "fallback_pool": []
+  },
+  "captions": {
+    "style": "word_highlight",
+    "font": "Bebas Neue",
+    "font_size": 72,
+    "color": "#ffffff",
+    "highlight_color": "#00ff88",
+    "position": "bottom",
+    "safe_zone": 0.85,
+    "max_words_per_line": 5
+  },
+  "stickers": {
+    "enabled": false,
+    "lip_sync": "none",
+    "blink": false,
+    "idle_bob": false
+  },
+  "scenes": [
+    {
+      "speaker": "alice",
+      "text": "AI is transforming how we create content.",
+      "emote": "neutral"
+    },
+    {
+      "speaker": "alice",
+      "text": "From voice synthesis to video editing, models do the heavy lifting.",
+      "emote": "happy"
+    }
+  ],
+  "output": {
+    "format": "mp4",
+    "codec": "h264",
+    "crf": 20,
+    "preset": "fast",
+    "render_engine": "ffmpeg"
+  }
+}
