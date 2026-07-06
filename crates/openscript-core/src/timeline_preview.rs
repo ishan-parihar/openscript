@@ -315,6 +315,7 @@ pub fn build_layered_timeline(
     music_ducking: bool,
     sticker_assignments: &[StickerAssignment],
     captions_path: Option<&str>,
+    caption_style: &str,
     width: u32,
     height: u32,
     fps: u32,
@@ -435,7 +436,7 @@ pub fn build_layered_timeline(
                 asset: caps.to_string(),
                 metadata: serde_json::json!({
                     "word_count": caption_count,
-                    "style": "word_highlight",
+                    "style": caption_style,
                 }),
             }],
         });

@@ -1387,6 +1387,47 @@ fn crop_filter_for_aspect(aspect: &str) -> String {
     format!("scale={}:{},crop={}:{}", w, h, w, h)
 }
 
+/// Resolve a repo-relative path CWD-independently.
+///
+/// Priority:
+///   1. If the path is absolute, return as-is.
+///   2. If the path exists relative to CWD, return the CWD-relative path.
+///   3. If OPENSCRIPT_ROOT env var is set, try `OPENSCRIPT_ROOT/path`.
+///   4. Fall back to `CARGO_MANIFEST_DIR/../../path` (compile-time workspace root).
+///   5. Last resort: return the relative path as-is (will likely fail downstream).
+///
+/// This fixes the round-2 UX audit GAP #12: background.search and other
+/// asset-index tools only worked when CWD was the repo root because they
+/// used relative paths like "mcp/assets/backgrounds_index.json". Now they
+/// work from any CWD.
+pub fn resolve_repo_path(rel: &str) -> std::path::PathBuf {
+    let p = std::path::Path::new(rel);
+    if p.is_absolute() {
+        return p.to_path_buf();
+    }
+    // Try CWD-relative first (fast path)
+    if p.exists() {
+        return p.to_path_buf();
+    }
+    // Try OPENSCRIPT_ROOT
+    if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
+        let resolved = std::path::Path::new(&root).join(rel);
+        if resolved.exists() {
+            return resolved;
+        }
+    }
+    // Try CARGO_MANIFEST_DIR (compile-time workspace path)
+    if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
+        let resolved = std::path::Path::new(d).join("../../").join(rel);
+        if resolved.exists() {
+            return resolved;
+        }
+    }
+    // Last resort: return the relative path (will likely fail, but with
+    // a clear error downstream rather than a misleading "re-clone" message)
+    p.to_path_buf()
+}
+
 fn sanitize_input_path<P: AsRef<std::path::Path>>(
     path: P,
 ) -> Result<std::path::PathBuf, ToolError> {
@@ -7057,14 +7098,19 @@ async fn handle_background_search(args: serde_json::Value) -> Result<serde_json:
     let motion_filter = default_opt_str(&args, "motion_intensity");
     let limit = default_u32(&args, "limit", 10) as usize;
 
-    // Resolve the index path. Mirrors library.search's env-var override pattern.
-    let index_path = std::env::var("OPENSCRIPT_BACKGROUNDS_INDEX")
+    // Resolve the index path CWD-independently. The round-2 UX audit
+    // (GAP #12) found background.search only worked from the repo root
+    // because it used a relative path. Now uses resolve_repo_path which
+    // tries CWD > OPENSCRIPT_ROOT > CARGO_MANIFEST_DIR.
+    let index_path_raw = std::env::var("OPENSCRIPT_BACKGROUNDS_INDEX")
         .unwrap_or_else(|_| "mcp/assets/backgrounds_index.json".to_string());
+    let index_path = resolve_repo_path(&index_path_raw);
 
-    if !Path::new(&index_path).exists() {
+    if !index_path.exists() {
         return Err(ToolError::NotFound(format!(
-            "Backgrounds index not found at {}. The index is committed at mcp/assets/backgrounds_index.json — if missing, re-clone or restore from git.",
-            index_path
+            "Backgrounds index not found at {} (resolved from {}). The index is committed at mcp/assets/backgrounds_index.json — if missing, re-clone or restore from git.",
+            index_path.display(),
+            index_path_raw
         )));
     }
 
@@ -7101,13 +7147,21 @@ async fn handle_background_search(args: serde_json::Value) -> Result<serde_json:
             }
         }
 
-        // Build the full path so callers can use it directly in fallback_pool
+        // Build the full path so callers can use it directly in fallback_pool.
+        // Resolve relative to the index file's parent's parent (so
+        // mcp/assets/backgrounds_index.json → mcp/assets/backgrounds/).
+        // This makes the returned paths work regardless of the agent's CWD.
         let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-        let full_path = format!("mcp/assets/backgrounds/{}", filename);
+        let backgrounds_dir = index_path
+            .parent() // mcp/assets/
+            .map(|p| p.join("backgrounds"))
+            .unwrap_or_else(|| std::path::PathBuf::from("mcp/assets/backgrounds"));
+        let full_path = backgrounds_dir.join(filename);
+        let full_path_str = full_path.to_string_lossy().to_string();
 
         let mut result = entry.clone();
         if let Some(obj) = result.as_object_mut() {
-            obj.insert("path".into(), json!(full_path));
+            obj.insert("path".into(), json!(full_path_str));
         }
         results.push(result);
     }
@@ -8189,6 +8243,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
         &sticker_assignments,
         Some(captions_path),
+        &spec.captions.style,
         spec.meta.width,
         spec.meta.height,
         spec.meta.fps,
@@ -9646,13 +9701,17 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
         .and_then(|v| v.as_f64());
     let tag_filter: Option<String> = default_opt_str(&args, "tag");
 
-    let index_path = std::env::var("OPENSCRIPT_MUSIC_LIBRARY_INDEX")
+    // Resolve path CWD-independently (round-2 GAP #12 fix — same as
+    // background.search). library.search only worked from repo root before.
+    let index_path_raw = std::env::var("OPENSCRIPT_MUSIC_LIBRARY_INDEX")
         .unwrap_or_else(|_| "mcp/assets/music_library_index.json".to_string());
+    let index_path = resolve_repo_path(&index_path_raw);
 
-    if !Path::new(&index_path).exists() {
+    if !index_path.exists() {
         return Err(ToolError::NotFound(format!(
-            "Music library index not found at {}. Run the library.build MCP tool to generate it (requires yt-dlp on PATH).",
-            index_path
+            "Music library index not found at {} (resolved from {}). Run the library.build MCP tool to generate it (requires yt-dlp on PATH).",
+            index_path.display(),
+            index_path_raw
         )));
     }
 

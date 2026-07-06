@@ -258,9 +258,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             skip_stickers,
             preview_mode,
         } => {
+            // Resolve the final output path. If output_path is a bare filename
+            // (no directory component), join it with output_dir. If output_path
+            // is already an absolute or relative path with a directory, respect
+            // it as-is. This fixes the round-2 UX audit GAP #8 where
+            // --output-dir artifacts --output-path healing.mp4 produced
+            // ./healing.mp4 in CWD instead of artifacts/healing.mp4.
+            let resolved_output_path = {
+                let p = std::path::Path::new(&output_path);
+                if p.parent().map(|p| p.as_os_str().is_empty()).unwrap_or(true) {
+                    // Bare filename — join with output_dir
+                    std::path::Path::new(&output_dir)
+                        .join(&output_path)
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    // Path with a directory component — respect as-is
+                    output_path.clone()
+                }
+            };
             let args = serde_json::json!({
                 "script": script,
-                "output_path": output_path,
+                "output_path": resolved_output_path,
                 "output_dir": output_dir,
                 "skip_background": skip_background,
                 "skip_stickers": skip_stickers,

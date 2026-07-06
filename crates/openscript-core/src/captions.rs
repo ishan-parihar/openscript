@@ -101,13 +101,17 @@ pub fn generate_ass(
     let primary_color = hex_to_ass_color(&spec.color);
     let highlight_color = hex_to_ass_color(&spec.highlight_color);
 
-    // Default style — center of screen, bold, with outline and shadow
+    // Default style — center of screen, bold, with outline and shadow.
+    // Use the spec's caption color (not hardcoded white) so the calm
+    // theme's cream text (#F5F0E8) flows through to the ASS renderer.
+    // (Round-2 UX audit GAP #13 fix — caption color was drifting to white.)
     // Alignment=5 means middle-center
     let margin_v = canvas_height / 6; // push captions toward center area
     out.push_str(&format!(
-        "Style: Default,{},{},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,5,80,80,{},1\n",
+        "Style: Default,{},{},{},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,5,80,80,{},1\n",
         spec.font,
         spec.font_size,
+        primary_color,
         margin_v,
     ));
 
