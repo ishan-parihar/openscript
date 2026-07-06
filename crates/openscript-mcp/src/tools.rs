@@ -7115,8 +7115,101 @@ fn auto_select_music(theme: &str) -> Option<String> {
     None
 }
 
-/// Extract search keywords from a scene text for Pexels video search.
-/// Takes the first 3-4 significant words, removing stop words.
+/// Build a mood-aware, scene-text-aware GIPHY sticker search query.
+///
+/// Priority (first non-empty candidate wins):
+/// 1. Theme-based keyword (calm → "meditation", energetic → "fire", etc.)
+/// 2. Scene emote (if the first scene has an emote like "happy", "surprised")
+/// 3. Scene-text noun extraction (first salient noun from scene text)
+/// 4. Speaker preset ("robot", "cat", "default_person")
+/// 5. Fallback: "talking head"
+///
+/// Round-5 audit: the old hardcoded "{speaker_name} talking" produced
+/// irrelevant stickers because speaker names are abstract IDs like "alice"
+/// or "narrator" — not content GIPHY has indexed.
+fn build_sticker_query(
+    _speaker_name: &str,
+    speaker_spec: &openscript_core::script::SpeakerSpec,
+    scenes: &[openscript_core::script::SceneSpec],
+    theme: &str,
+    used_queries: &mut std::collections::HashSet<String>,
+) -> String {
+    // Theme-based keyword pools (rotated to avoid duplicates across speakers)
+    let calm_keywords = ["meditation", "lotus", "candle", "breathing", "zen", "calm"];
+    let energetic_keywords = ["fire", "lightning", "thumbs up", "applause", "energy", "explosion"];
+    let neutral_keywords = ["talking head", "speech", "microphone", "podcast", "speaker"];
+
+    let pool: &[&str] = match theme {
+        "calm" => &calm_keywords,
+        "energetic" => &energetic_keywords,
+        _ => &neutral_keywords,
+    };
+
+    // Build candidate list in priority order
+    let mut candidates: Vec<String> = Vec::new();
+
+    // 1. Theme keywords (try each until we find one not yet used)
+    for kw in pool {
+        candidates.push(kw.to_string());
+    }
+
+    // 2. Scene emote
+    if let Some(scene) = scenes.first() {
+        if let Some(ref emote) = scene.emote {
+            if !emote.is_empty() {
+                candidates.push(emote.clone());
+            }
+        }
+    }
+
+    // 3. Scene-text noun (simple heuristic: first non-stopword > 4 chars)
+    if let Some(scene) = scenes.first() {
+        if let Some(noun) = extract_salient_noun(&scene.text) {
+            candidates.push(noun);
+        }
+    }
+
+    // 4. Speaker preset (if it's a real preset name, not empty/default)
+    if !speaker_spec.preset.is_empty() && speaker_spec.preset != "default_person" {
+        candidates.push(speaker_spec.preset.clone());
+    }
+
+    // 5. Fallback
+    candidates.push("talking head".to_string());
+
+    // Return the first candidate not yet used
+    for c in &candidates {
+        if !used_queries.contains(c) {
+            used_queries.insert(c.clone());
+            return c.clone();
+        }
+    }
+
+    // All used — return the last candidate anyway
+    candidates.last().unwrap().clone()
+}
+
+/// Extract the first salient noun from a text string.
+/// Simple heuristic: skip stopwords, return the first word > 4 characters.
+fn extract_salient_noun(text: &str) -> Option<String> {
+    let stopwords = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has", "had",
+        "do", "does", "did", "will", "would", "could", "should", "can", "may", "might",
+        "this", "that", "these", "those", "your", "you", "they", "them", "their", "with",
+        "from", "into", "about", "what", "when", "where", "which", "who", "how", "why",
+        "for", "and", "but", "not", "all", "any", "some", "more", "most", "other", "such",
+        "only", "own", "same", "than", "too", "very", "just", "also", "now", "then",
+    ];
+    for word in text.split_whitespace() {
+        let clean: String = word.chars().filter(|c| c.is_alphanumeric()).collect();
+        let lower = clean.to_lowercase();
+        if lower.len() > 4 && !stopwords.contains(&lower.as_str()) {
+            return Some(lower);
+        }
+    }
+    None
+}
+
 fn extract_keywords(text: &str, fallback_query: &str) -> String {
     let stop_words = [
         "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
@@ -8136,6 +8229,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         // Download one sticker per speaker
         let mut speaker_stickers: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
+        // Track queries used across speakers so we don't fetch the same
+        // sticker twice (each speaker gets a unique sticker).
+        let mut used_sticker_queries: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         if !giphy_key_val.is_empty() {
             let client = reqwest::Client::builder()
@@ -8146,11 +8243,28 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let stickers_dir = "mcp/assets/stickers";
             std::fs::create_dir_all(stickers_dir).ok();
 
-            for (speaker_name, _speaker_spec) in &spec.speakers {
-                // Search GIPHY for a sticker matching the speaker's name and persona
-                let search_query = format!("{} talking", speaker_name);
+            for (speaker_name, speaker_spec) in &spec.speakers {
+                // Build a mood-aware, scene-text-aware GIPHY search query.
+                // Round-5 audit: the old hardcoded "{speaker_name} talking"
+                // produced irrelevant stickers (speaker names are abstract IDs
+                // like "alice" or "narrator", not GIPHY-indexed content).
+                // New priority: theme keyword > scene emote > scene-text noun >
+                // speaker preset > trending fallback.
+                let search_query = build_sticker_query(
+                    speaker_name,
+                    speaker_spec,
+                    &spec.scenes,
+                    &spec.output.theme,
+                    &mut used_sticker_queries,
+                );
+                tracing::info!(
+                    "[script.to_video] GIPHY sticker search for '{}': query='{}'",
+                    speaker_name,
+                    search_query
+                );
+                // Use limit=8 so we can filter for relevance and skip duds
                 let giphy_url = format!(
-                    "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=1&rating=g&bundle=sticker_layering",
+                    "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=8&rating=g&bundle=sticker_layering&lang=en",
                     giphy_key_val,
                     urlencoding::encode(&search_query)
                 );
@@ -8159,26 +8273,88 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     if resp.status().is_success() {
                         if let Ok(body) = resp.json::<serde_json::Value>().await {
                             if let Some(data) = body.get("data").and_then(|v| v.as_array()) {
-                                if let Some(first) = data.first() {
-                                    let images = first.get("images").cloned().unwrap_or(json!({}));
+                                // Iterate through results (limit=8) and pick the
+                                // first valid sticker. Skip non-sticker results,
+                                // oversized files, and results already used by
+                                // another speaker.
+                                for sticker in data {
+                                    // Defensive: verify this is actually a sticker
+                                    let is_sticker = sticker
+                                        .get("is_sticker")
+                                        .and_then(|v| v.as_i64())
+                                        .unwrap_or(1);
+                                    if is_sticker != 1 {
+                                        continue;
+                                    }
+
+                                    let sticker_id = sticker
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    if used_sticker_queries.contains(&sticker_id) {
+                                        continue;
+                                    }
+
+                                    let images =
+                                        sticker.get("images").cloned().unwrap_or(json!({}));
                                     let original =
                                         images.get("original").cloned().unwrap_or(json!({}));
-                                    let gif_url =
-                                        original.get("url").and_then(|v| v.as_str()).unwrap_or("");
 
-                                    if !gif_url.is_empty() {
-                                        let sticker_path =
-                                            format!("{}/giphy_{}.gif", stickers_dir, speaker_name);
-                                        if let Ok(dl_resp) = client.get(gif_url).send().await {
-                                            if dl_resp.status().is_success() {
-                                                if let Ok(bytes) = dl_resp.bytes().await {
-                                                    std::fs::write(&sticker_path, &bytes).ok();
-                                                    speaker_stickers.insert(
-                                                        speaker_name.clone(),
-                                                        sticker_path.clone(),
-                                                    );
-                                                    tracing::info!("[script.to_video] Downloaded GIPHY sticker for {}: {}", speaker_name, sticker_path);
-                                                }
+                                    // Prefer WEBP (30-60% smaller, same transparency)
+                                    // Fall back to GIF if WEBP URL is missing
+                                    let sticker_url = original
+                                        .get("webp")
+                                        .and_then(|v| v.as_str())
+                                        .filter(|s| !s.is_empty())
+                                        .or_else(|| {
+                                            original
+                                                .get("url")
+                                                .and_then(|v| v.as_str())
+                                        })
+                                        .unwrap_or("");
+
+                                    if sticker_url.is_empty() {
+                                        continue;
+                                    }
+
+                                    // Skip oversized stickers (> 3MB)
+                                    let size: i64 = original
+                                        .get("webp_size")
+                                        .and_then(|v| v.as_i64())
+                                        .or_else(|| {
+                                            original.get("size").and_then(|v| v.as_i64())
+                                        })
+                                        .unwrap_or(0);
+                                    if size > 3_000_000 {
+                                        continue;
+                                    }
+
+                                    let ext = if sticker_url.contains(".webp") {
+                                        "webp"
+                                    } else {
+                                        "gif"
+                                    };
+                                    let sticker_path = format!(
+                                        "{}/giphy_{}.{}",
+                                        stickers_dir, speaker_name, ext
+                                    );
+                                    if let Ok(dl_resp) = client.get(sticker_url).send().await {
+                                        if dl_resp.status().is_success() {
+                                            if let Ok(bytes) = dl_resp.bytes().await {
+                                                std::fs::write(&sticker_path, &bytes).ok();
+                                                speaker_stickers.insert(
+                                                    speaker_name.clone(),
+                                                    sticker_path.clone(),
+                                                );
+                                                used_sticker_queries.insert(sticker_id);
+                                                tracing::info!(
+                                                    "[script.to_video] Downloaded GIPHY sticker for {}: {} ({} bytes)",
+                                                    speaker_name,
+                                                    sticker_path,
+                                                    bytes.len()
+                                                );
+                                                break; // Got a sticker for this speaker
                                             }
                                         }
                                     }
@@ -8343,7 +8519,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         voiceover_paths,
         stickers,
         music_path,
-        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-18.0) / 20.0),
+        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(6.0) / 20.0),
         ducking: spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
         ducking_depth_db: spec
             .music

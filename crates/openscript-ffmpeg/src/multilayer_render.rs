@@ -333,18 +333,28 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         filters.push(format!("{}copy[vout]", current_video_label));
     }
 
-    // 4. Audio: voiceover
+    // 4. Audio: voiceover + music (with sidechain ducking)
+    //
+    // The round-5 audit found music was inaudible because:
+    //   1. threshold=0.001 was too low — any voice signal triggered full ducking
+    //   2. makeup=1 meant no gain recovery after compression
+    //   3. Default music_volume was -18 dB (linear 0.126) — already very quiet
+    //
+    // Fix: raise threshold to 0.05 (only duck on moderate voice), add makeup
+    // gain of 2x (~6 dB boost after ducking so music stays present), and
+    // the caller now passes a higher default volume (-12 dB instead of -18).
     if has_music {
-        // Duck music during voiceover
-        let threshold = 0.001_f64.powf(1.0 - spec.ducking_depth_db / 20.0);
+        // Sidechain compression: duck music when voice is present.
+        // threshold=0.05: only trigger on moderate voice (not background noise)
+        // ratio=4: 4:1 compression
+        // makeup=2: boost music 2x after compression so it stays audible
         filters.push(format!("[{}:a]asplit=2[vo_out][vo_sc]", vo_input_idx));
         filters.push(format!(
             "[{}:a]volume={}[music_vol]",
             music_input_idx, spec.music_volume
         ));
         filters.push(format!(
-            "[music_vol][vo_sc]sidechaincompress=threshold={}:ratio=4:attack=50:release=200:makeup=1:level_sc=1[music_ducked]",
-            threshold
+            "[music_vol][vo_sc]sidechaincompress=threshold=0.05:ratio=4:attack=50:release=200:makeup=2:level_sc=1[music_ducked]"
         ));
         filters.push(format!(
             "[vo_out][music_ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout_raw]"
