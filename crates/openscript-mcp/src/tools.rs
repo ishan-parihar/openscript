@@ -1303,9 +1303,31 @@ fn track_count(timeline: &Timeline, track_type: &TrackType) -> usize {
 /// (e.g. "PEXELS_API_KEY"). This lets the system work out-of-the-box with
 /// bundled keys without requiring agents to set env vars.
 fn get_api_key(config_name: &str, env_name: &str) -> String {
-    // Try config file first
-    let config_path = std::path::Path::new("mcp/assets/.openscript_config.json");
-    if let Ok(content) = std::fs::read_to_string(config_path) {
+    // Resolve the config file path CWD-independently. Priority matches
+    // system.capabilities' repo_root resolution:
+    //   1. OPENSCRIPT_ROOT env var
+    //   2. CARGO_MANIFEST_DIR (compile-time, workspace-relative)
+    //   3. CWD (last resort — only works if run from repo root)
+    //
+    // The fresh-agent UX audit (round 2, GAP #7) found that system.capabilities
+    // reported PEXELS/GIPHY as unavailable even though the config file had
+    // valid keys — because get_api_key used a relative path that only worked
+    // when CWD was the repo root.
+    let config_path = {
+        let p = std::path::Path::new("mcp/assets/.openscript_config.json");
+        if p.exists() {
+            p.to_path_buf()
+        } else if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
+            std::path::PathBuf::from(root).join("mcp/assets/.openscript_config.json")
+        } else if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
+            std::path::Path::new(d)
+                .join("../../mcp/assets/.openscript_config.json")
+        } else {
+            p.to_path_buf()
+        }
+    };
+
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
         if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content) {
             if let Some(val) = map.get(config_name).and_then(|v| v.as_str()) {
                 if !val.is_empty() {
@@ -10489,10 +10511,11 @@ async fn handle_system_capabilities(
         },
     });
 
-    // SFX library
+    // SFX library — resolve path CWD-independently (same fix as music).
     let sfx_index_path = std::env::var("OPENSCRIPT_SFX_INDEX")
         .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
-    let sfx_count = SfxIndex::load(Some(&sfx_index_path))
+    let sfx_index_resolved = resolve(&sfx_index_path);
+    let sfx_count = SfxIndex::load(Some(&sfx_index_resolved.to_string_lossy()))
         .map(|idx| idx.len())
         .unwrap_or(0);
     let sfx = json!({
@@ -10501,10 +10524,17 @@ async fn handle_system_capabilities(
         "index_path": sfx_index_path,
     });
 
-    // Music library
+    // Music library — the committed 20-track stock index at
+    // mcp/assets/music_index.json. NOTE: this is distinct from
+    // music_library_index.json (the 500+ YouTube-scraped index built by
+    // library.build). The fresh-agent UX audit (round 2, GAP #7) found
+    // system.capabilities reported music as unavailable when run from a
+    // non-repo-root CWD because the path was relative. Now resolved via
+    // the `resolve` helper.
     let music_index_path = std::env::var("OPENSCRIPT_MUSIC_INDEX")
         .unwrap_or_else(|_| "mcp/assets/music_index.json".to_string());
-    let music_count = MusicIndex::load(Some(&music_index_path))
+    let music_index_resolved = resolve(&music_index_path);
+    let music_count = MusicIndex::load(Some(&music_index_resolved.to_string_lossy()))
         .map(|idx| idx.len())
         .unwrap_or(0);
     let music = json!({
@@ -10610,16 +10640,34 @@ async fn handle_system_capabilities(
         },
     });
 
-    // whisper_align.py (required for script.build_captions force alignment)
+    // whisper_align.py + the `whisper` Python module (required for
+    // script.build_captions force alignment). The fresh-agent UX audit
+    // (round 2, GAP #7) found that system.capabilities reported
+    // whisper_align as available when the .py file existed but the
+    // `whisper` Python module was not installed — causing silent
+    // fallback to estimated timings on every scene. Now we actually
+    // test that Python can import the module.
     let whisper_align_path = "mcp/scripts/whisper_align.py";
-    let whisper_align_available = path_exists(whisper_align_path);
+    let script_exists = path_exists(whisper_align_path);
+    let whisper_module_importable = std::process::Command::new("python3")
+        .args(["-c", "import whisper; print('ok')"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let whisper_align_available = script_exists && whisper_module_importable;
     let whisper_align = json!({
         "available": whisper_align_available,
         "path": whisper_align_path,
+        "script_exists": script_exists,
+        "module_importable": whisper_module_importable,
         "reason": if whisper_align_available {
             serde_json::Value::Null
-        } else {
+        } else if !script_exists {
             "whisper_align.py not found. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
+        } else {
+            "whisper_align.py exists but the Python `whisper` module is not installed. Install with: pip3 install --user openai-whisper. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
         },
     });
 
@@ -10884,16 +10932,28 @@ mod tests {
     /// broll.fetch with no API key and no fallback_pool should return
     /// status:warning with missing_key:true (NOT hard-fail with an Err).
     /// This is the bug #16 regression test.
+    ///
+    /// Note: we set OPENSCRIPT_ROOT to a temp dir so get_api_key() doesn't
+    /// find the real config file at mcp/assets/.openscript_config.json.
+    /// Without this, the test would pass real Pexels keys through and
+    /// broll.fetch would succeed instead of returning the warning.
     #[tokio::test]
     async fn test_broll_fetch_no_key_no_fallback_returns_warning() {
         // Ensure no Pexels key is set for this test.
         std::env::remove_var("PEXELS_API_KEY");
+        // Redirect OPENSCRIPT_ROOT to a temp dir so the config file is not found.
+        let temp_root = std::env::temp_dir().join("openscript_test_no_key");
+        let _ = std::fs::create_dir_all(&temp_root);
+        std::env::set_var("OPENSCRIPT_ROOT", &temp_root);
 
         let args = json!({
             "concepts": ["technology", "city"],
         });
 
         let result = handle_broll_fetch(args).await;
+        std::env::remove_var("OPENSCRIPT_ROOT");
+        let _ = std::fs::remove_dir_all(&temp_root);
+
         assert!(result.is_ok(), "broll.fetch should not hard-fail without PEXELS_API_KEY");
         let resp = result.unwrap();
         assert_eq!(resp["status"], "warning");
@@ -10906,6 +10966,9 @@ mod tests {
     #[tokio::test]
     async fn test_broll_fetch_no_key_with_fallback_uses_fallback_pool() {
         std::env::remove_var("PEXELS_API_KEY");
+        let temp_root = std::env::temp_dir().join("openscript_test_no_key_fb");
+        let _ = std::fs::create_dir_all(&temp_root);
+        std::env::set_var("OPENSCRIPT_ROOT", &temp_root);
 
         let args = json!({
             "concepts": ["technology", "city"],
@@ -10914,6 +10977,9 @@ mod tests {
         });
 
         let result = handle_broll_fetch(args).await;
+        std::env::remove_var("OPENSCRIPT_ROOT");
+        let _ = std::fs::remove_dir_all(&temp_root);
+
         assert!(result.is_ok());
         let resp = result.unwrap();
         assert_eq!(resp["status"], "warning");

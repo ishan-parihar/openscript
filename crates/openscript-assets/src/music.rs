@@ -6,18 +6,31 @@ pub struct MusicAsset {
     pub id: String,
     pub path: String,
     pub title: String,
+    #[serde(default)]
     pub artist: String,
+    #[serde(default)]
     pub duration_ms: i64,
+    #[serde(default)]
     pub sample_rate: u32,
+    #[serde(default)]
     pub channels: u32,
+    #[serde(default)]
     pub mood: String,
+    #[serde(default)]
     pub energy: String,
+    #[serde(default)]
     pub bpm: Option<u32>,
+    #[serde(default)]
     pub loopability: bool,
+    #[serde(default)]
     pub intro_friendly: bool,
+    #[serde(default)]
     pub cta_friendly: bool,
+    #[serde(default)]
     pub loudness_target_lufs: f64,
+    #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
     pub genre: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loudness_lufs: Option<f64>,
@@ -51,10 +64,35 @@ impl MusicIndex {
         match path {
             Some(p) => {
                 let data = std::fs::read_to_string(p)?;
-                // Try wrapper format first (Python-compatible), then fall back to flat array
+                // Try three formats in order:
+                // 1. Full wrapper (Python-compatible, has version/created_at/etc.)
+                // 2. Partial wrapper (just {"assets": [...]} — the committed
+                //    stock index format)
+                // 3. Flat array ([...])
+                //
+                // The fresh-agent UX audit (round 2, GAP #7) found that
+                // system.capabilities reported music as unavailable because
+                // the committed music_index.json uses format #2 but load()
+                // only tried #1 and #3. Now #2 is tried as well.
                 let (assets, paths) =
                     if let Ok(wrapper) = serde_json::from_str::<MusicIndexWrapper>(&data) {
                         (wrapper.assets, wrapper.music_paths)
+                    } else if let Ok(partial) = serde_json::from_str::<serde_json::Value>(&data) {
+                        // Try {"assets": [...]} partial wrapper
+                        if let Some(assets_arr) = partial.get("assets").and_then(|v| v.as_array()) {
+                            let parsed: Vec<MusicAsset> = assets_arr
+                                .iter()
+                                .filter_map(|a| serde_json::from_value(a.clone()).ok())
+                                .collect();
+                            let mp = partial.get("music_paths")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                .unwrap_or_default();
+                            (parsed, mp)
+                        } else {
+                            // Try flat array
+                            (serde_json::from_str(&data).unwrap_or_default(), vec![])
+                        }
                     } else {
                         (serde_json::from_str(&data).unwrap_or_default(), vec![])
                     };
