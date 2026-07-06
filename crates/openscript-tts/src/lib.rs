@@ -8,6 +8,15 @@ pub mod profiles;
 #[cfg(feature = "kokoro")]
 pub mod kokoro;
 
+/// Long-lived Kokoro sidecar pool (stdin/stdout JSON protocol).
+///
+/// Eliminates the ~360ms per-chunk cold-start that the fresh-process
+/// path pays (Python startup + kokoro_onnx import + ONNX model load +
+/// voices load). For a 20-scene script with 2 chunks per scene, this
+/// saves ~14 seconds of pure overhead.
+#[cfg(feature = "kokoro")]
+pub mod kokoro_sidecar;
+
 /// Evict oldest cache entries (LRU by mtime) if the cache directory exceeds
 /// the configured max size.
 ///

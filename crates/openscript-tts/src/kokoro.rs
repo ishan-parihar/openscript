@@ -61,6 +61,12 @@ pub struct KokoroClient {
 // the need for a native Rust ONNX runtime dependency.
 struct KokoroEngine {
     cfg: KokoroConfig,
+    /// Long-lived sidecar pool. Shared across all synth_one calls so we
+    /// pay the ~200ms ONNX model load once instead of per-chunk. The
+    /// Option is None until first use; once a start attempt fails we
+    /// leave it as None so subsequent calls don't retry (and fall back
+    /// to fresh-process mode instead).
+    sidecar: crate::kokoro_sidecar::SharedSidecar,
 }
 
 impl KokoroEngine {
@@ -81,7 +87,10 @@ impl KokoroEngine {
                 voices_file.display()
             )));
         }
-        Ok(Self { cfg: cfg.clone() })
+        Ok(Self {
+            cfg: cfg.clone(),
+            sidecar: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        })
     }
 
     /// Synthesise `text` with `voice` at `speed` (1.0 = normal).
@@ -100,7 +109,17 @@ impl KokoroEngine {
     }
 
     /// Synthesise a single chunk (must be ≤510 phoneme tokens).
-    /// Shells out to the Python kokoro-onnx sidecar.
+    ///
+    /// Tries the long-lived sidecar first (loads the ONNX model once,
+    /// serves requests via stdin/stdout JSON). If the sidecar is
+    /// unavailable (Python missing, imports missing, model missing, or
+    /// the sidecar died mid-request), falls back to the legacy
+    /// fresh-process-per-call path.
+    ///
+    /// The fallback path pays ~360ms cold-start per chunk (Python startup
+    /// + kokoro_onnx import + ONNX model load + voices load). For a
+    /// 20-scene script with 2 chunks per scene, that's 40 × 360ms =
+    /// 14.4s of pure overhead. The long-lived path pays it once.
     fn synth_one(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>, KokoroError> {
         let model_path = self.cfg.model_dir.join("onnx").join("kokoro-v1.0.onnx");
         let voices_file = self.cfg.model_dir.join("voices").join("voices-v1.0.bin");
@@ -115,69 +134,85 @@ impl KokoroEngine {
                 .unwrap_or(0)
         ));
 
-        // Resolve the Kokoro sidecar script path. Priority:
-        //   1. KOKORO_SIDECAR env var (explicit override)
-        //   2. CARGO_MANIFEST_DIR/../../mcp/scripts/kokoro_tts_sidecar.py
-        //      (workspace-relative at dev time)
-        //   3. OPENSCRIPT_ROOT/mcp/scripts/kokoro_tts_sidecar.py
-        //      (deployment override)
-        //   4. Relative "mcp/scripts/kokoro_tts_sidecar.py" (last resort;
-        //      only works if CWD is the repo root)
-        //
-        // Prior versions defaulted to the relative path, which broke the
-        // sidecar spawn whenever the process CWD was not the repo root.
-        let sidecar_script = std::env::var("KOKORO_SIDECAR")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .or_else(|| {
-                // CARGO_MANIFEST_DIR is set at compile time for the crate.
-                // At runtime this still points at the build-time location,
-                // which is fine for dev. For production binaries, fall through
-                // to OPENSCRIPT_ROOT.
-                option_env!("CARGO_MANIFEST_DIR")
-                    .map(|d| {
-                        std::path::Path::new(d)
-                            .join("../../mcp/scripts/kokoro_tts_sidecar.py")
-                            .to_string_lossy()
-                            .to_string()
-                    })
-                    .filter(|p| std::path::Path::new(p).exists())
-            })
-            .or_else(|| {
-                std::env::var("OPENSCRIPT_ROOT")
-                    .ok()
-                    .map(|root| format!("{}/mcp/scripts/kokoro_tts_sidecar.py", root))
-                    .filter(|p| std::path::Path::new(p).exists())
-            })
-            .unwrap_or_else(|| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
+        // Resolve the Kokoro sidecar script path via the shared helper in
+        // kokoro_sidecar.rs (priority: KOKORO_SIDECAR env > CARGO_MANIFEST_DIR
+        // > OPENSCRIPT_ROOT > relative path). Prior versions inlined this
+        // resolution; we now share it between the long-lived and
+        // fresh-process paths so they always agree on the script location.
+        let sidecar_script = crate::kokoro_sidecar::resolve_sidecar_script();
 
-        let output = std::process::Command::new("python3")
-            .arg(&sidecar_script)
-            .arg("--text")
-            .arg(text)
-            .arg("--voice")
-            .arg(voice)
-            .arg("--speed")
-            .arg(speed.to_string())
-            .arg("--model")
-            .arg(&model_path)
-            .arg("--voices")
-            .arg(&voices_file)
-            .arg("--output")
-            .arg(&tmp)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .map_err(|e| KokoroError::Engine(format!("Failed to spawn kokoro sidecar: {}", e)))?;
+        // === PATH 1: Long-lived sidecar (preferred) ===
+        // Acquire the shared sidecar (starting it on first call). If the
+        // sidecar is running, send the synth request and read the WAV
+        // result. On any error, fall through to PATH 2 (fresh-process mode).
+        let sidecar_ok = match crate::kokoro_sidecar::acquire_or_init(
+            &self.sidecar,
+            &model_path,
+            &voices_file,
+            &sidecar_script.to_string_lossy(),
+        ) {
+            Ok(mut guard) => {
+                if let Some(ref mut sidecar) = *guard {
+                    match sidecar.synth(text, voice, speed, &tmp.to_string_lossy()) {
+                        Ok(_result) => true,
+                        Err(e) => {
+                            // Sidecar was running but the request failed. The
+                            // process may have died; reset the slot so the next
+                            // call attempts a fresh start.
+                            tracing::warn!(
+                                "Kokoro long-lived sidecar request failed ({}); \
+                                 falling back to fresh-process mode for this chunk.",
+                                e
+                            );
+                            *guard = None;
+                            false
+                        }
+                    }
+                } else {
+                    // Sidecar failed to start earlier; fall back to fresh mode.
+                    false
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Sidecar acquire failed ({}); using fresh-process mode", e);
+                false
+            }
+        };
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let _ = std::fs::remove_file(&tmp);
-            return Err(KokoroError::Engine(format!(
-                "Kokoro sidecar failed: {}",
-                stderr
-            )));
+        // === PATH 2: Fresh-process-per-call (fallback) ===
+        // Spawns a new Python process for this one chunk. Pays the full
+        // ~360ms cold-start. Used when the long-lived sidecar is unavailable.
+        if !sidecar_ok {
+            let output = std::process::Command::new("python3")
+                .arg(&sidecar_script)
+                .arg("--text")
+                .arg(text)
+                .arg("--voice")
+                .arg(voice)
+                .arg("--speed")
+                .arg(speed.to_string())
+                .arg("--model")
+                .arg(&model_path)
+                .arg("--voices")
+                .arg(&voices_file)
+                .arg("--output")
+                .arg(&tmp)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()
+                .map_err(|e| {
+                    KokoroError::Engine(format!("Failed to spawn kokoro sidecar: {}", e))
+                })?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let _ = std::fs::remove_file(&tmp);
+                return Err(KokoroError::Engine(format!(
+                    "Kokoro sidecar failed: {}",
+                    stderr
+                )));
+            }
         }
 
         // Read the WAV file via hound (chunk-aware, supports 16/24/32-bit + float).
