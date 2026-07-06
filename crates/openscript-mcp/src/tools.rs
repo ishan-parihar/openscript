@@ -7132,6 +7132,16 @@ async fn auto_select_music(_theme: &str) -> Option<String> {
             continue;
         }
 
+        // Skip synthetic stock files (source_type=="local" entries in the
+        // library index are the 20 synthetic sine-wave tones in
+        // mcp/assets/music/). Only use YouTube-scraped tracks.
+        // (Round-9 audit: auto_select_music was picking up synthetic hums
+        // from the library index because they're tagged as "local" entries.)
+        let source_type = entry.get("source_type").and_then(|v| v.as_str()).unwrap_or("");
+        if source_type == "local" {
+            continue;
+        }
+
         for term in &search_terms {
             if title_lower.contains(term) {
                 let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
