@@ -7080,37 +7080,25 @@ fn format_seconds_to_timestamp(s: f64) -> String {
 /// Returns the path if a suitable track is found, None otherwise.
 /// (Round-3 UX audit PROBLEM 3b fix — ensures every video has background
 /// music by default, even when the agent doesn't specify music.path.)
-fn auto_select_music(theme: &str) -> Option<String> {
-    // Theme → preferred track filename mapping
-    let preferred = match theme {
-        "calm" => "relaxing_meditation.mp3",
-        "energetic" => "upbeat_pop.mp3",
-        _ => "lofi_chill.mp3", // neutral default
-    };
-
-    let candidates = [
-        format!("mcp/assets/music/{}", preferred),
-        // Fallbacks if the preferred track doesn't exist
-        "mcp/assets/music/relaxing_meditation.mp3".to_string(),
-        "mcp/assets/music/lofi_chill.mp3".to_string(),
-    ];
-
-    for path in &candidates {
-        let resolved = resolve_repo_path(path);
-        if resolved.exists() {
-            if path != &candidates[0] {
-                tracing::info!(
-                    "[script.to_video] Auto-selected music: {} (theme: {})",
-                    resolved.display(),
-                    theme
-                );
-            }
-            return Some(resolved.to_string_lossy().to_string());
-        }
-    }
-
-    tracing::warn!(
-        "[script.to_video] No music tracks found in mcp/assets/music/ — video will have no background music"
+fn auto_select_music(_theme: &str) -> Option<String> {
+    // The stock music files in mcp/assets/music/ are SYNTHETIC TONES
+    // (sine-wave hums at musical-note frequencies), not real music tracks.
+    // Using them produces a humming sound that users find unpleasant.
+    // (Round-6 audit: "The music is a humming sound rather than actual
+    // BG-Music".)
+    //
+    // Real music should come from:
+    //   1. library.search + library.download (YouTube-scraped, 500+ tracks)
+    //   2. stock.search + stock.fetch (Pixabay API, requires PIXABAY_API_KEY)
+    //   3. User-supplied music.path in the script
+    //
+    // We do NOT auto-select from the synthetic stock files. Instead, return
+    // None and let the caller warn that no real music is available. This
+    // is better than adding a hum that degrades video quality.
+    tracing::info!(
+        "[script.to_video] No real music auto-selected (stock files are synthetic tones). \
+         Set music.path in the script, or use library.search/library.download \
+         or stock.search/stock.fetch for real music tracks."
     );
     None
 }
@@ -7208,6 +7196,66 @@ fn extract_salient_noun(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Words that can produce undesirable Pexels results when used as search
+/// queries. For example, "inhale" returns cigarette-smoking videos; "drink"
+/// returns alcohol videos. Map them to safer equivalents that produce
+/// on-topic calming/meditation content.
+/// (Round-6 audit: "In the inhale section, the video was of someone
+/// inhaling a cigarette.")
+const UNSAFE_KEYWORD_MAP: &[(&str, &str)] = &[
+    ("inhale", "breathing meditation"),
+    ("exhale", "breathing relaxation"),
+    ("breathe", "breathing calm"),
+    ("breathing", "breathing meditation"),
+    ("drink", "drinking water wellness"),
+    ("smoke", "calm nature"),
+    ("drug", "calm nature"),
+    ("kill", "calm nature"),
+    ("blood", "calm nature"),
+    ("pain", "healing wellness"),
+    ("stress", "stress relief meditation"),
+    ("anxiety", "anxiety relief calm"),
+    ("fear", "courage calm nature"),
+    ("death", "calm nature peaceful"),
+    ("weapon", "calm nature"),
+];
+
+/// Enrich a Pexels search query with mood-aware context to bias results
+/// toward calming/energetic content. For theme:calm, prepend "calm" to
+/// the query so Pexels returns peaceful footage instead of literal matches
+/// that could be tonally wrong (e.g. "inhale" → cigarette).
+fn enrich_query_for_theme(query: &str, theme: &str) -> String {
+    // Don't double-enrich if the query already contains a mood word
+    let lower = query.to_lowercase();
+    let already_calm = lower.contains("calm") || lower.contains("peaceful") || lower.contains("meditation");
+    let already_energetic = lower.contains("energy") || lower.contains("action") || lower.contains("intense");
+
+    match theme {
+        "calm" if !already_calm => format!("calm {}", query),
+        "energetic" if !already_energetic => format!("energetic {}", query),
+        _ => query.to_string(),
+    }
+}
+
+/// Filter and enrich extracted keywords for Pexels search safety.
+/// 1. Replace unsafe keywords (inhale → breathing meditation)
+/// 2. Enrich with theme context (prepend "calm" for calm theme)
+fn safe_search_query(raw_keywords: &str, theme: &str) -> String {
+    // Check each word against the unsafe map
+    let mut safe_words: Vec<String> = Vec::new();
+    for word in raw_keywords.split_whitespace() {
+        let lower = word.to_lowercase();
+        let replaced = UNSAFE_KEYWORD_MAP
+            .iter()
+            .find(|(unsafe_word, _)| *unsafe_word == lower.as_str())
+            .map(|(_, safe)| safe.to_string())
+            .unwrap_or_else(|| word.to_string());
+        safe_words.push(replaced);
+    }
+    let safe_query = safe_words.join(" ");
+    enrich_query_for_theme(&safe_query, theme)
 }
 
 fn extract_keywords(text: &str, fallback_query: &str) -> String {
@@ -8039,7 +8087,18 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let query = extract_keywords(scene_text, &spec.background.query);
+            // Extract keywords from scene text, then filter through the
+            // safe-search map to prevent Pexels from returning tonally
+            // wrong results (e.g. "inhale" → cigarette smoking videos).
+            // Also enrich with theme context ("calm" prefix for calm theme).
+            let raw_keywords = extract_keywords(scene_text, &spec.background.query);
+            let query = safe_search_query(&raw_keywords, &spec.output.theme);
+            tracing::info!(
+                "[script.to_video] Pexels search for scene {}: raw='{}' safe='{}'",
+                scene_idx + 1,
+                raw_keywords,
+                query
+            );
 
             let progress_pct = 35.0 + (scene_idx as f64 / scene_durations.len() as f64) * 25.0;
             report_progress(
