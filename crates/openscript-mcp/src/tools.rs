@@ -6087,6 +6087,13 @@ async fn handle_script_generate_voices(
     let total_scenes = spec.scenes.len();
     let mut segments = Vec::new();
     let mut current_ms = 0i64;
+    // Collect per-scene warnings (e.g. whisper alignment failure) so callers
+    // (script.to_timeline → script.to_video) can surface them in their own
+    // response. Without this, whisper failures were only visible via
+    // tracing::warn! to stderr — the JSON response said "warnings: null"
+    // even when 5/5 scenes had fallen back to estimated word timings.
+    // (UX audit GAP #1 fix.)
+    let mut voice_warnings: Vec<String> = Vec::new();
 
     for (i, scene) in spec.scenes.iter().enumerate() {
         report_progress(
@@ -6150,10 +6157,13 @@ async fn handle_script_generate_voices(
         let words = run_whisper_alignment(&result.output_path, current_ms, scene_end_ms)
             .await
             .unwrap_or_else(|e| {
-                tracing::warn!(
-                    "[script.generate_voices] Whisper alignment failed ({}), using estimate",
+                let msg = format!(
+                    "Scene {}: whisper force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
+                    i + 1,
                     e
                 );
+                tracing::warn!("[script.generate_voices] {}", msg);
+                voice_warnings.push(msg);
                 estimate_word_timings(&scene.text, current_ms, scene_end_ms)
             });
 
@@ -6190,6 +6200,7 @@ async fn handle_script_generate_voices(
         "total_duration_ms": current_ms,
         "total_scenes": total_scenes,
         "segments": segments,
+        "warnings": if voice_warnings.is_empty() { serde_json::Value::Null } else { json!(voice_warnings) },
     }))
 }
 
@@ -7145,6 +7156,18 @@ async fn handle_script_to_timeline(
             "output_dir": voices_dir,
         }))
         .await?;
+
+        // Collect voice-generation warnings (e.g. whisper alignment failure)
+        // into our own warnings array so they propagate to script.to_video's
+        // final response. Without this, the warnings were returned in
+        // voices_result but never read by the caller. (UX audit GAP #1 fix.)
+        if let Some(voice_warns) = voices_result.get("warnings").and_then(|v| v.as_array()) {
+            for w in voice_warns {
+                if let Some(s) = w.as_str() {
+                    warnings.push(s.to_string());
+                }
+            }
+        }
 
         let mp = voices_result
             .get("manifest_path")
