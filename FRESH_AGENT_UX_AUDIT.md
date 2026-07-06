@@ -4,9 +4,36 @@
 **Method:** Deployed a fresh general-purpose AI agent with NO prior context, told only:
   > "Create a short vertical video (under 30 seconds, 9:16) on the topic: '3 daily practices to rewire your nervous system'. The CLI is at /home/z/my-project/openscript/target/debug/openscript. Produce an MP4 and report your experience."
 
-**Outcome:** Agent produced a 25.09s healing video at `healing_nervous_system.mp4` (Kokoro TTS, 5 calming procedural backgrounds, meditation music bed with ducking, warm-gold word-highlight captions). Render time 1m51s.
+**Round 1 outcome:** Agent produced a 25.09s healing video (Kokoro TTS, 5 calming procedural backgrounds, meditation music bed, warm-gold word-highlight captions). Render time 1m51s. Found 6 UX gaps.
 
-**Headline finding:** The from-scratch golden trajectory (`script.parse` → `script.to_video`) genuinely works — the agent reached a validated, rendering script within ~6 minutes of landing cold. But five specific UX gaps degraded both the **trustworthiness** of the output (silent warnings) and the **healing efficacy** of the defaults (neon-green captions, single loud font, randomly-sampled background pool mixing calm and neon clips).
+**Round 2 outcome (after fixing all 6 round-1 gaps):** Agent produced a 22.66s healing video (sentence_fade captions, warm-gold highlight, 5 calming backgrounds, meditation music, no stickers). Render time 67s. Found 5 of 6 round-1 gaps fixed; surfaced 7 new gaps (3 now fixed in Phase AP/AQ).
+
+**Headline finding:** The from-scratch golden trajectory (`script.parse` → `script.to_video`) genuinely works — both round-1 and round-2 agents reached a validated, rendering script within ~6-9 minutes of landing cold. The `theme:"calm"` preset (Phase AN) is the single highest-leverage efficacy fix — it cascades the right defaults for healing content without the agent hand-tuning 4 fields.
+
+---
+
+## Round 1 → Round 2 Comparison
+
+| Round-1 GAP | Round-2 verdict | Fix phase |
+|-------------|----------------|-----------|
+| #1: warnings:null hid whisper failure | **Fixed** — warnings[] now populated | Phase AJ |
+| #2: no mood tags on backgrounds | **Fixed** — background.search works | Phase AM |
+| #3: "loop" JSON key silently ignored | **Fixed** — serde alias works | Phase AK |
+| #4: defaults fight healing topics | **Fixed** — theme:"calm" works | Phase AN |
+| #5: verify.* no CLI mirrors | **Partially fixed** — mirrors exist, 2 had bugs (fixed in Phase AP) | Phase AO + AP |
+| #6: Kokoro sidecar restarted per scene | **Fixed** — 1 start, 37% faster | Phase AL |
+
+## Round-2 New Gaps (found after round-1 fixes)
+
+| # | Gap | Status | Fix phase |
+|---|-----|--------|-----------|
+| #7 | system.capabilities lied about whisper/pexels/giphy/music | **Fixed** | Phase AQ |
+| #8 | --output-dir silently ignored when --output-path given | Open (low priority) | — |
+| #9 | verify-render CLI crashed (missing --timeline-path) | **Fixed** | Phase AP |
+| #10 | verify-captions only accepted SRT, not ASS | **Fixed** | Phase AP |
+| #11 | timeline_preview hardcodes "word_highlight" string | Open (display-only bug) | — |
+| #12 | background-search only works from repo root | Open (low priority) | — |
+| #13 | caption color drift (cream → white in ASS) | Open (minor) | — |
 
 ---
 
