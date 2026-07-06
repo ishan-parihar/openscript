@@ -541,10 +541,38 @@ pub struct OutputSpec {
     /// connecting HyperFrames to the golden trajectory.
     #[serde(default = "default_render_engine")]
     pub render_engine: String,
+
+    /// Theme preset: "neutral" (default), "calm", "energetic".
+    /// When set to a non-neutral value, applies correlated defaults to
+    /// captions + stickers + background selection so the video has a
+    /// consistent emotional tone without the agent hand-tuning each field.
+    ///
+    /// "calm": warm-gold highlight (#E8B86D), cream text (#F5F0E8),
+    ///   sentence_fade style, stickers disabled, background.search
+    ///   filters mood:"calm". For healing/meditation/therapy content.
+    ///
+    /// "energetic": neon-green highlight (#00ff88), white text,
+    ///   word_highlight style, stickers enabled (default_person),
+    ///   background.search filters mood:"energetic". For gaming/edu-short
+    ///   content. This matches the historical defaults.
+    ///
+    /// "neutral": no override — use the explicit fields as-is.
+    ///
+    /// Individual field values (e.g. captions.highlight_color) always
+    /// override the theme preset. The theme only sets defaults for fields
+    /// the agent did not explicitly set.
+    /// (UX audit GAP #4 fix — defaults were tuned for energetic/meme
+    /// content and fought healing topics.)
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_render_engine() -> String {
     "ffmpeg".to_string()
+}
+
+fn default_theme() -> String {
+    "neutral".to_string()
 }
 
 fn default_format() -> String {
@@ -568,6 +596,7 @@ impl Default for OutputSpec {
             crf: default_crf(),
             preset: default_ffmpeg_preset(),
             render_engine: default_render_engine(),
+            theme: default_theme(),
         }
     }
 }
@@ -747,7 +776,61 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
         }
     }
 
+    // Apply theme preset. The theme overrides defaults for captions +
+    // stickers, but ONLY for fields that still have their hardcoded
+    // default values (meaning the user did not explicitly set them).
+    // This lets an agent set theme:"calm" and get warm-gold captions +
+    // disabled stickers + sentence_fade style without hand-tuning each
+    // field, while still allowing per-field overrides.
+    // (UX audit GAP #4 fix.)
+    apply_theme(&mut spec);
+
     Ok(spec)
+}
+
+/// Apply the theme preset from `output.theme` to captions + stickers.
+///
+/// A theme only overrides fields that still have their hardcoded default
+/// values — if the user explicitly set a field, the theme respects it.
+/// This is detected by comparing the current value to the default function.
+fn apply_theme(spec: &mut ScriptSpec) {
+    match spec.output.theme.as_str() {
+        "calm" => {
+            // Captions: warm-gold highlight, cream text, sentence_fade style.
+            // Only override if the field is still at its default (user didn't set it).
+            if spec.captions.highlight_color == default_highlight_color() {
+                spec.captions.highlight_color = "#E8B86D".to_string(); // warm gold
+            }
+            if spec.captions.color == default_text_color() {
+                spec.captions.color = "#F5F0E8".to_string(); // cream
+            }
+            if spec.captions.style == default_caption_style() {
+                spec.captions.style = "sentence_fade".to_string();
+            }
+            // Stickers: disable by default for calm content (cartoon puppets
+            // fight the healing aesthetic).
+            if spec.stickers.enabled {
+                // Only disable if the user didn't explicitly enable stickers.
+                // We detect "didn't explicitly set" by checking if the other
+                // sticker fields are still at their defaults (meaning the user
+                // didn't touch the stickers section at all).
+                if spec.stickers.lip_sync == default_lip_sync()
+                    && spec.stickers.blink == default_blink()
+                    && spec.stickers.idle_bob == default_idle_bob()
+                {
+                    spec.stickers.enabled = false;
+                }
+            }
+        }
+        "energetic" => {
+            // Energetic = the historical defaults (neon green, word_highlight,
+            // stickers on). No override needed — the defaults ARE the energetic
+            // theme. This branch exists for explicitness.
+        }
+        "neutral" | _ => {
+            // No override — use fields as-is.
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,4 +1140,63 @@ mod tests {
         }"#;
         let spec2 = parse_script(json2).unwrap();
         assert_eq!(spec2.background.loop_, false);
+    }
+
+    /// Verify that theme:"calm" applies warm-gold highlight, cream text,
+    /// sentence_fade style, and disables stickers — without the agent
+    /// hand-tuning each field. (UX audit GAP #4 regression test.)
+    #[test]
+    fn test_theme_calm_applies_healing_defaults() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Breathe in, breathe out."}],
+            "output": {"theme": "calm"}
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.output.theme, "calm");
+        assert_eq!(spec.captions.highlight_color, "#E8B86D", "calm theme should set warm-gold highlight");
+        assert_eq!(spec.captions.color, "#F5F0E8", "calm theme should set cream text");
+        assert_eq!(spec.captions.style, "sentence_fade", "calm theme should set sentence_fade style");
+        assert!(!spec.stickers.enabled, "calm theme should disable stickers");
+    }
+
+    /// Verify that theme:"calm" does NOT override fields the user explicitly set.
+    #[test]
+    fn test_theme_calm_respects_explicit_overrides() {
+        let json = r##"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Breathe."}],
+            "captions": {"highlight_color": "#FF0000", "style": "karaoke_fill"},
+            "output": {"theme": "calm"}
+        }"##;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.captions.highlight_color, "#FF0000", "user's explicit red should win over calm theme gold");
+        assert_eq!(spec.captions.style, "karaoke_fill", "user's explicit karaoke_fill should win over calm theme sentence_fade");
+        // But fields the user didn't set should still get the calm theme default
+        assert_eq!(spec.captions.color, "#F5F0E8", "calm theme cream text should apply (user didn't set color)");
+    }
+
+    /// Verify that theme:"neutral" (the default) applies no overrides.
+    #[test]
+    fn test_theme_neutral_is_no_op() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Hi"}],
+            "output": {"theme": "neutral"}
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.captions.highlight_color, "#00ff88", "neutral theme should keep default neon green");
+        assert_eq!(spec.captions.style, "word_highlight", "neutral theme should keep default word_highlight");
+        assert!(spec.stickers.enabled, "neutral theme should keep stickers enabled");
+    }
+
+    /// Verify that omitting theme entirely defaults to "neutral".
+    #[test]
+    fn test_theme_defaults_to_neutral() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Hi"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.output.theme, "neutral");
     }

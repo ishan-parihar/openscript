@@ -174,6 +174,65 @@ Post-render quality checks.
 
 ---
 
+## Theme Presets (one-field emotional tone)
+
+Set `output.theme` to apply correlated defaults for captions + stickers without hand-tuning each field. Individual field values always override the theme.
+
+| Theme | Use case | Caption highlight | Caption text | Caption style | Stickers |
+|-------|----------|-------------------|--------------|---------------|----------|
+| `"neutral"` (default) | Gaming, edu-shorts, memes | `#00ff88` (neon green) | `#ffffff` (white) | `word_highlight` | enabled |
+| `"calm"` | Healing, meditation, therapy, nervous-system content | `#E8B86D` (warm gold) | `#F5F0E8` (cream) | `sentence_fade` | disabled |
+| `"energetic"` | Same as neutral (explicit) | `#00ff88` (neon green) | `#ffffff` (white) | `word_highlight` | enabled |
+
+**For healing/calming content, set `"theme": "calm"`.** This is the single highest-leverage field for matching the video's tone to the topic. Without it, the defaults (neon green, cartoon puppet, word_highlight) fight calming intent.
+
+Example (minimal healing script):
+```json
+{
+  "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+  "scenes": [
+    {"speaker": "alice", "text": "Breathe in for four seconds."}
+  ],
+  "background": {"type": "procedural", "fallback_pool": []},
+  "output": {"theme": "calm"}
+}
+```
+
+---
+
+## Caption Styles (4 styles)
+
+| Style | Visual | Best for |
+|-------|--------|----------|
+| `word_highlight` | Current word highlighted in accent color, rest in white | Fast-paced talking-head, edu-shorts |
+| `sentence_fade` | Whole sentence fades in/out softly | Calm, meditative, narrative content |
+| `karaoke_fill` | Words fill with color left-to-right as spoken | Music videos, sing-along |
+| `subtitle_rail` | Static subtitle bar at bottom, minimal animation | Documentary, interview |
+
+**For healing content, use `sentence_fade`** (set automatically by `theme:"calm"`). Word-highlight's rapid color changes read as "gaming" and fight the calming intent.
+
+---
+
+## Background Selection (mood-aware)
+
+Use `background.search` to filter procedural backgrounds by mood before passing them to `script.to_video`'s `fallback_pool`. Without this, `type:"procedural"` grabs ALL `.mp4`s in `mcp/assets/backgrounds/` — which mixes calming clips (particles_blue, aurora_green) with jarring ones (tunnel_neon, gradient_rainbow).
+
+```
+background.search {mood: "calm"}  →  6 calming clip paths
+```
+
+Then pass those paths as `background.fallback_pool` in your script.
+
+| Mood | Clip count | Examples |
+|------|-----------|----------|
+| `calm` | 6 | particles_blue, waves_teal, aurora_green, bokeh_warm, waves_purple, waves_orange |
+| `neutral` | 8 | procedural_01 through procedural_10, abstract_pink |
+| `energetic` | 2 | gradient_rainbow, tunnel_neon |
+| `dark` | 1 | geometric_dark |
+| `uplifting` | 2 | waves_orange, abstract_pink |
+
+---
+
 ## Key Design Decisions
 
 1. **Kokoro is the default TTS** — no external dependency, 24kHz, 54 voices

@@ -264,7 +264,7 @@ cargo build -p openscript-mcp --release --bin mcp-server
 bash scripts/smoke_test_mcp.sh
 ```
 
-All four must pass. The baseline is **235 tests**. If your change reduces this
+All four must pass. The baseline is **239 tests**. If your change reduces this
 number, you have a regression.
 
 ### Test categories
@@ -297,7 +297,7 @@ inject a fake client in tests.
 > **Definition of Done for every iteration:**
 > 1. Code written
 > 2. `cargo build --workspace --exclude openscript-tauri` passes with zero warnings
-> 3. `cargo test --workspace --exclude openscript-tauri --lib --bins --tests` passes (baseline: 235 tests)
+> 3. `cargo test --workspace --exclude openscript-tauri --lib --bins --tests` passes (baseline: 239 tests)
 > 4. `npx tsc --noEmit` passes (if frontend changed)
 > 5. `git commit` with a message following §7.2
 > 6. **`git push origin main` succeeds** ← the iteration is NOT done until this prints `-> main`
