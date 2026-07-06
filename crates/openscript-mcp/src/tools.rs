@@ -7057,6 +7057,45 @@ fn format_seconds_to_timestamp(s: f64) -> String {
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
 
+/// Auto-select a music track from the 20-track stock catalog based on theme.
+/// Returns the path if a suitable track is found, None otherwise.
+/// (Round-3 UX audit PROBLEM 3b fix — ensures every video has background
+/// music by default, even when the agent doesn't specify music.path.)
+fn auto_select_music(theme: &str) -> Option<String> {
+    // Theme → preferred track filename mapping
+    let preferred = match theme {
+        "calm" => "relaxing_meditation.mp3",
+        "energetic" => "upbeat_pop.mp3",
+        _ => "lofi_chill.mp3", // neutral default
+    };
+
+    let candidates = [
+        format!("mcp/assets/music/{}", preferred),
+        // Fallbacks if the preferred track doesn't exist
+        "mcp/assets/music/relaxing_meditation.mp3".to_string(),
+        "mcp/assets/music/lofi_chill.mp3".to_string(),
+    ];
+
+    for path in &candidates {
+        let resolved = resolve_repo_path(path);
+        if resolved.exists() {
+            if path != &candidates[0] {
+                tracing::info!(
+                    "[script.to_video] Auto-selected music: {} (theme: {})",
+                    resolved.display(),
+                    theme
+                );
+            }
+            return Some(resolved.to_string_lossy().to_string());
+        }
+    }
+
+    tracing::warn!(
+        "[script.to_video] No music tracks found in mcp/assets/music/ — video will have no background music"
+    );
+    None
+}
+
 /// Extract search keywords from a scene text for Pexels video search.
 /// Takes the first 3-4 significant words, removing stop words.
 fn extract_keywords(text: &str, fallback_query: &str) -> String {
@@ -7846,7 +7885,15 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
     let pexels_key_val = pexels_key();
 
-    if !skip_background && !pexels_key().is_empty() && spec.background.r#type == "gameplay" {
+    // Multi-broll Pexels footage: download a DIFFERENT Pexels clip per scene.
+    // Gate: fire for any non-"static" background type when Pexels key is available.
+    // Before round-3 audit, this only fired for type=="gameplay", which meant
+    // type=="procedural" scripts completely bypassed live stock footage —
+    // agents got gradient videos even when Pexels was configured and working.
+    // Now type:"procedural" also gets Pexels first (falls back to procedural
+    // clips on failure). type:"static" is the explicit opt-out.
+    // (Round-3 UX audit PROBLEM 2 fix.)
+    if !skip_background && !pexels_key().is_empty() && spec.background.r#type != "static" {
         report_progress(
             35.0,
             60.0,
@@ -8172,13 +8219,22 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     }
 
     // Get music path
-    // (Prior versions loaded timeline_json here but never read it — the music
-    // path comes from spec.music, not the timeline JSON. Removed the dead load.)
-    let music_path = spec
-        .music
-        .as_ref()
-        .map(|m| m.path.clone())
-        .filter(|p| std::path::Path::new(p).exists());
+    // Music selection: use spec.music if provided, otherwise auto-select
+    // from the 20-track stock catalog based on the theme. This ensures
+    // every video has background music by default — the round-3 audit
+    // found that agents who omitted the music field got silent videos,
+    // which the user noted as a quality gap.
+    // (Round-3 UX audit PROBLEM 3b fix.)
+    let music_path = if let Some(ref m) = spec.music {
+        if std::path::Path::new(&m.path).exists() {
+            Some(m.path.clone())
+        } else {
+            tracing::warn!("[script.to_video] Music path not found: {} — falling back to auto-select", m.path);
+            auto_select_music(&spec.output.theme)
+        }
+    } else {
+        auto_select_music(&spec.output.theme)
+    };
 
     // Build timeline preview for agent inspection
     let bg_assignments: Vec<openscript_core::timeline_preview::BackgroundClipAssignment> =

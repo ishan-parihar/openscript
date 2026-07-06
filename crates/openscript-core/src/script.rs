@@ -544,16 +544,16 @@ pub struct OutputSpec {
 
     /// Theme preset: "neutral" (default), "calm", "energetic".
     /// When set to a non-neutral value, applies correlated defaults to
-    /// captions + stickers + background selection so the video has a
-    /// consistent emotional tone without the agent hand-tuning each field.
+    /// captions + stickers so the video has a consistent emotional tone
+    /// without the agent hand-tuning each field.
     ///
-    /// "calm": warm-gold highlight (#E8B86D), cream text (#F5F0E8),
-    ///   sentence_fade style, stickers disabled, background.search
-    ///   filters mood:"calm". For healing/meditation/therapy content.
+    /// "calm": warm-gold highlight (#E8B86D), cream text (#F5F0E8).
+    ///   Captions stay word_highlight (word-level sync with speaker's voice
+    ///   is the default for ALL content types). Stickers stay enabled.
+    ///   For healing/meditation/therapy content.
     ///
     /// "energetic": neon-green highlight (#00ff88), white text,
-    ///   word_highlight style, stickers enabled (default_person),
-    ///   background.search filters mood:"energetic". For gaming/edu-short
+    ///   word_highlight style, stickers enabled. For gaming/edu-short
     ///   content. This matches the historical defaults.
     ///
     /// "neutral": no override — use the explicit fields as-is.
@@ -562,7 +562,8 @@ pub struct OutputSpec {
     /// override the theme preset. The theme only sets defaults for fields
     /// the agent did not explicitly set.
     /// (UX audit GAP #4 fix — defaults were tuned for energetic/meme
-    /// content and fought healing topics.)
+    /// content and fought healing topics. Round-3 audit refined: word-sync
+    /// captions and stickers are universal defaults, only colors change.)
     #[serde(default = "default_theme")]
     pub theme: String,
 }
@@ -796,31 +797,22 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
 fn apply_theme(spec: &mut ScriptSpec) {
     match spec.output.theme.as_str() {
         "calm" => {
-            // Captions: warm-gold highlight, cream text, sentence_fade style.
-            // Only override if the field is still at its default (user didn't set it).
+            // Captions: warm-gold highlight, cream text. Keep word_highlight
+            // as the style — word-level sync with the speaker's voice is the
+            // expected default for ALL content types, including healing.
+            // (Round-3 UX audit: user reported "caption-words does not follow
+            // the speaker's voice" — sentence_fade removed that sync. Fix:
+            // keep word_highlight, only change the colors.)
             if spec.captions.highlight_color == default_highlight_color() {
                 spec.captions.highlight_color = "#E8B86D".to_string(); // warm gold
             }
             if spec.captions.color == default_text_color() {
                 spec.captions.color = "#F5F0E8".to_string(); // cream
             }
-            if spec.captions.style == default_caption_style() {
-                spec.captions.style = "sentence_fade".to_string();
-            }
-            // Stickers: disable by default for calm content (cartoon puppets
-            // fight the healing aesthetic).
-            if spec.stickers.enabled {
-                // Only disable if the user didn't explicitly enable stickers.
-                // We detect "didn't explicitly set" by checking if the other
-                // sticker fields are still at their defaults (meaning the user
-                // didn't touch the stickers section at all).
-                if spec.stickers.lip_sync == default_lip_sync()
-                    && spec.stickers.blink == default_blink()
-                    && spec.stickers.idle_bob == default_idle_bob()
-                {
-                    spec.stickers.enabled = false;
-                }
-            }
+            // Note: stickers stay enabled. GIPHY stickers can find calming
+            // imagery. Agents who want zero stickers set stickers.enabled:false
+            // explicitly. (Round-3 UX audit: sticker absence was noted as a
+            // quality gap.)
         }
         "energetic" => {
             // Energetic = the historical defaults (neon green, word_highlight,
@@ -1145,6 +1137,7 @@ mod tests {
     /// Verify that theme:"calm" applies warm-gold highlight, cream text,
     /// sentence_fade style, and disables stickers — without the agent
     /// hand-tuning each field. (UX audit GAP #4 regression test.)
+    /// Round-3 update: word_highlight + stickers are now universal defaults.
     #[test]
     fn test_theme_calm_applies_healing_defaults() {
         let json = r#"{
@@ -1156,8 +1149,8 @@ mod tests {
         assert_eq!(spec.output.theme, "calm");
         assert_eq!(spec.captions.highlight_color, "#E8B86D", "calm theme should set warm-gold highlight");
         assert_eq!(spec.captions.color, "#F5F0E8", "calm theme should set cream text");
-        assert_eq!(spec.captions.style, "sentence_fade", "calm theme should set sentence_fade style");
-        assert!(!spec.stickers.enabled, "calm theme should disable stickers");
+        assert_eq!(spec.captions.style, "word_highlight", "calm theme should keep word_highlight (word-sync is universal default)");
+        assert!(spec.stickers.enabled, "calm theme should keep stickers enabled");
     }
 
     /// Verify that theme:"calm" does NOT override fields the user explicitly set.
@@ -1166,14 +1159,14 @@ mod tests {
         let json = r##"{
             "speakers": {"alice": {"voice": "kokoro:af_heart"}},
             "scenes": [{"speaker": "alice", "text": "Breathe."}],
-            "captions": {"highlight_color": "#FF0000", "style": "karaoke_fill"},
+            "captions": {"highlight_color": "#FF0000"},
             "output": {"theme": "calm"}
         }"##;
         let spec = parse_script(json).unwrap();
         assert_eq!(spec.captions.highlight_color, "#FF0000", "user's explicit red should win over calm theme gold");
-        assert_eq!(spec.captions.style, "karaoke_fill", "user's explicit karaoke_fill should win over calm theme sentence_fade");
         // But fields the user didn't set should still get the calm theme default
         assert_eq!(spec.captions.color, "#F5F0E8", "calm theme cream text should apply (user didn't set color)");
+        assert_eq!(spec.captions.style, "word_highlight", "word_highlight is the universal default, not overridden by theme");
     }
 
     /// Verify that theme:"neutral" (the default) applies no overrides.

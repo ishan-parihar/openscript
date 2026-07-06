@@ -181,19 +181,18 @@ Set `output.theme` to apply correlated defaults for captions + stickers without 
 | Theme | Use case | Caption highlight | Caption text | Caption style | Stickers |
 |-------|----------|-------------------|--------------|---------------|----------|
 | `"neutral"` (default) | Gaming, edu-shorts, memes | `#00ff88` (neon green) | `#ffffff` (white) | `word_highlight` | enabled |
-| `"calm"` | Healing, meditation, therapy, nervous-system content | `#E8B86D` (warm gold) | `#F5F0E8` (cream) | `sentence_fade` | disabled |
+| `"calm"` | Healing, meditation, therapy, nervous-system content | `#E8B86D` (warm gold) | `#F5F0E8` (cream) | `word_highlight` | enabled |
 | `"energetic"` | Same as neutral (explicit) | `#00ff88` (neon green) | `#ffffff` (white) | `word_highlight` | enabled |
 
-**For healing/calming content, set `"theme": "calm"`.** This is the single highest-leverage field for matching the video's tone to the topic. Without it, the defaults (neon green, cartoon puppet, word_highlight) fight calming intent.
+**For healing/calming content, set `"theme": "calm"`.** This changes the caption colors to warm tones while keeping word-level sync animation (word_highlight) — the default for ALL content types. Stickers stay enabled so GIPHY can find calming imagery.
 
-Example (minimal healing script):
+Example (minimal healing script — uses live Pexels footage by default):
 ```json
 {
   "speakers": {"alice": {"voice": "kokoro:af_heart"}},
   "scenes": [
     {"speaker": "alice", "text": "Breathe in for four seconds."}
   ],
-  "background": {"type": "procedural", "fallback_pool": []},
   "output": {"theme": "calm"}
 }
 ```
@@ -204,12 +203,12 @@ Example (minimal healing script):
 
 | Style | Visual | Best for |
 |-------|--------|----------|
-| `word_highlight` | Current word highlighted in accent color, rest in white | Fast-paced talking-head, edu-shorts |
-| `sentence_fade` | Whole sentence fades in/out softly | Calm, meditative, narrative content |
+| `word_highlight` | Current word highlighted in accent color + 10% scale-up, rest in base color | **Universal default** — TikTok/Reels, talking-head, edu-shorts, healing content |
+| `sentence_fade` | Whole sentence fades in/out softly | Documentary narration where viewer reads ahead |
 | `karaoke_fill` | Words fill with color left-to-right as spoken | Music videos, sing-along |
-| `subtitle_rail` | Static subtitle bar at bottom, minimal animation | Documentary, interview |
+| `subtitle_rail` | Static subtitle bar at bottom, minimal animation | Interview, formal captioning |
 
-**For healing content, use `sentence_fade`** (set automatically by `theme:"calm"`). Word-highlight's rapid color changes read as "gaming" and fight the calming intent.
+**`word_highlight` is the default for all themes.** It produces word-by-word animation synced with the speaker's voice — the expected behavior for vertical video. Use `sentence_fade` only when you specifically want full-sentence readability over word-sync.
 
 ---
 
