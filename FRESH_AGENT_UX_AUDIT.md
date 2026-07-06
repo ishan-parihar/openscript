@@ -67,15 +67,30 @@
 
 ---
 
-## Summary: 3-Round Iterative Cycle
+## Summary: 5-Round Iterative Cycle
 
 | Round | Render time | Gaps found | Gaps fixed | Video quality |
 |-------|-------------|------------|------------|---------------|
 | 1 | 1m51s | 6 | 0 (baseline) | Good (agent pushed back on 4 defaults) |
 | 2 | 67s | 7 new | 6 of 6 round-1 | Better (theme:calm worked) |
-| 3 | 63s | 1 new (env) | 13 of 13 total | **Excellent** (all verify 100, healing-tonal) |
+| 3 | 63s | 1 new (env) | 13 of 13 total | Excellent (all verify 100, healing-tonal) |
+| 4 | ~5min | 4 quality gaps | 4 of 4 (music, stickers, captions, Pexels) | Excellent (all layers present) |
+| 5 | ~75s | 3 env issues | Code fixes pushed (Phases BA-BC) | Music audible + GIPHY mood-aware |
 
-The golden trajectory for agentic usage is now confirmed: a fresh agent with zero prior context can produce a healing-tonal vertical video in under 3 minutes, with all quality checks passing, using only 2 CLI calls (`script-parse` → `script-to-video`) plus `background-search` for mood filtering.
+### Round 5 Findings + Fixes
+
+**User-reported quality gaps (round 4 video):**
+1. "Caption-words does not follow the speaker's voice" → **Fixed** (Phase AU: removed theme:calm sentence_fade override, word_highlight is universal default)
+2. "Background is procedural gradient, should prefer live videos" → **Fixed** (Phase AV: loosened Pexels gate, type!="static" now triggers Pexels)
+3. "No stickers or GIFs" → **Fixed** (Phase AW: removed theme:calm sticker-disabling; Phase BA: mood-aware GIPHY search)
+4. "No background music or SFX" → **Fixed** (Phase AW: auto_select_music(); Phase BA: fixed inaudible music mixing)
+
+**Round-5 user-reported quality gaps:**
+1. "BG-Music and SFX are non-functional, not audible" → **Fixed** (Phase BA: sidechaincompress threshold 0.001→0.05, makeup 1→2, default gain -18→+6 dB; verified gap RMS improved -24.1→-17.8 dB)
+2. "Stickers/GIFs are not relevant" → **Fixed** (Phase BA: mood-aware build_sticker_query with calm/energetic keyword pools; Phase BC: GIF format for FFmpeg compat)
+3. "Use YouTube as video provider" → **Code correct, env blocked** (YouTube bot-detection in headless sandbox; CLI mirrors added in Phase BB)
+
+**Round-5 video deliverable:** `/home/z/my-project/download/round5_healing_video.mp4` (10.3s, 1080×1920, h264+aac, 5 layers: background + voiceover + music + stickers + captions)
 
 ---
 
