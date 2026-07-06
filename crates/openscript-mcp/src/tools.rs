@@ -8634,7 +8634,19 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // (Round-3 UX audit PROBLEM 3b fix.)
     let music_path = if let Some(ref m) = spec.music {
         if std::path::Path::new(&m.path).exists() {
-            Some(m.path.clone())
+            // Reject synthetic stock files (all 20 files in mcp/assets/music/
+            // are sine-wave tones, not real music). Check by file size —
+            // all synthetic files are exactly 481,114 bytes.
+            let file_size = std::fs::metadata(&m.path).map(|m| m.len()).unwrap_or(0);
+            if file_size == 481_114 && m.path.contains("mcp/assets/music/") {
+                tracing::warn!(
+                    "[script.to_video] Rejecting synthetic stock music: {} ({} bytes — all 20 stock files are identical sine-wave tones). Use library.search/library.download for real music.",
+                    m.path, file_size
+                );
+                auto_select_music(&spec.output.theme).await
+            } else {
+                Some(m.path.clone())
+            }
         } else {
             tracing::warn!("[script.to_video] Music path not found: {} — falling back to auto-select", m.path);
             auto_select_music(&spec.output.theme).await

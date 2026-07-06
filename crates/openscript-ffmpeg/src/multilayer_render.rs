@@ -306,63 +306,117 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         "[vbg]"
     };
 
-    // 3. Overlay stickers (and full-screen meme b-rolls)
-    // Sticker scaling: scale=1.0 means full-screen (meme b-roll mode).
-    // scale<1.0 means fraction of canvas width (sticker mode).
-    // For stickers, we scale by width and preserve aspect ratio (-1 for height).
-    // For full-screen memes, we scale to cover the entire canvas with crop.
-    let mut video_label = current_video_label.to_string();
-    for (idx, (input_idx, sticker)) in sticker_inputs.iter().enumerate() {
-        let is_fullscreen = sticker.scale >= 1.0;
+    // 3. Overlay stickers and meme b-rolls
+    //
+    // LAYERING ORDER (z-axis, bottom to top):
+    //   1. Background clips [vbg]
+    //   2. Full-screen meme b-rolls (brief full-screen cuts, scale=1.0)
+    //      — composited BEFORE captions so captions remain visible on top
+    //   3. Captions (burned into background in step 2)
+    //   4. Regular stickers (small overlays, scale<1.0)
+    //      — composited AFTER captions so they appear on top
+    //
+    // Round-7 audit: "GIF brolls are coming on top of the captions, stickers.
+    // The layering is incorrect." Fix: separate full-screen memes from
+    // regular stickers. Memes go between background and captions; stickers
+    // go after captions.
+    //
+    // However, since captions are already burned into [vcap] in step 2,
+    // we need to restructure: memes go on [vbg] first, THEN burn captions
+    // on the meme-composited video, THEN add regular stickers.
+    // This requires reordering the filter graph.
 
-        let (sticker_w, sticker_h) = if is_fullscreen {
-            // Full-screen meme b-roll: scale to cover entire canvas
-            (spec.width, spec.height)
-        } else {
-            // Regular sticker: scale by fraction of canvas width,
-            // preserve aspect ratio (height = -1 in FFmpeg)
-            let w = (spec.width as f64 * sticker.scale) as u32;
-            (w, w) // height will be auto from FFmpeg's -1
-        };
+    // Separate full-screen memes from regular stickers
+    let (memes, regular_stickers): (Vec<_>, Vec<_>) = sticker_inputs
+        .iter()
+        .partition(|(_, s)| s.scale >= 1.0);
 
+    // 3a. Overlay full-screen meme b-rolls on the BACKGROUND (before captions)
+    let mut video_label = "[vbg]".to_string();
+    for (idx, (input_idx, meme)) in memes.iter().enumerate() {
+        let sticker_w = spec.width;
+        let sticker_h = spec.height;
         let (tl_x, tl_y, cx, cy) = parse_position(
-            &sticker.position,
+            &meme.position,
             spec.width,
             spec.height,
             sticker_w,
             sticker_h,
         );
 
-        // Log sticker placement for agent debugging
         tracing::info!(
-            "[render] Sticker {} ({}): {} scale={:.0}%, size={}x{}, center=({}, {}), top_left=({}, {})",
-            idx, sticker.path,
-            if is_fullscreen { "FULLSCREEN" } else { "sticker" },
-            sticker.scale * 100.0, sticker_w, sticker_h,
-            cx, cy, tl_x, tl_y
+            "[render] Meme b-roll {} ({}): FULLSCREEN size={}x{}, top_left=({}, {})",
+            idx, meme.path, sticker_w, sticker_h, tl_x, tl_y
+        );
+
+        let st_label = format!("[mb{}]", idx);
+        let out_label = format!("[vmb{}]", idx);
+
+        // Full-screen: scale to cover canvas + crop
+        filters.push(format!(
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={}[mb{}]",
+            input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+        ));
+
+        // Overlay meme on background with time-based enable
+        filters.push(format!(
+            "{}[mb{}]overlay={}:{}:enable='between(t,{},{})'[vmb{}]",
+            video_label, idx, tl_x, tl_y, meme.start_s, meme.end_s, idx
+        ));
+
+        video_label = format!("[vmb{}]", idx);
+    }
+
+    // 3b. Burn captions ON TOP of meme-composited video
+    let video_label = if let Some(ref captions) = spec.captions_path {
+        if std::path::Path::new(captions).exists() {
+            let escaped = captions.replace('\\', "/").replace('\'', "'\\''");
+            let cap_label = if video_label == "[vbg]" {
+                // No memes — burn on background directly
+                filters.push(format!("[vbg]subtitles='{}'[vcap]", escaped));
+                "[vcap]"
+            } else {
+                // Memes were composited — burn captions on top of meme video
+                filters.push(format!("{}subtitles='{}'[vcap]", video_label, escaped));
+                "[vcap]"
+            };
+            cap_label.to_string()
+        } else {
+            video_label
+        }
+    } else {
+        video_label
+    };
+
+    // 3c. Overlay regular stickers ON TOP of captions
+    let mut video_label = video_label;
+    for (idx, (input_idx, sticker)) in regular_stickers.iter().enumerate() {
+        let sticker_w = (spec.width as f64 * sticker.scale) as u32;
+        let (tl_x, tl_y, cx, cy) = parse_position(
+            &sticker.position,
+            spec.width,
+            spec.height,
+            sticker_w,
+            sticker_w,
+        );
+
+        tracing::info!(
+            "[render] Sticker {} ({}): scale={:.0}%, size={}x{}, top_left=({}, {})",
+            idx, sticker.path, sticker.scale * 100.0, sticker_w, sticker_w, tl_x, tl_y
         );
 
         let st_label = format!("[st{}]", idx);
-        let out_label = if idx == sticker_inputs.len() - 1 {
+        let out_label = if idx == regular_stickers.len() - 1 {
             "[vout]".to_string()
         } else {
             format!("[vst{}]", idx)
         };
 
-        // Scale sticker:
-        // - Full-screen (meme b-roll): scale to cover canvas + crop to exact size
-        // - Regular sticker: scale by width, preserve aspect ratio (-1 height)
-        if is_fullscreen {
-            filters.push(format!(
-                "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={}[st{}]",
-                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
-            ));
-        } else {
-            filters.push(format!(
-                "[{}:v]scale={}:-1[st{}]",
-                input_idx, sticker_w, idx
-            ));
-        }
+        // Regular sticker: scale by width, preserve aspect ratio
+        filters.push(format!(
+            "[{}:v]scale={}:-1[st{}]",
+            input_idx, sticker_w, idx
+        ));
 
         // Overlay with time-based enable
         filters.push(format!(
@@ -373,9 +427,9 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         video_label = out_label;
     }
 
-    // If no stickers, rename vcap to vout
-    if sticker_inputs.is_empty() {
-        filters.push(format!("{}copy[vout]", current_video_label));
+    // If no regular stickers, rename current video to vout
+    if regular_stickers.is_empty() {
+        filters.push(format!("{}copy[vout]", video_label));
     }
 
     // 4. Audio: voiceover + music (with sidechain ducking)
