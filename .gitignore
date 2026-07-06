@@ -47,3 +47,5 @@ artifacts/
 Thumbs.db
 snapshots/
 renders/
+mcp/assets/.openscript_config.json
+mcp/assets/kokoro/

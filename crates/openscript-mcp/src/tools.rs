@@ -1275,6 +1275,42 @@ fn track_count(timeline: &Timeline, track_type: &TrackType) -> usize {
         .unwrap_or(0)
 }
 
+/// Read an API key from the config file first, then fall back to env var.
+/// The config file is at mcp/assets/.openscript_config.json and contains
+/// keys in snake_case (e.g. "pexels_api_key"). The env var is UPPER_SNAKE
+/// (e.g. "PEXELS_API_KEY"). This lets the system work out-of-the-box with
+/// bundled keys without requiring agents to set env vars.
+fn get_api_key(config_name: &str, env_name: &str) -> String {
+    // Try config file first
+    let config_path = std::path::Path::new("mcp/assets/.openscript_config.json");
+    if let Ok(content) = std::fs::read_to_string(config_path) {
+        if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content) {
+            if let Some(val) = map.get(config_name).and_then(|v| v.as_str()) {
+                if !val.is_empty() {
+                    return val.to_string();
+                }
+            }
+        }
+    }
+    // Fall back to env var
+    std::env::var(env_name).unwrap_or_default()
+}
+
+/// Convenience: get Pexels API key (config file or env var)
+fn pexels_key() -> String {
+    get_api_key("pexels_api_key", "PEXELS_API_KEY")
+}
+
+/// Convenience: get GIPHY API key (config file or env var)
+fn giphy_key() -> String {
+    get_api_key("giphy_api_key", "GIPHY_API_KEY")
+}
+
+/// Convenience: get Pixabay API key (config file or env var)
+fn pixabay_key() -> String {
+    get_api_key("pixabay_api_key", "PIXABAY_API_KEY")
+}
+
 /// Convert an aspect-ratio string ("9:16", "16:9", "1:1") to a (width, height)
 /// pixel tuple. Used by every tool that needs to crop/scale stock footage to
 /// the target aspect. Prior versions had 7+ duplicate match blocks for this;
@@ -3063,8 +3099,10 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    let api_key = std::env::var("PEXELS_API_KEY")
-        .map_err(|_| ToolError::Asset("PEXELS_API_KEY not set".to_string()))?;
+    let api_key = pexels_key();
+    if api_key.is_empty() {
+        return Err(ToolError::Asset("PEXELS_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var.".to_string()));
+    }
 
     let total = concepts.len();
     report_progress(0.0, total as f64, "Fetching b-roll...")
@@ -4011,10 +4049,12 @@ async fn handle_broll_director(args: serde_json::Value) -> Result<serde_json::Va
     let cadence_seconds = default_f64(&args, "cadence_seconds", 2.0);
     let cadence_ms = (cadence_seconds * 1000.0) as i64;
 
-    let api_key = std::env::var("PEXELS_API_KEY")
-        .map_err(|_| ToolError::Asset(
-            "PEXELS_API_KEY environment variable not set. Set it to use broll.director. Get a free key at https://www.pexels.com/api/".to_string()
-        ))?;
+    let api_key = pexels_key();
+    if api_key.is_empty() {
+        return Err(ToolError::Asset(
+            "PEXELS_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Get a free key at https://www.pexels.com/api/".to_string()
+        ));
+    }
 
     let mut timeline = Timeline::load(timeline_path)?;
 
@@ -4137,7 +4177,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
     let mut warnings: Vec<String> = Vec::new();
 
     // Environment diagnostics — warn about missing capabilities early
-    if std::env::var("PEXELS_API_KEY").is_err() {
+    if pexels_key().is_empty() {
         warnings.push("PEXELS_API_KEY not set — b-roll will be skipped".into());
     }
     let tts_available = std::env::var("OPENSCRIPT_TTS_URL").is_ok();
@@ -6259,9 +6299,9 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
 
     // === PRIORITY 1: Pexels API (most reliable) ===
-    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
+    let pexels_key_val = pexels_key();
 
-    if !pexels_key.is_empty() {
+    if !pexels_key_val.is_empty() {
         report_progress(0.0, 100.0, "Searching Pexels for stock footage...")
             .await
             .ok();
@@ -6281,7 +6321,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
         match client
             .get(&pexels_url)
-            .header("Authorization", &pexels_key)
+            .header("Authorization", &pexels_key_val)
             .send()
             .await
         {
@@ -7437,9 +7477,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // Instead of looping one short clip, download a unique stock video
     // for each scene based on keywords extracted from the scene text.
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
-    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
+    let pexels_key_val = pexels_key();
 
-    if !skip_background && !pexels_key.is_empty() && spec.background.r#type == "gameplay" {
+    if !skip_background && !pexels_key().is_empty() && spec.background.r#type == "gameplay" {
         report_progress(
             35.0,
             60.0,
@@ -7500,7 +7540,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
             if let Ok(resp) = client
                 .get(&pexels_url)
-                .header("Authorization", &pexels_key)
+                .header("Authorization", &pexels_key_val)
                 .send()
                 .await
             {
@@ -7658,13 +7698,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         // Fix: prior versions called env::var("GIPHY_API_KEY") twice in
         // unwrap_or_else (the inner call shadowed the outer). Simplify to a
         // single lookup.
-        let giphy_key = std::env::var("GIPHY_API_KEY").unwrap_or_default();
+        let giphy_key_val = giphy_key();
 
         // Download one sticker per speaker
         let mut speaker_stickers: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
-        if !giphy_key.is_empty() {
+        if !giphy_key_val.is_empty() {
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
@@ -7678,7 +7718,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 let search_query = format!("{} talking", speaker_name);
                 let giphy_url = format!(
                     "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=1&rating=g&bundle=sticker_layering",
-                    giphy_key,
+                    giphy_key_val,
                     urlencoding::encode(&search_query)
                 );
 
@@ -8004,8 +8044,8 @@ async fn handle_stock_fetch(args: serde_json::Value) -> Result<serde_json::Value
 
     if media_type == "music" {
         // Try Pixabay music API
-        let pixabay_key = std::env::var("PIXABAY_API_KEY").ok();
-        if let Some(key) = pixabay_key {
+        let pixabay_key_val = if pixabay_key().is_empty() { None } else { Some(pixabay_key()) };
+        if let Some(key) = pixabay_key_val {
             let url = format!(
                 "https://pixabay.com/api/audio/?key={}&q={}&per_page={}",
                 key,
@@ -8096,8 +8136,8 @@ async fn handle_stock_fetch(args: serde_json::Value) -> Result<serde_json::Value
 
     if media_type == "video" {
         // Try Pixabay video API
-        let pixabay_key = std::env::var("PIXABAY_API_KEY").ok();
-        if let Some(key) = pixabay_key {
+        let pixabay_key_val = if pixabay_key().is_empty() { None } else { Some(pixabay_key()) };
+        if let Some(key) = pixabay_key_val {
             let url = format!(
                 "https://pixabay.com/api/videos/?key={}&q={}&per_page={}&video_type=animation",
                 key,
@@ -8609,9 +8649,9 @@ async fn handle_stock_search(args: serde_json::Value) -> Result<serde_json::Valu
     .await
     .ok();
 
-    let pixabay_key = std::env::var("PIXABAY_API_KEY").ok();
+    let pixabay_key_val = if pixabay_key().is_empty() { None } else { Some(pixabay_key()) };
 
-    if let Some(key) = pixabay_key {
+    if let Some(key) = pixabay_key_val {
         let endpoint = if media_type == "music" {
             "https://pixabay.com/api/audio/"
         } else {
@@ -8800,7 +8840,7 @@ async fn handle_media_search(args: serde_json::Value) -> Result<serde_json::Valu
         .await
         .ok();
 
-    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
+    let pexels_key_val = pexels_key();
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -8808,7 +8848,7 @@ async fn handle_media_search(args: serde_json::Value) -> Result<serde_json::Valu
         .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
 
     // Try Pexels Images API first (if key available and source allows)
-    if source != "openverse" && !pexels_key.is_empty() {
+    if source != "openverse" && !pexels_key().is_empty() {
         let url = format!(
             "https://api.pexels.com/v1/search?query={}&per_page={}&orientation=portrait",
             urlencoding::encode(query),
@@ -8817,7 +8857,7 @@ async fn handle_media_search(args: serde_json::Value) -> Result<serde_json::Valu
 
         match client
             .get(&url)
-            .header("Authorization", &pexels_key)
+            .header("Authorization", &pexels_key_val)
             .send()
             .await
         {
@@ -8937,7 +8977,7 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
         .await
         .ok();
 
-    let giphy_key = std::env::var("GIPHY_API_KEY").ok();
+    let giphy_key = Some(giphy_key()).filter(|s| !s.is_empty());
 
     if let Some(key) = giphy_key {
         if !key.is_empty() {
@@ -9016,7 +9056,7 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
     )
     .await
     .ok();
-    let pexels_key = std::env::var("PEXELS_API_KEY").unwrap_or_default();
+    let pexels_key_val = pexels_key();
 
     let url = format!(
         "https://api.pexels.com/videos/search?query={}&per_page={}&orientation=square",
@@ -9031,7 +9071,7 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
 
     match client
         .get(&url)
-        .header("Authorization", &pexels_key)
+        .header("Authorization", &pexels_key_val)
         .send()
         .await
     {
@@ -10023,41 +10063,35 @@ async fn handle_system_capabilities(
     };
 
     // Pexels API key
-    let pexels_key = std::env::var("PEXELS_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let pexels_available = !pexels_key().is_empty();
     let pexels = json!({
-        "available": pexels_key.is_some(),
-        "reason": if pexels_key.is_some() {
+        "available": pexels_available,
+        "reason": if pexels_available {
             serde_json::Value::Null
         } else {
-            "PEXELS_API_KEY env var not set. Get a free key at https://www.pexels.com/api/".into()
+            "PEXELS_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Get a free key at https://www.pexels.com/api/".into()
         },
     });
 
     // GIPHY API key
-    let giphy_key = std::env::var("GIPHY_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let giphy_available = !giphy_key().is_empty();
     let giphy = json!({
-        "available": giphy_key.is_some(),
-        "reason": if giphy_key.is_some() {
+        "available": giphy_available,
+        "reason": if giphy_available {
             serde_json::Value::Null
         } else {
-            "GIPHY_API_KEY env var not set. Get a key at https://developers.giphy.com/".into()
+            "GIPHY_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Get a key at https://developers.giphy.com/".into()
         },
     });
 
     // Pixabay API key
-    let pixabay_key = std::env::var("PIXABAY_API_KEY")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let pixabay_available = !pixabay_key().is_empty();
     let pixabay = json!({
-        "available": pixabay_key.is_some(),
-        "reason": if pixabay_key.is_some() {
+        "available": pixabay_available,
+        "reason": if pixabay_available {
             serde_json::Value::Null
         } else {
-            "PIXABAY_API_KEY env var not set. Optional — only needed for stock.search/stock.fetch.".into()
+            "PIXABAY_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Optional — only needed for stock.search/stock.fetch.".into()
         },
     });
 

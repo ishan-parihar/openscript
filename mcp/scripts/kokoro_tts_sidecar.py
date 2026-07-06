@@ -40,7 +40,7 @@ def main():
         sys.exit(1)
 
     try:
-        samples, sample_rate = kokoro.create(args.text, voice=args.voice, speed=args.speed, is_phonemes=False)
+        samples, sample_rate = kokoro.create(args.text, voice=args.voice, speed=args.speed)
     except Exception as e:
         print(f"ERROR: synthesis failed: {e}", file=sys.stderr)
         sys.exit(1)
