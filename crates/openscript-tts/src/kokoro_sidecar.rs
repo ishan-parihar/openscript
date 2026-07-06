@@ -275,6 +275,30 @@ pub fn acquire_or_init<'a>(
     Ok(guard)
 }
 
+// ---------------------------------------------------------------------------
+// Process-global sidecar pool
+// ---------------------------------------------------------------------------
+
+/// Process-global sidecar pool. All `KokoroClient` instances share this
+/// single `SharedSidecar`, so the ONNX model is loaded exactly once per
+/// process — even if `KokoroClient::new()` is called per-request (which
+/// is what `tts_generate_routed` does in `tools.rs`).
+///
+/// Without this global, each `KokoroClient` got its own `SharedSidecar`
+/// (via `KokoroEngine::sidecar`), which meant each `script.generate_voices`
+/// scene started a fresh sidecar — 5 scenes × ~7s cold-start = ~35s wasted.
+/// (UX audit GAP #6 fix.)
+static GLOBAL_SIDECAR: std::sync::OnceLock<SharedSidecar> = std::sync::OnceLock::new();
+
+/// Get the process-global shared sidecar pool. All callers should use this
+/// instead of constructing their own `SharedSidecar`. The pool is lazily
+/// initialized on first use and lives for the lifetime of the process.
+pub fn global_shared_sidecar() -> &'static SharedSidecar {
+    GLOBAL_SIDECAR.get_or_init(|| {
+        std::sync::Arc::new(std::sync::Mutex::new(None))
+    })
+}
+
 /// Resolve the Kokoro sidecar script path using the same priority chain
 /// as the legacy `synth_one` in kokoro.rs. Duplicated here so this module
 /// is self-contained.

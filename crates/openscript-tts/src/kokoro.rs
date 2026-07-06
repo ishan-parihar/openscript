@@ -89,7 +89,12 @@ impl KokoroEngine {
         }
         Ok(Self {
             cfg: cfg.clone(),
-            sidecar: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            // Use the process-global sidecar pool so all KokoroClient
+            // instances (one per tts.generate call) share the same
+            // long-lived Python sidecar. Without this, each scene's TTS
+            // call started a fresh sidecar — 5 scenes × ~7s cold-start
+            // = ~35s wasted. (UX audit GAP #6 fix.)
+            sidecar: crate::kokoro_sidecar::global_shared_sidecar().clone(),
         })
     }
 
