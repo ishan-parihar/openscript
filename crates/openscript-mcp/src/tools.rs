@@ -767,6 +767,21 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "background.search",
+            "description": "Search the procedural background clip index by mood/energy/motion_intensity. Returns matching clip paths from mcp/assets/backgrounds/. Use this to build a curated fallback_pool for script.to_video when you want a specific emotional tone (e.g. mood:calm for healing content, mood:energetic for gaming recaps). Without this, script.to_video with type:procedural grabs ALL .mp4s in the folder — which mixes calming clips with neon tunnels. Returns: clip paths + metadata.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "mood": {"type": "string", "enum": ["calm", "energetic", "neutral", "dark", "uplifting"], "description": "Emotional tone filter"},
+                    "energy": {"type": "string", "enum": ["low", "medium", "high"], "description": "Energy level filter"},
+                    "motion_intensity": {"type": "string", "enum": ["slow", "medium", "fast"], "description": "Motion intensity filter"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results"}
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "sticker.load_preset",
             "description": "Load an SVG sticker preset by name. Presets are directories in mcp/assets/svg_presets/ containing puppet.svg, preset.json, mouth shapes, and emotes. Built-in presets: default_person, robot, cat. Returns the preset config + puppet SVG content.",
             "inputSchema": {
@@ -1169,6 +1184,7 @@ pub fn route_tool(
         "script.build_captions" => Box::pin(handle_script_build_captions(args)),
         "background.fetch" => Box::pin(handle_background_fetch(args)),
         "background.assign" => Box::pin(handle_background_assign(args)),
+        "background.search" => Box::pin(handle_background_search(args)),
         "sticker.load_preset" => Box::pin(handle_sticker_load_preset(args)),
         "sticker.render" => Box::pin(handle_sticker_render(args)),
         "script.to_timeline" => Box::pin(handle_script_to_timeline(args)),
@@ -6927,6 +6943,91 @@ fn extract_keywords(text: &str, fallback_query: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Handler: background.search — search procedural background index by mood
+// ---------------------------------------------------------------------------
+
+async fn handle_background_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let mood_filter = default_opt_str(&args, "mood");
+    let energy_filter = default_opt_str(&args, "energy");
+    let motion_filter = default_opt_str(&args, "motion_intensity");
+    let limit = default_u32(&args, "limit", 10) as usize;
+
+    // Resolve the index path. Mirrors library.search's env-var override pattern.
+    let index_path = std::env::var("OPENSCRIPT_BACKGROUNDS_INDEX")
+        .unwrap_or_else(|_| "mcp/assets/backgrounds_index.json".to_string());
+
+    if !Path::new(&index_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Backgrounds index not found at {}. The index is committed at mcp/assets/backgrounds_index.json — if missing, re-clone or restore from git.",
+            index_path
+        )));
+    }
+
+    let index_str = std::fs::read_to_string(&index_path)?;
+    let index: serde_json::Value = serde_json::from_str(&index_str)?;
+
+    let entries = index
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    for entry in &entries {
+        if let Some(ref mood) = mood_filter {
+            let entry_mood = entry.get("mood").and_then(|v| v.as_str()).unwrap_or("");
+            if entry_mood != mood {
+                continue;
+            }
+        }
+        if let Some(ref energy) = energy_filter {
+            let entry_energy = entry.get("energy").and_then(|v| v.as_str()).unwrap_or("");
+            if entry_energy != energy {
+                continue;
+            }
+        }
+        if let Some(ref motion) = motion_filter {
+            let entry_motion = entry
+                .get("motion_intensity")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if entry_motion != motion {
+                continue;
+            }
+        }
+
+        // Build the full path so callers can use it directly in fallback_pool
+        let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+        let full_path = format!("mcp/assets/backgrounds/{}", filename);
+
+        let mut result = entry.clone();
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("path".into(), json!(full_path));
+        }
+        results.push(result);
+    }
+
+    let total = results.len();
+    results.truncate(limit);
+
+    Ok(json!({
+        "status": "searched",
+        "filters": {
+            "mood": mood_filter,
+            "energy": energy_filter,
+            "motion_intensity": motion_filter,
+        },
+        "total_matches": total,
+        "count": results.len(),
+        "results": results,
+        "index_stats": {
+            "total_entries": index.get("total_entries"),
+            "mood_counts": index.get("mood_counts"),
+        },
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Handler: sticker.load_preset — load SVG preset config
 // ---------------------------------------------------------------------------
 
@@ -10795,5 +10896,60 @@ mod library_search_tests {
                 required
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod background_search_tests {
+    use super::*;
+
+    /// Verify background.search tool definition exists and exposes mood filter.
+    #[test]
+    fn test_background_search_schema_has_mood_filter() {
+        let tools = tool_definitions();
+        let bg_search = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "background.search")
+            .expect("background.search tool must exist");
+        let props = bg_search["inputSchema"]["properties"].as_object().unwrap();
+        for required in ["mood", "energy", "motion_intensity", "limit"] {
+            assert!(
+                props.contains_key(required),
+                "background.search schema must expose '{}' parameter",
+                required
+            );
+        }
+    }
+
+    /// Verify the backgrounds_index.json exists and has mood tags.
+    /// Without this index, background.search returns NotFound and the
+    /// fresh-agent UX gap (#2) returns.
+    #[test]
+    fn test_backgrounds_index_exists_and_has_moods() {
+        // Tests run with CWD = crate dir, so resolve relative to CARGO_MANIFEST_DIR.
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let index_path = format!("{}/../../mcp/assets/backgrounds_index.json", manifest_dir);
+        let index_str = std::fs::read_to_string(&index_path)
+            .unwrap_or_else(|_| panic!("backgrounds_index.json must exist at {}", index_path));
+        let index: serde_json::Value = serde_json::from_str(&index_str).unwrap();
+        let entries = index.get("entries").and_then(|v| v.as_array()).unwrap();
+        assert!(
+            entries.len() >= 10,
+            "expected at least 10 background entries, got {}",
+            entries.len()
+        );
+        // Every entry must have a mood field
+        for entry in entries {
+            let mood = entry.get("mood").and_then(|v| v.as_str());
+            assert!(mood.is_some(), "every background entry must have a mood");
+        }
+        // Must have at least some calm clips (for healing content)
+        let calm_count = entries
+            .iter()
+            .filter(|e| e.get("mood").and_then(|v| v.as_str()) == Some("calm"))
+            .count();
+        assert!(calm_count >= 3, "expected at least 3 calm backgrounds, got {}", calm_count);
     }
 }

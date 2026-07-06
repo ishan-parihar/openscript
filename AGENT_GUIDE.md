@@ -1,6 +1,6 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (75 tools, 8 categories)
+## Tool Taxonomy (76 tools, 8 categories)
 
 ### 1. SCRIPT CREATION (3 tools)
 Create a video from scratch — define scenes, speakers, backgrounds.

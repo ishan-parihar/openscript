@@ -1,0 +1,41 @@
+{
+  "_comment": "Background clips index — mirrors music_index.json's mood/energy schema so agents can filter backgrounds by emotional tone. Built to fix UX audit GAP #2: backgrounds had no mood tags, so a healing video could randomly get a neon tunnel behind it. Regenerate via: openscript background.index (coming soon) or edit by hand.",
+  "_schema": {
+    "filename": "relative path from mcp/assets/backgrounds/",
+    "mood": "calm | energetic | neutral | dark | uplifting",
+    "energy": "low | medium | high",
+    "motion_intensity": "slow | medium | fast",
+    "palette": "dominant colors",
+    "description": "one-line visual description"
+  },
+  "total_entries": 18,
+  "entries": [
+    {"filename": "procedural_particles_blue.mp4", "mood": "calm", "energy": "low", "motion_intensity": "slow", "palette": "blue, white", "description": "Soft blue particles drifting upward, like snow in reverse"},
+    {"filename": "procedural_waves_teal.mp4", "mood": "calm", "energy": "low", "motion_intensity": "slow", "palette": "teal, cyan", "description": "Gentle teal waves rippling horizontally"},
+    {"filename": "procedural_aurora_green.mp4", "mood": "calm", "energy": "low", "motion_intensity": "slow", "palette": "green, mint", "description": "Soft green aurora borealis gradient shift"},
+    {"filename": "procedural_bokeh_warm.mp4", "mood": "calm", "energy": "low", "motion_intensity": "slow", "palette": "warm gold, amber", "description": "Warm bokeh lights softly floating"},
+    {"filename": "procedural_waves_purple.mp4", "mood": "calm", "energy": "low", "motion_intensity": "slow", "palette": "purple, lavender", "description": "Gentle purple waves, meditative tone"},
+    {"filename": "procedural_waves_orange.mp4", "mood": "uplifting", "energy": "low", "motion_intensity": "slow", "palette": "orange, peach", "description": "Warm orange waves, sunset-like"},
+
+    {"filename": "procedural_01.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 01"},
+    {"filename": "procedural_02.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 02"},
+    {"filename": "procedural_03.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 03"},
+    {"filename": "procedural_05.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 05"},
+    {"filename": "procedural_06.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 06"},
+    {"filename": "procedural_07.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 07"},
+    {"filename": "procedural_09.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 09"},
+    {"filename": "procedural_10.mp4", "mood": "neutral", "energy": "medium", "motion_intensity": "medium", "palette": "mixed", "description": "Generic procedural pattern 10"},
+    {"filename": "procedural_abstract_pink.mp4", "mood": "uplifting", "energy": "medium", "motion_intensity": "medium", "palette": "pink, magenta", "description": "Abstract pink shapes, playful"},
+
+    {"filename": "procedural_geometric_dark.mp4", "mood": "dark", "energy": "medium", "motion_intensity": "medium", "palette": "dark grey, black", "description": "Dark geometric shapes, serious tone"},
+    {"filename": "procedural_gradient_rainbow.mp4", "mood": "energetic", "energy": "high", "motion_intensity": "fast", "palette": "rainbow", "description": "Fast-shifting rainbow gradient, high energy"},
+    {"filename": "procedural_tunnel_neon.mp4", "mood": "energetic", "energy": "high", "motion_intensity": "fast", "palette": "neon green, neon pink", "description": "Neon tunnel zoom, gaming/cyberpunk aesthetic"}
+  ],
+  "mood_counts": {
+    "calm": 6,
+    "neutral": 8,
+    "uplifting": 2,
+    "dark": 1,
+    "energetic": 2
+  }
+}

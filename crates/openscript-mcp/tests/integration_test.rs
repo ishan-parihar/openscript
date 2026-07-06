@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // Should have 70 tools: 72 prior tools + media.download + gif.download + overlay.assign + timeline.to_hyperframes + voices.list
+    // Should have 76 tools: 75 prior tools + background.search
     assert_eq!(
         tools.len(),
-        75,
-        "Expected 75 MCP tools, got {}",
+        76,
+        "Expected 76 MCP tools, got {}",
         tools.len()
     );
 
