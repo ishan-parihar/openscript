@@ -306,22 +306,39 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         "[vbg]"
     };
 
-    // 3. Overlay stickers
+    // 3. Overlay stickers (and full-screen meme b-rolls)
+    // Sticker scaling: scale=1.0 means full-screen (meme b-roll mode).
+    // scale<1.0 means fraction of canvas width (sticker mode).
+    // For stickers, we scale by width and preserve aspect ratio (-1 for height).
+    // For full-screen memes, we scale to cover the entire canvas with crop.
     let mut video_label = current_video_label.to_string();
     for (idx, (input_idx, sticker)) in sticker_inputs.iter().enumerate() {
-        let sticker_size = (spec.width as f64 * sticker.scale) as u32;
+        let is_fullscreen = sticker.scale >= 1.0;
+
+        let (sticker_w, sticker_h) = if is_fullscreen {
+            // Full-screen meme b-roll: scale to cover entire canvas
+            (spec.width, spec.height)
+        } else {
+            // Regular sticker: scale by fraction of canvas width,
+            // preserve aspect ratio (height = -1 in FFmpeg)
+            let w = (spec.width as f64 * sticker.scale) as u32;
+            (w, w) // height will be auto from FFmpeg's -1
+        };
+
         let (tl_x, tl_y, cx, cy) = parse_position(
             &sticker.position,
             spec.width,
             spec.height,
-            sticker_size,
-            sticker_size,
+            sticker_w,
+            sticker_h,
         );
 
         // Log sticker placement for agent debugging
         tracing::info!(
-            "[render] Sticker {} ({}): scale={:.0}%, size={}x{}, center=({}, {}), top_left=({}, {})",
-            idx, sticker.path, sticker.scale * 100.0, sticker_size, sticker_size,
+            "[render] Sticker {} ({}): {} scale={:.0}%, size={}x{}, center=({}, {}), top_left=({}, {})",
+            idx, sticker.path,
+            if is_fullscreen { "FULLSCREEN" } else { "sticker" },
+            sticker.scale * 100.0, sticker_w, sticker_h,
             cx, cy, tl_x, tl_y
         );
 
@@ -332,11 +349,20 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             format!("[vst{}]", idx)
         };
 
-        // Scale sticker — use -1 for height to preserve aspect ratio
-        filters.push(format!(
-            "[{}:v]scale={}:-1[st{}]",
-            input_idx, sticker_size, idx
-        ));
+        // Scale sticker:
+        // - Full-screen (meme b-roll): scale to cover canvas + crop to exact size
+        // - Regular sticker: scale by width, preserve aspect ratio (-1 height)
+        if is_fullscreen {
+            filters.push(format!(
+                "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={}[st{}]",
+                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+            ));
+        } else {
+            filters.push(format!(
+                "[{}:v]scale={}:-1[st{}]",
+                input_idx, sticker_w, idx
+            ));
+        }
 
         // Overlay with time-based enable
         filters.push(format!(

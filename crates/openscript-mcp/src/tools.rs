@@ -7080,26 +7080,99 @@ fn format_seconds_to_timestamp(s: f64) -> String {
 /// Returns the path if a suitable track is found, None otherwise.
 /// (Round-3 UX audit PROBLEM 3b fix — ensures every video has background
 /// music by default, even when the agent doesn't specify music.path.)
-fn auto_select_music(_theme: &str) -> Option<String> {
+async fn auto_select_music(_theme: &str) -> Option<String> {
     // The stock music files in mcp/assets/music/ are SYNTHETIC TONES
-    // (sine-wave hums at musical-note frequencies), not real music tracks.
-    // Using them produces a humming sound that users find unpleasant.
-    // (Round-6 audit: "The music is a humming sound rather than actual
-    // BG-Music".)
-    //
-    // Real music should come from:
-    //   1. library.search + library.download (YouTube-scraped, 500+ tracks)
-    //   2. stock.search + stock.fetch (Pixabay API, requires PIXABAY_API_KEY)
-    //   3. User-supplied music.path in the script
-    //
-    // We do NOT auto-select from the synthetic stock files. Instead, return
-    // None and let the caller warn that no real music is available. This
-    // is better than adding a hum that degrades video quality.
-    tracing::info!(
-        "[script.to_video] No real music auto-selected (stock files are synthetic tones). \
-         Set music.path in the script, or use library.search/library.download \
-         or stock.search/stock.fetch for real music tracks."
-    );
+    // (sine-wave hums). Real music comes from the library index
+    // (mcp/assets/music_library_index.json, 500+ YouTube-scraped tracks).
+    // This function searches the library index for a track matching the
+    // theme and downloads it via library.download.
+    // (Round-7: director-agent music selection from real index.)
+
+    let index_path = resolve_repo_path("mcp/assets/music_library_index.json");
+    if !index_path.exists() {
+        tracing::warn!(
+            "[script.to_video] Music library index not found at {}. Run library.build to generate it.",
+            index_path.display()
+        );
+        return None;
+    }
+
+    let index_str = match std::fs::read_to_string(&index_path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("[script.to_video] Failed to read music library index: {}", e);
+            return None;
+        }
+    };
+
+    let index: serde_json::Value = match serde_json::from_str(&index_str) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("[script.to_video] Failed to parse music library index: {}", e);
+            return None;
+        }
+    };
+
+    let entries_vec = index.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let entries = &entries_vec;
+
+    // Search keywords by theme
+    let search_terms: Vec<&str> = match _theme {
+        "calm" => vec!["calm", "relax", "meditat", "chill", "peaceful", "ambient", "lofi"],
+        "energetic" => vec!["energy", "upbeat", "electronic", "dance", "epic", "action"],
+        _ => vec!["background", "chill", "lofi", "ambient"],
+    };
+
+    // Find first matching track
+    for entry in entries {
+        let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        let title_lower = title.to_lowercase();
+        let media_type = entry.get("media_type").and_then(|v| v.as_str()).unwrap_or("");
+        if media_type != "music" {
+            continue;
+        }
+
+        for term in &search_terms {
+            if title_lower.contains(term) {
+                let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                let download_url = entry.get("download_url").and_then(|v| v.as_str()).unwrap_or("");
+                if !filename.is_empty() && !download_url.is_empty() {
+                    tracing::info!(
+                        "[script.to_video] Auto-selected music from library: '{}' (matched '{}')",
+                        title, term
+                    );
+                    // Download via library.download tool
+                    let music_cache = resolve_repo_path("mcp/assets/music_cache");
+                    let _ = std::fs::create_dir_all(&music_cache);
+                    let local_path = music_cache.join(filename);
+
+                    if local_path.exists() {
+                        tracing::info!("[script.to_video] Music already cached: {}", local_path.display());
+                        return Some(local_path.to_string_lossy().to_string());
+                    }
+
+                    // Use library.download MCP tool to fetch
+                    let download_args = json!({
+                        "filename": filename,
+                        "output_dir": music_cache.to_string_lossy(),
+                    });
+                    match handle_library_download(download_args).await {
+                        Ok(result) => {
+                            if let Some(path) = result.get("path").and_then(|v| v.as_str()) {
+                                tracing::info!("[script.to_video] Downloaded music: {}", path);
+                                return Some(path.to_string());
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("[script.to_video] Failed to download music '{}': {}", filename, e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::warn!("[script.to_video] No matching music found in library index for theme '{}'", _theme);
     None
 }
 
@@ -8564,18 +8637,22 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             Some(m.path.clone())
         } else {
             tracing::warn!("[script.to_video] Music path not found: {} — falling back to auto-select", m.path);
-            auto_select_music(&spec.output.theme)
+            auto_select_music(&spec.output.theme).await
         }
     } else {
-        auto_select_music(&spec.output.theme)
+        auto_select_music(&spec.output.theme).await
     };
 
-    // === MEME B-ROLLS: Download contextual reaction GIFs per scene ===
-    // Unlike stickers (persistent per-speaker overlays), meme b-rolls are
-    // brief (2-3s) emotional reaction GIFs that pop in at a specific moment
-    // in each scene, like TikTok reaction videos.
+    // === MEME B-ROLLS: Full-screen reaction GIF clips per scene ===
+    // Unlike stickers (small persistent corner overlays), meme b-rolls are
+    // FULL-SCREEN video clips that briefly replace the background — like
+    // TikTok reaction cuts. Downloaded as MP4 from GIPHY (not GIF) for
+    // better quality and FFmpeg compatibility.
+    // (Round-7 redesign: user said "Meme Brolls must be full-screen b-rolls,
+    // not stickers. Stickers/GIF implementation is another thing.")
+    let mut meme_broll_paths: Vec<String> = Vec::new();
     let mut meme_brolls: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
-    if spec.meme_brolls.enabled && !skip_stickers {
+    if spec.meme_brolls.enabled {
         let giphy_key_val = giphy_key();
         if !giphy_key_val.is_empty() {
             let client = reqwest::Client::builder()
@@ -8583,16 +8660,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 .build()
                 .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
 
-            let meme_dir = "mcp/assets/stickers";
+            let meme_dir = "mcp/assets/meme_cache";
             std::fs::create_dir_all(meme_dir).ok();
 
-            // Track scene start times for positioning the meme within the scene
             let mut scene_start_s: f64 = 0.0;
 
             for (scene_idx, scene) in spec.scenes.iter().enumerate() {
                 let scene_dur_s = scene_durations.get(scene_idx).copied().unwrap_or(3.0);
 
-                // Extract the emotional beat from the scene text
                 let emotion_query = extract_emotion_query(&scene.text, scene.emote.as_deref(), &spec.output.theme);
                 tracing::info!(
                     "[script.to_video] Meme b-roll scene {}: emotion='{}'",
@@ -8608,7 +8683,6 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                         urlencoding::encode(&emotion_query)
                     )
                 } else {
-                    // translate endpoint returns 1 best match
                     format!(
                         "https://api.giphy.com/v1/gifs/translate?api_key={}&s={}",
                         giphy_key_val,
@@ -8619,7 +8693,6 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 if let Ok(resp) = client.get(&giphy_url).send().await {
                     if resp.status().is_success() {
                         if let Ok(body) = resp.json::<serde_json::Value>().await {
-                            // Translate returns a single object; search returns an array
                             let gif_data = if spec.meme_brolls.query_strategy == "search" {
                                 body.get("data")
                                     .and_then(|v| v.as_array())
@@ -8632,34 +8705,30 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                             if let Some(gif) = gif_data {
                                 let images = gif.get("images").cloned().unwrap_or(json!({}));
                                 let original = images.get("original").cloned().unwrap_or(json!({}));
-                                let gif_url = original
-                                    .get("url")
+
+                                // Download MP4 (not GIF) for full-screen video quality.
+                                // GIPHY provides images.original.mp4 — a proper video format
+                                // that FFmpeg can decode and scale to full-screen.
+                                let mp4_url = original
+                                    .get("mp4")
                                     .and_then(|v| v.as_str())
                                     .filter(|s| !s.is_empty())
                                     .unwrap_or("");
 
-                                if !gif_url.is_empty() {
-                                    let meme_path = format!("{}/meme_scene_{}.gif", meme_dir, scene_idx + 1);
-                                    if let Ok(dl_resp) = client.get(gif_url).send().await {
+                                if !mp4_url.is_empty() {
+                                    let meme_path = format!("{}/meme_scene_{}.mp4", meme_dir, scene_idx + 1);
+                                    if let Ok(dl_resp) = client.get(mp4_url).send().await {
                                         if dl_resp.status().is_success() {
                                             if let Ok(bytes) = dl_resp.bytes().await {
                                                 std::fs::write(&meme_path, &bytes).ok();
+                                                // Store as a background clip that will be
+                                                // composited as a full-screen overlay during
+                                                // the meme's time window.
                                                 let meme_start_s = scene_start_s + spec.meme_brolls.offset_s;
                                                 let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
-                                                let sticker_w = (spec.meta.width as f64 * spec.meme_brolls.scale) as u32;
-                                                meme_brolls.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
-                                                    path: meme_path.clone(),
-                                                    start_s: meme_start_s,
-                                                    end_s: meme_end_s,
-                                                    position: spec.meme_brolls.position.clone(),
-                                                    scale: spec.meme_brolls.scale,
-                                                    center_x: 0,
-                                                    center_y: 0,
-                                                    sticker_width: sticker_w,
-                                                    sticker_height: sticker_w,
-                                                });
+                                                meme_broll_paths.push(meme_path.clone());
                                                 tracing::info!(
-                                                    "[script.to_video] Downloaded meme b-roll for scene {}: {} ({} bytes, {:.1}s-{:.1}s)",
+                                                    "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s)",
                                                     scene_idx + 1,
                                                     meme_path,
                                                     bytes.len(),
@@ -8678,6 +8747,27 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 scene_start_s += scene_dur_s;
             }
         }
+    }
+
+    // Convert meme b-roll MP4s into full-screen sticker overlays.
+    // Using StickerOverlay with scale=1.0 (full canvas) and position="center"
+    // + fade transitions for the pop-in/pop-out effect.
+    for (idx, meme_path) in meme_broll_paths.iter().enumerate() {
+        let scene_start_s: f64 = scene_durations[..idx].iter().sum::<f64>();
+        let meme_start_s = scene_start_s + spec.meme_brolls.offset_s;
+        let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
+        // Full-screen: scale=1.0 means the meme covers the entire canvas
+        meme_brolls.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
+            path: meme_path.clone(),
+            start_s: meme_start_s,
+            end_s: meme_end_s,
+            position: "center".to_string(),
+            scale: 1.0, // Full-screen
+            center_x: 0,
+            center_y: 0,
+            sticker_width: spec.meta.width,  // Full canvas width
+            sticker_height: spec.meta.height, // Full canvas height
+        });
     }
 
     // Build timeline preview for agent inspection

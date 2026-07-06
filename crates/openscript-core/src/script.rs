@@ -210,7 +210,10 @@ fn default_position() -> String {
     "top-left".to_string()
 }
 fn default_scale() -> f64 {
-    0.25
+    // Raised from 0.25 to 0.35 per round-7 audit: "sticker/gif scaling is
+    // always very small and badly compositioned." 0.35 = 35% of canvas width
+    // = 378px on 1080px canvas — large enough to be clearly visible.
+    0.35
 }
 
 // ---------------------------------------------------------------------------
