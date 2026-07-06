@@ -75,6 +75,19 @@ pub struct MultiLayerRenderSpec {
     pub preset: String,
     /// Total duration in seconds
     pub total_duration_s: f64,
+    /// Full-screen meme b-roll clips (GIPHY MP4s). Each clip has a start/end
+    /// time and will be composited as a brief full-screen background cut.
+    /// Unlike stickers (small overlays), meme clips replace the background
+    /// for their duration — like TikTok reaction cuts.
+    pub meme_clips: Vec<MemeClip>,
+}
+
+/// A full-screen meme b-roll clip from GIPHY.
+#[derive(Debug, Clone)]
+pub struct MemeClip {
+    pub path: String,
+    pub start_s: f64,
+    pub end_s: f64,
 }
 
 /// Parse a position string to:
@@ -296,86 +309,75 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     // 2. Burn captions — NOTE: caption burning is now handled in step 3b
     // (after meme b-rolls are composited onto [vbg], so captions remain
     // visible ON TOP of full-screen meme cuts). This step is intentionally
-    // a no-op: the previous version pushed a second `[vbg]subtitles=...[vcap]`
-    // filter here, which conflicted with step 3b's caption burn (duplicate
-    // [vcap] output + [vbg] consumed twice) and caused
-    // "Filter 'subtitles:default' has output 0 (vcap) unconnected" /
-    // "Error binding filtergraph inputs/outputs: Invalid argument".
-    // (Round-8 fresh-agent UX: render failed with memes + captions enabled.)
-    let _ = &spec.captions_path; // keep reference; burning deferred to 3b
+    // a no-op.
+    let _ = &spec.captions_path;
     let current_video_label = "[vbg]";
 
-    // 3. Overlay stickers and meme b-rolls
+    // 3. Overlay meme b-rolls (full-screen GIPHY video clips) and stickers
     //
     // LAYERING ORDER (z-axis, bottom to top):
     //   1. Background clips [vbg]
-    //   2. Full-screen meme b-rolls (brief full-screen cuts, scale=1.0)
+    //   2. Full-screen meme b-rolls (brief cuts from GIPHY MP4)
     //      — composited BEFORE captions so captions remain visible on top
-    //   3. Captions (burned into background in step 2)
+    //   3. Captions (burned on top of meme-composited video)
     //   4. Regular stickers (small overlays, scale<1.0)
     //      — composited AFTER captions so they appear on top
-    //
-    // Round-7 audit: "GIF brolls are coming on top of the captions, stickers.
-    // The layering is incorrect." Fix: separate full-screen memes from
-    // regular stickers. Memes go between background and captions; stickers
-    // go after captions.
-    //
-    // However, since captions are already burned into [vcap] in step 2,
-    // we need to restructure: memes go on [vbg] first, THEN burn captions
-    // on the meme-composited video, THEN add regular stickers.
-    // This requires reordering the filter graph.
 
-    // Separate full-screen memes from regular stickers
-    let (memes, regular_stickers): (Vec<_>, Vec<_>) = sticker_inputs
-        .iter()
-        .partition(|(_, s)| s.scale >= 1.0);
+    // 3a. Add meme b-roll clips as FFmpeg inputs
+    let mut meme_input_start = if has_music {
+        music_input_idx + 1
+    } else {
+        vo_input_idx + 1
+    };
+    // Adjust for sticker inputs that were already added
+    meme_input_start += sticker_inputs.len();
 
-    // 3a. Overlay full-screen meme b-rolls on the BACKGROUND (before captions)
+    let mut meme_inputs: Vec<(usize, &MemeClip)> = Vec::new();
+    for meme in &spec.meme_clips {
+        if std::path::Path::new(&meme.path).exists() {
+            cmd.arg("-i").arg(&meme.path);
+            meme_inputs.push((meme_input_start, meme));
+            meme_input_start += 1;
+        }
+    }
+
+    // 3b. Overlay full-screen meme b-rolls on the BACKGROUND (before captions)
     let mut video_label = "[vbg]".to_string();
-    for (idx, (input_idx, meme)) in memes.iter().enumerate() {
-        let sticker_w = spec.width;
-        let sticker_h = spec.height;
-        let (tl_x, tl_y, cx, cy) = parse_position(
-            &meme.position,
-            spec.width,
-            spec.height,
-            sticker_w,
-            sticker_h,
-        );
+    for (idx, (input_idx, meme)) in meme_inputs.iter().enumerate() {
+        let meme_w = spec.width;
+        let meme_h = spec.height;
 
         tracing::info!(
-            "[render] Meme b-roll {} ({}): FULLSCREEN size={}x{}, top_left=({}, {})",
-            idx, meme.path, sticker_w, sticker_h, tl_x, tl_y
+            "[render] Meme b-roll {} ({}): FULLSCREEN size={}x{}, time={:.1}-{:.1}s",
+            idx, meme.path, meme_w, meme_h, meme.start_s, meme.end_s
         );
 
-        let st_label = format!("[mb{}]", idx);
+        let meme_label = format!("[mb{}]", idx);
         let out_label = format!("[vmb{}]", idx);
 
-        // Full-screen: scale to cover canvas + crop
+        // Full-screen: scale to cover canvas + crop to exact dimensions
         filters.push(format!(
             "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={}[mb{}]",
-            input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+            input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
 
         // Overlay meme on background with time-based enable
         filters.push(format!(
-            "{}[mb{}]overlay={}:{}:enable='between(t,{},{})'[vmb{}]",
-            video_label, idx, tl_x, tl_y, meme.start_s, meme.end_s, idx
+            "{}[mb{}]overlay=0:0:enable='between(t,{},{})'[vmb{}]",
+            video_label, idx, meme.start_s, meme.end_s, idx
         ));
 
         video_label = format!("[vmb{}]", idx);
     }
 
-    // 3b. Burn captions ON TOP of meme-composited video
+    // 3c. Burn captions ON TOP of meme-composited video
     let video_label = if let Some(ref captions) = spec.captions_path {
         if std::path::Path::new(captions).exists() {
             let escaped = captions.replace('\\', "/").replace('\'', "'\\''");
             let cap_label = if video_label == "[vbg]" {
-                // No memes — burn on background directly
                 filters.push(format!("[vbg]subtitles='{}'[vcap]", escaped));
                 "[vcap]"
             } else {
-                // Memes were composited — burn captions on top of meme video
                 filters.push(format!("{}subtitles='{}'[vcap]", video_label, escaped));
                 "[vcap]"
             };
@@ -387,11 +389,11 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         video_label
     };
 
-    // 3c. Overlay regular stickers ON TOP of captions
+    // 3d. Overlay regular stickers ON TOP of captions
     let mut video_label = video_label;
-    for (idx, (input_idx, sticker)) in regular_stickers.iter().enumerate() {
+    for (idx, (input_idx, sticker)) in sticker_inputs.iter().enumerate() {
         let sticker_w = (spec.width as f64 * sticker.scale) as u32;
-        let (tl_x, tl_y, cx, cy) = parse_position(
+        let (tl_x, tl_y, _cx, _cy) = parse_position(
             &sticker.position,
             spec.width,
             spec.height,
@@ -405,7 +407,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         );
 
         let st_label = format!("[st{}]", idx);
-        let out_label = if idx == regular_stickers.len() - 1 {
+        let out_label = if idx == sticker_inputs.len() - 1 {
             "[vout]".to_string()
         } else {
             format!("[vst{}]", idx)
@@ -417,7 +419,6 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             input_idx, sticker_w, idx
         ));
 
-        // Overlay with time-based enable
         filters.push(format!(
             "{}{}overlay={}:{}:enable='between(t,{},{})'{}",
             video_label, st_label, tl_x, tl_y, sticker.start_s, sticker.end_s, out_label
@@ -426,8 +427,8 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         video_label = out_label;
     }
 
-    // If no regular stickers, rename current video to vout
-    if regular_stickers.is_empty() {
+    // If no stickers, rename current video to vout
+    if sticker_inputs.is_empty() {
         filters.push(format!("{}copy[vout]", video_label));
     }
 

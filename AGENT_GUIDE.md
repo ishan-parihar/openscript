@@ -232,6 +232,53 @@ Then pass those paths as `background.fallback_pool` in your script.
 
 ---
 
+## Sticker/GIF Scaling Guide
+
+Stickers are small transparent GIF overlays (from GIPHY) that identify the speaker. The default scale is **35% of canvas width** (378px on a 1080px canvas). Here's how to choose the right scale and position:
+
+| Use case | Scale | Position | Notes |
+|----------|-------|----------|-------|
+| Speaker identifier (default) | 0.35 | `top-left` | Standard TikTok-style speaker sticker |
+| Larger speaker (prominent) | 0.45 | `top-left` | When the speaker is the focus |
+| Small corner badge | 0.20 | `bottom-right` | Subtle branding/icon |
+| Centered reaction | 0.40 | `center` | When the sticker is the main visual |
+
+**Position options:** `top-left`, `top-right`, `bottom-left`, `bottom-right`, `top-center`/`center-top`, `bottom-center`/`center-bottom`, `center`.
+
+**Important:** Stickers are NOT meme b-rolls. Stickers are small persistent overlays that identify the speaker. Meme b-rolls are full-screen video clips that briefly replace the background (set `"meme_brolls": {"enabled": true}`).
+
+---
+
+## Meme B-Rolls (GIPHY as video-clip provider)
+
+Meme b-rolls are **full-screen video clips** from GIPHY that briefly replace the background — like TikTok reaction cuts. They are NOT stickers. They are a separate video-clip provider alongside Pexels and YouTube.
+
+### How it works
+1. For each scene, the system detects the emotional beat from the scene text (e.g. "surprising" → "mind blown reaction", "funny" → "laughing reaction")
+2. GIPHY's `/v1/gifs/translate` endpoint returns the best-matching GIF
+3. The GIF is downloaded as **MP4** (not GIF) for full-screen video quality
+4. The MP4 is composited as a **full-screen background cut** for 2.5 seconds (configurable)
+5. Captions remain visible ON TOP of the meme cut (correct layering: background → meme → captions → stickers)
+
+### Usage
+```json
+{
+  "meme_brolls": {
+    "enabled": true,
+    "duration_s": 2.5,
+    "offset_s": 0.3
+  }
+}
+```
+
+### GIPHY as a video provider
+GIPHY provides `images.original.mp4` — a proper video format that FFmpeg can decode and scale to full-screen. This makes GIPHY a first-class video-clip provider alongside:
+- **Pexels** — stock footage (per-scene keyword search)
+- **YouTube** — stock footage (via yt-dlp, may be bot-blocked)
+- **GIPHY** — reaction/meme clips (per-scene emotion search, MP4 format)
+
+---
+
 ## Key Design Decisions
 
 1. **Kokoro is the default TTS** — no external dependency, 24kHz, 54 voices

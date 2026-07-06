@@ -8656,14 +8656,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     };
 
     // === MEME B-ROLLS: Full-screen reaction GIF clips per scene ===
-    // Unlike stickers (small persistent corner overlays), meme b-rolls are
-    // FULL-SCREEN video clips that briefly replace the background — like
-    // TikTok reaction cuts. Downloaded as MP4 from GIPHY (not GIF) for
-    // better quality and FFmpeg compatibility.
-    // (Round-7 redesign: user said "Meme Brolls must be full-screen b-rolls,
-    // not stickers. Stickers/GIF implementation is another thing.")
-    let mut meme_broll_paths: Vec<String> = Vec::new();
-    let mut meme_brolls: Vec<openscript_ffmpeg::multilayer_render::StickerOverlay> = Vec::new();
+    // GIPHY is a video-clip provider (like Pexels/YouTube). Meme b-rolls
+    // are FULL-SCREEN video clips downloaded as MP4 from GIPHY that briefly
+    // replace the background — like TikTok reaction cuts. They are NOT
+    // stickers (small overlays). They are proper background video clips.
+    // (Round-9: user said "Meme Brolls must be full-screen b-rolls, not
+    // stickers. Stickers/GIF implementation is another thing.")
+    let mut meme_clips: Vec<openscript_ffmpeg::multilayer_render::MemeClip> = Vec::new();
     if spec.meme_brolls.enabled {
         let giphy_key_val = giphy_key();
         if !giphy_key_val.is_empty() {
@@ -8738,7 +8737,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                 // the meme's time window.
                                                 let meme_start_s = scene_start_s + spec.meme_brolls.offset_s;
                                                 let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
-                                                meme_broll_paths.push(meme_path.clone());
+                                                // Push as MemeClip (full-screen background video clip),
+                                                // NOT as StickerOverlay. Memes are a separate video-clip
+                                                // provider, not stickers.
+                                                meme_clips.push(openscript_ffmpeg::multilayer_render::MemeClip {
+                                                    path: meme_path.clone(),
+                                                    start_s: meme_start_s,
+                                                    end_s: meme_end_s,
+                                                });
                                                 tracing::info!(
                                                     "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s)",
                                                     scene_idx + 1,
@@ -8759,27 +8765,6 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 scene_start_s += scene_dur_s;
             }
         }
-    }
-
-    // Convert meme b-roll MP4s into full-screen sticker overlays.
-    // Using StickerOverlay with scale=1.0 (full canvas) and position="center"
-    // + fade transitions for the pop-in/pop-out effect.
-    for (idx, meme_path) in meme_broll_paths.iter().enumerate() {
-        let scene_start_s: f64 = scene_durations[..idx].iter().sum::<f64>();
-        let meme_start_s = scene_start_s + spec.meme_brolls.offset_s;
-        let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
-        // Full-screen: scale=1.0 means the meme covers the entire canvas
-        meme_brolls.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
-            path: meme_path.clone(),
-            start_s: meme_start_s,
-            end_s: meme_end_s,
-            position: "center".to_string(),
-            scale: 1.0, // Full-screen
-            center_x: 0,
-            center_y: 0,
-            sticker_width: spec.meta.width,  // Full canvas width
-            sticker_height: spec.meta.height, // Full canvas height
-        });
     }
 
     // Build timeline preview for agent inspection
@@ -8863,11 +8848,6 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .await
         .ok();
 
-    // Merge meme b-rolls into the stickers vector — they use the same
-    // StickerOverlay type and FFmpeg overlay path, just with different
-    // timing (brief pop-in vs persistent overlay) and position.
-    stickers.extend(meme_brolls);
-
     // Build multi-layer render spec
     use openscript_ffmpeg::multilayer_render::{render_multilayer, MultiLayerRenderSpec};
     let render_spec = MultiLayerRenderSpec {
@@ -8898,6 +8878,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             "fast".to_string()
         },
         total_duration_s,
+        meme_clips,
     };
 
     // Phase L: Branch on render_engine. When "hyperframes", compile the
