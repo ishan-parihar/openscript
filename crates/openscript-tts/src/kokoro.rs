@@ -37,10 +37,8 @@ pub type KokoroVoiceId = str;
 /// (ONNX session + loaded voice packs) lives in the `Arc<KokoroEngine>`.
 #[derive(Clone)]
 pub struct KokoroConfig {
-    /// Directory containing `model.onnx` (+ quantised variants) and `voices/*.bin`.
+    /// Directory containing `onnx/kokoro-v1.0.onnx` and `voices/voices-v1.0.bin`.
     pub model_dir: PathBuf,
-    /// Which ONNX variant to load: `model.onnx` | `model_q8f16.onnx` | `model_fp16.onnx` ...
-    pub model_variant: String,
     /// Default preset voice when a profile doesn't name one.
     pub default_voice: String,
     /// Where to persist generated WAVs (content-addressed by hash).

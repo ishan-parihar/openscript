@@ -2296,7 +2296,6 @@ async fn handle_voice_profile_remove(
 // Routes to Kokoro (if profile.provider == "kokoro" and feature enabled) or sidecar.
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 struct TtsGenResult {
     output_path: String,
     duration_ms: i64,
@@ -2327,14 +2326,11 @@ async fn tts_generate_routed(
 
         let model_dir =
             std::env::var("KOKORO_MODEL_DIR").unwrap_or_else(|_| "mcp/assets/kokoro".to_string());
-        let model_variant = std::env::var("KOKORO_MODEL_VARIANT")
-            .unwrap_or_else(|_| "kokoro-v1.0.onnx".to_string());
         let default_voice =
             std::env::var("KOKORO_DEFAULT_VOICE").unwrap_or_else(|_| "af_heart".to_string());
 
         let cfg = KokoroConfig {
             model_dir: std::path::PathBuf::from(&model_dir),
-            model_variant,
             default_voice,
             cache_dir: std::path::PathBuf::from(&cache_dir),
         };
@@ -2459,14 +2455,11 @@ async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Valu
 
         let model_dir =
             std::env::var("KOKORO_MODEL_DIR").unwrap_or_else(|_| "mcp/assets/kokoro".to_string());
-        let model_variant = std::env::var("KOKORO_MODEL_VARIANT")
-            .unwrap_or_else(|_| "model_q8f16.onnx".to_string());
         let default_voice =
             std::env::var("KOKORO_DEFAULT_VOICE").unwrap_or_else(|_| "af_heart".to_string());
 
         let cfg = KokoroConfig {
             model_dir: std::path::PathBuf::from(&model_dir),
-            model_variant,
             default_voice,
             cache_dir: std::path::PathBuf::from(&cache_dir),
         };
@@ -7170,6 +7163,7 @@ async fn handle_script_to_timeline(
                     "canvas_height": spec.meta.height,
                     "fps": spec.meta.fps,
                     "output_path": sticker_output,
+                    "render_to_video": false,  // HTML only — script.to_video uses GIPHY/PNG stickers for rendering
                 }))
                 .await;
 
@@ -7179,6 +7173,7 @@ async fn handle_script_to_timeline(
                             "speaker": speaker,
                             "start_ms": start_ms,
                             "html_path": r.get("output_path").and_then(|v| v.as_str()).unwrap_or(""),
+                            "video_path": r.get("video_path").and_then(|v| v.as_str()).unwrap_or(""),
                             "frame_count": r.get("frame_count").and_then(|v| v.as_u64()).unwrap_or(0),
                         }));
                     }
