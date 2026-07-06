@@ -101,13 +101,19 @@ fn parse_position(
     let sh = sticker_h as i32;
 
     // Top-left coordinates for FFmpeg overlay filter
+    // NOTE: accept both adjective-noun ("top-center") and noun-adjective
+    // ("center-top") spellings. The MemeBrollSpec default position is
+    // "center-bottom" and agents naturally write "center-top" — without
+    // these aliases every such value fell through to the `_` arm (top-left
+    // at the margin), causing meme b-rolls to render on top of the speaker
+    // sticker instead of where the agent asked. (Round-6 fresh-agent UX.)
     let (tl_x, tl_y) = match position {
         "top-left" => (margin, margin),
         "top-right" => (cw - sw - margin, margin),
-        "top-center" => ((cw - sw) / 2, margin),
+        "top-center" | "center-top" => ((cw - sw) / 2, margin),
         "bottom-left" => (margin, ch - sh - margin),
         "bottom-right" => (cw - sw - margin, ch - sh - margin),
-        "bottom-center" => ((cw - sw) / 2, ch - sh - margin),
+        "bottom-center" | "center-bottom" => ((cw - sw) / 2, ch - sh - margin),
         "center" => ((cw - sw) / 2, (ch - sh) / 2),
         _ => (margin, margin),
     };
@@ -226,7 +232,20 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     }
 
     // Inputs: sticker overlays
-    let mut sticker_input_idx = music_input_idx + 1;
+    // NOTE: only skip past the music input index when music was actually
+    // added. Previously this always used `music_input_idx + 1`, which is
+    // `vo_input_idx + 2` — but when `has_music` is false the music input
+    // is never added to the ffmpeg command, so the first sticker input
+    // actually lands at `vo_input_idx + 1`. This off-by-one made every
+    // sticker filtergraph label ([N:v]) point one input too high, which
+    // produced "Invalid file index N in filtergraph description" whenever
+    // music was omitted. (Round-6 fresh-agent UX: brain video with no
+    // music failed to render.)
+    let mut sticker_input_idx = if has_music {
+        music_input_idx + 1
+    } else {
+        vo_input_idx + 1
+    };
     let mut sticker_inputs = Vec::new();
     for sticker in &spec.stickers {
         if std::path::Path::new(&sticker.path).exists() {
