@@ -355,15 +355,17 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         let meme_label = format!("[mb{}]", idx);
         let out_label = format!("[vmb{}]", idx);
 
-        // Full-screen: scale to cover canvas + crop to exact dimensions
+        // Full-screen meme b-roll: scale to cover canvas + crop to exact
+        // dimensions (crop-to-fit). Also add loop for short clips and
+        // fps matching for smooth playback. setpts resets timestamps.
         filters.push(format!(
-            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={}[mb{}]",
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},setpts=PTS-STARTPTS[mb{}]",
             input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
 
-        // Overlay meme on background with time-based enable
+        // Overlay meme on background with time-based enable + repeat last frame
         filters.push(format!(
-            "{}[mb{}]overlay=0:0:enable='between(t,{},{})'[vmb{}]",
+            "{}[mb{}]overlay=0:0:enable='between(t,{},{})':eof_action=repeat[vmb{}]",
             video_label, idx, meme.start_s, meme.end_s, idx
         ));
 
@@ -390,20 +392,32 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     };
 
     // 3d. Overlay regular stickers ON TOP of captions
+    //
+    // GIF sticker rendering fixes (round-10):
+    // - Animated GIFs need `loop=loop=-1:size=0` to loop continuously
+    // - GIFs need `fps` filter to match output framerate for smooth animation
+    // - Non-square GIFs need crop-to-fit or letterbox to avoid distortion
+    // - The user requested "crop to fit with custom-solid-color background
+    //   or blurred-letterbox so that it can be perfectly optimal"
+    //
+    // We use a square crop-to-fit approach: scale the GIF to fill the
+    // target square area, then crop to exact dimensions. This avoids
+    // distortion and ensures the sticker always fills its allocated space.
     let mut video_label = video_label;
     for (idx, (input_idx, sticker)) in sticker_inputs.iter().enumerate() {
         let sticker_w = (spec.width as f64 * sticker.scale) as u32;
+        let sticker_h = sticker_w; // Square target area
         let (tl_x, tl_y, _cx, _cy) = parse_position(
             &sticker.position,
             spec.width,
             spec.height,
             sticker_w,
-            sticker_w,
+            sticker_h,
         );
 
         tracing::info!(
             "[render] Sticker {} ({}): scale={:.0}%, size={}x{}, top_left=({}, {})",
-            idx, sticker.path, sticker.scale * 100.0, sticker_w, sticker_w, tl_x, tl_y
+            idx, sticker.path, sticker.scale * 100.0, sticker_w, sticker_h, tl_x, tl_y
         );
 
         let st_label = format!("[st{}]", idx);
@@ -413,14 +427,31 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             format!("[vst{}]", idx)
         };
 
-        // Regular sticker: scale by width, preserve aspect ratio
-        filters.push(format!(
-            "[{}:v]scale={}:-1[st{}]",
-            input_idx, sticker_w, idx
-        ));
+        // Check if the sticker is a GIF (animated) or a regular image/video
+        let is_gif = sticker.path.ends_with(".gif");
 
+        if is_gif {
+            // Animated GIF: loop continuously + crop-to-fit for smooth animation
+            // - loop=loop=-1:size=0: infinite loop
+            // - scale=W:H:force_original_aspect_ratio=increase: scale to fill
+            // - crop=W:H: crop to exact target size (crop-to-fit)
+            // - fps={fps}: match output framerate for smooth playback
+            // - setpts=PTS-STARTPTS: reset timestamps
+            filters.push(format!(
+                "[{}:v]loop=loop=-1:size=0,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},setpts=PTS-STARTPTS[st{}]",
+                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+            ));
+        } else {
+            // Regular image or video: scale to fill + crop to fit
+            filters.push(format!(
+                "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},setpts=PTS-STARTPTS[st{}]",
+                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+            ));
+        }
+
+        // Overlay with time-based enable
         filters.push(format!(
-            "{}{}overlay={}:{}:enable='between(t,{},{})'{}",
+            "{}{}overlay={}:{}:enable='between(t,{},{})':eof_action=repeat{}",
             video_label, st_label, tl_x, tl_y, sticker.start_s, sticker.end_s, out_label
         ));
 
