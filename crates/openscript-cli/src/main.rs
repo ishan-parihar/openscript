@@ -112,6 +112,43 @@ enum Commands {
     },
     /// List all available MCP tools (for discovery)
     ListTools,
+    /// Probe available subsystems (mirrors system.capabilities MCP tool)
+    SystemCapabilities,
+    /// Natural-language tool discovery (mirrors help.tool MCP tool)
+    HelpTool {
+        #[arg(short, long)]
+        query: String,
+        #[arg(long, default_value = "8")]
+        limit: u32,
+    },
+    /// Search procedural backgrounds by mood (mirrors background.search)
+    BackgroundSearch {
+        #[arg(long)]
+        mood: Option<String>,
+        #[arg(long)]
+        energy: Option<String>,
+        #[arg(long)]
+        motion_intensity: Option<String>,
+        #[arg(long, default_value = "10")]
+        limit: u32,
+    },
+    /// Verify audio quality of a rendered video (mirrors verify.audio)
+    VerifyAudio {
+        #[arg(short, long)]
+        video_path: String,
+    },
+    /// Verify caption timing/burn of a rendered video (mirrors verify.captions)
+    VerifyCaptions {
+        #[arg(short, long)]
+        video_path: String,
+        #[arg(long)]
+        srt_path: Option<String>,
+    },
+    /// Verify render quality of a video (mirrors verify.render)
+    VerifyRender {
+        #[arg(short, long)]
+        video_path: String,
+    },
 }
 
 #[tokio::main]
@@ -231,6 +268,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ListTools => {
             let tools = openscript_mcp::tools::tool_definitions();
             println!("{}", serde_json::to_string_pretty(&tools)?);
+        }
+        Commands::SystemCapabilities => {
+            let result = openscript_mcp::tools::route_tool("system.capabilities", serde_json::json!({})).await;
+            print_cli_result("system.capabilities", result);
+        }
+        Commands::HelpTool { query, limit } => {
+            let args = serde_json::json!({"query": query, "limit": limit});
+            let result = openscript_mcp::tools::route_tool("help.tool", args).await;
+            print_cli_result("help.tool", result);
+        }
+        Commands::BackgroundSearch { mood, energy, motion_intensity, limit } => {
+            let mut args = serde_json::json!({"limit": limit});
+            if let Some(m) = mood { args["mood"] = serde_json::json!(m); }
+            if let Some(e) = energy { args["energy"] = serde_json::json!(e); }
+            if let Some(mi) = motion_intensity { args["motion_intensity"] = serde_json::json!(mi); }
+            let result = openscript_mcp::tools::route_tool("background.search", args).await;
+            print_cli_result("background.search", result);
+        }
+        Commands::VerifyAudio { video_path } => {
+            let args = serde_json::json!({"video_path": video_path});
+            let result = openscript_mcp::tools::route_tool("verify.audio", args).await;
+            print_cli_result("verify.audio", result);
+        }
+        Commands::VerifyCaptions { video_path, srt_path } => {
+            let mut args = serde_json::json!({"video_path": video_path});
+            if let Some(s) = srt_path { args["srt_path"] = serde_json::json!(s); }
+            let result = openscript_mcp::tools::route_tool("verify.captions", args).await;
+            print_cli_result("verify.captions", result);
+        }
+        Commands::VerifyRender { video_path } => {
+            let args = serde_json::json!({"video_path": video_path});
+            let result = openscript_mcp::tools::route_tool("verify.render", args).await;
+            print_cli_result("verify.render", result);
         }
     }
 
