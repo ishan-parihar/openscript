@@ -293,18 +293,17 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         ));
     }
 
-    // 2. Burn captions
-    let current_video_label = if let Some(ref captions) = spec.captions_path {
-        if std::path::Path::new(captions).exists() {
-            let escaped = captions.replace('\\', "/").replace('\'', "'\\''");
-            filters.push(format!("[vbg]subtitles='{}'[vcap]", escaped));
-            "[vcap]"
-        } else {
-            "[vbg]"
-        }
-    } else {
-        "[vbg]"
-    };
+    // 2. Burn captions — NOTE: caption burning is now handled in step 3b
+    // (after meme b-rolls are composited onto [vbg], so captions remain
+    // visible ON TOP of full-screen meme cuts). This step is intentionally
+    // a no-op: the previous version pushed a second `[vbg]subtitles=...[vcap]`
+    // filter here, which conflicted with step 3b's caption burn (duplicate
+    // [vcap] output + [vbg] consumed twice) and caused
+    // "Filter 'subtitles:default' has output 0 (vcap) unconnected" /
+    // "Error binding filtergraph inputs/outputs: Invalid argument".
+    // (Round-8 fresh-agent UX: render failed with memes + captions enabled.)
+    let _ = &spec.captions_path; // keep reference; burning deferred to 3b
+    let current_video_label = "[vbg]";
 
     // 3. Overlay stickers and meme b-rolls
     //

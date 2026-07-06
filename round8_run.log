@@ -1,0 +1,92 @@
+2026-07-06T20:16:25.232428Z  WARN openscript_mcp::tools: [script.generate_voices] Scene 1: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.
+2026-07-06T20:16:25.505880Z  WARN openscript_mcp::tools: [script.generate_voices] Scene 2: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.
+2026-07-06T20:16:25.784651Z  WARN openscript_mcp::tools: [script.generate_voices] Scene 3: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.
+2026-07-06T20:16:26.094409Z  WARN openscript_mcp::tools: [script.generate_voices] Scene 4: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.
+2026-07-06T20:16:26.122341Z  INFO openscript_mcp::tools: [script.to_video] GIPHY sticker search for 'alice': query='fire'
+2026-07-06T20:16:26.487948Z  INFO openscript_mcp::tools: [script.to_video] Downloaded GIPHY sticker for alice: mcp/assets/stickers/giphy_alice.gif (85266 bytes)
+2026-07-06T20:16:26.504350Z  INFO openscript_mcp::tools: [script.to_video] Meme b-roll scene 1: emotion='mind blown reaction'
+2026-07-06T20:16:26.945315Z  INFO openscript_mcp::tools: [script.to_video] Downloaded meme b-roll MP4 for scene 1: mcp/assets/meme_cache/meme_scene_1.mp4 (166658 bytes, 0.3s-2.8s)
+2026-07-06T20:16:26.945435Z  INFO openscript_mcp::tools: [script.to_video] Meme b-roll scene 2: emotion='happy reaction'
+2026-07-06T20:16:27.425052Z  INFO openscript_mcp::tools: [script.to_video] Downloaded meme b-roll MP4 for scene 2: mcp/assets/meme_cache/meme_scene_2.mp4 (321373 bytes, 3.1s-5.6s)
+2026-07-06T20:16:27.425206Z  INFO openscript_mcp::tools: [script.to_video] Meme b-roll scene 3: emotion='happy reaction'
+2026-07-06T20:16:27.735691Z  INFO openscript_mcp::tools: [script.to_video] Downloaded meme b-roll MP4 for scene 3: mcp/assets/meme_cache/meme_scene_3.mp4 (321373 bytes, 7.0s-9.5s)
+2026-07-06T20:16:27.735822Z  INFO openscript_mcp::tools: [script.to_video] Meme b-roll scene 4: emotion='mind blown reaction'
+2026-07-06T20:16:28.050720Z  INFO openscript_mcp::tools: [script.to_video] Downloaded meme b-roll MP4 for scene 4: mcp/assets/meme_cache/meme_scene_4.mp4 (392681 bytes, 11.0s-13.5s)
+2026-07-06T20:16:28.051139Z  INFO openscript_ffmpeg::multilayer_render: [render] Meme b-roll 0 (mcp/assets/meme_cache/meme_scene_1.mp4): FULLSCREEN size=1080x1920, top_left=(0, 0)
+2026-07-06T20:16:28.051151Z  INFO openscript_ffmpeg::multilayer_render: [render] Meme b-roll 1 (mcp/assets/meme_cache/meme_scene_2.mp4): FULLSCREEN size=1080x1920, top_left=(0, 0)
+2026-07-06T20:16:28.051155Z  INFO openscript_ffmpeg::multilayer_render: [render] Meme b-roll 2 (mcp/assets/meme_cache/meme_scene_3.mp4): FULLSCREEN size=1080x1920, top_left=(0, 0)
+2026-07-06T20:16:28.051158Z  INFO openscript_ffmpeg::multilayer_render: [render] Meme b-roll 3 (mcp/assets/meme_cache/meme_scene_4.mp4): FULLSCREEN size=1080x1920, top_left=(0, 0)
+2026-07-06T20:16:28.051163Z  INFO openscript_ffmpeg::multilayer_render: [render] Sticker 0 (mcp/assets/stickers/giphy_alice.gif): scale=35%, size=378x378, top_left=(40, 40)
+2026-07-06T20:16:28.051171Z  INFO openscript_ffmpeg::multilayer_render: [render] Sticker 1 (mcp/assets/stickers/giphy_alice.gif): scale=35%, size=378x378, top_left=(40, 40)
+2026-07-06T20:16:28.051174Z  INFO openscript_ffmpeg::multilayer_render: [render] Sticker 2 (mcp/assets/stickers/giphy_alice.gif): scale=35%, size=378x378, top_left=(40, 40)
+2026-07-06T20:16:28.051176Z  INFO openscript_ffmpeg::multilayer_render: [render] Sticker 3 (mcp/assets/stickers/giphy_alice.gif): scale=35%, size=378x378, top_left=(40, 40)
+{
+  "background_count": 4,
+  "captions_path": "artifacts/captions.ass",
+  "file_size_bytes": 5131115,
+  "output_path": "artifacts/round8_video.mp4",
+  "scene_count": 4,
+  "speaker_count": 1,
+  "status": "rendered",
+  "sticker_count": 8,
+  "timeline_issues": [
+    "Overlap in background: 2.0s - 2.8s",
+    "Overlap in background: 10.0s - 10.0s"
+  ],
+  "timeline_path": "artifacts/timeline.json",
+  "timeline_preview": "Timeline (13.5s, 1080x1920, 30fps)\n├── BACKGROUND\n│   ├── [0.0s - 2.8s] mcp/assets/background_cache/3f37f0f5f4a070423046e771f0ebb932_clip.mp4\n│   ├── [2.0s - 5.9s] mcp/assets/background_cache/f59f6f9df4ab5b25bce0cca51dccedd9_clip.mp4\n│   ├── [6.0s - 10.0s] mcp/assets/background_cache/fe6ed17c27c42238c3062e9591a11233_clip.mp4\n│   └── [10.0s - 12.8s] mcp/assets/background_cache/4db17b943890887f6e9854c93be52bda_clip.mp4\n├── VOICEOVER\n│   ├── [0.0s - 2.8s] alice: \"Here are three surprising facts about...\"\n│   ├── [2.8s - 6.7s] alice: \"Your brain generates enough electrici...\"\n│   ├── [6.7s - 10.7s] alice: \"It has about eighty-six billion neuro...\"\n│   └── [10.7s - 13.5s] alice: \"And nearly half of your brain's dry w...\"\n├── MUSIC\n│   └── [0.0s - 13.5s] assets_music/ambient_bed.mp3 (ducked -12dB)\n├── STICKERS\n│   ├── [0.0s - 2.8s] giphy_alice.gif (top-left, 35%, 378x378px, center=[-311, -731])\n│   ├── [2.8s - 6.7s] giphy_alice.gif (top-left, 35%, 378x378px, center=[-311, -731])\n│   ├── [6.7s - 10.7s] giphy_alice.gif (top-left, 35%, 378x378px, center=[-311, -731])\n│   └── [10.7s - 13.5s] giphy_alice.gif (top-left, 35%, 378x378px, center=[-311, -731])\n└── CAPTIONS\n    └── [0.0s - 13.5s] captions.ass (43 words, word_highlight style)\n",
+  "timeline_preview_path": "artifacts/timeline_preview.txt",
+  "timeline_summary": {
+    "duration_s": 13.547,
+    "fps": 30,
+    "height": 1920,
+    "layer_count": 5,
+    "layers": [
+      {
+        "event_count": 4,
+        "first_start_ms": 0,
+        "last_end_ms": 12816,
+        "name": "Background",
+        "type": "background"
+      },
+      {
+        "event_count": 4,
+        "first_start_ms": 0,
+        "last_end_ms": 13547,
+        "name": "Voiceover",
+        "type": "voiceover"
+      },
+      {
+        "event_count": 1,
+        "first_start_ms": 0,
+        "last_end_ms": 13547,
+        "name": "Music",
+        "type": "music"
+      },
+      {
+        "event_count": 4,
+        "first_start_ms": 0,
+        "last_end_ms": 13547,
+        "name": "Stickers",
+        "type": "stickers"
+      },
+      {
+        "event_count": 1,
+        "first_start_ms": 0,
+        "last_end_ms": 13547,
+        "name": "Captions",
+        "type": "captions"
+      }
+    ],
+    "total_duration_ms": 13547,
+    "width": 1080
+  },
+  "total_duration_ms": 13547,
+  "voiceover_manifest": "artifacts/voices/manifest.json",
+  "warnings": [
+    "Scene 1: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.",
+    "Scene 2: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.",
+    "Scene 3: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate.",
+    "Scene 4: Parakeet force-alignment failed (Parakeet failed: onnxruntime.capi.onnxruntime_pybind11_state.NoSuchFile: [ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from mcp/assets/parakeet/encoder-model.int8.onnx failed:Load model mcp/assets/parakeet/encoder-model.int8.onnx failed. File doesn't exist), using estimated word timings. Caption sync will be approximate."
+  ]
+}
