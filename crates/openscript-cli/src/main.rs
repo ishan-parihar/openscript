@@ -148,6 +148,10 @@ enum Commands {
     VerifyRender {
         #[arg(short, long)]
         video_path: String,
+        #[arg(long)]
+        timeline_path: String,
+        #[arg(long, default_value = "9:16")]
+        expected_aspect: String,
     },
 }
 
@@ -297,8 +301,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("verify.captions", args).await;
             print_cli_result("verify.captions", result);
         }
-        Commands::VerifyRender { video_path } => {
-            let args = serde_json::json!({"video_path": video_path});
+        Commands::VerifyRender { video_path, timeline_path, expected_aspect } => {
+            let args = serde_json::json!({"video_path": video_path, "timeline_path": timeline_path, "expected_aspect": expected_aspect});
             let result = openscript_mcp::tools::route_tool("verify.render", args).await;
             print_cli_result("verify.render", result);
         }

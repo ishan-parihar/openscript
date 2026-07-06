@@ -667,12 +667,12 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "verify.captions",
-            "description": "Verify caption synchronization in a rendered video. Compares caption timing from the source SRT/ASS against the actual video duration to check: (1) Coverage — do captions span the full speaking duration? (2) Gaps — are there sections without captions that should have them? (3) Overlap — do any captions overlap incorrectly? (4) Duration — are individual captions readable (not too fast)? Use AFTER rendering to ensure captions are properly burned in and timed. Returns: caption_count, coverage_percent, gaps, overlaps, avg_caption_duration_ms, readability_score (0-100).",
+            "description": "Verify caption synchronization in a rendered video. Compares caption timing from the source SRT/ASS against the actual video duration to check: (1) Coverage — do captions span the full speaking duration? (2) Gaps — are there sections without captions that should have them? (3) Overlap — do any captions overlap incorrectly? (4) Duration — are individual captions readable (not too fast)? Use AFTER rendering to ensure captions are properly burned in and timed. Auto-detects caption format: .ass files (from script.to_video) and .srt files are both accepted. Returns: caption_count, coverage_percent, gaps, overlaps, avg_caption_duration_ms, readability_score (0-100).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "Path to the rendered video"},
-                    "srt_path": {"type": "string", "description": "Source SRT file used for caption burn-in"},
+                    "srt_path": {"type": "string", "description": "Source SRT or ASS caption file. script.to_video produces captions.ass in the output_dir; pass that path here."},
                     "min_caption_duration_ms": {"type": "integer", "default": 300, "description": "Minimum readable caption duration in ms"},
                     "max_caption_duration_ms": {"type": "integer", "default": 5000, "description": "Maximum caption duration before flagging"}
                 },
@@ -5023,6 +5023,79 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
     }))
 }
 
+/// Parse an ASS (Advanced SubStation Alpha) caption file into SrtEntry-like
+/// records so verify.captions can work with the ASS files that
+/// script.to_video produces. Extracts Dialogue lines' start/end timestamps
+/// and strips ASS override tags ({\...}) from the visible text.
+///
+/// ASS Dialogue format: `Dialogue: layer,start,end,style,name,L,R,E,text`
+/// where start/end are `H:MM:SS.cc` (centiseconds, not milliseconds).
+/// (UX audit round-2 GAP #10 fix — verify.captions previously only
+/// accepted SRT, but script.to_video emits ASS.)
+fn parse_ass_captions(path: &str) -> Result<Vec<openscript_core::srt::SrtEntry>, ToolError> {
+    let content = std::fs::read_to_string(path).map_err(|e| ToolError::Io(e))?;
+    let mut entries = Vec::new();
+    let mut idx = 1;
+
+    for line in content.lines() {
+        let line = line.trim();
+        if !line.starts_with("Dialogue:") {
+            continue;
+        }
+        // Dialogue: layer,start,end,style,name,L,R,E,text
+        let parts: Vec<&str> = line.splitn(9, ',').collect();
+        if parts.len() < 9 {
+            continue;
+        }
+        let start_s = parse_ass_timestamp(parts[1].trim())?;
+        let end_s = parse_ass_timestamp(parts[2].trim())?;
+        // Strip ASS override tags {\...} from the visible text
+        let text = strip_ass_tags(parts[8].trim());
+
+        entries.push(openscript_core::srt::SrtEntry {
+            idx,
+            start: start_s,
+            end: end_s,
+            text,
+        });
+        idx += 1;
+    }
+
+    Ok(entries)
+}
+
+/// Parse an ASS timestamp `H:MM:SS.cc` into seconds (f64).
+/// Example: "0:00:01.50" -> 1.5
+fn parse_ass_timestamp(ts: &str) -> Result<f64, ToolError> {
+    let parts: Vec<&str> = ts.split(':').collect();
+    if parts.len() != 3 {
+        return Err(ToolError::InvalidArg(format!(
+            "Invalid ASS timestamp: {}",
+            ts
+        )));
+    }
+    let h: f64 = parts[0].parse().unwrap_or(0.0);
+    let m: f64 = parts[1].parse().unwrap_or(0.0);
+    let s: f64 = parts[2].parse().unwrap_or(0.0);
+    Ok(h * 3600.0 + m * 60.0 + s)
+}
+
+/// Strip ASS override tags ({\...}) from text, leaving only visible characters.
+fn strip_ass_tags(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut in_tag = false;
+    for ch in text.chars() {
+        if ch == '{' {
+            in_tag = true;
+        } else if ch == '}' {
+            in_tag = false;
+        } else if !in_tag {
+            result.push(ch);
+        }
+    }
+    result.trim().to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Handler: verify.captions
 // ---------------------------------------------------------------------------
@@ -5044,7 +5117,7 @@ async fn handle_verify_captions(args: serde_json::Value) -> Result<serde_json::V
         )));
     }
     if !Path::new(&srt_path).exists() {
-        return Err(ToolError::NotFound(format!("SRT not found: {}", srt_path)));
+        return Err(ToolError::NotFound(format!("Caption file not found: {}", srt_path)));
     }
 
     let probe_output = tokio::process::Command::new("ffprobe")
@@ -5078,8 +5151,18 @@ async fn handle_verify_captions(args: serde_json::Value) -> Result<serde_json::V
         .unwrap_or(0.0);
     let video_duration_ms = (video_duration_s * 1000.0) as i64;
 
-    let entries =
-        openscript_core::srt::parse_srt(srt_path).map_err(|e| ToolError::Srt(e.to_string()))?;
+    // Auto-detect caption format: ASS (.ass) or SRT (.srt).
+    // script.to_video emits ASS; verify.captions previously only accepted
+    // SRT, which meant the verify step was unusable after a script.to_video
+    // render. Now we accept both and normalize to the same entry format.
+    // (UX audit round-2 GAP #10 fix.)
+    let is_ass = srt_path.ends_with(".ass");
+    let entries: Vec<openscript_core::srt::SrtEntry> = if is_ass {
+        parse_ass_captions(&srt_path)?
+    } else {
+        openscript_core::srt::parse_srt(&srt_path)
+            .map_err(|e| ToolError::Srt(e.to_string()))?
+    };
 
     if entries.is_empty() {
         return Ok(json!({
