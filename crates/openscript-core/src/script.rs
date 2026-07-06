@@ -235,7 +235,12 @@ pub struct BackgroundSpec {
     pub crop_mode: String,
 
     /// Whether to loop the background if shorter than the scene.
-    #[serde(default = "default_loop")]
+    /// Serde alias "loop" accepts the JSON key users naturally write
+    /// (Rust reserves `loop` as a keyword, so the field is `loop_`).
+    /// Without this alias, `"loop": false` in JSON was silently ignored
+    /// and the default (true) was used — a silent-failure UX bug.
+    /// (UX audit GAP #3 fix.)
+    #[serde(default = "default_loop", alias = "loop")]
     pub loop_: bool,
 
     /// Background video volume in dB (typically -20 to -30 for subtle gameplay).
@@ -1024,3 +1029,32 @@ mod tests {
         assert_eq!(spec.output.format, "mp4");
     }
 }
+
+    /// Verify that the JSON key "loop" (what users naturally write) is
+    /// accepted as an alias for the Rust field `loop_` (Rust keyword
+    /// collision). Without the #[serde(alias = "loop")] attribute,
+    /// `"loop": false` was silently ignored and the default (true) was
+    /// used — a silent-failure UX bug found by the fresh-agent audit.
+    /// (UX audit GAP #3 regression test.)
+    #[test]
+    fn test_loop_alias_accepted_in_json() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Hi"}],
+            "background": {"type": "procedural", "loop": false}
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(
+            spec.background.loop_, false,
+            "JSON key 'loop' must be accepted as alias for Rust field 'loop_'"
+        );
+
+        // Also verify the underscore form still works (backward compat).
+        let json2 = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Hi"}],
+            "background": {"type": "procedural", "loop_": false}
+        }"#;
+        let spec2 = parse_script(json2).unwrap();
+        assert_eq!(spec2.background.loop_, false);
+    }

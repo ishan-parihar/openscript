@@ -19,6 +19,9 @@ pub struct BackgroundClip {
     /// Duration of the clip (seconds).
     pub duration_s: f64,
     /// Whether to loop this clip if scene is longer.
+    /// Serde alias "loop" accepts the JSON key users naturally write.
+    /// (UX audit GAP #3 fix — same as BackgroundSpec::loop_.)
+    #[serde(default, alias = "loop")]
     pub loop_: bool,
 }
 
