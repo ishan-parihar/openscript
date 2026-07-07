@@ -7356,6 +7356,94 @@ fn build_sticker_query(
 /// Detects the emotional beat of the scene and returns a GIPHY-friendly
 /// query that will produce a relevant reaction GIF. Uses keyword matching
 /// in the scene text + the scene's emote field + the overall theme.
+/// Build a GIPHY search query for meme b-rolls that is BOTH topic-relevant
+/// AND scene-specific.
+///
+/// The old approach used emotion labels ("mind blown reaction", "happy reaction")
+/// which returned generic reaction memes unrelated to the video's topic.
+/// GIPHY's translate endpoint interprets these as "show me a reaction GIF"
+/// — it returns random reaction memes, not content-relevant clips.
+///
+/// The new approach uses content keywords extracted from the scene text,
+/// combined with the video topic keywords. This makes GIPHY return clips
+/// that are actually about the scene's subject matter.
+///
+/// Example:
+///   Scene: "Your brain uses 20 watts of power."
+///   Topic: ["brain", "neuroscience"]
+///   Old query: "brain reaction" → generic brain reaction meme (irrelevant)
+///   New query: "brain power energy" → brain/power/energy themed GIF (relevant)
+///
+/// (Round-17: "GIF relevance is still an issue. The recently generated
+/// round 16 has a lot of GIF Brolls that are fully irrelevant. They are
+/// meme material but not relevant to the topic.")
+fn build_meme_search_query(
+    scene_text: &str,
+    video_keywords: &[String],
+    theme: &str,
+) -> String {
+    // Step 1: Extract content keywords from the scene text
+    let stop_words = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "have",
+        "has", "had", "do", "does", "did", "will", "would", "could", "should",
+        "can", "may", "might", "it", "its", "this", "that", "these", "those",
+        "i", "you", "he", "she", "we", "they", "what", "which", "who", "when",
+        "where", "why", "how", "all", "each", "every", "both", "few", "more",
+        "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+        "same", "so", "than", "too", "very", "just", "but", "and", "or", "if",
+        "then", "else", "for", "of", "to", "in", "on", "at", "by", "with",
+        "from", "as", "into", "through", "during", "before", "after", "about",
+        "your", "yours", "their", "them", "our", "us", "my", "me",
+    ];
+
+    let scene_words: Vec<String> = scene_text
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .filter(|w| !w.is_empty() && w.len() > 2 && !stop_words.contains(&w.as_str()))
+        .take(3) // Top 3 content words from the scene
+        .collect();
+
+    // Step 2: Combine with topic keywords
+    let topic_words: Vec<&str> = video_keywords.iter().take(2).map(|s| s.as_str()).collect();
+
+    // Step 3: Build the query — topic + scene content words
+    let mut query_parts: Vec<String> = Vec::new();
+
+    // Add 1-2 topic keywords for context
+    for tw in &topic_words {
+        query_parts.push(tw.to_string());
+    }
+
+    // Add 1-2 scene-specific content words for specificity
+    for sw in scene_words.iter().take(2) {
+        // Don't duplicate topic keywords
+        if !topic_words.contains(&sw.as_str()) {
+            query_parts.push(sw.clone());
+        }
+    }
+
+    // Step 4: Add a content-type suffix to bias GIPHY toward video/animation
+    // clips rather than static reaction memes. Using "animation" or "clip"
+    // helps GIPHY return actual animated content.
+    let suffix = match theme {
+        "calm" => "calm",
+        "energetic" => "energy",
+        _ => "",
+    };
+    if !suffix.is_empty() {
+        query_parts.push(suffix.to_string());
+    }
+
+    let query = query_parts.join(" ");
+
+    if query.is_empty() {
+        // Fallback: just use the first topic keyword
+        video_keywords.first().map(|s| s.clone()).unwrap_or_else(|| "animation".to_string())
+    } else {
+        query
+    }
+}
+
 fn extract_emotion_query(text: &str, emote: Option<&str>, theme: &str) -> String {
     let lower = text.to_lowercase();
 
@@ -8861,52 +8949,64 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             for (scene_idx, scene) in spec.scenes.iter().enumerate() {
                 let scene_dur_s = scene_durations.get(scene_idx).copied().unwrap_or(3.0);
 
-                // Build a topic-aware emotion query for GIPHY meme b-rolls.
-                // (Round-13: topic-aware video search upgrade.)
-                // Combine emotion from scene text + video topic keywords
-                // so memes are both emotionally relevant AND topically relevant.
-                let base_emotion = extract_emotion_query(&scene.text, scene.emote.as_deref(), &spec.output.theme);
-                let emotion_query = if !spec.video_keywords.is_empty() {
-                    // Prepend first topic keyword to make the meme search
-                    // topically relevant (e.g. "brain mind blown" instead of
-                    // just "mind blown")
-                    let topic_kw = &spec.video_keywords[0];
-                    format!("{} {}", topic_kw, base_emotion)
-                } else {
-                    base_emotion
-                };
+                // Build a content-aware search query for GIPHY meme b-rolls.
+                // (Round-17: GIF relevance fix — replaced emotion-based queries
+                // like "mind blown reaction" with content-based queries like
+                // "brain power energy" that return topic-relevant clips.)
+                let meme_query = build_meme_search_query(
+                    &scene.text,
+                    &spec.video_keywords,
+                    &spec.output.theme,
+                );
                 tracing::info!(
-                    "[script.to_video] Meme b-roll scene {}: emotion='{}'",
+                    "[script.to_video] Meme b-roll scene {}: query='{}'",
                     scene_idx + 1,
-                    emotion_query
+                    meme_query
                 );
 
-                // Use GIPHY translate (best single match) or search
-                let giphy_url = if spec.meme_brolls.query_strategy == "search" {
-                    format!(
-                        "https://api.giphy.com/v1/gifs/search?api_key={}&q={}&limit=3&rating=pg&lang=en",
-                        giphy_key_val,
-                        urlencoding::encode(&emotion_query)
-                    )
-                } else {
-                    format!(
-                        "https://api.giphy.com/v1/gifs/translate?api_key={}&s={}",
-                        giphy_key_val,
-                        urlencoding::encode(&emotion_query)
-                    )
-                };
+                // Use GIPHY search (not translate) for content queries.
+                // Translate returns 1 "best match" which is often a generic
+                // reaction meme. Search returns multiple results, letting us
+                // pick from a wider pool of content-relevant clips.
+                let giphy_url = format!(
+                    "https://api.giphy.com/v1/gifs/search?api_key={}&q={}&limit=5&rating=pg&lang=en&bundle=sticker_layering",
+                    giphy_key_val,
+                    urlencoding::encode(&meme_query)
+                );
 
                 if let Ok(resp) = client.get(&giphy_url).send().await {
                     if resp.status().is_success() {
                         if let Ok(body) = resp.json::<serde_json::Value>().await {
-                            let gif_data = if spec.meme_brolls.query_strategy == "search" {
-                                body.get("data")
-                                    .and_then(|v| v.as_array())
-                                    .and_then(|arr| arr.first())
-                                    .cloned()
-                            } else {
-                                body.get("data").cloned()
-                            };
+                            // Always search mode now — iterate results to find
+                            // the first non-duplicate, non-static GIF.
+                            let gif_data = body
+                                .get("data")
+                                .and_then(|v| v.as_array())
+                                .and_then(|arr| {
+                                    // Find first result that:
+                                    // 1. Hasn't been used (dedup by ID)
+                                    // 2. Has >= 2 frames (not static)
+                                    // 3. Has an MP4 URL
+                                    arr.iter().find_map(|g| {
+                                        let gid = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                        if used_meme_ids.contains(gid) {
+                                            return None;
+                                        }
+                                        let imgs = g.get("images").and_then(|v| v.as_object())?;
+                                        let orig = imgs.get("original")?;
+                                        let frames = orig.get("frames")
+                                            .and_then(|v| v.as_str())
+                                            .and_then(|s| s.parse::<u32>().ok())
+                                            .unwrap_or(0);
+                                        if frames < 2 {
+                                            return None;
+                                        }
+                                        let mp4 = orig.get("mp4")
+                                            .and_then(|v| v.as_str())
+                                            .filter(|s| !s.is_empty())?;
+                                        Some(g.clone())
+                                    })
+                                });
 
                             if let Some(gif) = gif_data {
                                 // Dedup: skip if this GIPHY GIF was already
