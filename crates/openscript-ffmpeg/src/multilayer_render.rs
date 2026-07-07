@@ -335,6 +335,17 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut meme_inputs: Vec<(usize, &MemeClip)> = Vec::new();
     for meme in &spec.meme_clips {
         if std::path::Path::new(&meme.path).exists() {
+            // Loop the meme input to the full output duration so the
+            // blurred-letterbox background stream has frames for the entire
+            // video. Without this, the short GIPHY MP4 (~2-3s) runs out of
+            // frames and the overlay filtergraph fails to bind (the base
+            // stream [mb{idx}_bg] would EOF before the output ends).
+            // (Round-12 fresh-agent UX: render failed with "Filter 'fps:default'
+            // has output 0 (vbg) unconnected" because [vbg] was never consumed
+            // as a base — the meme overlay was missing its connection back to
+            // the background. Fixed in the filter section below.)
+            cmd.arg("-stream_loop").arg("-1");
+            cmd.arg("-t").arg(spec.total_duration_s.to_string());
             cmd.arg("-i").arg(&meme.path);
             meme_inputs.push((meme_input_start, meme));
             meme_input_start += 1;
@@ -368,9 +379,17 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         // on top. This creates a professional "blurred background" effect
         // that fills the screen while showing the full GIF/MP4 in the center.
         //
-        // [mb{idx}_bg] = blurred full-screen background
-        // [mb{idx}_fg] = sharp contain-scaled foreground
-        // [vmb{idx}] = blurred bg + sharp fg overlaid
+        // [mb{idx}_bg] = blurred full-screen background (looped to full duration)
+        // [mb{idx}_fg] = sharp contain-scaled foreground (looped to full duration)
+        // [vmid{idx}]  = blurred bg + sharp fg overlaid (the meme composite)
+        // [vmb{idx}]   = video_label + meme composite, ONLY during the meme's
+        //                time range. Outside the range, video_label (the
+        //                background) passes through unchanged.
+        //
+        // The previous version produced [vmb{idx}] from only [mb_bg]+[mb_fg]
+        // and never connected [vbg] — FFmpeg errored with "output 0 (vbg)
+        // unconnected" and the background was never composited with the meme.
+        // (Round-12 fresh-agent UX fix.)
         filters.push(format!(
             "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},boxblur=20:5,fps={},setpts=PTS-STARTPTS[mb{}_bg]",
             input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
@@ -379,9 +398,15 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=black,fps={},setpts=PTS-STARTPTS[mb{}_fg]",
             input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
+        // [vmid{idx}] = blurred bg + sharp fg (full-screen meme composite)
         filters.push(format!(
-            "[mb{}_bg][mb{}_fg]overlay=0:0:enable='between(t,{},{})':eof_action=repeat[vmb{}]",
+            "[mb{}_bg][mb{}_fg]overlay=0:0:enable='between(t,{},{})':eof_action=repeat[vmid{}]",
             idx, idx, meme.start_s, meme.end_s, idx
+        ));
+        // [vmb{idx}] = background + meme composite, only during the meme range
+        filters.push(format!(
+            "{}[vmid{}]overlay=0:0:enable='between(t,{},{})':eof_action=repeat[vmb{}]",
+            video_label, idx, meme.start_s, meme.end_s, idx
         ));
 
         video_label = format!("[vmb{}]", idx);
