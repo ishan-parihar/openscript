@@ -8849,16 +8849,19 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                     })
                                     .unwrap_or("");
 
-                                // Also verify the GIF has multiple frames (not static).
-                                // Round-11: "Some GIFs were static images"
+                                // Verify the GIF has multiple frames (not static).
+                                // Round-11/12: "Some GIFs were static images" — must
+                                // always check, regardless of whether MP4 is available.
+                                // A GIPHY result with frames<2 is a static image, not
+                                // an animated GIF/video. Skip it entirely.
                                 let frames = original
                                     .get("frames")
                                     .and_then(|v| v.as_str())
                                     .and_then(|s| s.parse::<u32>().ok())
                                     .unwrap_or(0);
-                                if frames < 2 && mp4_url.is_empty() {
+                                if frames < 2 {
                                     tracing::info!(
-                                        "[script.to_video] Skipping static GIPHY meme (frames={}): {}",
+                                        "[script.to_video] Skipping static GIPHY result (frames={}): {}",
                                         frames,
                                         gif.get("id").and_then(|v| v.as_str()).unwrap_or("?")
                                     );
@@ -8871,11 +8874,20 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                         if dl_resp.status().is_success() {
                                             if let Ok(bytes) = dl_resp.bytes().await {
                                                 std::fs::write(&meme_path, &bytes).ok();
-                                                // Store as a background clip that will be
-                                                // composited as a full-screen overlay during
-                                                // the meme's time window.
-                                                let meme_start_s = scene_start_s + spec.meme_brolls.offset_s;
+                                                // Time the meme to the emotional peak of the scene.
+                                                // Instead of a fixed offset from scene start, place
+                                                // the meme at ~40% through the scene (after the
+                                                // setup, at the reveal/punchline). This ensures
+                                                // the meme is relevant to what the speaker is saying.
+                                                // (Round-12: "The directing of the video is not good.
+                                                // The videos/gifs are not placed at the correct
+                                                // position of the sentences, making an irrelevant
+                                                // video at speaker's timing.")
+                                                let meme_start_s = scene_start_s + (scene_dur_s * 0.4);
                                                 let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
+                                                // Clamp end to scene end
+                                                let scene_end_s = scene_start_s + scene_dur_s;
+                                                let meme_end_s = meme_end_s.min(scene_end_s);
                                                 // Push as MemeClip (full-screen background video clip),
                                                 // NOT as StickerOverlay. Memes are a separate video-clip
                                                 // provider, not stickers.
@@ -8885,12 +8897,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                     end_s: meme_end_s,
                                                 });
                                                 tracing::info!(
-                                                    "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s)",
+                                                    "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s, scene={:.1}-{:.1}s)",
                                                     scene_idx + 1,
                                                     meme_path,
                                                     bytes.len(),
                                                     meme_start_s,
-                                                    meme_end_s
+                                                    meme_end_s,
+                                                    scene_start_s,
+                                                    scene_end_s
                                                 );
                                             }
                                         }

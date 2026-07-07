@@ -342,6 +342,14 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     }
 
     // 3b. Overlay full-screen meme b-rolls on the BACKGROUND (before captions)
+    //
+    // Meme b-roll scaling: use force_original_aspect_ratio=decrease + pad
+    // (contain/letterbox) so the FULL GIPHY clip is visible without cropping.
+    // The GIPHY clips are typically 480x270 — scaling to 1080x1920 with
+    // "increase+crop" would zoom in massively and lose quality. With
+    // "decrease+pad", the clip is scaled to fit within the canvas and the
+    // remaining area is filled with a blurred version of the clip itself
+    // (blurred letterbox) for a professional look.
     let mut video_label = "[vbg]".to_string();
     for (idx, (input_idx, meme)) in meme_inputs.iter().enumerate() {
         let meme_w = spec.width;
@@ -355,18 +363,25 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         let meme_label = format!("[mb{}]", idx);
         let out_label = format!("[vmb{}]", idx);
 
-        // Full-screen meme b-roll: scale to cover canvas + crop to exact
-        // dimensions (crop-to-fit). Also add loop for short clips and
-        // fps matching for smooth playback. setpts resets timestamps.
+        // Blurred letterbox: scale the clip to fill the canvas (increase),
+        // blur it heavily, then overlay the properly-scaled (decrease) clip
+        // on top. This creates a professional "blurred background" effect
+        // that fills the screen while showing the full GIF/MP4 in the center.
+        //
+        // [mb{idx}_bg] = blurred full-screen background
+        // [mb{idx}_fg] = sharp contain-scaled foreground
+        // [vmb{idx}] = blurred bg + sharp fg overlaid
         filters.push(format!(
-            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},setpts=PTS-STARTPTS[mb{}]",
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},boxblur=20:5,fps={},setpts=PTS-STARTPTS[mb{}_bg]",
             input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
-
-        // Overlay meme on background with time-based enable + repeat last frame
         filters.push(format!(
-            "{}[mb{}]overlay=0:0:enable='between(t,{},{})':eof_action=repeat[vmb{}]",
-            video_label, idx, meme.start_s, meme.end_s, idx
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=black,fps={},setpts=PTS-STARTPTS[mb{}_fg]",
+            input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
+        ));
+        filters.push(format!(
+            "[mb{}_bg][mb{}_fg]overlay=0:0:enable='between(t,{},{})':eof_action=repeat[vmb{}]",
+            idx, idx, meme.start_s, meme.end_s, idx
         ));
 
         video_label = format!("[vmb{}]", idx);
