@@ -8332,6 +8332,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         let cache_dir = "mcp/assets/background_cache";
         std::fs::create_dir_all(cache_dir).ok();
 
+        // Track Pexels video IDs that have already been used to prevent
+        // the same clip appearing in multiple scenes.
+        // (Round-16: "There are repeating video-cuts between the GIFs.
+        // Ensure that the entire video timeline has unique videos, not
+        // repeated video that might reduce the attention-hooking.")
+        let mut used_pexels_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
         for (scene_idx, &dur) in scene_durations.iter().enumerate() {
             // Extract keywords from scene text for the search query
             let scene_text = manifest
@@ -8407,8 +8414,19 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 if resp.status().is_success() {
                     if let Ok(body) = resp.json::<serde_json::Value>().await {
                         if let Some(videos) = body.get("videos").and_then(|v| v.as_array()) {
-                            // Find a video >= 5s with HD quality
+                            // Find a video >= 3s with HD quality that hasn't
+                            // been used in a previous scene (dedup by video ID).
                             for video in videos {
+                                let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                                // Skip if this Pexels video was already used
+                                // in a previous scene.
+                                if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
+                                    tracing::info!(
+                                        "[script.to_video] Skipping duplicate Pexels video {} for scene {}",
+                                        vid_id, scene_idx + 1
+                                    );
+                                    continue;
+                                }
                                 let vid_dur =
                                     video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
                                 if vid_dur >= 3 {
@@ -8470,6 +8488,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                             } else {
                                                                 scene_bg = Some(clip_path);
                                                             }
+                                                            // Mark this Pexels video as used so
+                                                            // subsequent scenes don't repeat it.
+                                                            used_pexels_ids.insert(vid_id);
                                                             break;
                                                         }
                                                     }
@@ -8819,6 +8840,11 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // (Round-9: user said "Meme Brolls must be full-screen b-rolls, not
     // stickers. Stickers/GIF implementation is another thing.")
     let mut meme_clips: Vec<openscript_ffmpeg::multilayer_render::MemeClip> = Vec::new();
+    // Track GIPHY GIF IDs that have already been used to prevent the same
+    // meme appearing in multiple scenes.
+    // (Round-16: "Ensure that the entire video timeline has unique videos,
+    // not repeated video that might reduce the attention-hooking.")
+    let mut used_meme_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     if spec.meme_brolls.enabled {
         let giphy_key_val = giphy_key();
         if !giphy_key_val.is_empty() {
@@ -8883,6 +8909,18 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                             };
 
                             if let Some(gif) = gif_data {
+                                // Dedup: skip if this GIPHY GIF was already
+                                // used in a previous scene.
+                                let gif_id = gif.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                if !gif_id.is_empty() && used_meme_ids.contains(&gif_id) {
+                                    tracing::info!(
+                                        "[script.to_video] Skipping duplicate GIPHY meme {} for scene {}",
+                                        gif_id, scene_idx + 1
+                                    );
+                                    scene_start_s += scene_dur_s;
+                                    continue;
+                                }
+
                                 let images = gif.get("images").cloned().unwrap_or(json!({}));
                                 let original = images.get("original").cloned().unwrap_or(json!({}));
 
@@ -8950,6 +8988,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                     start_s: meme_start_s,
                                                     end_s: meme_end_s,
                                                 });
+                                                // Mark this GIPHY GIF as used so
+                                                // subsequent scenes don't repeat it.
+                                                used_meme_ids.insert(gif_id.clone());
                                                 tracing::info!(
                                                     "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s, scene={:.1}-{:.1}s)",
                                                     scene_idx + 1,
