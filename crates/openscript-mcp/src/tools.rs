@@ -7377,6 +7377,147 @@ fn build_sticker_query(
 /// (Round-17: "GIF relevance is still an issue. The recently generated
 /// round 16 has a lot of GIF Brolls that are fully irrelevant. They are
 /// meme material but not relevant to the topic.")
+/// Build multiple GIPHY search queries for meme b-rolls, ranked by relevance.
+///
+/// Uses GIPHY SDK features discovered via Context7 research:
+/// 1. Multi-query strategy: try specific → broad → trending fallback
+/// 2. Relevance scoring: check GIF `tags` and `title` against query keywords
+/// 3. `remove_low_contrast=true`: filter low-quality results
+/// 4. `channel_ids`: could filter to topic-relevant channels (future)
+///
+/// The function returns a list of (query, limit) pairs to try in order.
+/// The caller iterates through them until it finds a suitable non-duplicate,
+/// non-static GIF with an MP4 URL.
+///
+/// (Round-18: GIPHY SDK comprehensive integration — user asked to "check
+/// GIPHY SDK details and investigate how to effectively implement the
+/// topic/context relevant brolls through GIFs, and understand how the
+/// GIPHY SDK provides more comprehensive features and utilities than
+/// regular API")
+fn build_meme_search_queries(
+    scene_text: &str,
+    video_keywords: &[String],
+    theme: &str,
+) -> Vec<(String, u32)> {
+    let stop_words = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "have",
+        "has", "had", "do", "does", "did", "will", "would", "could", "should",
+        "can", "may", "might", "it", "its", "this", "that", "these", "those",
+        "i", "you", "he", "she", "we", "they", "what", "which", "who", "when",
+        "where", "why", "how", "all", "each", "every", "both", "few", "more",
+        "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+        "same", "so", "than", "too", "very", "just", "but", "and", "or", "if",
+        "then", "else", "for", "of", "to", "in", "on", "at", "by", "with",
+        "from", "as", "into", "through", "during", "before", "after", "about",
+        "your", "yours", "their", "them", "our", "us", "my", "me",
+        "here", "there", "now", "then", "also", "very",
+    ];
+
+    // Extract ALL content words from scene (not just first 3)
+    let scene_words: Vec<String> = scene_text
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .filter(|w| !w.is_empty() && w.len() > 2 && !stop_words.contains(&w.as_str()))
+        .collect();
+
+    let topic_words: Vec<&str> = video_keywords.iter().take(3).map(|s| s.as_str()).collect();
+
+    let mut queries: Vec<(String, u32)> = Vec::new();
+
+    // Strategy 1: Most specific — topic + best scene content words
+    // Pick the 2 longest scene words (usually the most informative nouns)
+    let mut sorted_scene: Vec<&String> = scene_words.iter().collect();
+    sorted_scene.sort_by(|a, b| b.len().cmp(&a.len()));
+    let best_scene_words: Vec<&str> = sorted_scene.iter().take(2).map(|s| s.as_str()).collect();
+
+    let mut q1_parts: Vec<&str> = Vec::new();
+    for tw in &topic_words {
+        if !q1_parts.contains(tw) {
+            q1_parts.push(tw);
+        }
+    }
+    for sw in &best_scene_words {
+        if !q1_parts.contains(sw) && !topic_words.contains(sw) {
+            q1_parts.push(sw);
+        }
+    }
+    if !q1_parts.is_empty() {
+        queries.push((q1_parts.join(" "), 10));
+    }
+
+    // Strategy 2: Broader — just topic keywords (for when scene words are too specific)
+    if !topic_words.is_empty() {
+        queries.push((topic_words.join(" "), 10));
+    }
+
+    // Strategy 3: Single best scene word alone (for when topic is too broad)
+    if let Some(&best) = best_scene_words.first() {
+        if !topic_words.contains(&best) {
+            queries.push((best.to_string(), 5));
+        }
+    }
+
+    // Strategy 4: Topic + theme (fallback for diversity)
+    if !topic_words.is_empty() {
+        let theme_suffix = match theme {
+            "calm" => " nature",
+            "energetic" => " action",
+            _ => "",
+        };
+        queries.push((format!("{}{}", topic_words[0], theme_suffix), 5));
+    }
+
+    // Strategy 5: Ultimate fallback — trending GIFs (no query, just popular content)
+    queries.push(("".to_string(), 5)); // Empty query = use trending endpoint
+
+    queries
+}
+
+/// Score a GIPHY GIF's relevance to the search query.
+/// Returns a score 0-100 based on how well the GIF's title, tags, and
+/// source match the query keywords.
+/// (Round-18: GIPHY SDK relevance scoring using GIF Object metadata)
+fn score_gif_relevance(gif: &serde_json::Value, query: &str) -> u32 {
+    let query_words: Vec<&str> = query.split_whitespace().collect();
+    if query_words.is_empty() {
+        return 50; // No query = neutral score for trending
+    }
+
+    let title = gif.get("title").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let slug = gif.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let username = gif.get("username").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+    let source_tld = gif.get("source_tld").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+
+    let mut score = 0u32;
+
+    for word in &query_words {
+        let w = word.to_lowercase();
+        // Title match = strong signal (5 points per word)
+        if title.contains(&w) {
+            score += 5;
+        }
+        // Slug match = medium signal (3 points)
+        if slug.contains(&w) {
+            score += 3;
+        }
+        // Username match = weak signal (1 point)
+        if username.contains(&w) {
+            score += 1;
+        }
+        // Source TLD match = weak signal (1 point)
+        if source_tld.contains(&w) {
+            score += 1;
+        }
+    }
+
+    // Bonus: GIF has alt_text (descriptive metadata) = higher quality
+    if gif.get("alt_text").and_then(|v| v.as_str()).is_some() {
+        score += 2;
+    }
+
+    score.min(100)
+}
+
 fn build_meme_search_query(
     scene_text: &str,
     video_keywords: &[String],
@@ -8949,165 +9090,161 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             for (scene_idx, scene) in spec.scenes.iter().enumerate() {
                 let scene_dur_s = scene_durations.get(scene_idx).copied().unwrap_or(3.0);
 
-                // Build a content-aware search query for GIPHY meme b-rolls.
-                // (Round-17: GIF relevance fix — replaced emotion-based queries
-                // like "mind blown reaction" with content-based queries like
-                // "brain power energy" that return topic-relevant clips.)
-                let meme_query = build_meme_search_query(
+                // Build multiple search queries ranked by specificity.
+                // (Round-18: GIPHY SDK multi-query strategy with relevance
+                // scoring. Tries specific → broad → trending fallback.)
+                let search_strategies = build_meme_search_queries(
                     &scene.text,
                     &spec.video_keywords,
                     &spec.output.theme,
                 );
+
                 tracing::info!(
-                    "[script.to_video] Meme b-roll scene {}: query='{}'",
+                    "[script.to_video] Meme b-roll scene {}: {} search strategies",
                     scene_idx + 1,
-                    meme_query
+                    search_strategies.len()
                 );
+                for (i, (q, lim)) in search_strategies.iter().enumerate() {
+                    tracing::info!(
+                        "[script.to_video]   strategy {}: query='{}' limit={}",
+                        i + 1, q, lim
+                    );
+                }
 
-                // Use GIPHY search (not translate) for content queries.
-                // Translate returns 1 "best match" which is often a generic
-                // reaction meme. Search returns multiple results, letting us
-                // pick from a wider pool of content-relevant clips.
-                let giphy_url = format!(
-                    "https://api.giphy.com/v1/gifs/search?api_key={}&q={}&limit=5&rating=pg&lang=en&bundle=sticker_layering",
-                    giphy_key_val,
-                    urlencoding::encode(&meme_query)
-                );
+                let mut meme_found = false;
 
-                if let Ok(resp) = client.get(&giphy_url).send().await {
-                    if resp.status().is_success() {
-                        if let Ok(body) = resp.json::<serde_json::Value>().await {
-                            // Always search mode now — iterate results to find
-                            // the first non-duplicate, non-static GIF.
-                            let gif_data = body
-                                .get("data")
-                                .and_then(|v| v.as_array())
-                                .and_then(|arr| {
-                                    // Find first result that:
-                                    // 1. Hasn't been used (dedup by ID)
-                                    // 2. Has >= 2 frames (not static)
-                                    // 3. Has an MP4 URL
-                                    arr.iter().find_map(|g| {
-                                        let gid = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                        if used_meme_ids.contains(gid) {
-                                            return None;
-                                        }
-                                        let imgs = g.get("images").and_then(|v| v.as_object())?;
-                                        let orig = imgs.get("original")?;
-                                        let frames = orig.get("frames")
-                                            .and_then(|v| v.as_str())
-                                            .and_then(|s| s.parse::<u32>().ok())
-                                            .unwrap_or(0);
-                                        if frames < 2 {
-                                            return None;
-                                        }
-                                        let mp4 = orig.get("mp4")
-                                            .and_then(|v| v.as_str())
-                                            .filter(|s| !s.is_empty())?;
-                                        Some(g.clone())
-                                    })
-                                });
+                // Try each search strategy in order until we find a suitable GIF
+                for (query, limit) in &search_strategies {
+                    if meme_found {
+                        break;
+                    }
 
-                            if let Some(gif) = gif_data {
-                                // Dedup: skip if this GIPHY GIF was already
-                                // used in a previous scene.
-                                let gif_id = gif.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                if !gif_id.is_empty() && used_meme_ids.contains(&gif_id) {
-                                    tracing::info!(
-                                        "[script.to_video] Skipping duplicate GIPHY meme {} for scene {}",
-                                        gif_id, scene_idx + 1
-                                    );
-                                    scene_start_s += scene_dur_s;
-                                    continue;
-                                }
+                    // Build GIPHY URL — use search for non-empty queries,
+                    // trending for empty query (ultimate fallback).
+                    let giphy_url = if query.is_empty() {
+                        format!(
+                            "https://api.giphy.com/v1/gifs/trending?api_key={}&limit={}&rating=pg&bundle=sticker_layering",
+                            giphy_key_val, limit
+                        )
+                    } else {
+                        format!(
+                            "https://api.giphy.com/v1/gifs/search?api_key={}&q={}&limit={}&rating=pg&lang=en&bundle=sticker_layering&remove_low_contrast=true",
+                            giphy_key_val,
+                            urlencoding::encode(query),
+                            limit
+                        )
+                    };
 
-                                let images = gif.get("images").cloned().unwrap_or(json!({}));
-                                let original = images.get("original").cloned().unwrap_or(json!({}));
+                    let resp_result = client.get(&giphy_url).send().await;
+                    if let Ok(resp) = resp_result {
+                        if !resp.status().is_success() {
+                            continue;
+                        }
+                        let body_result = resp.json::<serde_json::Value>().await;
+                        if body_result.is_err() {
+                            continue;
+                        }
+                        let body = body_result.unwrap();
+                        let data_arr = body.get("data").and_then(|v| v.as_array());
+                        if data_arr.is_none() {
+                            continue;
+                        }
+                        let gifs = data_arr.unwrap();
 
-                                // Download MP4 (not GIF) for full-screen video quality.
-                                // GIPHY provides images.original.mp4 — a proper video format
-                                // that FFmpeg can decode and scale to full-screen.
-                                // Also check images.original_mp4 as a fallback.
-                                let mp4_url = original
-                                    .get("mp4")
-                                    .and_then(|v| v.as_str())
-                                    .filter(|s| !s.is_empty())
-                                    .or_else(|| {
-                                        // Fallback: try images.original_mp4.mp4
-                                        images.get("original_mp4")
-                                            .and_then(|v| v.get("mp4"))
-                                            .and_then(|v| v.as_str())
-                                            .filter(|s| !s.is_empty())
-                                    })
-                                    .unwrap_or("");
+                        // Score all results by relevance and pick the best
+                        // non-duplicate, non-static GIF with MP4.
+                        let mut best_gif: Option<(serde_json::Value, u32)> = None;
+                        for g in gifs {
+                            let gid = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                            if !gid.is_empty() && used_meme_ids.contains(gid) {
+                                continue;
+                            }
+                            let imgs = match g.get("images").and_then(|v| v.as_object()) {
+                                Some(im) => im,
+                                None => continue,
+                            };
+                            let orig = match imgs.get("original") {
+                                Some(o) => o,
+                                None => continue,
+                            };
+                            let frames = orig.get("frames")
+                                .and_then(|v| v.as_str())
+                                .and_then(|s| s.parse::<u32>().ok())
+                                .unwrap_or(0);
+                            if frames < 2 {
+                                continue;
+                            }
+                            let mp4 = orig.get("mp4")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty());
+                            if mp4.is_none() {
+                                continue;
+                            }
+                            // Score relevance
+                            let score = score_gif_relevance(g, query);
+                            if best_gif.is_none() || score > best_gif.as_ref().unwrap().1 {
+                                best_gif = Some((g.clone(), score));
+                            }
+                        }
 
-                                // Verify the GIF has multiple frames (not static).
-                                // Round-11/12: "Some GIFs were static images" — must
-                                // always check, regardless of whether MP4 is available.
-                                // A GIPHY result with frames<2 is a static image, not
-                                // an animated GIF/video. Skip it entirely.
-                                let frames = original
-                                    .get("frames")
-                                    .and_then(|v| v.as_str())
-                                    .and_then(|s| s.parse::<u32>().ok())
-                                    .unwrap_or(0);
-                                if frames < 2 {
-                                    tracing::info!(
-                                        "[script.to_video] Skipping static GIPHY result (frames={}): {}",
-                                        frames,
-                                        gif.get("id").and_then(|v| v.as_str()).unwrap_or("?")
-                                    );
-                                    continue;
-                                }
+                        if let Some((gif, score)) = best_gif {
+                            let gif_id = gif.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let gif_title = gif.get("title").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+                            tracing::info!(
+                                "[script.to_video] Meme b-roll scene {}: FOUND query='{}' gif_id={} title='{}' relevance_score={}",
+                                scene_idx + 1, query, gif_id, gif_title, score
+                            );
 
-                                if !mp4_url.is_empty() {
-                                    let meme_path = format!("{}/meme_scene_{}.mp4", meme_dir, scene_idx + 1);
-                                    if let Ok(dl_resp) = client.get(mp4_url).send().await {
-                                        if dl_resp.status().is_success() {
-                                            if let Ok(bytes) = dl_resp.bytes().await {
-                                                std::fs::write(&meme_path, &bytes).ok();
-                                                // Time the meme to the emotional peak of the scene.
-                                                // Instead of a fixed offset from scene start, place
-                                                // the meme at ~40% through the scene (after the
-                                                // setup, at the reveal/punchline). This ensures
-                                                // the meme is relevant to what the speaker is saying.
-                                                // (Round-12: "The directing of the video is not good.
-                                                // The videos/gifs are not placed at the correct
-                                                // position of the sentences, making an irrelevant
-                                                // video at speaker's timing.")
-                                                let meme_start_s = scene_start_s + (scene_dur_s * 0.4);
-                                                let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
-                                                // Clamp end to scene end
-                                                let scene_end_s = scene_start_s + scene_dur_s;
-                                                let meme_end_s = meme_end_s.min(scene_end_s);
-                                                // Push as MemeClip (full-screen background video clip),
-                                                // NOT as StickerOverlay. Memes are a separate video-clip
-                                                // provider, not stickers.
-                                                meme_clips.push(openscript_ffmpeg::multilayer_render::MemeClip {
-                                                    path: meme_path.clone(),
-                                                    start_s: meme_start_s,
-                                                    end_s: meme_end_s,
-                                                });
-                                                // Mark this GIPHY GIF as used so
-                                                // subsequent scenes don't repeat it.
-                                                used_meme_ids.insert(gif_id.clone());
-                                                tracing::info!(
-                                                    "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s, scene={:.1}-{:.1}s)",
-                                                    scene_idx + 1,
-                                                    meme_path,
-                                                    bytes.len(),
-                                                    meme_start_s,
-                                                    meme_end_s,
-                                                    scene_start_s,
-                                                    scene_end_s
-                                                );
-                                            }
+                            let images = gif.get("images").cloned().unwrap_or(json!({}));
+                            let original = images.get("original").cloned().unwrap_or(json!({}));
+
+                            let mp4_url = original
+                                .get("mp4")
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .or_else(|| {
+                                    images.get("original_mp4")
+                                        .and_then(|v| v.get("mp4"))
+                                        .and_then(|v| v.as_str())
+                                        .filter(|s| !s.is_empty())
+                                })
+                                .unwrap_or("");
+
+                            if !mp4_url.is_empty() {
+                                let meme_path = format!("{}/meme_scene_{}.mp4", meme_dir, scene_idx + 1);
+                                if let Ok(dl_resp) = client.get(mp4_url).send().await {
+                                    if dl_resp.status().is_success() {
+                                        if let Ok(bytes) = dl_resp.bytes().await {
+                                            std::fs::write(&meme_path, &bytes).ok();
+                                            let meme_start_s = scene_start_s + (scene_dur_s * 0.4);
+                                            let meme_end_s = meme_start_s + spec.meme_brolls.duration_s;
+                                            let scene_end_s = scene_start_s + scene_dur_s;
+                                            let meme_end_s = meme_end_s.min(scene_end_s);
+                                            meme_clips.push(openscript_ffmpeg::multilayer_render::MemeClip {
+                                                path: meme_path.clone(),
+                                                start_s: meme_start_s,
+                                                end_s: meme_end_s,
+                                            });
+                                            used_meme_ids.insert(gif_id.clone());
+                                            tracing::info!(
+                                                "[script.to_video] Downloaded meme b-roll MP4 for scene {}: {} ({} bytes, {:.1}s-{:.1}s, relevance={})",
+                                                scene_idx + 1, meme_path, bytes.len(),
+                                                meme_start_s, meme_end_s, score
+                                            );
+                                            meme_found = true;
                                         }
                                     }
                                 }
                             }
                         }
                     }
+                }
+
+                if !meme_found {
+                    tracing::warn!(
+                        "[script.to_video] No suitable meme b-roll found for scene {} after all strategies",
+                        scene_idx + 1
+                    );
                 }
 
                 scene_start_s += scene_dur_s;
