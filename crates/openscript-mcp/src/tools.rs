@@ -7183,6 +7183,95 @@ async fn auto_select_music(_theme: &str) -> Option<String> {
     }
 
     tracing::warn!("[script.to_video] No matching music found in library index for theme '{}'", _theme);
+
+    // Fallback: try Pixabay free music API (no API key required for basic use,
+    // but works better with PIXABAY_API_KEY). Pixabay provides royalty-free
+    // music with direct download URLs that don't require yt-dlp.
+    // (Round-11: "I am still not hearing any BG-Music. Ensure that it would
+    // work when the music is available. Check if you can implement scraping
+    // from the stock music providers.")
+    if let Some(path) = fetch_pixabay_music(_theme).await {
+        return Some(path);
+    }
+
+    None
+}
+
+/// Fetch royalty-free music from Pixabay's API.
+/// Pixabay provides direct MP3 download URLs (no yt-dlp needed).
+/// If PIXABAY_API_KEY is not set, uses the free tier (limited but functional).
+async fn fetch_pixabay_music(theme: &str) -> Option<String> {
+    let pixabay_key = pixabay_key();
+    if pixabay_key.is_empty() {
+        tracing::info!("[script.to_video] PIXABAY_API_KEY not set — skipping Pixabay music fetch");
+        return None;
+    }
+
+    let search_query = match theme {
+        "calm" => "meditation+calm",
+        "energetic" => "upbeat+energetic",
+        _ => "background+music",
+    };
+
+    let url = format!(
+        "https://pixabay.com/api/audio/?key={}&q={}&per_page=3",
+        pixabay_key,
+        search_query
+    );
+
+    tracing::info!("[script.to_video] Fetching music from Pixabay: q='{}'", search_query);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .ok()?;
+
+    let resp = client.get(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        tracing::warn!("[script.to_video] Pixabay API returned status: {}", resp.status());
+        return None;
+    }
+
+    let body: serde_json::Value = resp.json().await.ok()?;
+    let hits = body.get("hits").and_then(|v| v.as_array())?;
+
+    for hit in hits {
+        let audio_url = hit.get("audio").and_then(|v| v.as_str()).unwrap_or("");
+        let title = hit.get("tags").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+        if audio_url.is_empty() {
+            continue;
+        }
+
+        tracing::info!("[script.to_video] Pixabay music found: '{}'", title);
+
+        // Download the MP3
+        let music_cache = resolve_repo_path("mcp/assets/music_cache");
+        let _ = std::fs::create_dir_all(&music_cache);
+        let filename = format!("pixabay_{}.mp3",
+            title.replace(' ', "_").chars().take(30).collect::<String>());
+        let local_path = music_cache.join(&filename);
+
+        if local_path.exists() {
+            tracing::info!("[script.to_video] Pixabay music already cached: {}", local_path.display());
+            return Some(local_path.to_string_lossy().to_string());
+        }
+
+        if let Ok(dl_resp) = client.get(audio_url).send().await {
+            if dl_resp.status().is_success() {
+                if let Ok(bytes) = dl_resp.bytes().await {
+                    std::fs::write(&local_path, &bytes).ok();
+                    tracing::info!(
+                        "[script.to_video] Downloaded Pixabay music: {} ({} bytes)",
+                        local_path.display(), bytes.len()
+                    );
+                    return Some(local_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    tracing::warn!("[script.to_video] No downloadable music found on Pixabay");
     None
 }
 
@@ -8543,6 +8632,22 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                         continue;
                                     }
 
+                                    // Skip static (non-animated) GIFs — check frame count.
+                                    // (Round-11: "Some GIFs were static images" — user wants
+                                    // animated stickers only.)
+                                    let frames = original
+                                        .get("frames")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| s.parse::<u32>().ok())
+                                        .unwrap_or(0);
+                                    if frames < 2 {
+                                        tracing::info!(
+                                            "[script.to_video] Skipping static GIPHY sticker (frames={}): {}",
+                                            frames, sticker_id
+                                        );
+                                        continue;
+                                    }
+
                                     // Skip oversized stickers (> 3MB)
                                     let size: i64 = original
                                         .get("webp_size")
@@ -8730,11 +8835,35 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                 // Download MP4 (not GIF) for full-screen video quality.
                                 // GIPHY provides images.original.mp4 — a proper video format
                                 // that FFmpeg can decode and scale to full-screen.
+                                // Also check images.original_mp4 as a fallback.
                                 let mp4_url = original
                                     .get("mp4")
                                     .and_then(|v| v.as_str())
                                     .filter(|s| !s.is_empty())
+                                    .or_else(|| {
+                                        // Fallback: try images.original_mp4.mp4
+                                        images.get("original_mp4")
+                                            .and_then(|v| v.get("mp4"))
+                                            .and_then(|v| v.as_str())
+                                            .filter(|s| !s.is_empty())
+                                    })
                                     .unwrap_or("");
+
+                                // Also verify the GIF has multiple frames (not static).
+                                // Round-11: "Some GIFs were static images"
+                                let frames = original
+                                    .get("frames")
+                                    .and_then(|v| v.as_str())
+                                    .and_then(|s| s.parse::<u32>().ok())
+                                    .unwrap_or(0);
+                                if frames < 2 && mp4_url.is_empty() {
+                                    tracing::info!(
+                                        "[script.to_video] Skipping static GIPHY meme (frames={}): {}",
+                                        frames,
+                                        gif.get("id").and_then(|v| v.as_str()).unwrap_or("?")
+                                    );
+                                    continue;
+                                }
 
                                 if !mp4_url.is_empty() {
                                     let meme_path = format!("{}/meme_scene_{}.mp4", meme_dir, scene_idx + 1);

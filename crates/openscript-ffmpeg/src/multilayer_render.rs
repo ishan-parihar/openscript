@@ -431,20 +431,29 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         let is_gif = sticker.path.ends_with(".gif");
 
         if is_gif {
-            // Animated GIF: loop continuously + crop-to-fit for smooth animation
+            // Animated GIF: loop continuously + contain (letterbox) mode.
+            // Round-11: user said "the GIF must show up in the middle, being
+            // able to show the full-GIF effectively. Currently, it is very
+            // zoomed in low resolution image."
+            //
+            // Use force_original_aspect_ratio=decrease (contain/letterbox)
+            // instead of increase (crop). This shows the FULL GIF without
+            // cropping, padded to the target size. The padding is transparent
+            // (GIF alpha), so the background shows through.
+            //
             // - loop=loop=-1:size=0: infinite loop
-            // - scale=W:H:force_original_aspect_ratio=increase: scale to fill
-            // - crop=W:H: crop to exact target size (crop-to-fit)
+            // - scale=W:H:force_original_aspect_ratio=decrease: contain (full GIF visible)
+            // - pad=W:H:(W-w)/2:(H-h)/2:center: center the GIF in the target area
             // - fps={fps}: match output framerate for smooth playback
             // - setpts=PTS-STARTPTS: reset timestamps
             filters.push(format!(
-                "[{}:v]loop=loop=-1:size=0,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},setpts=PTS-STARTPTS[st{}]",
+                "[{}:v]loop=loop=-1:size=0,scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
                 input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
             ));
         } else {
-            // Regular image or video: scale to fill + crop to fit
+            // Regular image or video: contain mode (full content visible)
             filters.push(format!(
-                "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},setpts=PTS-STARTPTS[st{}]",
+                "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
                 input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
             ));
         }
