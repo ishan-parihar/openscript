@@ -337,15 +337,10 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         if std::path::Path::new(&meme.path).exists() {
             // Loop the meme input to the full output duration so the
             // blurred-letterbox background stream has frames for the entire
-            // video. Without this, the short GIPHY MP4 (~2-3s) runs out of
-            // frames and the overlay filtergraph fails to bind (the base
-            // stream [mb{idx}_bg] would EOF before the output ends).
-            // (Round-12 fresh-agent UX: render failed with "Filter 'fps:default'
-            // has output 0 (vbg) unconnected" because [vbg] was never consumed
-            // as a base — the meme overlay was missing its connection back to
-            // the background. Fixed in the filter section below.)
-            cmd.arg("-stream_loop").arg("-1");
-            cmd.arg("-t").arg(spec.total_duration_s.to_string());
+            // Note: boomerang looping is handled in the filter graph
+            // (split + reverse + concat + loop). No need for -stream_loop
+            // on the input since the filter handles infinite looping.
+            // (Round-14: boomerang looping upgrade.)
             cmd.arg("-i").arg(&meme.path);
             meme_inputs.push((meme_input_start, meme));
             meme_input_start += 1;
@@ -390,13 +385,36 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         // and never connected [vbg] — FFmpeg errored with "output 0 (vbg)
         // unconnected" and the background was never composited with the meme.
         // (Round-12 fresh-agent UX fix.)
+        // Boomerang (ping-pong) the meme clip for smooth looping.
+        // (Round-14: "upgrade their looping to boomerang style to remove
+        // the jitter that is there in regular loops")
+        //
+        // Each meme input is split: forward + reversed → concat → loop.
+        // The boomerang cycle is then split again for blurred bg + sharp fg.
+        let m_fwd = format!("[mf{}]", idx);
+        let m_rev_src = format!("[mrs{}]", idx);
+        let m_rev = format!("[mr{}]", idx);
+        let m_boom = format!("[mbo{}]", idx);
+        let m_bg_src = format!("[mbs{}]", idx);
+        let m_fg_src = format!("[mfs{}]", idx);
+
+        // Split input → forward + reverse_source
+        filters.push(format!("[{}:v]split=2{}{}", input_idx, m_fwd, m_rev_src));
+        // Reverse the second copy
+        filters.push(format!("{}reverse{}", m_rev_src, m_rev));
+        // Concat forward + reversed = one boomerang cycle
+        filters.push(format!("{}{}concat=n=2{}", m_fwd, m_rev, m_boom));
+        // Loop boomerang infinitely, then split for bg + fg
+        filters.push(format!("{}loop=loop=-1:size=0,split=2{}{}", m_boom, m_bg_src, m_fg_src));
+        // Blurred background
         filters.push(format!(
-            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},boxblur=20:5,fps={},setpts=PTS-STARTPTS[mb{}_bg]",
-            input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
+            "{}scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},boxblur=20:5,fps={},setpts=PTS-STARTPTS[mb{}_bg]",
+            m_bg_src, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
+        // Sharp foreground (contain/letterbox)
         filters.push(format!(
-            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=black,fps={},setpts=PTS-STARTPTS[mb{}_fg]",
-            input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
+            "{}scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=black,fps={},setpts=PTS-STARTPTS[mb{}_fg]",
+            m_fg_src, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
         // [vmid{idx}] = blurred bg + sharp fg (full-screen meme composite)
         filters.push(format!(
@@ -471,24 +489,34 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         let is_gif = sticker.path.ends_with(".gif");
 
         if is_gif {
-            // Animated GIF: loop continuously + contain (letterbox) mode.
-            // Round-11: user said "the GIF must show up in the middle, being
-            // able to show the full-GIF effectively. Currently, it is very
-            // zoomed in low resolution image."
+            // Animated GIF: boomerang (ping-pong) loop + contain (letterbox).
             //
-            // Use force_original_aspect_ratio=decrease (contain/letterbox)
-            // instead of increase (crop). This shows the FULL GIF without
-            // cropping, padded to the target size. The padding is transparent
-            // (GIF alpha), so the background shows through.
+            // Boomerang eliminates loop jitter by playing frames
+            // forward → backward → forward → ... instead of jumping
+            // from last frame back to first.
             //
-            // - loop=loop=-1:size=0: infinite loop
-            // - scale=W:H:force_original_aspect_ratio=decrease: contain (full GIF visible)
-            // - pad=W:H:(W-w)/2:(H-h)/2:center: center the GIF in the target area
-            // - fps={fps}: match output framerate for smooth playback
-            // - setpts=PTS-STARTPTS: reset timestamps
+            // (Round-14: "upgrade their looping to boomerang style to
+            // remove the jitter that is there in regular loops")
+            //
+            // FFmpeg implementation:
+            // 1. split input into two copies [fwd] + [rev_src]
+            // 2. reverse [rev_src] → [rev] (backward playback)
+            // 3. [fwd][rev] concat → [boom] (one boomerang cycle)
+            // 4. [boom] loop=loop=-1 → infinite boomerang
+            // 5. scale+pad (contain) + fps → [stN]
+            let fwd = format!("[bf{}]", idx);
+            let rev_src = format!("[brs{}]", idx);
+            let rev = format!("[br{}]", idx);
+            let boom = format!("[bc{}]", idx);
+            let looped = format!("[bl{}]", idx);
+
+            filters.push(format!("[{}:v]split=2{}{}", input_idx, fwd, rev_src));
+            filters.push(format!("{}reverse{}", rev_src, rev));
+            filters.push(format!("{}{}concat=n=2{}", fwd, rev, boom));
+            filters.push(format!("{}loop=loop=-1:size=0{}", boom, looped));
             filters.push(format!(
-                "[{}:v]loop=loop=-1:size=0,scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
-                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+                "{}scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
+                looped, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
             ));
         } else {
             // Regular image or video: contain mode (full content visible)
