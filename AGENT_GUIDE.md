@@ -144,18 +144,39 @@ Post-render quality checks.
 
 ---
 
+## Video Keywords (topic-aware search)
+
+**Critical for video relevance.** Set `video_keywords` at the top level of your script to provide 3-5 topic keywords that represent the WHOLE video. These keywords are prepended to every Pexels (background) and GIPHY (sticker + meme) search query to ensure results are topically relevant, not just sentence-relevant.
+
+```json
+{
+  "title": "3 Surprising Facts About the Human Brain",
+  "video_keywords": ["brain", "neuroscience", "neurons", "science"],
+  ...
+}
+```
+
+**Without `video_keywords`:** A scene saying "inhale for four seconds" in a brain video → Pexels searches "inhale four seconds" → returns cigarette/breathing exercise clips (irrelevant to brain topic).
+
+**With `video_keywords`:** Same scene → Pexels searches "brain neurons inhale" → returns neuroscience/neuron clips (relevant to the video topic).
+
+If `video_keywords` is omitted, the system auto-extracts keywords from the title (non-stopwords, length > 3, max 5).
+
+---
+
 ## Script JSON Format (the single source of truth)
 
 ```json
 {
-  "title": "My Video",
+  "title": "3 Surprising Facts About the Human Brain",
+  "video_keywords": ["brain", "neuroscience", "neurons", "science"],
   "meta": {"aspect": "9:16", "fps": 30, "width": 1080, "height": 1920},
   "tts": {"backend": "kokoro", "default_speed": 1.0},
   "speakers": {
     "alice": {
       "voice": "kokoro:af_heart",
       "position": "bottom-left",
-      "scale": 0.2
+      "scale": 0.35
     }
   },
   "background": {

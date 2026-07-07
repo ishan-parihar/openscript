@@ -26,6 +26,15 @@ pub struct ScriptSpec {
     #[serde(default)]
     pub title: String,
 
+    /// Topic keywords representing the WHOLE video (3-5 words).
+    /// These are prepended to every Pexels/GIPHY search query to bias
+    /// results toward the video's topic, not just the individual sentence.
+    /// Example: ["brain", "neuroscience", "neurons", "science", "mind"]
+    /// If not provided, keywords are auto-extracted from the title.
+    /// (Round-13: topic-aware video search upgrade.)
+    #[serde(default)]
+    pub video_keywords: Vec<String>,
+
     /// Output metadata (aspect, fps, resolution).
     #[serde(default)]
     pub meta: MetaSpec,
@@ -852,16 +861,36 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
         }
     }
 
-    // Apply theme preset. The theme overrides defaults for captions +
-    // stickers, but ONLY for fields that still have their hardcoded
-    // default values (meaning the user did not explicitly set them).
-    // This lets an agent set theme:"calm" and get warm-gold captions +
-    // disabled stickers + sentence_fade style without hand-tuning each
-    // field, while still allowing per-field overrides.
-    // (UX audit GAP #4 fix.)
+    // Auto-extract video_keywords from title if not provided.
+    // (Round-13: topic-aware video search upgrade.)
+    if spec.video_keywords.is_empty() && !spec.title.is_empty() {
+        spec.video_keywords = extract_topic_keywords(&spec.title);
+    }
+
+    // Apply theme preset.
     apply_theme(&mut spec);
 
     Ok(spec)
+}
+
+/// Extract topic keywords from a video title.
+/// Takes the most significant words (non-stopwords, length > 3),
+/// limited to 5 keywords. These represent the WHOLE video topic.
+/// Example: "3 Surprising Facts About the Human Brain" → ["surprising", "facts", "human", "brain"]
+fn extract_topic_keywords(title: &str) -> Vec<String> {
+    let stop_words = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "about", "of", "to", "in",
+        "on", "at", "by", "with", "and", "or", "for", "from", "how", "why", "what",
+        "when", "where", "who", "your", "you", "can", "do", "does", "did", "will",
+        "would", "could", "should", "3", "5", "10", "top", "best", "most",
+    ];
+
+    title
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+        .filter(|w| !w.is_empty() && w.len() > 3 && !stop_words.contains(&w.as_str()))
+        .take(5)
+        .collect()
 }
 
 /// Apply the theme preset from `output.theme` to captions + stickers.

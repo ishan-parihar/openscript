@@ -8342,16 +8342,36 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            // Extract keywords from scene text, then filter through the
-            // safe-search map to prevent Pexels from returning tonally
-            // wrong results (e.g. "inhale" → cigarette smoking videos).
-            // Also enrich with theme context ("calm" prefix for calm theme).
-            let raw_keywords = extract_keywords(scene_text, &spec.background.query);
-            let query = safe_search_query(&raw_keywords, &spec.output.theme);
+            // Build a topic-aware search query for Pexels.
+            // (Round-13: topic-aware video search upgrade.)
+            //
+            // The query combines:
+            // 1. Video topic keywords (from spec.video_keywords) — provides CONTEXT
+            // 2. Scene-specific keywords (from extract_keywords) — provides SPECIFICITY
+            // 3. Theme context (from safe_search_query) — provides MOOD
+            //
+            // Example: video about "brain neuroscience" + scene "86 billion neurons"
+            // → query: "brain neurons" (not "did you know 86 billion neurons")
+            let scene_keywords = extract_keywords(scene_text, &spec.background.query);
+            let topic_str = if spec.video_keywords.is_empty() {
+                String::new()
+            } else {
+                // Use first 2 topic keywords + first 2 scene keywords
+                let topic_part: Vec<&str> = spec.video_keywords.iter().take(2).map(|s| s.as_str()).collect();
+                let scene_part: Vec<&str> = scene_keywords.split_whitespace().take(2).collect::<Vec<_>>();
+                format!("{} {}", topic_part.join(" "), scene_part.join(" ")).trim().to_string()
+            };
+            let query_source = if topic_str.is_empty() {
+                scene_keywords.clone()
+            } else {
+                topic_str
+            };
+            let query = safe_search_query(&query_source, &spec.output.theme);
             tracing::info!(
-                "[script.to_video] Pexels search for scene {}: raw='{}' safe='{}'",
+                "[script.to_video] Pexels search for scene {}: topic='{:?}' scene='{}' → query='{}'",
                 scene_idx + 1,
-                raw_keywords,
+                spec.video_keywords.iter().take(2).collect::<Vec<_>>(),
+                scene_keywords,
                 query
             );
 
@@ -8564,13 +8584,34 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 // like "alice" or "narrator", not GIPHY-indexed content).
                 // New priority: theme keyword > scene emote > scene-text noun >
                 // speaker preset > trending fallback.
-                let search_query = build_sticker_query(
-                    speaker_name,
-                    speaker_spec,
-                    &spec.scenes,
-                    &spec.output.theme,
-                    &mut used_sticker_queries,
-                );
+                // Build a topic-aware GIPHY sticker search query.
+                // (Round-13: topic-aware video search upgrade.)
+                // If video_keywords are available, use the first one as
+                // the sticker query (e.g. "brain" for a brain video) so
+                // the sticker is topically relevant, not just theme-based.
+                let search_query = if !spec.video_keywords.is_empty() {
+                    let topic_kw = &spec.video_keywords[0];
+                    if !used_sticker_queries.contains(topic_kw) {
+                        used_sticker_queries.insert(topic_kw.clone());
+                        topic_kw.clone()
+                    } else {
+                        build_sticker_query(
+                            speaker_name,
+                            speaker_spec,
+                            &spec.scenes,
+                            &spec.output.theme,
+                            &mut used_sticker_queries,
+                        )
+                    }
+                } else {
+                    build_sticker_query(
+                        speaker_name,
+                        speaker_spec,
+                        &spec.scenes,
+                        &spec.output.theme,
+                        &mut used_sticker_queries,
+                    )
+                };
                 tracing::info!(
                     "[script.to_video] GIPHY sticker search for '{}': query='{}'",
                     speaker_name,
@@ -8794,7 +8835,20 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             for (scene_idx, scene) in spec.scenes.iter().enumerate() {
                 let scene_dur_s = scene_durations.get(scene_idx).copied().unwrap_or(3.0);
 
-                let emotion_query = extract_emotion_query(&scene.text, scene.emote.as_deref(), &spec.output.theme);
+                // Build a topic-aware emotion query for GIPHY meme b-rolls.
+                // (Round-13: topic-aware video search upgrade.)
+                // Combine emotion from scene text + video topic keywords
+                // so memes are both emotionally relevant AND topically relevant.
+                let base_emotion = extract_emotion_query(&scene.text, scene.emote.as_deref(), &spec.output.theme);
+                let emotion_query = if !spec.video_keywords.is_empty() {
+                    // Prepend first topic keyword to make the meme search
+                    // topically relevant (e.g. "brain mind blown" instead of
+                    // just "mind blown")
+                    let topic_kw = &spec.video_keywords[0];
+                    format!("{} {}", topic_kw, base_emotion)
+                } else {
+                    base_emotion
+                };
                 tracing::info!(
                     "[script.to_video] Meme b-roll scene {}: emotion='{}'",
                     scene_idx + 1,
