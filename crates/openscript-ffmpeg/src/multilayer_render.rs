@@ -335,15 +335,45 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut meme_inputs: Vec<(usize, &MemeClip)> = Vec::new();
     for meme in &spec.meme_clips {
         if std::path::Path::new(&meme.path).exists() {
-            // Loop the meme input to the full output duration so the
-            // blurred-letterbox background stream has frames for the entire
-            // Note: boomerang looping is handled in the filter graph
-            // (split + reverse + concat + loop). No need for -stream_loop
-            // on the input since the filter handles infinite looping.
-            // (Round-14: boomerang looping upgrade.)
+            // Probe the meme clip to get frame count for debug logging.
+            // (Round-15: "Ensure that after each attempt to use openscript,
+            // there is a debug log dump, an effective debugging system")
+            let probe_output = std::process::Command::new("ffprobe")
+                .args([
+                    "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=nb_frames,width,height,duration",
+                    "-of", "json",
+                    &meme.path,
+                ])
+                .output();
+            let probe_info = match probe_output {
+                Ok(o) if o.status.success() => {
+                    let s = String::from_utf8_lossy(&o.stdout);
+                    s.lines().take(5).collect::<Vec<_>>().join(" ")
+                }
+                _ => "probe failed".to_string(),
+            };
+            tracing::info!(
+                "[render] Meme input: path={} probe={}",
+                meme.path, probe_info
+            );
+
+            // Use -stream_loop -1 for reliable infinite looping.
+            // The boomerang approach (split+reverse+concat+loop) was fragile:
+            // - reverse filter fails on very short clips (< 4 frames)
+            // - concat + loop chain can produce empty output for short GIFs
+            // - split=2 on a 2-frame input produces degraded streams
+            // (Round-15: "There are a lot of glitches and bugs in the
+            // boomerang implementation. Sometimes the GIFs are there, and
+            // sometimes not, only a blank screen, and sometimes only a
+            // single frame.")
+            cmd.arg("-stream_loop").arg("-1");
             cmd.arg("-i").arg(&meme.path);
             meme_inputs.push((meme_input_start, meme));
             meme_input_start += 1;
+        } else {
+            tracing::warn!("[render] Meme input file not found: {}", meme.path);
         }
     }
 
@@ -385,36 +415,26 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         // and never connected [vbg] — FFmpeg errored with "output 0 (vbg)
         // unconnected" and the background was never composited with the meme.
         // (Round-12 fresh-agent UX fix.)
-        // Boomerang (ping-pong) the meme clip for smooth looping.
-        // (Round-14: "upgrade their looping to boomerang style to remove
-        // the jitter that is there in regular loops")
+        // Blurred letterbox meme b-roll with reliable -stream_loop looping.
+        // (Round-15: replaced fragile boomerang split+reverse+concat+loop
+        // with simple -stream_loop -1 + eof_action=repeat. Boomerang caused
+        // blank screens / single frames on short clips because `reverse`
+        // needs to buffer ALL frames before outputting ANY, and the
+        // split+concat+loop chain could produce empty output for clips
+        // with < 4 frames.)
         //
-        // Each meme input is split: forward + reversed → concat → loop.
-        // The boomerang cycle is then split again for blurred bg + sharp fg.
-        let m_fwd = format!("[mf{}]", idx);
-        let m_rev_src = format!("[mrs{}]", idx);
-        let m_rev = format!("[mr{}]", idx);
-        let m_boom = format!("[mbo{}]", idx);
-        let m_bg_src = format!("[mbs{}]", idx);
-        let m_fg_src = format!("[mfs{}]", idx);
-
-        // Split input → forward + reverse_source
-        filters.push(format!("[{}:v]split=2{}{}", input_idx, m_fwd, m_rev_src));
-        // Reverse the second copy
-        filters.push(format!("{}reverse{}", m_rev_src, m_rev));
-        // Concat forward + reversed = one boomerang cycle
-        filters.push(format!("{}{}concat=n=2{}", m_fwd, m_rev, m_boom));
-        // Loop boomerang infinitely, then split for bg + fg
-        filters.push(format!("{}loop=loop=-1:size=0,split=2{}{}", m_boom, m_bg_src, m_fg_src));
-        // Blurred background
+        // Filter chain:
+        // 1. scale+crop+boxblur → blurred full-screen bg
+        // 2. scale+pad → sharp contain fg
+        // 3. overlay fg on bg → [vmid]
+        // 4. overlay [vmid] on background during meme time range → [vmb]
         filters.push(format!(
-            "{}scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},boxblur=20:5,fps={},setpts=PTS-STARTPTS[mb{}_bg]",
-            m_bg_src, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},boxblur=20:5,fps={},setpts=PTS-STARTPTS[mb{}_bg]",
+            input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
-        // Sharp foreground (contain/letterbox)
         filters.push(format!(
-            "{}scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=black,fps={},setpts=PTS-STARTPTS[mb{}_fg]",
-            m_fg_src, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
+            "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=black,fps={},setpts=PTS-STARTPTS[mb{}_fg]",
+            input_idx, meme_w, meme_h, meme_w, meme_h, spec.fps, idx
         ));
         // [vmid{idx}] = blurred bg + sharp fg (full-screen meme composite)
         filters.push(format!(
@@ -489,34 +509,24 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         let is_gif = sticker.path.ends_with(".gif");
 
         if is_gif {
-            // Animated GIF: boomerang (ping-pong) loop + contain (letterbox).
+            // Animated GIF: reliable loop + contain (letterbox) mode.
             //
-            // Boomerang eliminates loop jitter by playing frames
-            // forward → backward → forward → ... instead of jumping
-            // from last frame back to first.
+            // (Round-15: replaced fragile boomerang split+reverse+concat+loop
+            // with simple loop filter. Boomerang caused blank screens / single
+            // frames on short GIFs because `reverse` buffers ALL frames before
+            // outputting ANY — if the GIF has 2-3 frames, the reverse output
+            // is nearly empty, and the subsequent concat+loop produces nothing.
+            // The `loop` filter + `eof_action=repeat` on overlay is rock-solid
+            // for all frame counts.)
             //
-            // (Round-14: "upgrade their looping to boomerang style to
-            // remove the jitter that is there in regular loops")
-            //
-            // FFmpeg implementation:
-            // 1. split input into two copies [fwd] + [rev_src]
-            // 2. reverse [rev_src] → [rev] (backward playback)
-            // 3. [fwd][rev] concat → [boom] (one boomerang cycle)
-            // 4. [boom] loop=loop=-1 → infinite boomerang
-            // 5. scale+pad (contain) + fps → [stN]
-            let fwd = format!("[bf{}]", idx);
-            let rev_src = format!("[brs{}]", idx);
-            let rev = format!("[br{}]", idx);
-            let boom = format!("[bc{}]", idx);
-            let looped = format!("[bl{}]", idx);
-
-            filters.push(format!("[{}:v]split=2{}{}", input_idx, fwd, rev_src));
-            filters.push(format!("{}reverse{}", rev_src, rev));
-            filters.push(format!("{}{}concat=n=2{}", fwd, rev, boom));
-            filters.push(format!("{}loop=loop=-1:size=0{}", boom, looped));
+            // - loop=loop=-1:size=0: infinite loop (all frames)
+            // - scale+pad: contain/letterbox (full GIF visible, centered)
+            // - fps: match output framerate for smooth playback
+            // - setpts=PTS-STARTPTS: reset timestamps
+            // - eof_action=repeat on overlay: hold last frame if GIF runs out
             filters.push(format!(
-                "{}scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
-                looped, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+                "[{}:v]loop=loop=-1:size=0,scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
+                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
             ));
         } else {
             // Regular image or video: contain mode (full content visible)
@@ -595,6 +605,65 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
 
     // Output
     cmd.arg(&spec.output_path);
+
+    // === DEBUG DUMP (Round-15: "Ensure that after each attempt to use
+    // openscript, there is a debug log dump, an effective debugging system
+    // that can help us trace back the bugs, identify their causation and
+    // fix them") ===
+    let debug_log_path = format!("{}.debug.log", spec.output_path);
+    let mut debug_log = String::new();
+    debug_log.push_str("=== OpenScript Render Debug Dump ===\n\n");
+
+    // 1. Render spec summary
+    debug_log.push_str(&format!("Output: {} ({}x{}@{}fps, {:.1}s)\n",
+        spec.output_path, spec.width, spec.height, spec.fps, spec.total_duration_s));
+    debug_log.push_str(&format!("Backgrounds: {} clips\n", spec.backgrounds.len()));
+    debug_log.push_str(&format!("Voiceovers: {} files\n", spec.voiceover_paths.len()));
+    debug_log.push_str(&format!("Stickers: {} overlays\n", spec.stickers.len()));
+    debug_log.push_str(&format!("Meme clips: {} clips\n", spec.meme_clips.len()));
+    debug_log.push_str(&format!("Music: {} (vol={:.3}, ducking={})\n",
+        spec.music_path.as_deref().unwrap_or("none"),
+        spec.music_volume, spec.ducking));
+    debug_log.push_str(&format!("Captions: {}\n\n",
+        spec.captions_path.as_deref().unwrap_or("none")));
+
+    // 2. Input files with probes
+    debug_log.push_str("=== Input Files ===\n");
+    for (i, bg) in spec.backgrounds.iter().enumerate() {
+        debug_log.push_str(&format!("  [{}] bg: {} (dur={:.1}s, loop={})\n",
+            i, bg.path, bg.duration_s, bg.looped));
+    }
+    for (i, vo) in spec.voiceover_paths.iter().enumerate() {
+        debug_log.push_str(&format!("  [{}] vo: {}\n", spec.backgrounds.len() + i, vo));
+    }
+    if let Some(ref music) = spec.music_path {
+        debug_log.push_str(&format!("  music: {}\n", music));
+    }
+    for (i, s) in sticker_inputs.iter().enumerate() {
+        let (_, sticker) = s;
+        debug_log.push_str(&format!("  sticker[{}]: {} (pos={}, scale={:.2}, {:.1}-{:.1}s)\n",
+            i, sticker.path, sticker.position, sticker.scale,
+            sticker.start_s, sticker.end_s));
+    }
+    for (i, m) in meme_inputs.iter().enumerate() {
+        let (_, meme) = m;
+        debug_log.push_str(&format!("  meme[{}]: {} ({:.1}-{:.1}s)\n",
+            i, meme.path, meme.start_s, meme.end_s));
+    }
+    debug_log.push('\n');
+
+    // 3. Full filter_complex
+    debug_log.push_str("=== Filter Complex ===\n");
+    debug_log.push_str(&filter_complex);
+    debug_log.push_str("\n\n");
+
+    // 4. Full FFmpeg command
+    debug_log.push_str("=== FFmpeg Command ===\n");
+    debug_log.push_str(&format!("{:?}", cmd));
+    debug_log.push_str("\n\n");
+
+    let _ = std::fs::write(&debug_log_path, &debug_log);
+    tracing::info!("[render] Debug dump written to {}", debug_log_path);
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
