@@ -1,11 +1,13 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (77 tools)
+## Tool Taxonomy (80 tools)
 
 > **Always start a new environment with `system.capabilities`.** It reports
 > ffmpeg, Kokoro (real ONNX + voices.bin), Parakeet, Pexels/GIPHY/Pixabay keys,
-> music/SFX indices, yt-dlp, and HyperFrames. Do not assume TTS works until
-> `kokoro.available` is true and `model_path` exists on disk.
+> music/SFX indices, yt-dlp, HyperFrames, and the **LLM/vision cascade**
+> (`llm.local` Ollama Qwen3.5-4B GGUF + `llm.openrouter` free multimodal).
+> Do not assume TTS works until `kokoro.available` is true and `model_path`
+> exists on disk.
 
 ### 1. SCRIPT CREATION (5 tools)
 Create a video from scratch — define scenes, speakers, backgrounds.
@@ -92,7 +94,21 @@ Post-render quality checks.
 | `verify.audio` | Technical: audio levels, silence, sample rate |
 | `verify.captions` | Caption timing checks |
 | `verify.render` | **Technical only** — duration/aspect/file integrity (score 100 ≠ beautiful video) |
-| `verify.production` | **Production KPI gate** — stock visuals, real music, stickers, memes, speech, captions → grade A–F |
+| `verify.production` | **Production KPI gate** — stock visuals, real music, stickers, memes, speech, captions → grade A–F. Optional `vision_rescore=true` re-scores B-roll with vision cascade |
+
+### 8b. LLM & VISION (3 tools)
+Local GGUF + OpenRouter free multimodal cascade for director reasoning and clip QA.
+
+| Tool | When to use |
+|------|------------|
+| `llm.complete` | Text completion via local Ollama `qwen3.5-4b` (GGUF at `~/Downloads/Qwen3.5-4B-Q4_K_M.gguf`) → OpenRouter `google/gemma-4-31b-it:free` → `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` |
+| `vision.analyze_clip` | Extract a frame + describe setting/time-of-day/subjects (multimodal OpenRouter free models; local text fallback) |
+| `vision.score_clip` | Score stock-clip relevance vs scene dialogue + `video_keywords` (0–1 + match/reason) |
+
+**Setup**
+- Local: `ollama serve` + `ollama run qwen3.5-4b` (or `bash scripts/import_local_gguf.sh` after downloading the Unsloth GGUF)
+- Vision free fallbacks: set `OPENROUTER_API_KEY`
+- Override models: `OPENSCRIPT_LOCAL_MODEL`, `OPENSCRIPT_OPENROUTER_VISION_MODEL`, `OPENSCRIPT_OPENROUTER_VISION_FALLBACK`, `OPENSCRIPT_GGUF_PATH`
 
 #### Production KPI baseline v2 (`verify.production` + `render_manifest.json`)
 

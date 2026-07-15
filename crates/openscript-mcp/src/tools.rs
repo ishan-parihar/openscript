@@ -697,8 +697,50 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "llm.complete",
+            "description": "Run a text LLM completion through the director cascade: local Ollama (qwen3.5-4b / GGUF at OPENSCRIPT_GGUF_PATH or ~/Downloads/Qwen3.5-4B-Q4_K_M.gguf) → OpenRouter free models google/gemma-4-31b-it:free → nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free. Returns: text, backend, model.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "User prompt"},
+                    "system": {"type": "string", "default": "You are a helpful video director assistant.", "description": "System prompt"}
+                },
+                "required": ["prompt"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "vision.analyze_clip",
+            "description": "Extract a frame from a video clip and describe it with the vision cascade (OpenRouter multimodal free models when OPENROUTER_API_KEY is set; local Qwen text fallback). Use to judge morning/night, indoor/outdoor, phone UI, etc. Returns structured description + backend.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "Path to video clip"},
+                    "at_s": {"type": "number", "description": "Optional timestamp seconds (default ~40% into clip)"},
+                    "prompt": {"type": "string", "description": "Optional analysis question"}
+                },
+                "required": ["video_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "vision.score_clip",
+            "description": "Vision+LLM relevance score of a stock clip vs scene dialogue and video_keywords. Uses local GGUF/Ollama when possible and OpenRouter free multimodal fallbacks. Returns relevance 0–1, time_of_day, match, reason. Wire into multi-broll QA and verify.production context_relevance.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string"},
+                    "scene_text": {"type": "string"},
+                    "video_keywords": {"type": "array", "items": {"type": "string"}},
+                    "search_query": {"type": "string"}
+                },
+                "required": ["video_path", "scene_text"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "verify.production",
-            "description": "PRODUCTION-QUALITY KPI gate (v2) baked into architecture. Scores efficacious director use of the timeline/render stack: (1) video_source_quality 20 — Pexels/YouTube/local vs procedural, (2) cuts_pacing 12 — cuts/sec + uniqueness band 0.12–0.55, (3) music_variance 12 — real bed + ducking + mood/energy tags, (4) sticker_design 12 — scale 0.20–0.45, position vs captions, uniqueness, animation, (5) section_composition 12 — hook/body/cta text + title cards + meme placement, (6) speech 10, (7) captions 10, (8) timeline_editor 12 — multi-track utilization/gaps. Prefer render_manifest_path from script.to_video. Returns grade A–F, cuts_per_second, video_source_mix, timeline_editor report. verify.render=100 is NOT production quality.",
+            "description": "PRODUCTION-QUALITY KPI gate (v2.1) baked into architecture. Scores efficacious director use of the timeline/render stack including visual_repetition (content-hash) and context_relevance. Prefer render_manifest_path from script.to_video. Optional vision_rescore=true re-scores clips with vision.analyze cascade. verify.render=100 is NOT production quality.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -710,7 +752,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "meme_count": {"type": "integer", "default": 0, "description": "Fallback meme count if no manifest"},
                     "background_sources": {"type": "array", "items": {"type": "string"}, "description": "Fallback background paths if no manifest"},
                     "music_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Music path used at render if any"},
-                    "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F)."}
+                    "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F)."},
+                    "vision_rescore": {"type": "boolean", "default": false, "description": "If true, re-score each background clip with vision.score_clip (local Qwen GGUF/Ollama → OpenRouter free multimodal). Adds vision_scores to the response."}
                 },
                 "required": ["video_path", "timeline_path"],
                 "additionalProperties": false
@@ -1170,6 +1213,9 @@ pub fn route_tool(
         "verify.captions" => Box::pin(handle_verify_captions(args)),
         "verify.render" => Box::pin(handle_verify_render(args)),
         "verify.production" => Box::pin(handle_verify_production(args)),
+        "llm.complete" => Box::pin(handle_llm_complete(args)),
+        "vision.analyze_clip" => Box::pin(handle_vision_analyze_clip(args)),
+        "vision.score_clip" => Box::pin(handle_vision_score_clip(args)),
         // HyperFrames tools
         "hf.lint" => Box::pin(async move {
             crate::hf::handle_hf_lint(args)
@@ -5805,6 +5851,53 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     let report = evaluate_production_quality(&timeline, &manifest);
     let meets_min = grade_rank(&report.grade) >= grade_rank(&min_grade);
 
+    // Optional vision re-score of background clips (local Qwen → OpenRouter free).
+    let vision_rescore = default_bool(&args, "vision_rescore", false);
+    let mut vision_scores: Vec<serde_json::Value> = Vec::new();
+    if vision_rescore {
+        let keywords = manifest.video_keywords.clone();
+        let scene_fallback = timeline
+            .segments
+            .iter()
+            .map(|s| s.caption.as_str())
+            .filter(|c| !c.is_empty())
+            .take(4)
+            .collect::<Vec<_>>()
+            .join(" ");
+        for (i, bg) in manifest.backgrounds.iter().take(8).enumerate() {
+            if bg.path.is_empty() || bg.path == "placeholder" || !Path::new(&bg.path).exists() {
+                vision_scores.push(json!({
+                    "index": i,
+                    "path": bg.path,
+                    "status": "skipped",
+                    "reason": "missing or placeholder path",
+                }));
+                continue;
+            }
+            let scene_text = if scene_fallback.is_empty() {
+                bg.search_query.clone().unwrap_or_else(|| "video scene".into())
+            } else {
+                scene_fallback.clone()
+            };
+            match crate::llm::score_clip_relevance(
+                &bg.path,
+                &scene_text,
+                &keywords,
+                bg.search_query.as_deref(),
+            )
+            .await
+            {
+                Ok(v) => vision_scores.push(v),
+                Err(e) => vision_scores.push(json!({
+                    "index": i,
+                    "path": bg.path,
+                    "status": "error",
+                    "error": e.to_string(),
+                })),
+            }
+        }
+    }
+
     Ok(json!({
         "status": if meets_min && report.hard_fails.is_empty() {
             "pass"
@@ -5825,6 +5918,8 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         "timeline_editor": report.timeline_editor,
         "kpi_version": report.kpi_version,
         "kpi_note": "verify.render is technical-only. Production v2 scores source quality, cuts/sec, music variance, sticker design, section composition, and timeline-editor utilization.",
+        "vision_rescore": vision_rescore,
+        "vision_scores": vision_scores,
     }))
 }
 
@@ -6042,7 +6137,9 @@ async fn fetch_youtube_stock_clip_unique(
     None
 }
 
-/// Backward-compatible wrapper (no uniqueness set).
+/// Backward-compatible wrapper (no uniqueness set). Kept for call sites that
+/// do not track identity sets (e.g. one-off background.fetch without multi-broll).
+#[allow(dead_code)]
 async fn fetch_youtube_stock_clip(
     query: &str,
     duration_s: f64,
@@ -12315,6 +12412,81 @@ async fn handle_timeline_to_hyperframes(
 }
 
 // ---------------------------------------------------------------------------
+// Handlers: llm.complete / vision.analyze_clip / vision.score_clip
+// ---------------------------------------------------------------------------
+
+/// Text LLM via local Ollama (Qwen3.5-4B GGUF) → OpenRouter free models.
+async fn handle_llm_complete(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let prompt = extract_str(&args, "prompt")?;
+    let system = default_str(
+        &args,
+        "system",
+        "You are a helpful short-form video director assistant.",
+    );
+    let result = crate::llm::chat_complete(&system, prompt, None)
+        .await
+        .map_err(|e| ToolError::Asset(format!("LLM cascade failed: {}", e)))?;
+    Ok(json!({
+        "status": "success",
+        "text": result.text,
+        "backend": result.backend,
+        "model": result.model,
+    }))
+}
+
+/// Extract a frame and describe it (OpenRouter multimodal free → local text).
+async fn handle_vision_analyze_clip(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?
+        .to_string_lossy()
+        .to_string();
+    if !Path::new(&video_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Video not found: {}",
+            video_path
+        )));
+    }
+    let at_s = args.get("at_s").and_then(|v| v.as_f64());
+    let prompt = default_opt_str(&args, "prompt");
+    crate::llm::analyze_clip(&video_path, at_s, prompt.as_deref())
+        .await
+        .map_err(|e| ToolError::Asset(format!("vision.analyze_clip failed: {}", e)))
+}
+
+/// Score stock clip relevance vs scene dialogue + keywords.
+async fn handle_vision_score_clip(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?
+        .to_string_lossy()
+        .to_string();
+    if !Path::new(&video_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Video not found: {}",
+            video_path
+        )));
+    }
+    let scene_text = extract_str(&args, "scene_text")?;
+    let keywords: Vec<String> = args
+        .get("video_keywords")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let search_query = default_opt_str(&args, "search_query");
+    crate::llm::score_clip_relevance(
+        &video_path,
+        scene_text,
+        &keywords,
+        search_query.as_deref(),
+    )
+    .await
+    .map_err(|e| ToolError::Asset(format!("vision.score_clip failed: {}", e)))
+}
+
+// ---------------------------------------------------------------------------
 // Handler: system.capabilities (P1-2 from prior audit)
 // ---------------------------------------------------------------------------
 
@@ -12639,6 +12811,9 @@ async fn handle_system_capabilities(
         "path": presets_dir,
     });
 
+    // LLM / vision cascade: local Ollama Qwen3.5-4B GGUF + OpenRouter free multimodal
+    let llm = crate::llm::probe_llm_capabilities().await;
+
     Ok(json!({
         "status": "success",
         "voicebox": voicebox,
@@ -12656,6 +12831,7 @@ async fn handle_system_capabilities(
         "ass_font": ass_font,
         "svg_presets": svg_presets,
         "hyperframes": hyperframes,
+        "llm": llm,
     }))
 }
 
@@ -13024,7 +13200,7 @@ mod tests {
             "mcp/assets/background_cache/scene_001_yt.mp4".into(),
             "cache/stock_city.mp4".into(),
         ];
-        let (score, _, hard, _) = compute_production_score(
+        let (score, _, _hard, _) = compute_production_score(
             &bgs,
             Some(music.to_str().unwrap()),
             3,

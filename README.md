@@ -48,7 +48,7 @@ Do **not** chain intermediate tools unless you need fine control. `script.to_vid
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│              MCP Server / CLI  (77 tools, stdio)                  │
+│              MCP Server / CLI  (80 tools, stdio)                  │
 │  AI agents  ── script.to_video / timeline.* / hf.* / verify.* ── │
 └──────┬──────────┬──────────┬──────────┬──────────┬───────────────┘
        │          │          │          │          │
