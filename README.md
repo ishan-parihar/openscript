@@ -12,7 +12,7 @@
 
 ## What It Does
 
-OpenScript exposes **76 MCP tools** (plus a CLI mirror) so AI agents can direct short-form video end-to-end:
+OpenScript exposes **77 MCP tools** (plus a CLI mirror) so AI agents can direct short-form video end-to-end:
 
 1. **From scratch (golden path):** write a script JSON → one call → vertical MP4 with TTS, captions, multi-scene backgrounds, optional stickers/memes, music, ducking.
 2. **NLE on existing footage:** transcribe → timeline → b-roll/music/SFX → render.
@@ -48,7 +48,7 @@ Do **not** chain intermediate tools unless you need fine control. `script.to_vid
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│              MCP Server / CLI  (76 tools, stdio)                  │
+│              MCP Server / CLI  (77 tools, stdio)                  │
 │  AI agents  ── script.to_video / timeline.* / hf.* / verify.* ── │
 └──────┬──────────┬──────────┬──────────┬──────────┬───────────────┘
        │          │          │          │          │
@@ -212,7 +212,7 @@ cargo build -p openscript-mcp --release --bin mcp-server
 bash scripts/smoke_test_mcp.sh
 ```
 
-Baseline: **242+** library/integration tests (see `AGENTS.md` §6).
+Baseline: **244+** library/integration tests (see `AGENTS.md` §6).
 
 ---
 

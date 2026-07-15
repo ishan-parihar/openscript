@@ -682,7 +682,8 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "verify.render",
-            "description": "Verify a rendered video matches its source timeline. Compares the output video against the timeline JSON to check: (1) Duration — does output match expected timeline duration? (2) Segment count — are all timeline segments present? (3) Resolution — does output match target aspect ratio and resolution? (4) File integrity — is the file valid and non-corrupt? (5) Track completeness — were all expected tracks (broll, music, sfx, voiceover) rendered? Use AFTER timeline.render as the final quality gate before delivery. Returns: duration_match (boolean), expected_duration_ms, actual_duration_ms, segment_count_match, resolution, file_size_bytes, tracks_present, issues (array), overall_score (0-100).",
+            "description": "TECHNICAL integrity check only (duration/aspect/file size). Does NOT measure production beauty. For stock footage, stickers, music quality use verify.production. Returns: overall_score (0-100 technical).",
+
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -690,6 +691,25 @@ pub fn tool_definitions() -> serde_json::Value {
                     "timeline_path": {"type": "string", "description": "Path to the source timeline JSON"},
                     "expected_aspect": {"type": "string", "default": "9:16", "description": "Expected output aspect ratio"},
                     "duration_tolerance_ms": {"type": "integer", "default": 2000, "description": "Acceptable duration deviation in ms"}
+                },
+                "required": ["video_path", "timeline_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "verify.production",
+            "description": "PRODUCTION-QUALITY KPI gate for AI-directed shorts. Scores beauty layers that verify.render ignores: (1) stock_visuals — real footage vs synthetic procedural backgrounds (weight 30), (2) music_quality — real bed vs synthetic sine stubs (15), (3) overlay_presence — stickers/GIFs (15), (4) meme_cuts — full-screen reaction cuts (10), (5) speech_audio — dialogue loudness (15), (6) captions — burned ASS/SRT present (15). Returns grade A–F, dimension scores, hard_fails, and next_actions. Use AFTER script.to_video before claiming delivery quality. A technical pass with grade D/F means the video is NOT production-ready.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "Rendered MP4 path"},
+                    "timeline_path": {"type": "string", "description": "Timeline JSON from script.to_video"},
+                    "captions_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional ASS/SRT path"},
+                    "sticker_count": {"type": "integer", "default": 0, "description": "Sticker overlays used at render (from script.to_video response)"},
+                    "meme_count": {"type": "integer", "default": 0, "description": "Meme b-roll cuts used at render"},
+                    "background_sources": {"type": "array", "items": {"type": "string"}, "description": "Optional list of background file paths used"},
+                    "music_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Music path used at render if any"},
+                    "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F). Response status is fail if below."}
                 },
                 "required": ["video_path", "timeline_path"],
                 "additionalProperties": false
@@ -1148,6 +1168,7 @@ pub fn route_tool(
         "verify.audio" => Box::pin(handle_verify_audio(args)),
         "verify.captions" => Box::pin(handle_verify_captions(args)),
         "verify.render" => Box::pin(handle_verify_render(args)),
+        "verify.production" => Box::pin(handle_verify_production(args)),
         // HyperFrames tools
         "hf.lint" => Box::pin(async move {
             crate::hf::handle_hf_lint(args)
@@ -5524,7 +5545,394 @@ async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Val
         "has_audio_stream": has_audio,
         "issues": issues,
         "overall_score": score,
+        "note": "Technical integrity only. Call verify.production for stock/music/sticker beauty KPIs.",
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Production Quality KPIs (beauty / director layers — NOT technical integrity)
+// ---------------------------------------------------------------------------
+
+fn is_procedural_media_path(path: &str) -> bool {
+    let p = path.to_lowercase();
+    p.contains("procedural")
+        || p.contains("backgrounds/procedural")
+        || p.contains("_procedural.mp4")
+}
+
+fn is_synthetic_music_file(path: &str) -> bool {
+    // All 20 committed stock tones are exactly 481_114 bytes.
+    if !path.contains("mcp/assets/music/") && !path.contains("mcp\\assets\\music\\") {
+        return false;
+    }
+    std::fs::metadata(path)
+        .map(|m| m.len() == 481_114)
+        .unwrap_or(false)
+}
+
+fn production_grade(score: i32) -> &'static str {
+    match score {
+        85..=100 => "A",
+        70..=84 => "B",
+        55..=69 => "C",
+        40..=54 => "D",
+        _ => "F",
+    }
+}
+
+fn grade_rank(g: &str) -> i32 {
+    match g {
+        "A" => 5,
+        "B" => 4,
+        "C" => 3,
+        "D" => 2,
+        _ => 1,
+    }
+}
+
+/// Score production beauty layers. Weights sum to 100.
+fn compute_production_score(
+    background_paths: &[String],
+    music_path: Option<&str>,
+    sticker_count: usize,
+    meme_count: usize,
+    has_dialogue: bool,
+    rms_ok: bool,
+    captions_present: bool,
+) -> (i32, serde_json::Value, Vec<String>, Vec<String>) {
+    let mut hard_fails: Vec<String> = Vec::new();
+    let mut next_actions: Vec<String> = Vec::new();
+
+    // 1. Stock visuals (30)
+    let bg_total = background_paths.len().max(1);
+    let procedural_n = background_paths
+        .iter()
+        .filter(|p| is_procedural_media_path(p))
+        .count();
+    let stock_n = bg_total.saturating_sub(procedural_n);
+    let stock_ratio = stock_n as f64 / bg_total as f64;
+    let stock_score = (stock_ratio * 30.0).round() as i32;
+    if stock_n == 0 {
+        hard_fails.push(
+            "stock_visuals: all backgrounds are synthetic procedural gradients — not production stock footage"
+                .into(),
+        );
+        next_actions.push(
+            "Set PEXELS_API_KEY or ensure yt-dlp works; use background.type=gameplay (default) and do NOT force type=procedural / procedural fallback_pool"
+                .into(),
+        );
+    } else if procedural_n > 0 {
+        next_actions.push(format!(
+            "stock_visuals: {}/{} scenes still use procedural fallback — improve queries or API keys",
+            procedural_n, bg_total
+        ));
+    }
+
+    // 2. Music quality (15)
+    let music_score = match music_path {
+        Some(p) if !p.is_empty() && Path::new(p).exists() && !is_synthetic_music_file(p) => 15,
+        Some(p) if is_synthetic_music_file(p) => {
+            hard_fails.push(
+                "music_quality: music file is synthetic sine-wave stock (481114-byte placeholder)"
+                    .into(),
+            );
+            next_actions.push(
+                "Provide real music via library.build + library.download, stock.fetch (Pixabay), or a non-placeholder path"
+                    .into(),
+            );
+            0
+        }
+        _ => {
+            hard_fails.push("music_quality: no real background music bed".into());
+            next_actions.push(
+                "Add real music path or run library.build; do not rely on mcp/assets/music/*.mp3 stubs"
+                    .into(),
+            );
+            0
+        }
+    };
+
+    // 3. Overlay / stickers (15)
+    let overlay_score = if sticker_count >= 3 {
+        15
+    } else if sticker_count >= 1 {
+        10
+    } else {
+        hard_fails.push("overlay_presence: no stickers/GIFs composited".into());
+        next_actions.push(
+            "Enable stickers (default), set GIPHY_API_KEY, or ensure local GIFs under mcp/assets/stickers/ are used"
+                .into(),
+        );
+        0
+    };
+
+    // 4. Meme cuts (10) — optional polish; not always hard-fail
+    let meme_score = if meme_count >= 2 {
+        10
+    } else if meme_count == 1 {
+        6
+    } else {
+        next_actions.push(
+            "meme_cuts: enable meme_brolls.enabled for full-screen reaction cuts (needs GIPHY or YouTube fallback)"
+                .into(),
+        );
+        0
+    };
+
+    // 5. Speech (15)
+    let speech_score = if has_dialogue && rms_ok {
+        15
+    } else if has_dialogue {
+        10
+    } else {
+        hard_fails.push("speech_audio: no dialogue detected".into());
+        0
+    };
+
+    // 6. Captions (15)
+    let caption_score = if captions_present { 15 } else { 0 };
+    if !captions_present {
+        hard_fails.push("captions: no caption file / burn evidence".into());
+        next_actions.push("Ensure script.build_captions / ASS path is present".into());
+    }
+
+    let score = (stock_score + music_score + overlay_score + meme_score + speech_score + caption_score)
+        .clamp(0, 100);
+
+    let dimensions = json!({
+        "stock_visuals": {"score": stock_score, "max": 30, "stock_clips": stock_n, "procedural_clips": procedural_n, "total_clips": bg_total},
+        "music_quality": {"score": music_score, "max": 15, "path": music_path},
+        "overlay_presence": {"score": overlay_score, "max": 15, "sticker_count": sticker_count},
+        "meme_cuts": {"score": meme_score, "max": 10, "meme_count": meme_count},
+        "speech_audio": {"score": speech_score, "max": 15, "has_dialogue": has_dialogue, "rms_ok": rms_ok},
+        "captions": {"score": caption_score, "max": 15, "present": captions_present},
+    });
+
+    (score, dimensions, hard_fails, next_actions)
+}
+
+async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
+    // Reuse ffprobe+ffmpeg volumedetect lightly
+    let out = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-i",
+            video_path,
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .await;
+    let stderr = out
+        .map(|o| String::from_utf8_lossy(&o.stderr).to_string())
+        .unwrap_or_default();
+    let mut mean_db = -100.0_f64;
+    for line in stderr.lines() {
+        if let Some(rest) = line.trim().strip_prefix("mean_volume:") {
+            let num = rest.trim().trim_end_matches(" dB").trim();
+            if let Ok(v) = num.parse::<f64>() {
+                mean_db = v;
+            }
+        }
+    }
+    // Dialogue typically > -45 dB mean if present; pure silence ~ -91
+    let has_dialogue = mean_db > -50.0;
+    let rms_ok = mean_db >= -30.0 && mean_db <= -8.0;
+    (has_dialogue, rms_ok)
+}
+
+async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?
+        .to_string_lossy()
+        .to_string();
+    let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?
+        .to_string_lossy()
+        .to_string();
+    let captions_path = default_opt_str(&args, "captions_path");
+    let sticker_count = default_u32(&args, "sticker_count", 0) as usize;
+    let meme_count = default_u32(&args, "meme_count", 0) as usize;
+    let min_grade = default_str(&args, "min_grade", "B");
+    let music_path_arg = default_opt_str(&args, "music_path");
+
+    if !Path::new(&video_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Video not found: {}",
+            video_path
+        )));
+    }
+    if !Path::new(&timeline_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Timeline not found: {}",
+            timeline_path
+        )));
+    }
+
+    let timeline = Timeline::load(&timeline_path).map_err(|e| ToolError::Timeline(e.to_string()))?;
+
+    // Collect background paths from timeline assets + events
+    let mut bg_paths: Vec<String> = args
+        .get("background_sources")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if bg_paths.is_empty() {
+        for v in timeline.assets.broll.values() {
+            if let Some(p) = v.get("path").and_then(|x| x.as_str()) {
+                bg_paths.push(p.to_string());
+            }
+        }
+    }
+
+    let music_path = music_path_arg.or_else(|| {
+        timeline
+            .assets
+            .music
+            .values()
+            .next()
+            .and_then(|v| v.get("path"))
+            .and_then(|p| p.as_str())
+            .map(String::from)
+    });
+
+    let captions_present = captions_path
+        .as_ref()
+        .map(|p| Path::new(p).exists())
+        .unwrap_or(false)
+        || timeline
+            .assets
+            .captions
+            .get("ass")
+            .and_then(|a| a.get("path"))
+            .and_then(|p| p.as_str())
+            .map(|p| Path::new(p).exists())
+            .unwrap_or(false)
+        || timeline
+            .assets
+            .captions
+            .get("path")
+            .and_then(|p| p.as_str())
+            .map(|p| Path::new(p).exists())
+            .unwrap_or(false);
+
+    let sticker_n = sticker_count;
+    let meme_n = meme_count;
+
+    let (has_dialogue, rms_ok) = probe_dialogue_rms(&video_path).await;
+    let (score, dimensions, hard_fails, next_actions) = compute_production_score(
+        &bg_paths,
+        music_path.as_deref(),
+        sticker_n,
+        meme_n,
+        has_dialogue,
+        rms_ok,
+        captions_present,
+    );
+    let grade = production_grade(score);
+    let meets_min = grade_rank(grade) >= grade_rank(&min_grade);
+
+    Ok(json!({
+        "status": if meets_min && hard_fails.is_empty() {
+            "pass"
+        } else if score >= 40 {
+            "warning"
+        } else {
+            "fail"
+        },
+        "production_score": score,
+        "grade": grade,
+        "min_grade": min_grade,
+        "meets_min_grade": meets_min,
+        "hard_fails": hard_fails,
+        "dimensions": dimensions,
+        "next_actions": next_actions,
+        "kpi_note": "verify.render score 100 only means the file is valid. Production grade requires real stock visuals, real music, and overlays.",
+        "background_paths_scored": bg_paths,
+    }))
+}
+
+/// Download a short stock clip via yt-dlp (no API key). Used when Pexels is unavailable.
+async fn fetch_youtube_stock_clip(
+    query: &str,
+    duration_s: f64,
+    aspect: &str,
+    out_path: &str,
+) -> Option<String> {
+    let cache_dir = "mcp/assets/background_cache";
+    std::fs::create_dir_all(cache_dir).ok()?;
+    let safe: String = query
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .take(48)
+        .collect();
+    let full_path = format!("{}/yt_{}.mp4", cache_dir, safe);
+    if !Path::new(&full_path).exists() {
+        let yt = tokio::process::Command::new("yt-dlp")
+            .args([
+                "--format",
+                "best[height<=720][ext=mp4]/best[height<=720]/best",
+                "--output",
+                &full_path,
+                "--no-playlist",
+                "--quiet",
+                "--no-warnings",
+                &format!("ytsearch1:{}", query),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .ok()?;
+        if !yt.status.success() || !Path::new(&full_path).exists() {
+            tracing::warn!(
+                "[youtube stock] yt-dlp failed for '{}': {}",
+                query,
+                String::from_utf8_lossy(&yt.stderr).chars().take(200).collect::<String>()
+            );
+            return None;
+        }
+    }
+    let crop = crop_filter_for_aspect(aspect);
+    let trim = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-ss",
+            "2",
+            "-i",
+            &full_path,
+            "-t",
+            &duration_s.max(2.0).to_string(),
+            "-vf",
+            &crop,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-an",
+            out_path,
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .ok()?;
+    if trim.status.success() && Path::new(out_path).exists() {
+        Some(out_path.to_string())
+    } else {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -7097,6 +7505,60 @@ fn format_seconds_to_timestamp(s: f64) -> String {
 /// Returns the path if a suitable track is found, None otherwise.
 /// (Round-3 UX audit PROBLEM 3b fix — ensures every video has background
 /// music by default, even when the agent doesn't specify music.path.)
+/// Try to download a free/stock music bed via yt-dlp when placeholders are the only local option.
+async fn fetch_youtube_music_bed(theme: &str) -> Option<String> {
+    let cache_dir = "mcp/assets/music_cache";
+    std::fs::create_dir_all(cache_dir).ok()?;
+    let query = match theme {
+        "calm" => "lofi chill royalty free background music",
+        "energetic" => "upbeat royalty free background music",
+        _ => "cinematic royalty free background music no copyright",
+    };
+    let out_tmpl = format!("{}/yt_music_%(id)s.%(ext)s", cache_dir);
+    let result = tokio::process::Command::new("yt-dlp")
+        .args([
+            "-x",
+            "--audio-format",
+            "mp3",
+            "--audio-quality",
+            "5",
+            "--no-playlist",
+            "--quiet",
+            "--no-warnings",
+            "-o",
+            &out_tmpl,
+            &format!("ytsearch1:{}", query),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .ok()?;
+    if !result.status.success() {
+        return None;
+    }
+    // Pick newest mp3 in music_cache
+    let mut best: Option<(std::time::SystemTime, String)> = None;
+    if let Ok(entries) = std::fs::read_dir(cache_dir) {
+        for e in entries.filter_map(|x| x.ok()) {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("mp3") {
+                let modified = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                let ps = p.to_string_lossy().to_string();
+                if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+                    best = Some((modified, ps));
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 async fn auto_select_music(_theme: &str) -> Option<String> {
     // The stock music files in mcp/assets/music/ are SYNTHETIC TONES
     // (sine-wave hums). Real music comes from the library index
@@ -7208,6 +7670,13 @@ async fn auto_select_music(_theme: &str) -> Option<String> {
     // work when the music is available. Check if you can implement scraping
     // from the stock music providers.")
     if let Some(path) = fetch_pixabay_music(_theme).await {
+        return Some(path);
+    }
+
+    // Final network fallback: yt-dlp audio extract (no API key).
+    // Still better than silent / sine stubs for production_score.
+    if let Some(path) = fetch_youtube_music_bed(_theme).await {
+        tracing::info!("[script.to_video] Music via yt-dlp audio bed: {}", path);
         return Some(path);
     }
 
@@ -8404,19 +8873,16 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
     let pexels_key_val = pexels_key();
 
-    // Multi-broll Pexels footage: download a DIFFERENT Pexels clip per scene.
-    // Gate: fire for any non-"static" background type when Pexels key is available.
-    // Before round-3 audit, this only fired for type=="gameplay", which meant
-    // type=="procedural" scripts completely bypassed live stock footage —
-    // agents got gradient videos even when Pexels was configured and working.
-    // Now type:"procedural" also gets Pexels first (falls back to procedural
-    // clips on failure). type:"static" is the explicit opt-out.
-    // (Round-3 UX audit PROBLEM 2 fix.)
-    if !skip_background && !pexels_key().is_empty() && spec.background.r#type != "static" {
+    // Multi-broll stock footage: unique clip per scene.
+    // Priority: Pexels (if key) → YouTube via yt-dlp (no key) → procedural (last resort).
+    // type:"static" is the explicit opt-out. type:"procedural" still TRIES stock first
+    // so agents do not silently ship gradient-only videos when stock is reachable.
+    // (Phase CF: production quality upgrade — never treat procedural as success.)
+    if !skip_background && spec.background.r#type != "static" {
         report_progress(
             35.0,
             60.0,
-            "Fetching multi-broll backgrounds from Pexels...",
+            "Fetching multi-broll stock backgrounds (Pexels → YouTube → procedural)...",
         )
         .await
         .ok();
@@ -8442,6 +8908,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         // Ensure that the entire video timeline has unique videos, not
         // repeated video that might reduce the attention-hooking.")
         let mut used_pexels_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut used_yt_queries: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         for (scene_idx, &dur) in scene_durations.iter().enumerate() {
             // Extract keywords from scene text for the search query
@@ -8500,111 +8968,120 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             .await
             .ok();
 
-            // Search Pexels for this scene's background
-            let pexels_url = format!(
-                "https://api.pexels.com/videos/search?query={}&per_page=5&orientation={}",
-                urlencoding::encode(&query),
-                orientation
-            );
-
             let mut scene_bg: Option<String> = None;
+            let mut bg_source = "none";
 
-            if let Ok(resp) = client
-                .get(&pexels_url)
-                .header("Authorization", &pexels_key_val)
-                .send()
-                .await
-            {
-                if resp.status().is_success() {
-                    if let Ok(body) = resp.json::<serde_json::Value>().await {
-                        if let Some(videos) = body.get("videos").and_then(|v| v.as_array()) {
-                            // Find a video >= 3s with HD quality that hasn't
-                            // been used in a previous scene (dedup by video ID).
-                            for video in videos {
-                                let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-                                // Skip if this Pexels video was already used
-                                // in a previous scene.
-                                if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
-                                    tracing::info!(
-                                        "[script.to_video] Skipping duplicate Pexels video {} for scene {}",
-                                        vid_id, scene_idx + 1
-                                    );
-                                    continue;
-                                }
-                                let vid_dur =
-                                    video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
-                                if vid_dur >= 3 {
-                                    if let Some(files) =
-                                        video.get("video_files").and_then(|v| v.as_array())
-                                    {
-                                        for file in files {
-                                            let width = file
-                                                .get("width")
-                                                .and_then(|v| v.as_u64())
-                                                .unwrap_or(0);
-                                            let url = file
-                                                .get("link")
-                                                .and_then(|v| v.as_str())
-                                                .unwrap_or("");
-                                            if width >= 720 && width <= 1920 && !url.is_empty() {
-                                                // Download this clip
-                                                let clip_path = format!(
-                                                    "{}/scene_{:03}.mp4",
-                                                    cache_dir,
-                                                    scene_idx + 1
-                                                );
-                                                if let Ok(dl_resp) = client.get(url).send().await {
-                                                    if dl_resp.status().is_success() {
-                                                        if let Ok(bytes) = dl_resp.bytes().await {
-                                                            std::fs::write(&clip_path, &bytes).ok();
-                                                            // Trim to scene duration
-                                                            let crop_filter =
-                                                                crop_filter_for_aspect(
-                                                                    &spec.meta.aspect,
-                                                                );
-                                                            let trimmed = format!(
-                                                                "{}/scene_{:03}_trim.mp4",
-                                                                cache_dir,
-                                                                scene_idx + 1
-                                                            );
-                                                            let trim_result = tokio::process::Command::new("ffmpeg")
-                                                                .arg("-y")
-                                                                .arg("-i").arg(&clip_path)
-                                                                .arg("-t").arg(dur.to_string())
-                                                                .arg("-vf").arg(&crop_filter)
-                                                                .arg("-c:v").arg("libx264")
-                                                                .arg("-preset").arg("fast")
-                                                                .arg("-crf").arg("23")
-                                                                .arg("-an")
-                                                                .arg(&trimmed)
-                                                                .stdin(std::process::Stdio::null())
-                                                                .stdout(std::process::Stdio::null())
-                                                                .stderr(std::process::Stdio::piped())
-                                                                .kill_on_drop(true)
-                                                                .output()
-                                                                .await;
-                                                            if trim_result
-                                                                .as_ref()
-                                                                .map(|o| o.status.success())
-                                                                .unwrap_or(false)
+            // --- Priority 1: Pexels (requires API key) ---
+            if !pexels_key_val.is_empty() {
+                let pexels_url = format!(
+                    "https://api.pexels.com/videos/search?query={}&per_page=5&orientation={}",
+                    urlencoding::encode(&query),
+                    orientation
+                );
+
+                if let Ok(resp) = client
+                    .get(&pexels_url)
+                    .header("Authorization", &pexels_key_val)
+                    .send()
+                    .await
+                {
+                    if resp.status().is_success() {
+                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                            if let Some(videos) = body.get("videos").and_then(|v| v.as_array()) {
+                                for video in videos {
+                                    let vid_id =
+                                        video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                                    if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
+                                        continue;
+                                    }
+                                    let vid_dur = video
+                                        .get("duration")
+                                        .and_then(|v| v.as_i64())
+                                        .unwrap_or(0);
+                                    if vid_dur >= 3 {
+                                        if let Some(files) =
+                                            video.get("video_files").and_then(|v| v.as_array())
+                                        {
+                                            for file in files {
+                                                let width = file
+                                                    .get("width")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                let url = file
+                                                    .get("link")
+                                                    .and_then(|v| v.as_str())
+                                                    .unwrap_or("");
+                                                if width >= 720 && width <= 1920 && !url.is_empty() {
+                                                    let clip_path = format!(
+                                                        "{}/scene_{:03}.mp4",
+                                                        cache_dir,
+                                                        scene_idx + 1
+                                                    );
+                                                    if let Ok(dl_resp) =
+                                                        client.get(url).send().await
+                                                    {
+                                                        if dl_resp.status().is_success() {
+                                                            if let Ok(bytes) =
+                                                                dl_resp.bytes().await
                                                             {
-                                                                scene_bg = Some(trimmed);
-                                                            } else {
-                                                                scene_bg = Some(clip_path);
+                                                                std::fs::write(&clip_path, &bytes)
+                                                                    .ok();
+                                                                let crop_filter =
+                                                                    crop_filter_for_aspect(
+                                                                        &spec.meta.aspect,
+                                                                    );
+                                                                let trimmed = format!(
+                                                                    "{}/scene_{:03}_trim.mp4",
+                                                                    cache_dir,
+                                                                    scene_idx + 1
+                                                                );
+                                                                let trim_result =
+                                                                    tokio::process::Command::new(
+                                                                        "ffmpeg",
+                                                                    )
+                                                                    .arg("-y")
+                                                                    .arg("-i")
+                                                                    .arg(&clip_path)
+                                                                    .arg("-t")
+                                                                    .arg(dur.to_string())
+                                                                    .arg("-vf")
+                                                                    .arg(&crop_filter)
+                                                                    .arg("-c:v")
+                                                                    .arg("libx264")
+                                                                    .arg("-preset")
+                                                                    .arg("fast")
+                                                                    .arg("-crf")
+                                                                    .arg("23")
+                                                                    .arg("-an")
+                                                                    .arg(&trimmed)
+                                                                    .stdin(std::process::Stdio::null())
+                                                                    .stdout(std::process::Stdio::null())
+                                                                    .stderr(std::process::Stdio::piped())
+                                                                    .kill_on_drop(true)
+                                                                    .output()
+                                                                    .await;
+                                                                if trim_result
+                                                                    .as_ref()
+                                                                    .map(|o| o.status.success())
+                                                                    .unwrap_or(false)
+                                                                {
+                                                                    scene_bg = Some(trimmed);
+                                                                } else {
+                                                                    scene_bg = Some(clip_path);
+                                                                }
+                                                                used_pexels_ids.insert(vid_id);
+                                                                bg_source = "pexels";
+                                                                break;
                                                             }
-                                                            // Mark this Pexels video as used so
-                                                            // subsequent scenes don't repeat it.
-                                                            used_pexels_ids.insert(vid_id);
-                                                            break;
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                }
-                                if scene_bg.is_some() {
-                                    break;
+                                    if scene_bg.is_some() {
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -8612,13 +9089,44 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 }
             }
 
+            // --- Priority 2: YouTube stock via yt-dlp (no API key) ---
+            if scene_bg.is_none() {
+                // Prefer non-procedural paths from script.fallback_pool if caller supplied stock
+                let pool_stock = spec
+                    .background
+                    .fallback_pool
+                    .iter()
+                    .find(|p| !is_procedural_media_path(p) && Path::new(p).exists());
+                if let Some(p) = pool_stock {
+                    scene_bg = Some(p.clone());
+                    bg_source = "fallback_pool_stock";
+                }
+            }
+            if scene_bg.is_none() {
+                let mut yt_q = format!("{} stock footage cinematic", query);
+                if used_yt_queries.contains(&yt_q) {
+                    yt_q = format!("{} b-roll vertical", query);
+                }
+                used_yt_queries.insert(yt_q.clone());
+                let yt_out = format!("{}/scene_{:03}_yt.mp4", cache_dir, scene_idx + 1);
+                if let Some(path) =
+                    fetch_youtube_stock_clip(&yt_q, dur, &spec.meta.aspect, &yt_out).await
+                {
+                    scene_bg = Some(path);
+                    bg_source = "youtube";
+                }
+            }
+
             if let Some(path) = scene_bg {
+                tracing::info!(
+                    "[script.to_video] Scene {} background source={} path={}",
+                    scene_idx + 1,
+                    bg_source,
+                    path
+                );
                 per_scene_backgrounds.push(path);
             } else {
-                // Fallback: use a procedural background for this scene.
-                // These are SYNTHETIC fallbacks (committed mcp/assets/backgrounds/*.mp4),
-                // not real stock footage. Warn the agent so they know the quality is
-                // lower and can retry with different search queries or a Pexels API key.
+                // Last resort: procedural (synthetic) — hard production quality fail.
                 let fallback = format!(
                     "mcp/assets/backgrounds/procedural_{:02}.mp4",
                     (scene_idx % 10) + 1
@@ -8630,7 +9138,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 };
                 per_scene_backgrounds.push(procedural_path.clone());
                 render_warnings.push(format!(
-                    "Scene {}: no Pexels/YouTube background found — using SYNTHETIC procedural fallback ({}). Set PEXELS_API_KEY for real stock footage, or provide background.fallback_pool in the script.",
+                    "PRODUCTION_FAIL stock_visuals scene {}: Pexels+YouTube failed — SYNTHETIC procedural ({}) used. Set PEXELS_API_KEY and/or fix yt-dlp. Grade will be capped.",
                     scene_idx + 1,
                     procedural_path
                 ));
@@ -8859,19 +9367,75 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             }
         }
 
-        // Also check for local PNG stickers
-        for (speaker_name, speaker_spec) in &spec.speakers {
-            if !speaker_stickers.contains_key(speaker_name) {
-                let position_parts: Vec<&str> = speaker_spec.position.split('-').collect();
-                let facing = position_parts.last().unwrap_or(&"left");
-                let png_path = format!(
-                    "mcp/assets/stickers/speaker_{}_{}.png",
-                    speaker_name, facing
-                );
-                if std::path::Path::new(&png_path).exists() {
-                    speaker_stickers.insert(speaker_name.clone(), png_path);
+        // Local sticker fallback when GIPHY missing/failed (Phase CF).
+        // Prefer animated GIFs (giphy_*.gif), then speaker PNGs, then any .gif/.png.
+        let local_sticker_pool: Vec<String> = {
+            let mut pool = Vec::new();
+            if let Ok(entries) = std::fs::read_dir("mcp/assets/stickers") {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let p = entry.path();
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if matches!(ext, "gif" | "png" | "webp") && !name.starts_with('.') {
+                        pool.push(p.to_string_lossy().to_string());
+                    }
                 }
             }
+            // Prefer GIFs first for motion
+            pool.sort_by(|a, b| {
+                let ag = a.ends_with(".gif") as i32;
+                let bg = b.ends_with(".gif") as i32;
+                bg.cmp(&ag)
+            });
+            pool
+        };
+        let mut local_idx = 0usize;
+        for (speaker_name, speaker_spec) in &spec.speakers {
+            if speaker_stickers.contains_key(speaker_name) {
+                continue;
+            }
+            // Named PNG first
+            let position_parts: Vec<&str> = speaker_spec.position.split('-').collect();
+            let facing = position_parts.last().unwrap_or(&"left");
+            let png_path = format!(
+                "mcp/assets/stickers/speaker_{}_{}.png",
+                speaker_name, facing
+            );
+            if std::path::Path::new(&png_path).exists() {
+                speaker_stickers.insert(speaker_name.clone(), png_path);
+                continue;
+            }
+            // Generic named GIFs
+            for candidate in [
+                format!("mcp/assets/stickers/giphy_{}.gif", speaker_name),
+                "mcp/assets/stickers/giphy_narrator.gif".to_string(),
+                "mcp/assets/stickers/giphy_alice.gif".to_string(),
+            ] {
+                if Path::new(&candidate).exists() {
+                    speaker_stickers.insert(speaker_name.clone(), candidate);
+                    break;
+                }
+            }
+            if speaker_stickers.contains_key(speaker_name) {
+                continue;
+            }
+            // Cycle remaining local pool
+            if !local_sticker_pool.is_empty() {
+                let path = local_sticker_pool[local_idx % local_sticker_pool.len()].clone();
+                local_idx += 1;
+                speaker_stickers.insert(speaker_name.clone(), path);
+            }
+        }
+        if speaker_stickers.is_empty() {
+            render_warnings.push(
+                "PRODUCTION_FAIL overlay_presence: no GIPHY key and no local stickers under mcp/assets/stickers/"
+                    .into(),
+            );
+        } else if giphy_key_val.is_empty() {
+            render_warnings.push(format!(
+                "Using LOCAL sticker fallbacks ({} speaker(s)) — set GIPHY_API_KEY for topical animated stickers",
+                speaker_stickers.len()
+            ));
         }
 
         // Create sticker overlays per scene
@@ -9318,9 +9882,36 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
             report_progress(100.0, 100.0, "Video created").await.ok();
 
-            // Include timeline preview in the response for agent inspection
+            // Production KPI (beauty layers) — not the same as verify.render technical score.
+            let bg_paths: Vec<String> = render_spec
+                .backgrounds
+                .iter()
+                .map(|b| b.path.clone())
+                .collect();
+            let music_for_score = render_spec.music_path.as_deref();
+            let (has_dialogue, rms_ok) = probe_dialogue_rms(&out_path).await;
+            let captions_ok = !captions_path.is_empty() && Path::new(captions_path).exists();
+            let (prod_score, prod_dims, hard_fails, next_actions) = compute_production_score(
+                &bg_paths,
+                music_for_score,
+                render_spec.stickers.len(),
+                render_spec.meme_clips.len(),
+                has_dialogue,
+                rms_ok,
+                captions_ok,
+            );
+            let grade = production_grade(prod_score);
+            // Cap delivery status: technical render ok but production may be fail
+            let delivery_status = if prod_score >= 70 && hard_fails.is_empty() {
+                "rendered"
+            } else if prod_score >= 40 {
+                "rendered_below_production_grade"
+            } else {
+                "rendered_production_fail"
+            };
+
             Ok(json!({
-                "status": "rendered",
+                "status": delivery_status,
                 "output_path": out_path,
                 "file_size_bytes": file_size,
                 "timeline_path": timeline_path,
@@ -9335,6 +9926,17 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 "speaker_count": timeline_result.get("speaker_count"),
                 "background_count": render_spec.backgrounds.len(),
                 "sticker_count": render_spec.stickers.len(),
+                "meme_count": render_spec.meme_clips.len(),
+                "background_sources": bg_paths,
+                "music_path": render_spec.music_path,
+                "production_quality": {
+                    "production_score": prod_score,
+                    "grade": grade,
+                    "dimensions": prod_dims,
+                    "hard_fails": hard_fails,
+                    "next_actions": next_actions,
+                    "kpi_note": "verify.render technical score is NOT production quality. Grade A/B requires real stock visuals + real music + overlays.",
+                },
                 "warnings": merged_warnings,
             }))
         }
@@ -11544,10 +12146,21 @@ async fn handle_system_capabilities(
     let music_count = MusicIndex::load(Some(&music_index_resolved.to_string_lossy()))
         .map(|idx| idx.len())
         .unwrap_or(0);
+    // Stock mcp/assets/music/*.mp3 are synthetic sine tones — not production-usable.
+    let synthetic_stock = music_count > 0; // committed index is placeholders
+    let music_library_index = resolve("mcp/assets/music_library_index.json");
+    let real_library = music_library_index.exists();
     let music = json!({
-        "available": music_count > 0,
+        "available": music_count > 0 || real_library,
         "indexed_count": music_count,
         "index_path": music_index_path,
+        "usable_for_production": real_library || !pixabay_key().is_empty(),
+        "synthetic_placeholder_index": synthetic_stock && !real_library,
+        "reason": if real_library {
+            serde_json::Value::Null
+        } else {
+            "Committed music_index tracks are synthetic sine stubs (not production music). Run library.build or set PIXABAY_API_KEY / use yt-dlp music fallback.".into()
+        },
     });
 
     // Voicebox TTS (qwen3 / faster-tts sidecar at OPENSCRIPT_TTS_URL)
@@ -12118,6 +12731,45 @@ mod tests {
             Some(false)
         );
     }
+
+    #[test]
+    fn test_production_score_procedural_only_is_fail_grade() {
+        let bgs = vec![
+            "mcp/assets/backgrounds/procedural_01.mp4".into(),
+            "mcp/assets/backgrounds/procedural_02.mp4".into(),
+        ];
+        let (score, _dims, hard, _next) =
+            compute_production_score(&bgs, None, 0, 0, true, true, true);
+        assert!(score < 55, "procedural-only should not reach grade C; score={}", score);
+        assert!(!hard.is_empty());
+        assert_eq!(production_grade(score), "F");
+    }
+
+    #[test]
+    fn test_production_score_full_stack_is_a() {
+        let music = std::env::temp_dir().join("openscript_real_music_kpi.mp3");
+        // Non-placeholder size (not 481114)
+        std::fs::write(&music, vec![1u8; 12_000]).expect("write temp music");
+        let bgs = vec![
+            "mcp/assets/background_cache/scene_001_yt.mp4".into(),
+            "cache/stock_city.mp4".into(),
+        ];
+        let (score, _, hard, _) = compute_production_score(
+            &bgs,
+            Some(music.to_str().unwrap()),
+            3,
+            2,
+            true,
+            true,
+            true,
+        );
+        let _ = std::fs::remove_file(&music);
+        // Non-procedural paths count as stock even if files missing on disk
+        assert!(score >= 85, "full stack should be A; score={}", score);
+        assert!(hard.is_empty(), "hard fails: {:?}", hard);
+        assert_eq!(production_grade(score), "A");
+    }
+
 
     /// help.tool for NLE queries must prefer transcribe/reelize over script.to_video.
     #[tokio::test]

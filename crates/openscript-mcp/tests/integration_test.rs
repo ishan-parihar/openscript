@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // Should have 76 tools: 75 prior tools + background.search
+    // 77 tools: prior 76 + verify.production
     assert_eq!(
         tools.len(),
-        76,
-        "Expected 76 MCP tools, got {}",
+        77,
+        "Expected 77 MCP tools, got {}",
         tools.len()
     );
 
@@ -188,6 +188,7 @@ fn test_mcp_tools_list() {
         .iter()
         .map(|t| t.get("name").unwrap().as_str().unwrap())
         .collect();
+    assert!(tool_names.contains(&"verify.production"));
 
     // Original tools (8)
     assert!(tool_names.contains(&"transcribe"));

@@ -153,6 +153,21 @@ enum Commands {
         #[arg(long, default_value = "9:16")]
         expected_aspect: String,
     },
+    /// Production beauty KPI gate (mirrors verify.production) — stock/music/stickers grade
+    VerifyProduction {
+        #[arg(short, long)]
+        video_path: String,
+        #[arg(long)]
+        timeline_path: String,
+        #[arg(long)]
+        captions_path: Option<String>,
+        #[arg(long, default_value = "0")]
+        sticker_count: u32,
+        #[arg(long, default_value = "0")]
+        meme_count: u32,
+        #[arg(long, default_value = "B")]
+        min_grade: String,
+    },
     /// Search YouTube for videos (mirrors youtube.search)
     YoutubeSearch {
         #[arg(short, long)]
@@ -344,6 +359,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let args = serde_json::json!({"video_path": video_path, "timeline_path": timeline_path, "expected_aspect": expected_aspect});
             let result = openscript_mcp::tools::route_tool("verify.render", args).await;
             print_cli_result("verify.render", result);
+        }
+        Commands::VerifyProduction {
+            video_path,
+            timeline_path,
+            captions_path,
+            sticker_count,
+            meme_count,
+            min_grade,
+        } => {
+            let mut args = serde_json::json!({
+                "video_path": video_path,
+                "timeline_path": timeline_path,
+                "sticker_count": sticker_count,
+                "meme_count": meme_count,
+                "min_grade": min_grade,
+            });
+            if let Some(c) = captions_path {
+                args["captions_path"] = serde_json::json!(c);
+            }
+            let result = openscript_mcp::tools::route_tool("verify.production", args).await;
+            print_cli_result("verify.production", result);
         }
         Commands::YoutubeSearch { query, limit } => {
             let args = serde_json::json!({"query": query, "limit": limit});

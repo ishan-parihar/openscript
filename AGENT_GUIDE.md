@@ -1,6 +1,6 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (76 tools)
+## Tool Taxonomy (77 tools)
 
 > **Always start a new environment with `system.capabilities`.** It reports
 > ffmpeg, Kokoro (real ONNX + voices.bin), Parakeet, Pexels/GIPHY/Pixabay keys,
@@ -84,14 +84,28 @@ Inspect, validate, and modify timelines.
 | `timeline.diff` | Compare two timeline versions |
 | `timeline.autofill_broll` | Auto-fill b-roll from segment captions |
 
-### 8. QUALITY & VERIFICATION (3 tools)
+### 8. QUALITY & VERIFICATION (4 tools)
 Post-render quality checks.
 
 | Tool | When to use |
 |------|------------|
-| `verify.audio` | Check audio levels, silence, sample rate |
-| `verify.captions` | Verify caption timing against video |
-| `verify.render` | Full render verification (duration, resolution, tracks) |
+| `verify.audio` | Technical: audio levels, silence, sample rate |
+| `verify.captions` | Caption timing checks |
+| `verify.render` | **Technical only** — duration/aspect/file integrity (score 100 ≠ beautiful video) |
+| `verify.production` | **Production KPI gate** — stock visuals, real music, stickers, memes, speech, captions → grade A–F |
+
+#### Production KPI baseline (verify.production)
+
+| Grade | Score | Meaning |
+|-------|------:|---------|
+| **A** | 85–100 | Delivery-ready: stock footage + real music + overlays |
+| **B** | 70–84 | Acceptable short; minor layer gaps |
+| **C** | 55–69 | Watchable draft; missing beauty layers |
+| **D/F** | <55 | Not production — typically procedural-only + no music/stickers |
+
+Weights: stock_visuals 30 · music 15 · overlays 15 · memes 10 · speech 15 · captions 15.
+
+`script.to_video` now returns `production_quality` with the same grade. Status becomes `rendered_below_production_grade` or `rendered_production_fail` when beauty KPIs fail — **do not treat verify.render=100 as success.**
 
 ---
 

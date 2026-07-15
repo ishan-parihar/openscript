@@ -3,7 +3,7 @@
 #
 # Enforces the Definition of Done from AGENTS.md §7:
 #   1. cargo build — zero warnings
-#   2. cargo test — all pass, count >= baseline (242)
+#   2. cargo test — all pass, count >= baseline (244)
 #   3. npx tsc --noEmit — clean (if frontend exists)
 #   4. git status — no uncommitted changes
 #   5. git push origin main — succeeds
@@ -39,7 +39,7 @@ if [ -f /home/z/my-project/.git-credentials ]; then
 fi
 
 # Test baseline — must never decrease. Update when adding new tests.
-BASELINE_TEST_COUNT=242
+BASELINE_TEST_COUNT=244
 
 FAIL() {
   echo ""
