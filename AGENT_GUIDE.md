@@ -1,13 +1,20 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (76 tools, 8 categories)
+## Tool Taxonomy (76 tools)
 
-### 1. SCRIPT CREATION (3 tools)
+> **Always start a new environment with `system.capabilities`.** It reports
+> ffmpeg, Kokoro (real ONNX + voices.bin), Parakeet, Pexels/GIPHY/Pixabay keys,
+> music/SFX indices, yt-dlp, and HyperFrames. Do not assume TTS works until
+> `kokoro.available` is true and `model_path` exists on disk.
+
+### 1. SCRIPT CREATION (5 tools)
 Create a video from scratch — define scenes, speakers, backgrounds.
 
 | Tool | When to use |
 |------|------------|
 | `script.parse` | Validate a script JSON before production |
+| `script.generate_voices` | TTS only (when fine-tuning) |
+| `script.build_captions` | ASS captions only (when fine-tuning) |
 | `script.to_timeline` | Build timeline from script (TTS + captions + backgrounds) |
 | `script.to_video` | **ONE-CALL**: script JSON → finished MP4 |
 
@@ -302,10 +309,12 @@ GIPHY provides `images.original.mp4` — a proper video format that FFmpeg can d
 
 ## Key Design Decisions
 
-1. **Kokoro is the default TTS** — no external dependency, 24kHz, 54 voices
-2. **Pexels is the primary video source** — API key hardcoded, portrait/landscape
-3. **GIPHY for stickers** — transparent GIFs, sticker_layering bundle
-4. **Multi-broll per scene** — extract_keywords() finds relevant stock per scene
-5. **Whisper force-alignment** — real per-word timestamps (not even-spacing)
+1. **Kokoro is the default TTS** — ONNX sidecar, 24kHz, many preset voices (`voices.list`)
+2. **Pexels is the primary stock video source** — requires `PEXELS_API_KEY` (env or config)
+3. **GIPHY for stickers + meme b-rolls** — requires `GIPHY_API_KEY`
+4. **Multi-broll per scene** — `video_keywords` + per-scene text for topic-relevant clips
+5. **Parakeet force-alignment** — real per-word timestamps when models are installed; else even-spacing with warnings
 6. **Timeline preview** — token-efficient tree view for agent inspection
 7. **Sentence separation** — captions split on . ! ? — no leaking
+8. **`music.search` boolean filters are optional** — omit `loopable` / `intro_friendly` / `cta_friendly` unless you need them (defaults no longer force empty results)
+9. **Stock `mcp/assets/music/*.mp3` are synthetic fallbacks** — prefer `library.search` / `stock.search` for production music

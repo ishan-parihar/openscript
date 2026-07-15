@@ -114,22 +114,31 @@ fi
 # ----------------------------------------------------------------------------
 step "2/8 — Installing Python ML sidecar deps"
 
-# Kokoro sidecar needs: kokoro-onnx==0.4.0, numpy
-# Whisper sidecar (apex_transcriber.py) needs: whisper_timestamped (Apex model)
-# We install kokoro-onnx here; the Whisper deps require a conda env
-# (whisper-hindi) and are documented in AGENTS.md §16.
+# Kokoro sidecar needs: kokoro-onnx + numpy.
+# Pin a range that supports Python 3.11–3.13. Old pin kokoro-onnx==0.4.0
+# fails on Python 3.13 (requires <3.13). Prefer >=0.4.4 / latest 0.5.x.
+# Whisper sidecar (apex_transcriber.py) needs whisper_timestamped in the
+# whisper-hindi conda env (see AGENTS.md §16).
 
 if command -v pip3 >/dev/null 2>&1; then
   info "Installing kokoro-onnx + numpy (user-level, no virtualenv)..."
   # --user so we don't need sudo; --break-system-packages for PEP 668 systems
+  # Try modern pin first; fall back to whatever pip can resolve.
   pip3 install --user --break-system-packages --quiet \
-    "kokoro-onnx==0.4.0" \
+    "kokoro-onnx>=0.4.4" \
     "numpy" \
-    2>&1 | tail -3 || warn "pip install failed (some Python sidecars may not work)"
-  ok "Python deps installed"
+    2>&1 | tail -5 \
+    || pip3 install --user --break-system-packages --quiet "kokoro-onnx" "numpy" 2>&1 | tail -5 \
+    || warn "pip install failed (some Python sidecars may not work)"
+  if python3 -c "import kokoro_onnx" 2>/dev/null; then
+    ok "kokoro-onnx importable ($(python3 -c 'import kokoro_onnx,inspect; print(getattr(kokoro_onnx,\"__file__\",\"ok\"))' 2>/dev/null || echo ok))"
+  else
+    warn "kokoro-onnx still not importable — script.to_video TTS will fail until fixed"
+  fi
+  ok "Python deps step finished"
 else
   warn "pip3 not found; skipping Python dep install. The Kokoro sidecar will fail to start."
-  warn "Install pip3 + run: pip3 install --user kokoro-onnx==0.4.0 numpy"
+  warn "Install pip3 + run: pip3 install --user 'kokoro-onnx>=0.4.4' numpy"
 fi
 
 # ----------------------------------------------------------------------------

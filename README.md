@@ -1,9 +1,9 @@
 # OpenScript
 
-**AI-directed video editing pipeline — from raw footage to polished short-form content.**
+**AI-directed video creation & editing — agents as directors, from script (or raw footage) to polished short-form MP4.**
 
 [![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org/)
-[![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-Server-5B8DEF.svg)](https://modelcontextprotocol.io/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -12,208 +12,210 @@
 
 ## What It Does
 
-OpenScript turns raw video into edited short-form content through a structured pipeline: **transcribe → analyze → edit decision list → multi-track timeline → render**. It exposes **43 MCP tools** so AI coding agents can direct the entire editing workflow — selecting b-roll, composing voiceovers, mixing music with ducking, and rendering final video — without human intervention.
+OpenScript exposes **76 MCP tools** (plus a CLI mirror) so AI agents can direct short-form video end-to-end:
 
-Two editing modes:
-- **`reelize.timeline`** — One-call pipeline: raw video → complete 9:16 reel with captions, b-roll, music, and SFX
-- **`reelize.brief` → `reelize.direct`** — Two-step workflow: AI analyzes footage and returns a structured brief, then executes creative direction with full control over every track
+1. **From scratch (golden path):** write a script JSON → one call → vertical MP4 with TTS, captions, multi-scene backgrounds, optional stickers/memes, music, ducking.
+2. **NLE on existing footage:** transcribe → timeline → b-roll/music/SFX → render.
+
+Canonical agent docs: [`AGENT_GUIDE.md`](./AGENT_GUIDE.md). Engineering protocol: [`AGENTS.md`](./AGENTS.md).
+
+### Golden trajectories
+
+| Path | Flow | When |
+|------|------|------|
+| **A — From scratch** | `system.capabilities` → `script.parse` → **`script.to_video`** | Create a new short from a script |
+| **B — NLE** | `transcribe` → `timeline.build` → `broll.director` → `timeline.render` | Edit existing video |
+| **C — Discovery** | `system.capabilities` → `help.tool` | New environment / unsure which tool |
+
+Do **not** chain intermediate tools unless you need fine control. `script.to_video` is the default.
+
+---
 
 ## Key Features
 
-- **Multi-Track Timeline (EDL v2)** — Six independent tracks: dialogue, voiceover, captions, b-roll, music, SFX. Full validation and backward compatibility with EDL v1.
-- **Transcription Pipeline** — Apex (Oriserve/Whisper-Hindi2Hinglish-Apex) speech-to-text with word-level timestamps, phrase-level grouping, and human-editable SRT workflow. Optimized for Hinglish content.
-- **TTS Voiceover Engine** — Voice profile registry with `faster-qwen3-tts` integration, caching, duration estimation, and multi-speaker commentary generation.
-- **Asset Libraries** — 261 indexed SFX and 16 music tracks with editorial-role and mood-based search. Pexels API integration for stock b-roll with director-mode concept extraction.
-- **FFmpeg Rendering** — Multi-track audio mixing, automatic ducking, ASS caption burning with Bebas Neue font, preview/standard/quality modes.
-- **Remotion Composition** — TypeScript-based renderer for rich visual compositions with crossfade transitions and layered animations.
-- **MCP Server (43 Tools)** — Rust-native Model Context Protocol server with stdio transport, progress notifications, and type-safe tool schemas.
-- **Terminal TUI** — `ratatui`-based interactive interface for timeline browsing and editing.
-- **Verification Layer** — Post-render quality checks for audio levels, caption synchronization, and render fidelity.
+- **Script → video orchestrator** — Kokoro TTS, word-timed ASS captions (4 styles), unique backgrounds per scene, GIPHY stickers/meme cuts, music + sidechain ducking
+- **Multi-track timeline (EDL v2)** — dialogue, voiceover, captions, b-roll, music, SFX
+- **Transcription** — Apex (Hinglish-oriented Whisper) with word/phrase SRT
+- **Asset search** — SFX (261), music index, Pexels / GIPHY / Pixabay / YouTube / library
+- **Render engines** — FFmpeg multilayer (default), HyperFrames (HTML+GSAP), Remotion escape hatch
+- **Agent meta-tools** — `system.capabilities`, `help.tool` (trajectory-aware ranking)
+- **QA** — `verify.audio` / `verify.captions` / `verify.render`
+- **CLI + MCP + Tauri shell** — same `route_tool()` surface
+
+---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        MCP Server (43 tools)                     │
-│  AI Agents ─────────────────────────────────────────────────────│
-└──────┬──────────┬──────────┬──────────┬──────────┬──────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│              MCP Server / CLI  (76 tools, stdio)                  │
+│  AI agents  ── script.to_video / timeline.* / hf.* / verify.* ── │
+└──────┬──────────┬──────────┬──────────┬──────────┬───────────────┘
        │          │          │          │          │
   ┌────▼───┐ ┌───▼────┐ ┌──▼─────┐ ┌──▼──────┐ ┌▼──────────┐
   │ Core   │ │Trans-  │ │ FFmpeg │ │  TTS    │ │  Assets   │
-  │Timeline│ │ cribe  │ │ Render │ │ Engine  │ │  (SFX/    │
-  │  & SRT │ │        │ │        │ │         │ │  Music)   │
-  └────┬───┘ └───┬────┘ └──┬─────┘ └──┬──────┘ └┬──────────┘
-       │          │          │          │          │
-       └──────────┴──────────┴──────────┴──────────┘
+  │Timeline│ │ cribe  │ │ Multi- │ │ Kokoro  │ │ Pexels/   │
+  │  & SRT │ │ Apex   │ │ layer  │ │ Voicebox│ │ GIPHY/SFX │
+  └────────┘ └────────┘ └────────┘ └─────────┘ └───────────┘
                               │
                     ┌─────────▼──────────┐
-                    │   Remotion (TS)    │
-                    │   Composition +    │
-                    │   Animation Engine │
+                    │ HyperFrames /      │
+                    │ Remotion (optional)│
                     └─────────┬──────────┘
-                              │
-                         ┌────▼────┐
-                         │  MP4    │
-                         │  Output │
-                         └─────────┘
+                              ▼
+                            MP4
 ```
+
+---
 
 ## Tech Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| Core | Rust (8 crates) | Timeline schema, SRT parsing, type-safe EDL |
-| Transcription | Apex (Whisper-Hindi2Hinglish) | Speech-to-text (Hinglish-optimized) |
-| TTS | faster-qwen3-tts | Voiceover generation |
-| Rendering | FFmpeg + Remotion | Video composition and output |
-| Assets | JSON-indexed libraries | SFX (261), Music (16), Pexels b-roll |
-| AI Interface | MCP Server (Rust) | 43 tools for agent-directed editing |
-| TUI | ratatui + crossterm | Terminal-based timeline editor |
-| Scripts | Python | Pipeline orchestration and helpers |
+| Core | Rust workspace (8 crates) | Timeline, tools, render, TTS, assets |
+| TTS | Kokoro ONNX (default) + optional Voicebox | Voiceover |
+| STT | Apex / Whisper-Hindi2Hinglish | Transcription |
+| Alignment | Parakeet TDT (optional) | Word-level caption sync |
+| Render | FFmpeg + HyperFrames + Remotion | Composition |
+| AI interface | MCP (stdio) + CLI | Agent / human control |
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
 - Rust 1.80+
-- Python 3.12+
-- FFmpeg installed
-- Node.js 20+ (for Remotion rendering and Tauri frontend, optional)
+- Python **3.11–3.13** (kokoro-onnx needs a supported version; 3.13 requires recent kokoro-onnx)
+- FFmpeg + ffprobe
+- Optional: Node 20+ (Remotion / Tauri frontend), yt-dlp, API keys
 
-### Build
+### Bootstrap (recommended)
 
 ```bash
-cargo build --release
+bash setup.sh                 # models, deps, build, smoke test
+# or
+bash setup.sh --skip-models   # if you already have Kokoro weights
 ```
 
-### MCP Server
+### Env / API keys
+
+Set via environment or `mcp/assets/.openscript_config.json`:
+
+| Variable | Used for |
+|----------|----------|
+| `PEXELS_API_KEY` | Stock video backgrounds / b-roll |
+| `GIPHY_API_KEY` | Stickers + meme b-rolls |
+| `PIXABAY_API_KEY` | Stock music/video search |
+| `KOKORO_MODEL` / `KOKORO_VOICES` | Override default ONNX paths |
+
+Kokoro model paths expected by default:
+
+- `mcp/assets/kokoro/onnx/kokoro-v1.0.onnx`
+- `mcp/assets/kokoro/voices/voices-v1.0.bin`
+
+### MCP server
 
 ```bash
-# Start the MCP server (Rust implementation, stdio transport)
 cargo run -p openscript-mcp --bin mcp-server
+# or after build:
+./target/release/mcp-server
 ```
 
-### Run Full Pipeline
+### CLI (from-scratch golden path)
 
 ```bash
-# One-command: raw video → 9:16 reel with captions, b-roll, music, SFX
-cargo run -p openscript-cli -- reelize input.mp4
+./target/debug/openscript system-capabilities
+./target/debug/openscript script-parse --script my_script.json
+./target/debug/openscript script-to-video \
+  --script my_script.json \
+  --output-path out.mp4 \
+  --output-dir artifacts
 ```
 
-## MCP Tools (43)
+### NLE (existing footage)
 
-| Category | Tools |
-|----------|-------|
-| **Core Pipeline** | `transcribe`, `srt.read`, `srt.prepare`, `srt.apply_edit`, `edl.build`, `render`, `reelize`, `overlay.generate` |
-| **AI Director** | `reelize.brief`, `reelize.direct` — Analyze footage, then execute creative direction |
-| **Timeline Management** | `timeline.build`, `timeline.load`, `timeline.validate`, `timeline.upgrade`, `timeline.add_segment`, `timeline.add_track_event`, `timeline.diff`, `timeline.preview`, `timeline.render` |
-| **Voice / TTS** | `voice.profile.add`, `voice.profile.list`, `voice.profile.remove`, `tts.generate`, `tts.estimate_duration`, `tts.preview`, `tts.commentary` |
-| **SFX Library** | `sfx.index`, `sfx.search`, `sfx.assign` |
-| **Music Library** | `music.index`, `music.search`, `music.assign`, `music.ducking.plan` |
-| **B-Roll** | `broll.suggest`, `broll.fetch`, `broll.assign`, `broll.director`, `timeline.autofill_broll` |
-| **Voiceover** | `voiceover.generate` |
-| **Orchestration** | `reelize.timeline` — Single-call end-to-end pipeline |
-| **Verification** | `verify.audio`, `verify.captions`, `verify.render` — Post-render QA |
+Use MCP tools `transcribe` → `reelize.timeline` / `timeline.*`, or the legacy reelize CLI flows documented in older tooling.
 
-## Workflows
+---
 
-### One-Call Pipeline
+## MCP Tools (76)
 
+High-level map (full “when to use” tables: [`AGENT_GUIDE.md`](./AGENT_GUIDE.md)):
+
+| Category | Examples |
+|----------|----------|
+| **Script creation** | `script.parse`, `script.to_video`, `script.to_timeline`, `script.generate_voices`, `script.build_captions` |
+| **Discovery** | `system.capabilities`, `help.tool`, `voices.list` |
+| **Timeline** | `timeline.build`, `timeline.preview`, `timeline.inspect`, `timeline.render`, `timeline.to_hyperframes`, … |
+| **Background / b-roll** | `background.fetch`, `background.search`, `broll.director`, `broll.fetch` |
+| **Media / stickers** | `gif.search`, `gif.download`, `media.search`, `media.download`, `overlay.assign`, `sticker.*` |
+| **Music / SFX / library** | `music.search`, `music.assign`, `sfx.search`, `library.search`, `library.build` |
+| **NLE / reelize** | `transcribe`, `srt.*`, `edl.build`, `reelize`, `reelize.timeline`, `reelize.brief`, `reelize.direct` |
+| **Render** | `composition.render`, `hf.classify`, `hf.lint`, `hf.validate`, `hf.snapshot`, `hf.render`, `render` |
+| **QA** | `verify.audio`, `verify.captions`, `verify.render` |
+| **Stock / YouTube** | `stock.search`, `stock.fetch`, `youtube.search`, `youtube.download` |
+
+---
+
+## Minimal script JSON
+
+```json
+{
+  "title": "3 Surprising Facts About the Human Brain",
+  "video_keywords": ["brain", "neuroscience", "neurons"],
+  "speakers": {
+    "alice": { "voice": "kokoro:af_heart", "position": "top-left", "scale": 0.35 }
+  },
+  "scenes": [
+    { "speaker": "alice", "text": "Your brain has about 86 billion neurons." }
+  ],
+  "output": { "theme": "neutral" }
+}
 ```
-reelize.timeline(video_path)
-  ├── Transcribe (Apex)
-  ├── Build timeline with segments
-  ├── B-roll director (Pexels)
-  ├── Assign background music + ducking
-  ├── Assign SFX (hook, transitions, highlights)
-  ├── Generate captions (Bebas Neue, centered)
-  └── Render final video
-```
 
-### AI Director Mode
+See `AGENT_GUIDE.md` for themes, caption styles, meme b-rolls, and sticker scaling.
 
-```
-reelize.brief(video_path)
-  └── Returns: segments, timing, word counts, topic clusters, b-roll concepts
-
-# AI agent reviews brief, makes creative decisions
-
-reelize.direct(video_path, segments, broll, sfx, music, voiceover, captions)
-  └── Returns: rendered reel with full creative control
-```
+---
 
 ## Project Structure
 
 ```
 openscript/
 ├── crates/
-│   ├── openscript-core/      # Timeline schema, SRT parsing, core types
-│   ├── openscript-mcp/       # MCP server (43 tools, stdio transport)
-│   │   └── src/bin/
-│   │       └── mcp-server.rs # MCP server binary
-│   ├── openscript-ffmpeg/    # FFmpeg filter graphs, rendering, subtitles
-│   ├── openscript-transcribe/# Whisper/Apex transcription
-│   ├── openscript-tts/       # TTS client, voice profiles
-│   ├── openscript-assets/    # SFX/music indexing, Pexels b-roll
-│   ├── openscript-ui/        # ratatui TUI (app + rendering)
-│   └── openscript-cli/       # CLI entry point
-├── mcp/
-│   ├── scripts/              # Python pipeline helpers
-│   ├── assets/               # Indexed SFX, music, voice configs
-│   ├── fonts/                # Bebas Neue for caption burning
-│   └── styles/               # PupCaps CSS presets
-├── remotion/
-│   └── src/                  # TypeScript composition engine
-├── third_party/              # faster-qwen3-tts (TTS sidecar)
-└── LICENSE                   # MIT License
+│   ├── openscript-core/       # Timeline, SRT, script types
+│   ├── openscript-mcp/        # MCP server + 76 tool handlers
+│   ├── openscript-ffmpeg/     # Filter graphs, multilayer render
+│   ├── openscript-tts/        # Kokoro + Voicebox clients
+│   ├── openscript-transcribe/ # Apex wrapper
+│   ├── openscript-assets/     # Music/SFX/Pexels
+│   ├── openscript-cli/        # CLI
+│   ├── openscript-tauri/      # Desktop shell
+│   └── openscript-ui/         # Legacy ratatui TUI
+├── mcp/scripts/               # Kokoro / Apex / Parakeet sidecars
+├── mcp/assets/                # Models, music, backgrounds, indices
+├── hyperframes/               # Default motion-graphics path
+├── remotion/                  # Escape-hatch React renderer
+├── AGENT_GUIDE.md             # Agent tool catalog
+└── AGENTS.md                  # Engineering protocol
 ```
 
-## Code Metrics
-
-| Component | Lines of Code |
-|-----------|--------------|
-| Rust (8 crates) | ~16,000 |
-| Python (project) | ~1,060 |
-| TypeScript (Remotion) | ~760 |
-| **Total (project)** | **~17,800** |
+---
 
 ## Testing
 
 ```bash
-# Run the full test suite
-cargo test --workspace
+export PATH="$HOME/.cargo/bin:$PATH"
+cargo build --workspace --exclude openscript-tauri
+cargo test --workspace --exclude openscript-tauri --lib --bins --tests
+cargo build -p openscript-mcp --release --bin mcp-server
+bash scripts/smoke_test_mcp.sh
 ```
 
-Test coverage includes unit tests for core types, integration tests for the MCP server, E2E pipeline validation, and asset library verification.
-
-## Development Status
-
-Core timeline system, MCP server, FFmpeg rendering, TTS pipeline, and asset libraries are production-ready. Remotion composition and TUI are functional with ongoing refinement.
-
-| Component | Status |
-|-----------|--------|
-| Core timeline (EDL v2) | Production |
-| MCP server (43 tools) | Production |
-| Transcription (Apex) | Production |
-| FFmpeg rendering | Production |
-| TTS voiceover | Production |
-| Asset libraries | Production |
-| Verification layer | Production |
-| Remotion composition | Beta |
-| Terminal TUI | Beta |
+Baseline: **239+** library/integration tests (see `AGENTS.md` §6).
 
 ---
 
-## Why OpenScript
+## License
 
-Traditional video editing requires manual timeline work in Premiere, DaVinci, or Final Cut. OpenScript flips this: **you direct, the AI edits**. Feed it raw footage, tell it what kind of reel you want, and it handles transcription, timing, b-roll selection, audio mixing, caption burning, and rendering — all through a structured, type-safe pipeline.
-
-Built as a demonstration of what's possible when AI agents have **real tools** instead of just text interfaces.
-
----
-
-Built by [Ishan Parihar](https://github.com/ishan-parihar)
-
-[View on GitHub →](https://github.com/ishan-parihar/openscript)
-
-If you find this project useful, [consider supporting its development](https://rzp.io/rzp/ishan-parihar) ☕
+MIT — see [LICENSE](./LICENSE).
