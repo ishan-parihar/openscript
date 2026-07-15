@@ -733,6 +733,21 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "director.run",
+            "description": "ONE-SHOT director: system preflight + script.parse + script.to_video + verify.production. Returns video path, production grade, hard_fails, next_actions. Prefer this for cold agents. Fails closed when majority procedural or music topic mismatch.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "Script JSON string or path to .json"},
+                    "output_path": {"type": "string", "default": "artifacts/director_out.mp4"},
+                    "output_dir": {"type": "string", "default": "artifacts/director_run"},
+                    "min_grade": {"type": "string", "default": "B"}
+                },
+                "required": ["script"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "vision.analyze_clip",
             "description": "Extract a frame from a video clip and describe it with the vision cascade (OpenRouter multimodal free models when OPENROUTER_API_KEY is set; local Qwen text fallback). Use to judge morning/night, indoor/outdoor, phone UI, etc. Returns structured description + backend.",
             "inputSchema": {
@@ -1241,6 +1256,7 @@ pub fn route_tool(
         "vision.score_clip" => Box::pin(handle_vision_score_clip(args)),
         "system.config.get" => Box::pin(handle_system_config_get(args)),
         "system.config.set" => Box::pin(handle_system_config_set(args)),
+        "director.run" => Box::pin(handle_director_run(args)),
         // HyperFrames tools
         "hf.lint" => Box::pin(async move {
             crate::hf::handle_hf_lint(args)
@@ -5635,7 +5651,7 @@ fn compute_production_score(
             content_hash: Some(format!("shim_hash_{}", i)),
             video_id: None,
             search_query: Some(p.clone()),
-        })
+         lexical_score: None, source_title: None, })
         .collect();
     let stickers: Vec<StickerLayerInfo> = (0..sticker_count)
         .map(|i| StickerLayerInfo {
@@ -5666,7 +5682,7 @@ fn compute_production_score(
         ducking: true,
         mood: Some("neutral".into()),
         energy: Some("medium".into()),
-    });
+     tags: vec![], selection_query: None, source: None, });
     let manifest = RenderManifest {
         duration_ms: 16_000,
         backgrounds,
@@ -5679,7 +5695,7 @@ fn compute_production_score(
         has_dialogue,
         rms_ok,
         video_keywords: vec![],
-    };
+     theme: None, sfx_count: 0, };
     let report = evaluate_production_quality(&tl, &manifest);
     let dims = serde_json::to_value(&report.dimensions).unwrap_or(json!({}));
     (report.production_score, dims, report.hard_fails, report.next_actions)
@@ -5801,7 +5817,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
                     content_hash: None,
                     video_id: None,
                     search_query: None,
-                })
+                 lexical_score: None, source_title: None, })
                 .collect();
         }
     }
@@ -5833,7 +5849,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
                 ducking: true,
                 mood: None,
                 energy: None,
-            });
+             tags: vec![], selection_query: None, source: None, });
         }
     }
     if manifest.captions_path.is_none() {
@@ -5895,18 +5911,21 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         }
     }
 
+    let status = if !report.hard_fails.is_empty() {
+        "fail"
+    } else if meets_min {
+        "pass"
+    } else if report.production_score >= 40 {
+        "warning"
+    } else {
+        "fail"
+    };
     Ok(json!({
-        "status": if meets_min && report.hard_fails.is_empty() {
-            "pass"
-        } else if report.production_score >= 40 {
-            "warning"
-        } else {
-            "fail"
-        },
+        "status": status,
         "production_score": report.production_score,
         "grade": report.grade,
         "min_grade": min_grade,
-        "meets_min_grade": meets_min,
+        "meets_min_grade": meets_min && report.hard_fails.is_empty(),
         "hard_fails": report.hard_fails,
         "dimensions": report.dimensions,
         "next_actions": report.next_actions,
@@ -5914,9 +5933,108 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         "video_source_mix": report.video_source_mix,
         "timeline_editor": report.timeline_editor,
         "kpi_version": report.kpi_version,
-        "kpi_note": "verify.render is technical-only. Production v2 scores source quality, cuts/sec, music variance, sticker design, section composition, and timeline-editor utilization.",
+        "kpi_note": "verify.render is technical-only. Production v3 hard-fails majority procedural, missing visual hooks, and parade music on calm/focus. Use real stock + topic-tagged music.",
         "vision_rescore": vision_rescore,
         "vision_scores": vision_scores,
+    }))
+}
+
+/// ONE-SHOT director: preflight → parse → to_video → verify.production.
+async fn handle_director_run(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let script = extract_str(&args, "script")?;
+    let output_path = default_str(&args, "output_path", "artifacts/director_out.mp4");
+    let output_dir = default_str(&args, "output_dir", "artifacts/director_run");
+    let min_grade = default_str(&args, "min_grade", "B");
+    let _ = std::fs::create_dir_all(&output_dir);
+
+    // Preflight
+    let pexels = !pexels_key().is_empty();
+    let ytdlp = std::process::Command::new("yt-dlp")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !pexels && !ytdlp {
+        return Err(ToolError::Asset(
+            "director.run preflight failed: need PEXELS_API_KEY or yt-dlp for stock B-roll"
+                .into(),
+        ));
+    }
+    let mut preflight_warnings: Vec<String> = Vec::new();
+    if !pexels {
+        preflight_warnings.push(
+            "PEXELS_API_KEY unset — YouTube-only multi-broll (weaker relevance). Set api_keys.pexels in ~/.openscript/config.json"
+                .into(),
+        );
+    }
+    let lib = resolve_repo_path("mcp/assets/music_library_index.json");
+    if !lib.exists() {
+        preflight_warnings.push(
+            "music_library_index.json missing — run library.build for tagged music".into(),
+        );
+    }
+
+    let parse = handle_script_parse(json!({"script": script})).await?;
+    if parse.get("status").and_then(|s| s.as_str()) == Some("error")
+        || parse
+            .get("errors")
+            .and_then(|e| e.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false)
+    {
+        return Ok(json!({
+            "status": "error",
+            "phase": "parse",
+            "parse": parse,
+            "preflight_warnings": preflight_warnings,
+        }));
+    }
+
+    let to_video = handle_script_to_video(json!({
+        "script": script,
+        "output_path": output_path,
+        "output_dir": output_dir,
+    }))
+    .await?;
+
+    let video = to_video
+        .get("output_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&output_path)
+        .to_string();
+    let timeline = to_video
+        .get("timeline_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let manifest = to_video
+        .get("render_manifest_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let mut verify_args = json!({
+        "video_path": video,
+        "timeline_path": timeline,
+        "min_grade": min_grade,
+    });
+    if let Some(m) = manifest {
+        verify_args["render_manifest_path"] = json!(m);
+    }
+    let production = if !timeline.is_empty() && Path::new(&video).exists() {
+        handle_verify_production(verify_args).await.ok()
+    } else {
+        None
+    };
+
+    Ok(json!({
+        "status": to_video.get("status").cloned().unwrap_or(json!("unknown")),
+        "preflight_warnings": preflight_warnings,
+        "parse": parse,
+        "to_video": to_video,
+        "verify_production": production,
+        "output_path": video,
     }))
 }
 
@@ -5927,6 +6045,8 @@ struct StockClipFetch {
     video_id: String,
     content_hash: String,
     search_query: String,
+    lexical_score: f64,
+    source_title: String,
 }
 
 fn file_content_fingerprint(path: &str) -> Option<String> {
@@ -6215,6 +6335,8 @@ async fn fetch_youtube_stock_clip_signal(
             video_id,
             content_hash: out_hash,
             search_query: format!("{} | title={}", diversified, title),
+            lexical_score: lex,
+            source_title: title,
         });
     }
     None
@@ -7807,14 +7929,19 @@ fn format_seconds_to_timestamp(s: f64) -> String {
 /// (Round-3 UX audit PROBLEM 3b fix — ensures every video has background
 /// music by default, even when the agent doesn't specify music.path.)
 /// Try to download a free/stock music bed via yt-dlp when placeholders are the only local option.
+#[allow(dead_code)]
 async fn fetch_youtube_music_bed(theme: &str) -> Option<String> {
+    let query = match theme {
+        "calm" => "lofi study focus chill no copyright music",
+        "energetic" => "upbeat corporate positive no copyright music",
+        _ => "ambient chill background no copyright music",
+    };
+    fetch_youtube_music_bed_query(query).await
+}
+
+async fn fetch_youtube_music_bed_query(query: &str) -> Option<String> {
     let cache_dir = "mcp/assets/music_cache";
     std::fs::create_dir_all(cache_dir).ok()?;
-    let query = match theme {
-        "calm" => "lofi chill royalty free background music",
-        "energetic" => "upbeat royalty free background music",
-        _ => "cinematic royalty free background music no copyright",
-    };
     let out_tmpl = format!("{}/yt_music_%(id)s.%(ext)s", cache_dir);
     // Constrain size/duration — unrestricted ytsearch can pull 800MB+ streams.
     let result = tokio::process::Command::new("yt-dlp")
@@ -7867,127 +7994,247 @@ async fn fetch_youtube_music_bed(theme: &str) -> Option<String> {
     best.map(|(_, p)| p)
 }
 
-async fn auto_select_music(_theme: &str) -> Option<String> {
-    // The stock music files in mcp/assets/music/ are SYNTHETIC TONES
-    // (sine-wave hums). Real music comes from the library index
-    // (mcp/assets/music_library_index.json, 500+ YouTube-scraped tracks).
-    // This function searches the library index for a track matching the
-    // theme and downloads it via library.download.
-    // (Round-7: director-agent music selection from real index.)
+
+/// Pick intro + cut SFX from the tagged sfx_index (editorial_role / tags).
+fn auto_select_sfx_hits(scene_durations: &[f64]) -> Vec<openscript_ffmpeg::multilayer_render::SfxHit> {
+    let mut hits = Vec::new();
+    let index_path = resolve_repo_path("mcp/assets/sfx_index.json");
+    let Ok(raw) = std::fs::read_to_string(&index_path) else {
+        return hits;
+    };
+    let Ok(index) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return hits;
+    };
+    let assets = index
+        .get("assets")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let resolve_path = |p: &str| -> Option<String> {
+        let pb = std::path::Path::new(p);
+        if pb.exists() {
+            return Some(p.to_string());
+        }
+        // Relative under OPENSCRIPT_SFX_PATH / ~/Videos/Assets/SFX
+        if let Ok(base) = std::env::var("OPENSCRIPT_SFX_PATH") {
+            let name = pb.file_name()?.to_string_lossy().into_owned();
+            let cand = std::path::Path::new(&base).join(&name);
+            if cand.exists() {
+                return Some(cand.to_string_lossy().into());
+            }
+        }
+        None
+    };
+
+    let find = |role: &str, tag: &str| -> Option<String> {
+        for a in &assets {
+            let er = a.get("editorial_role").and_then(|v| v.as_str()).unwrap_or("");
+            let tags = a
+                .get("tags")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .unwrap_or_default();
+            let path = a.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            if (er == role || tags.contains(tag) || path.to_lowercase().contains(tag))
+                && !path.is_empty()
+            {
+                if let Some(rp) = resolve_path(path) {
+                    return Some(rp);
+                }
+            }
+        }
+        None
+    };
+
+    if let Some(p) = find("intro", "rise").or_else(|| find("intro", "whoosh")) {
+        hits.push(openscript_ffmpeg::multilayer_render::SfxHit {
+            path: p,
+            start_s: 0.05,
+            volume: 0.28,
+        });
+    }
+    let mut t = 0.0;
+    for (i, d) in scene_durations.iter().enumerate() {
+        if i == 0 {
+            t += *d;
+            continue;
+        }
+        if let Some(p) = find("transition", "whoosh").or_else(|| find("transition", "swish")) {
+            hits.push(openscript_ffmpeg::multilayer_render::SfxHit {
+                path: p,
+                start_s: (t - 0.05).max(0.0),
+                volume: 0.22,
+            });
+        }
+        t += *d;
+    }
+    hits
+}
+
+/// Selected music bed with provenance for KPI / denylist.
+struct MusicSelection {
+    path: String,
+    #[allow(dead_code)]
+    mood: String,
+    tags: Vec<String>,
+    selection_query: String,
+    source: String,
+}
+
+/// Topic-aware music: library index → Pixabay → yt-dlp (denylist parade/march on calm/focus).
+async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<MusicSelection> {
+    let calm = openscript_core::production_quality::is_calm_focus_context(Some(theme), video_keywords);
+    let mood = if calm {
+        "calm"
+    } else if theme == "energetic" {
+        "energetic"
+    } else {
+        "neutral"
+    }
+    .to_string();
+    let search_terms: Vec<&str> = if calm {
+        vec![
+            "lofi", "chill", "ambient", "calm", "focus", "study", "peaceful", "meditation",
+            "relax",
+        ]
+    } else if theme == "energetic" {
+        vec!["upbeat", "electronic", "energy", "corporate", "positive"]
+    } else {
+        vec!["background", "chill", "lofi", "ambient"]
+    };
+    let deny = ["parade", "march", "military", "trailer", "stadium", "anthem", "circus"];
 
     let index_path = resolve_repo_path("mcp/assets/music_library_index.json");
-    if !index_path.exists() {
-        tracing::warn!(
-            "[script.to_video] Music library index not found at {}. Run library.build to generate it.",
-            index_path.display()
-        );
-        return None;
-    }
-
-    let index_str = match std::fs::read_to_string(&index_path) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("[script.to_video] Failed to read music library index: {}", e);
-            return None;
-        }
-    };
-
-    let index: serde_json::Value = match serde_json::from_str(&index_str) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("[script.to_video] Failed to parse music library index: {}", e);
-            return None;
-        }
-    };
-
-    let entries_vec = index.get("entries").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let entries = &entries_vec;
-
-    // Search keywords by theme
-    let search_terms: Vec<&str> = match _theme {
-        "calm" => vec!["calm", "relax", "meditat", "chill", "peaceful", "ambient", "lofi"],
-        "energetic" => vec!["energy", "upbeat", "electronic", "dance", "epic", "action"],
-        _ => vec!["background", "chill", "lofi", "ambient"],
-    };
-
-    // Find first matching track
-    for entry in entries {
-        let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("");
-        let title_lower = title.to_lowercase();
-        let media_type = entry.get("media_type").and_then(|v| v.as_str()).unwrap_or("");
-        if media_type != "music" {
-            continue;
-        }
-
-        // Skip synthetic stock files (source_type=="local" entries in the
-        // library index are the 20 synthetic sine-wave tones in
-        // mcp/assets/music/). Only use YouTube-scraped tracks.
-        // (Round-9 audit: auto_select_music was picking up synthetic hums
-        // from the library index because they're tagged as "local" entries.)
-        let source_type = entry.get("source_type").and_then(|v| v.as_str()).unwrap_or("");
-        if source_type == "local" {
-            continue;
-        }
-
-        for term in &search_terms {
-            if title_lower.contains(term) {
-                let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-                let download_url = entry.get("download_url").and_then(|v| v.as_str()).unwrap_or("");
-                if !filename.is_empty() && !download_url.is_empty() {
-                    tracing::info!(
-                        "[script.to_video] Auto-selected music from library: '{}' (matched '{}')",
-                        title, term
-                    );
-                    // Download via library.download tool
+    if index_path.exists() {
+        if let Ok(index_str) = std::fs::read_to_string(&index_path) {
+            if let Ok(index) = serde_json::from_str::<serde_json::Value>(&index_str) {
+                let entries = index
+                    .get("entries")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                for entry in &entries {
+                    let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let title_lower = title.to_lowercase();
+                    if deny.iter().any(|d| title_lower.contains(d)) {
+                        continue;
+                    }
+                    let media_type = entry.get("media_type").and_then(|v| v.as_str()).unwrap_or("music");
+                    if media_type != "music" && !media_type.is_empty() {
+                        continue;
+                    }
+                    let source_type = entry
+                        .get("source_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if source_type == "local" {
+                        continue;
+                    }
+                    let tags: Vec<String> = entry
+                        .get("tags")
+                        .and_then(|v| v.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_str().map(String::from))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let tag_blob = tags.join(" ").to_lowercase();
+                    let matched = search_terms.iter().any(|t| {
+                        title_lower.contains(t) || tag_blob.contains(t)
+                    });
+                    if !matched {
+                        continue;
+                    }
+                    let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                    if filename.is_empty() {
+                        continue;
+                    }
                     let music_cache = resolve_repo_path("mcp/assets/music_cache");
                     let _ = std::fs::create_dir_all(&music_cache);
                     let local_path = music_cache.join(filename);
-
                     if local_path.exists() {
-                        tracing::info!("[script.to_video] Music already cached: {}", local_path.display());
-                        return Some(local_path.to_string_lossy().to_string());
+                        return Some(MusicSelection {
+                            path: local_path.to_string_lossy().into(),
+                            mood: mood.clone(),
+                            tags: tags.clone(),
+                            selection_query: format!("library:{}", filename),
+                            source: "library".into(),
+                        });
                     }
-
-                    // Use library.download MCP tool to fetch
                     let download_args = json!({
                         "filename": filename,
                         "output_dir": music_cache.to_string_lossy(),
                     });
-                    match handle_library_download(download_args).await {
-                        Ok(result) => {
-                            if let Some(path) = result.get("path").and_then(|v| v.as_str()) {
-                                tracing::info!("[script.to_video] Downloaded music: {}", path);
-                                return Some(path.to_string());
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("[script.to_video] Failed to download music '{}': {}", filename, e);
+                    if let Ok(result) = handle_library_download(download_args).await {
+                        if let Some(path) = result.get("path").and_then(|v| v.as_str()) {
+                            return Some(MusicSelection {
+                                path: path.to_string(),
+                                mood: mood.clone(),
+                                tags,
+                                selection_query: format!("library:{}", filename),
+                                source: "library".into(),
+                            });
                         }
                     }
                 }
             }
         }
+    } else {
+        tracing::warn!(
+            "[script.to_video] music_library_index.json missing — run library.build"
+        );
     }
 
-    tracing::warn!("[script.to_video] No matching music found in library index for theme '{}'", _theme);
-
-    // Fallback: try Pixabay free music API (no API key required for basic use,
-    // but works better with PIXABAY_API_KEY). Pixabay provides royalty-free
-    // music with direct download URLs that don't require yt-dlp.
-    // (Round-11: "I am still not hearing any BG-Music. Ensure that it would
-    // work when the music is available. Check if you can implement scraping
-    // from the stock music providers.")
-    if let Some(path) = fetch_pixabay_music(_theme).await {
-        return Some(path);
+    if let Some(path) = fetch_pixabay_music(if calm { "calm" } else { theme }).await {
+        if !openscript_core::production_quality::music_hits_denylist(
+            &path,
+            Some(&mood),
+            &[],
+            Some("pixabay"),
+        ) {
+            return Some(MusicSelection {
+                path,
+                mood: mood.clone(),
+                tags: search_terms.iter().map(|s| s.to_string()).collect(),
+                selection_query: format!("pixabay:{}", theme),
+                source: "pixabay".into(),
+            });
+        }
     }
 
-    // Final network fallback: yt-dlp audio extract (no API key).
-    // Still better than silent / sine stubs for production_score.
-    if let Some(path) = fetch_youtube_music_bed(_theme).await {
-        tracing::info!("[script.to_video] Music via yt-dlp audio bed: {}", path);
-        return Some(path);
+    // yt-dlp: topic-safe queries only (no "upbeat funky" for calm)
+    let yt_q = if calm {
+        "lofi study focus chill no copyright music"
+    } else if theme == "energetic" {
+        "upbeat corporate positive no copyright music"
+    } else {
+        "ambient chill background no copyright music"
+    };
+    if let Some(path) = fetch_youtube_music_bed_query(yt_q).await {
+        if openscript_core::production_quality::music_hits_denylist(
+            &path,
+            Some(&mood),
+            &[],
+            Some(yt_q),
+        ) {
+            tracing::warn!("[script.to_video] rejecting denylist music path {}", path);
+        } else {
+            return Some(MusicSelection {
+                path,
+                mood,
+                tags: search_terms.iter().map(|s| s.to_string()).collect(),
+                selection_query: yt_q.into(),
+                source: "youtube".into(),
+            });
+        }
     }
-
     None
 }
 
@@ -9162,7 +9409,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // for each scene based on keywords extracted from the scene text.
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
     // (video_id, content_hash, search_query) per scene for variance KPIs
-    let mut scene_stock_meta: Vec<Option<(String, String, String)>> = Vec::new();
+    // Per-scene stock provenance for KPI (id, hash, query, lex, title)
+    let mut scene_stock_meta: Vec<Option<(String, String, String, f64, String)>> = Vec::new();
     let pexels_key_val = pexels_key();
 
     // Multi-broll stock footage: unique clip per scene.
@@ -9255,7 +9503,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
             let mut scene_bg: Option<String> = None;
             let mut bg_source = "none";
-            let mut stock_meta: Option<(String, String, String)> = None; // id, hash, query
+            let mut stock_meta: Option<(String, String, String, f64, String)> = None; // id,hash,q,lex,title
 
             // --- Priority 1: Pexels (requires API key) ---
             if !pexels_key_val.is_empty() {
@@ -9390,6 +9638,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                                         format!("pexels_{}", vid_id),
                                                                         h,
                                                                         query.clone(),
+                                                                        0.5,
+                                                                        String::new(),
                                                                     ));
                                                                 }
                                                                 scene_bg = Some(chosen);
@@ -9451,6 +9701,41 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                         fetch.video_id,
                         fetch.content_hash,
                         fetch.search_query,
+                        fetch.lexical_score,
+                        fetch.source_title,
+                    ));
+                    scene_bg = Some(fetch.path);
+                    bg_source = "youtube";
+                }
+            }
+
+            // Phase B: query fan-out — one more attempt with scene nouns only
+            if scene_bg.is_none() && !signal_tokens.is_empty() {
+                let short_q = signal_tokens
+                    .iter()
+                    .take(4)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let yt_out2 = format!("{}/scene_{:03}_yt_b.mp4", cache_dir, scene_idx + 1);
+                if let Some(fetch) = fetch_youtube_stock_clip_signal(
+                    &format!("{} stock footage vertical", short_q),
+                    &signal_tokens,
+                    dur,
+                    &spec.meta.aspect,
+                    &yt_out2,
+                    scene_idx,
+                    &mut used_video_ids,
+                    &mut used_content_hashes,
+                )
+                .await
+                {
+                    stock_meta = Some((
+                        fetch.video_id,
+                        fetch.content_hash,
+                        fetch.search_query,
+                        fetch.lexical_score,
+                        fetch.source_title,
                     ));
                     scene_bg = Some(fetch.path);
                     bg_source = "youtube";
@@ -9479,12 +9764,36 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     "mcp/assets/backgrounds/procedural_01.mp4".to_string()
                 };
                 per_scene_backgrounds.push(procedural_path.clone());
-                render_warnings.push(format!(
-                    "PRODUCTION_FAIL stock_visuals scene {}: Pexels+YouTube failed / no unique unused stock — SYNTHETIC procedural ({}) used. Grade will be capped. Check visual_repetition KPI.",
-                    scene_idx + 1,
-                    procedural_path
-                ));
+                let allow_proc = std::env::var("OPENSCRIPT_ALLOW_PROCEDURAL")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+                if !allow_proc {
+                    render_warnings.push(format!(
+                        "HARD stock_visuals scene {}: no relevant unique stock (Pexels/YT). Using procedural {}. Set PEXELS_API_KEY or OPENSCRIPT_ALLOW_PROCEDURAL=1. Production will hard-fail if ≥50% procedural.",
+                        scene_idx + 1,
+                        procedural_path
+                    ));
+                } else {
+                    render_warnings.push(format!(
+                        "PRODUCTION_FAIL stock_visuals scene {}: synthetic procedural ({})",
+                        scene_idx + 1,
+                        procedural_path
+                    ));
+                }
             }
+        }
+        let proc_n = per_scene_backgrounds
+            .iter()
+            .filter(|p| is_procedural_media_path(p))
+            .count();
+        if !per_scene_backgrounds.is_empty()
+            && proc_n * 2 >= per_scene_backgrounds.len()
+        {
+            render_warnings.push(format!(
+                "HARD: majority procedural multi-broll ({}/{}) — visual hooks missing. Configure Pexels or widen YT stock queries.",
+                proc_n,
+                per_scene_backgrounds.len()
+            ));
         }
     }
 
@@ -9819,27 +10128,60 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // found that agents who omitted the music field got silent videos,
     // which the user noted as a quality gap.
     // (Round-3 UX audit PROBLEM 3b fix.)
-    let music_path = if let Some(ref m) = spec.music {
-        if std::path::Path::new(&m.path).exists() {
-            // Reject synthetic stock files (all 20 files in mcp/assets/music/
-            // are sine-wave tones, not real music). Check by file size —
-            // all synthetic files are exactly 481,114 bytes.
-            let file_size = std::fs::metadata(&m.path).map(|m| m.len()).unwrap_or(0);
-            if file_size == 481_114 && m.path.contains("mcp/assets/music/") {
-                tracing::warn!(
-                    "[script.to_video] Rejecting synthetic stock music: {} ({} bytes — all 20 stock files are identical sine-wave tones). Use library.search/library.download for real music.",
-                    m.path, file_size
-                );
-                auto_select_music(&spec.output.theme).await
+    let mut music_sel_tags: Vec<String> = Vec::new();
+    let mut music_sel_query: Option<String> = None;
+    let mut music_sel_source: Option<String> = None;
+
+    let music_path = {
+        let explicit = if let Some(ref m) = spec.music {
+            if std::path::Path::new(&m.path).exists() {
+                if is_synthetic_music_file(&m.path) {
+                    tracing::warn!(
+                        "[script.to_video] Rejecting synthetic stock music: {}",
+                        m.path
+                    );
+                    None
+                } else if openscript_core::production_quality::is_calm_focus_context(
+                    Some(&spec.output.theme),
+                    &spec.video_keywords,
+                ) && openscript_core::production_quality::music_hits_denylist(
+                    &m.path,
+                    None,
+                    &[],
+                    Some(&m.path),
+                ) {
+                    tracing::warn!(
+                        "[script.to_video] Rejecting denylist music for calm/focus: {}",
+                        m.path
+                    );
+                    None
+                } else {
+                    music_sel_source = Some("script".into());
+                    music_sel_query = Some(m.path.clone());
+                    Some(m.path.clone())
+                }
             } else {
-                Some(m.path.clone())
+                tracing::warn!(
+                    "[script.to_video] Music path not found: {} — auto-select",
+                    m.path
+                );
+                None
             }
         } else {
-            tracing::warn!("[script.to_video] Music path not found: {} — falling back to auto-select", m.path);
-            auto_select_music(&spec.output.theme).await
+            None
+        };
+        if let Some(p) = explicit {
+            Some(p)
+        } else if let Some(sel) =
+            auto_select_music(&spec.output.theme, &spec.video_keywords).await
+        {
+            music_sel_tags = sel.tags;
+            music_sel_query = Some(sel.selection_query);
+            music_sel_source = Some(sel.source);
+            Some(sel.path)
+        } else {
+            None
         }
-    } else {
-        auto_select_music(&spec.output.theme).await
     };
 
     // === MEME B-ROLLS: Full-screen reaction GIF clips per scene ===
@@ -10116,6 +10458,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
     // Build multi-layer render spec
     use openscript_ffmpeg::multilayer_render::{render_multilayer, MultiLayerRenderSpec};
+    // Phase D: auto SFX from tagged index (intro + per-cut transitions)
+    let sfx_hits = auto_select_sfx_hits(&scene_durations);
+    let music_sel_sfx_count = sfx_hits.len();
+
     let render_spec = MultiLayerRenderSpec {
         backgrounds,
         voiceover_paths,
@@ -10145,6 +10491,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         },
         total_duration_s,
         meme_clips,
+        sfx: sfx_hits,
     };
 
     // Phase L: Branch on render_engine. When "hyperframes", compile the
@@ -10240,7 +10587,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     Some("procedural".into())
                 } else if b.path.contains("_yt") || b.path.contains("background_cache") {
                     Some("youtube".into())
-                } else if meta.map(|(id, _, _)| id.starts_with("pexels_")).unwrap_or(false) {
+                } else if meta.map(|(id, _, _, _, _)| id.starts_with("pexels_")).unwrap_or(false) {
                     Some("pexels".into())
                 } else {
                     None
@@ -10250,9 +10597,11 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     start_ms: t_cursor,
                     end_ms: t_cursor + dur_ms,
                     source_hint: hint,
-                    content_hash: meta.map(|(_, h, _)| h.clone()),
-                    video_id: meta.map(|(id, _, _)| id.clone()),
-                    search_query: meta.map(|(_, _, q)| q.clone()),
+                    content_hash: meta.map(|(_, h, _, _, _)| h.clone()),
+                    video_id: meta.map(|(id, _, _, _, _)| id.clone()),
+                    search_query: meta.map(|(_, _, q, _, _)| q.clone()),
+                    lexical_score: meta.map(|(_, _, _, lex, _)| *lex),
+                    source_title: meta.map(|(_, _, _, _, t)| t.clone()),
                 });
                 t_cursor += dur_ms;
             }
@@ -10288,6 +10637,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     ducking: render_spec.ducking,
                     mood: Some(spec.output.theme.clone()),
                     energy: None,
+                    tags: music_sel_tags.clone(),
+                    selection_query: music_sel_query.clone(),
+                    source: music_sel_source.clone(),
                 }
             });
             // Section map from scenes (hook / body / cta)
@@ -10333,6 +10685,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 has_dialogue,
                 rms_ok,
                 video_keywords: spec.video_keywords.clone(),
+                theme: Some(spec.output.theme.clone()),
+                sfx_count: music_sel_sfx_count,
             };
             let manifest_out = format!("{}/render_manifest.json", output_dir);
             if let Ok(s) = serde_json::to_string_pretty(&render_manifest) {
@@ -10341,7 +10695,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let timeline_for_kpi = Timeline::load(&timeline_path)
                 .unwrap_or_else(|_| Timeline::new(std::path::PathBuf::from("out.mp4"), "9:16", 30, None));
             let pq = evaluate_production_quality(&timeline_for_kpi, &render_manifest);
-            let delivery_status = if pq.production_score >= 70 && pq.hard_fails.is_empty() {
+            // Fail closed: hard_fails or majority procedural never "success"
+            let delivery_status = if !pq.hard_fails.is_empty() {
+                "rendered_production_fail"
+            } else if pq.production_score >= 70 {
                 "rendered"
             } else if pq.production_score >= 40 {
                 "rendered_below_production_grade"

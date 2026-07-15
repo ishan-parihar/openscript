@@ -1,8 +1,19 @@
 # OpenScript Full-Pipeline Fix Plan
 
-**Status:** Planning — implement in ordered phases  
+**Status:** Implemented (Phases A–F landed 2026-07-15)  
 **Date:** 2026-07-15  
 **Driven by:** Cold-agent trials v2/v3 + production KPI gaps + provider/config audit  
+
+### Implementation log
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| A Validator hard-fails + visual_hooks | **done** | KPI v3.0; majority procedural / parade music / no hooks → hard_fail + grade ≤ D |
+| B Providers + stock yield | **done** | YT fan-out, preflight, HARD warnings; Pexels still needs key |
+| C Music topic-tagged | **done** | denylist, calm/focus query map, MusicSelection provenance |
+| D SFX auto-assign | **done** | tagged sfx_index → multilayer SfxHit mix |
+| E Relevance fields | **done** | lexical_score + source_title on backgrounds in manifest |
+| F director.run | **done** | one-shot MCP tool + tool count 83 |  
 
 ---
 

@@ -1,6 +1,6 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (82 tools)
+## Tool Taxonomy (83 tools)
 
 > **Always start a new environment with `system.capabilities`.** It reports
 > ffmpeg, Kokoro (real ONNX + voices.bin), Parakeet, Pexels/GIPHY/Pixabay keys,
@@ -98,7 +98,8 @@ Post-render quality checks.
 | `verify.audio` | Technical: audio levels, silence, sample rate |
 | `verify.captions` | Caption timing checks |
 | `verify.render` | **Technical only** — duration/aspect/file integrity (score 100 ≠ beautiful video) |
-| `verify.production` | **Production KPI gate** — stock visuals, real music, stickers, memes, speech, captions → grade A–F. Optional `vision_rescore=true` re-scores B-roll with vision cascade |
+| `verify.production` | **Production KPI v3** — hard-fails majority procedural, missing visual hooks, parade music on calm/focus. Grade A–F. Optional `vision_rescore=true` |
+| `director.run` | **ONE-SHOT** preflight + parse + to_video + verify.production (cold agents) |
 
 ### 8b. LLM & VISION (3 tools)
 Local GGUF + OpenRouter free multimodal cascade for director reasoning and clip QA.

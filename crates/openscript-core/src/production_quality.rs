@@ -2,14 +2,17 @@
 //!
 //! `verify.render` is **technical integrity** only. This module scores whether the
 //! timeline/render actually uses the editor like a director:
-//! video source quality, cut pacing, music variance, sticker design principles,
-//! section-level title/text/meme placement, and track utilization.
+//! video source quality, visual hooks, cut pacing, music variance, sticker design,
+//! section composition, and track utilization.
 //!
 //! Weights sum to 100. Grade bands:
 //!   A 85–100 · B 70–84 · C 55–69 · D 40–54 · F <40
 //!
-//! v2.1 adds **visual_repetition** (content-hash uniqueness) and
-//! **context_relevance** (search query vs scene text / video keywords).
+//! v3.0 (Phase A pipeline fix):
+//! - **visual_hooks** dimension — real stock in the open + cut presence
+//! - **HARD:** majority procedural (≥50%) always hard-fails and caps grade ≤ D
+//! - music denylist / synthetic hard-fails
+//! - findings with `HARD:` prefix always hard-fail
 
 use crate::timeline::{EventKind, Timeline};
 use crate::types::TrackType;
@@ -93,10 +96,16 @@ pub struct BackgroundLayerInfo {
     /// Search query used to fetch this clip (for context-relevance scoring).
     #[serde(default)]
     pub search_query: Option<String>,
+    /// Lexical relevance of stock title vs scene signal (0–1), when ranked.
+    #[serde(default)]
+    pub lexical_score: Option<f64>,
+    /// Provider title / description snippet used at accept time.
+    #[serde(default)]
+    pub source_title: Option<String>,
 }
 
 /// Music bed metadata for variance scoring.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MusicLayerInfo {
     pub path: String,
     #[serde(default)]
@@ -107,6 +116,15 @@ pub struct MusicLayerInfo {
     pub mood: Option<String>,
     #[serde(default)]
     pub energy: Option<String>,
+    /// Selection tags (focus, chill, parade, …) for topic-fit scoring.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Query used to select this bed (library / yt / pixabay).
+    #[serde(default)]
+    pub selection_query: Option<String>,
+    /// Provider: library | pixabay | youtube | stock | unknown
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// Narrative section (scene beat) for section-composition scoring.
@@ -147,6 +165,12 @@ pub struct RenderManifest {
     /// Topic keywords for the whole video (context relevance).
     #[serde(default)]
     pub video_keywords: Vec<String>,
+    /// Script theme (calm / energetic / …) for music topic fit.
+    #[serde(default)]
+    pub theme: Option<String>,
+    /// Count of auto-assigned SFX events (hook punctuation).
+    #[serde(default)]
+    pub sfx_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,12 +244,59 @@ pub fn classify_video_source(path: &str, source_hint: Option<&str>) -> VideoSour
 }
 
 pub fn is_synthetic_music_file(path: &str) -> bool {
-    if !path.contains("mcp/assets/music/") && !path.contains("mcp\\assets\\music\\") {
-        return false;
+    let p = path.replace('\\', "/");
+    // Committed stock catalog is synthetic sine stubs (all OpenScript Stock).
+    if p.contains("mcp/assets/music/") {
+        return true;
     }
     std::fs::metadata(path)
         .map(|m| m.len() == 481_114)
         .unwrap_or(false)
+}
+
+/// Moods/themes that should never pick hype/parade/trailer beds.
+pub fn is_calm_focus_context(theme: Option<&str>, video_keywords: &[String]) -> bool {
+    let mut blob = theme.unwrap_or("").to_ascii_lowercase();
+    for k in video_keywords {
+        blob.push(' ');
+        blob.push_str(&k.to_ascii_lowercase());
+    }
+    ["calm", "focus", "desk", "study", "lofi", "ambient", "meditation", "sleep", "chill"]
+        .iter()
+        .any(|t| blob.contains(t))
+}
+
+/// Title/path/tags that clash with calm/focus shorts (parade music, etc.).
+pub fn music_hits_denylist(path: &str, mood: Option<&str>, tags: &[String], selection_query: Option<&str>) -> bool {
+    let blob = format!(
+        "{} {} {} {}",
+        path.to_ascii_lowercase(),
+        mood.unwrap_or("").to_ascii_lowercase(),
+        tags.join(" ").to_ascii_lowercase(),
+        selection_query.unwrap_or("").to_ascii_lowercase()
+    );
+    const DENY: &[&str] = &[
+        "parade", "march", "military", "trailer", "epic war", "sport hype",
+        "stadium", "anthem", "circus", "carnival", "polka",
+    ];
+    DENY.iter().any(|d| blob.contains(d))
+}
+
+/// Fraction of backgrounds that are procedural synthetic (0–1).
+pub fn procedural_ratio(bgs: &[BackgroundLayerInfo]) -> f64 {
+    if bgs.is_empty() {
+        return 1.0;
+    }
+    let proc = bgs
+        .iter()
+        .filter(|b| {
+            matches!(
+                classify_video_source(&b.path, b.source_hint.as_deref()),
+                VideoSourceClass::ProceduralSynthetic
+            )
+        })
+        .count();
+    proc as f64 / bgs.len() as f64
 }
 
 pub fn production_grade(score: i32) -> &'static str {
@@ -252,16 +323,18 @@ pub fn grade_rank(g: &str) -> i32 {
 // Dimension scorers (weights documented inline)
 // ---------------------------------------------------------------------------
 
-/// Weight 14 — video source quality mix (Pexels > YT > local > unknown > procedural).
+/// Weight 12 — video source quality mix (Pexels > YT > local > unknown > procedural).
 fn score_video_source(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     let n = bgs.len().max(1);
     let mut tier_sum = 0.0;
     let mut findings = Vec::new();
     let mut mix_counts: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    let mut procedural_n = 0usize;
     for b in bgs {
         let cls = classify_video_source(&b.path, b.source_hint.as_deref());
         tier_sum += cls.quality_tier();
         if matches!(cls, VideoSourceClass::ProceduralSynthetic) {
+            procedural_n += 1;
             findings.push(format!("procedural synthetic: {}", b.path));
         }
         let key = match cls {
@@ -276,19 +349,113 @@ fn score_video_source(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
         mix_counts.insert(key.to_string(), serde_json::json!(c));
     }
     let avg = tier_sum / n as f64;
-    let score = (avg * 14.0).round() as i32;
-    if score == 0 {
-        findings.push("all backgrounds are synthetic procedural — not production stock".into());
+    let mut score = (avg * 12.0).round() as i32;
+    let ratio = procedural_n as f64 / n as f64;
+    if procedural_n == n && n > 0 {
+        findings.push(
+            "HARD: all backgrounds are synthetic procedural — not production stock".into(),
+        );
+        score = 0;
+    } else if ratio >= 0.5 && n >= 2 {
+        findings.push(format!(
+            "HARD: majority procedural backgrounds ({}/{} = {:.0}%) — no production visual bed",
+            procedural_n,
+            n,
+            ratio * 100.0
+        ));
+        // Cap source score hard — majority synthetic is not Grade-B material
+        score = score.min(2);
     }
     DimensionScore {
         id: "video_source_quality".into(),
         label: "Video source quality".into(),
         score,
-        max: 14,
+        max: 12,
         detail: serde_json::json!({
             "clip_count": bgs.len(),
+            "procedural_count": procedural_n,
+            "procedural_ratio": (ratio * 1000.0).round() / 1000.0,
             "average_tier": (avg * 1000.0).round() / 1000.0,
             "source_mix": mix_counts,
+        }),
+        findings,
+    }
+}
+
+/// Weight 10 — visual hooks: real stock presence (not procedural) especially in the open.
+fn score_visual_hooks(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> DimensionScore {
+    let mut findings = Vec::new();
+    if bgs.is_empty() {
+        findings.push("HARD: no visual hooks — zero background clips".into());
+        return DimensionScore {
+            id: "visual_hooks".into(),
+            label: "Visual hooks (real stock / open)".into(),
+            score: 0,
+            max: 10,
+            detail: serde_json::json!({}),
+            findings,
+        };
+    }
+    let real: Vec<&BackgroundLayerInfo> = bgs
+        .iter()
+        .filter(|b| {
+            !matches!(
+                classify_video_source(&b.path, b.source_hint.as_deref()),
+                VideoSourceClass::ProceduralSynthetic
+            )
+        })
+        .collect();
+    let real_n = real.len();
+    let real_ratio = real_n as f64 / bgs.len() as f64;
+
+    // Hook window: first 3 seconds need a real stock cut if possible
+    let hook_has_real = bgs.iter().any(|b| {
+        b.start_ms < 3000
+            && !matches!(
+                classify_video_source(&b.path, b.source_hint.as_deref()),
+                VideoSourceClass::ProceduralSynthetic
+            )
+            && (b.end_ms - b.start_ms) >= 1200
+    });
+
+    let score = if real_n == 0 {
+        findings.push(
+            "HARD: no visual hooks — all backgrounds procedural/synthetic gradients".into(),
+        );
+        0
+    } else {
+        let mut s = (real_ratio * 7.0).round() as i32; // up to 7 for coverage
+        if hook_has_real {
+            s += 3;
+        } else {
+            findings.push("opening 3s lacks real stock visual hook".into());
+            s = s.saturating_sub(1);
+        }
+        // Bonus if any clip has lexical score evidence
+        let lex_ok = real
+            .iter()
+            .filter(|b| b.lexical_score.unwrap_or(0.0) >= 0.12)
+            .count();
+        if lex_ok > 0 {
+            s = (s + 1).min(10);
+        }
+        s
+    };
+    let mut score = score;
+    if duration_ms > 8000 && real_n < 2 && bgs.len() >= 3 {
+        findings.push("multi-scene short with <2 real stock clips — weak visual variety".into());
+        score = score.min(4);
+    }
+    DimensionScore {
+        id: "visual_hooks".into(),
+        label: "Visual hooks (real stock / open)".into(),
+        score: score.clamp(0, 10),
+        max: 10,
+        detail: serde_json::json!({
+            "real_stock_count": real_n,
+            "total_clips": bgs.len(),
+            "real_ratio": (real_ratio * 1000.0).round() / 1000.0,
+            "hook_has_real_stock": hook_has_real,
         }),
         findings,
     }
@@ -309,7 +476,7 @@ fn visual_identity(b: &BackgroundLayerInfo) -> String {
     format!("path:{}", b.path)
 }
 
-/// Weight 16 — **visual repetitiveness** (content-hash / video-id uniqueness).
+/// Weight 12 — **visual repetitiveness** (content-hash / video-id uniqueness).
 /// Path-only uniqueness is insufficient: same YT video can be saved to different paths.
 fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     let mut findings = Vec::new();
@@ -319,7 +486,7 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
             id: "visual_repetition".into(),
             label: "Visual variance / anti-repeat".into(),
             score: 0,
-            max: 16,
+            max: 12,
             detail: serde_json::json!({}),
             findings: vec!["no backgrounds".into()],
         };
@@ -349,13 +516,13 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     let max_freq = freq.values().copied().max().unwrap_or(1);
     let dominant_share = max_freq as f64 / n as f64;
 
-    let mut score = (uniqueness * 16.0).round() as i32;
+    let mut score = (uniqueness * 12.0).round() as i32;
     if max_run >= 3 && n >= 3 {
         findings.push(format!(
             "REPETITION: same visual identity runs for {} consecutive cuts — looks like one clip looping",
             max_run
         ));
-        score = (score - 8).max(0);
+        score = (score - 6).max(0);
     } else if max_run >= 2 && n >= 4 {
         findings.push(format!(
             "back-to-back repeat of same visual for {} cuts",
@@ -387,8 +554,8 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     DimensionScore {
         id: "visual_repetition".into(),
         label: "Visual variance / anti-repeat".into(),
-        score: score.min(16),
-        max: 16,
+        score: score.min(12),
+        max: 12,
         detail: serde_json::json!({
             "unique_identities": unique.len(),
             "total_clips": n,
@@ -538,25 +705,25 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
         findings.push("single background path for whole video".into());
         2
     } else if (0.12..=0.55).contains(&cps) {
-        8
+        6
     } else if (0.08..0.12).contains(&cps) || (0.55..0.75).contains(&cps) {
         findings.push(format!(
             "cuts_per_second={:.2} slightly outside ideal 0.12–0.55 band",
             cps
         ));
-        5
+        4
     } else if cps < 0.08 {
         findings.push(format!(
             "cuts_per_second={:.2} too static (want ≥0.12)",
             cps
         ));
-        3
+        2
     } else {
         findings.push(format!(
             "cuts_per_second={:.2} too rapid (want ≤0.55)",
             cps
         ));
-        3
+        2
     };
 
     (
@@ -564,7 +731,7 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
             id: "cuts_pacing".into(),
             label: "Cuts / visual pacing".into(),
             score,
-            max: 8,
+            max: 6,
             detail: serde_json::json!({
                 "cuts_per_second": (cps * 1000.0).round() / 1000.0,
                 "visual_changes": visual_changes,
@@ -576,24 +743,43 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
     )
 }
 
-/// Weight 10 — music bed presence + ducking + mood/energy tags + non-synthetic.
-fn score_music_variance(music: Option<&MusicLayerInfo>) -> DimensionScore {
+/// Weight 10 — music bed presence + ducking + mood/energy tags + non-synthetic + topic fit.
+fn score_music_variance(
+    music: Option<&MusicLayerInfo>,
+    theme: Option<&str>,
+    video_keywords: &[String],
+) -> DimensionScore {
     let mut findings = Vec::new();
+    let calm_ctx = is_calm_focus_context(theme, video_keywords);
     let score = match music {
         None => {
-            findings.push("no background music bed".into());
+            findings.push("HARD: no background music bed".into());
             0
         }
         Some(m) if is_synthetic_music_file(&m.path) => {
-            findings.push("music is synthetic sine-wave placeholder".into());
+            findings.push("HARD: music is synthetic sine-wave placeholder (mcp/assets/music stock)".into());
             0
         }
         Some(m) if !Path::new(&m.path).exists() => {
-            findings.push(format!("music path missing on disk: {}", m.path));
+            findings.push(format!("HARD: music path missing on disk: {}", m.path));
+            0
+        }
+        Some(m)
+            if calm_ctx
+                && music_hits_denylist(
+                    &m.path,
+                    m.mood.as_deref(),
+                    &m.tags,
+                    m.selection_query.as_deref(),
+                ) =>
+        {
+            findings.push(
+                "HARD: music topic mismatch — parade/march/hype bed on calm/focus content".into(),
+            );
             0
         }
         Some(m) => {
-            let mut s = 5;
+            let mut s = 4;
             if m.ducking {
                 s += 2;
             } else {
@@ -607,6 +793,9 @@ fn score_music_variance(music: Option<&MusicLayerInfo>) -> DimensionScore {
             if m.energy.as_ref().map(|x| !x.is_empty()).unwrap_or(false) {
                 s += 1;
             }
+            if !m.tags.is_empty() {
+                s += 1;
+            }
             if m.gain_db > -24.0 {
                 s += 1;
             } else {
@@ -617,15 +806,15 @@ fn score_music_variance(music: Option<&MusicLayerInfo>) -> DimensionScore {
     };
     DimensionScore {
         id: "music_variance".into(),
-        label: "BG music presence & variance metadata".into(),
+        label: "BG music presence & topic fit".into(),
         score,
         max: 10,
-        detail: serde_json::json!({ "music": music }),
+        detail: serde_json::json!({ "music": music, "calm_focus_context": calm_ctx }),
         findings,
     }
 }
 
-/// Weight 10 — sticker design principles.
+/// Weight 8 — sticker design principles.
 fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
     let mut findings = Vec::new();
     if stickers.is_empty() {
@@ -634,7 +823,7 @@ fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
             id: "sticker_design".into(),
             label: "Sticker design principles".into(),
             score: 0,
-            max: 10,
+            max: 8,
             detail: serde_json::json!({ "sticker_count": 0 }),
             findings,
         };
@@ -686,8 +875,8 @@ fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
     DimensionScore {
         id: "sticker_design".into(),
         label: "Sticker design principles".into(),
-        score: s.min(10),
-        max: 10,
+        score: s.min(8),
+        max: 8,
         detail: serde_json::json!({
             "sticker_count": stickers.len(),
             "unique_assets": unique.len(),
@@ -700,7 +889,7 @@ fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
     }
 }
 
-/// Weight 10 — section composition.
+/// Weight 8 — section composition.
 fn score_section_composition(
     sections: &[SectionInfo],
     memes: &[MemeLayerInfo],
@@ -712,7 +901,7 @@ fn score_section_composition(
             id: "section_composition".into(),
             label: "Section title/text/meme placement".into(),
             score: 2,
-            max: 10,
+            max: 8,
             detail: serde_json::json!({ "sections": 0 }),
             findings,
         };
@@ -766,8 +955,8 @@ fn score_section_composition(
     DimensionScore {
         id: "section_composition".into(),
         label: "Section title/text/meme placement".into(),
-        score: s.min(10),
-        max: 10,
+        score: s.min(8),
+        max: 8,
         detail: serde_json::json!({
             "section_count": sections.len(),
             "with_text": with_text,
@@ -803,7 +992,7 @@ fn score_speech(has_dialogue: bool, rms_ok: bool) -> DimensionScore {
     }
 }
 
-/// Weight 8 — captions present.
+/// Weight 6 — captions present.
 fn score_captions(captions_path: Option<&str>) -> DimensionScore {
     let present = captions_path
         .map(|p| !p.is_empty() && Path::new(p).exists())
@@ -815,8 +1004,8 @@ fn score_captions(captions_path: Option<&str>) -> DimensionScore {
     DimensionScore {
         id: "captions".into(),
         label: "Captions".into(),
-        score: if present { 8 } else { 0 },
-        max: 8,
+        score: if present { 6 } else { 0 },
+        max: 6,
         detail: serde_json::json!({ "captions_path": captions_path, "present": present }),
         findings,
     }
@@ -996,6 +1185,8 @@ pub fn backgrounds_from_timeline(timeline: &Timeline) -> Vec<BackgroundLayerInfo
                     content_hash: None,
                     video_id: None,
                     search_query: None,
+                    lexical_score: None,
+                    source_title: None,
                 });
             }
         }
@@ -1034,6 +1225,9 @@ pub fn evaluate_production_quality(
                 ducking: true,
                 mood: None,
                 energy: None,
+                tags: vec![],
+                selection_query: None,
+                source: None,
             })
         })
     });
@@ -1056,32 +1250,36 @@ pub fn evaluate_production_quality(
             })
     });
 
+    let theme = manifest.theme.as_deref();
     let d_source = score_video_source(&backgrounds);
+    let d_hooks = score_visual_hooks(&backgrounds, duration_ms);
     let d_repeat = score_visual_repetition(&backgrounds);
     let d_context =
         score_context_relevance(&backgrounds, &sections, &manifest.video_keywords);
     let (d_cuts, cps) = score_cuts_pacing(&backgrounds, duration_ms);
-    let d_music = score_music_variance(music.as_ref());
+    let d_music =
+        score_music_variance(music.as_ref(), theme, &manifest.video_keywords);
     let d_sticker = score_sticker_design(&manifest.stickers);
     let d_section = score_section_composition(&sections, &manifest.memes);
     let d_speech = score_speech(manifest.has_dialogue, manifest.rms_ok);
     let d_cap = score_captions(captions_path.as_deref());
     let timeline_editor = score_timeline_editor(timeline);
 
-    // max 4 from editor utilization
-    let editor_score = ((timeline_editor.utilization_score as f64) * 0.04).round() as i32;
+    // max 8 from editor utilization (sfx/hooks included in findings)
+    let editor_score = ((timeline_editor.utilization_score as f64) * 0.08).round() as i32;
     let d_editor = DimensionScore {
         id: "timeline_editor".into(),
         label: "Timeline editor efficacious use".into(),
-        score: editor_score.min(4),
-        max: 4,
+        score: editor_score.min(8),
+        max: 8,
         detail: serde_json::to_value(&timeline_editor).unwrap_or(serde_json::json!({})),
         findings: timeline_editor.findings.clone(),
     };
 
-    // Weights: 14+16+12+8+10+10+10+8+8+4 = 100
+    // Weights v3: 12+10+12+12+6+10+8+8+8+6+8 = 100
     let dimensions = vec![
         d_source,
+        d_hooks,
         d_repeat,
         d_context,
         d_cuts,
@@ -1093,7 +1291,8 @@ pub fn evaluate_production_quality(
         d_editor,
     ];
 
-    let production_score: i32 = dimensions.iter().map(|d| d.score).sum::<i32>().clamp(0, 100);
+    let mut production_score: i32 =
+        dimensions.iter().map(|d| d.score).sum::<i32>().clamp(0, 100);
 
     let mut hard_fails = Vec::new();
     let mut next_actions = Vec::new();
@@ -1103,6 +1302,7 @@ pub fn evaluate_production_quality(
                 && matches!(
                     d.id.as_str(),
                     "video_source_quality"
+                        | "visual_hooks"
                         | "visual_repetition"
                         | "music_variance"
                         | "speech_audio"
@@ -1111,7 +1311,7 @@ pub fn evaluate_production_quality(
             {
                 hard_fails.push(format!("{}: {}", d.id, f));
             }
-            // Always surface REPETITION flags as hard fails when present
+            // Always surface REPETITION / HARD flags
             if f.contains("REPETITION") || f.contains("HARD:") {
                 let msg = format!("{}: {}", d.id, f);
                 if !hard_fails.contains(&msg) {
@@ -1125,9 +1325,29 @@ pub fn evaluate_production_quality(
                 d.id,
                 d.score,
                 d.max,
-                d.findings.first().cloned().unwrap_or_else(|| "see detail".into())
+                d.findings
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "see detail".into())
             ));
         }
+    }
+
+    // Cap grade when hard fails present (fail closed on synthetic majority)
+    let mut grade = production_grade(production_score).to_string();
+    if !hard_fails.is_empty() {
+        if production_score > 54 {
+            production_score = 54;
+        }
+        grade = production_grade(production_score).to_string();
+        if grade_rank(&grade) > grade_rank("D") {
+            grade = "D".into();
+            production_score = production_score.min(54);
+        }
+        next_actions.insert(
+            0,
+            "HARD FAIL: re-render with real stock + topic music (see hard_fails)".into(),
+        );
     }
 
     // Source mix summary
@@ -1141,14 +1361,14 @@ pub fn evaluate_production_quality(
 
     ProductionQualityReport {
         production_score,
-        grade: production_grade(production_score).to_string(),
+        grade,
         dimensions,
         hard_fails,
         next_actions,
         timeline_editor,
         cuts_per_second: (cps * 1000.0).round() / 1000.0,
         video_source_mix: serde_json::Value::Object(mix),
-        kpi_version: "2.1.0".into(),
+        kpi_version: "3.0.0".into(),
     }
 }
 
@@ -1192,7 +1412,7 @@ mod tests {
                     content_hash: Some("proc1".into()),
                     video_id: None,
                     search_query: None,
-                },
+                 lexical_score: None, source_title: None, },
                 BackgroundLayerInfo {
                     path: "mcp/assets/backgrounds/procedural_02.mp4".into(),
                     start_ms: 8000,
@@ -1201,7 +1421,7 @@ mod tests {
                     content_hash: Some("proc2".into()),
                     video_id: None,
                     search_query: None,
-                },
+                 lexical_score: None, source_title: None, },
             ],
             has_dialogue: true,
             rms_ok: true,
@@ -1237,7 +1457,7 @@ mod tests {
                     content_hash: Some(format!("unique_hash_{}", i)),
                     video_id: Some(format!("vid{}", i)),
                     search_query: Some(format!("morning habit {}", i)),
-                })
+                 lexical_score: None, source_title: None, })
                 .collect(),
             stickers: vec![StickerLayerInfo {
                 path: "mcp/assets/stickers/giphy_alice.gif".into(),
@@ -1257,7 +1477,7 @@ mod tests {
                 ducking: true,
                 mood: Some("calm".into()),
                 energy: Some("low".into()),
-            }),
+             tags: vec![], selection_query: None, source: None, }),
             captions_path: Some(caps.to_string_lossy().to_string()),
             voiceover_count: 5,
             sections: vec![
@@ -1286,7 +1506,7 @@ mod tests {
             has_dialogue: true,
             rms_ok: true,
             video_keywords: vec!["morning".into(), "habit".into()],
-        };
+         theme: None, sfx_count: 0, };
         let report = evaluate_production_quality(&tl, &manifest);
         let _ = std::fs::remove_file(&music);
         let _ = std::fs::remove_file(&caps);
@@ -1322,7 +1542,7 @@ mod tests {
                 content_hash: Some("deadbeef_111".into()), // SAME hash — the bug
                 video_id: Some("abc123".into()),
                 search_query: Some("morning routine".into()),
-            })
+             lexical_score: None, source_title: None, })
             .collect();
         let d = score_visual_repetition(&bgs);
         assert_eq!(d.score, 0, "identical content must score 0, got {}", d.score);
@@ -1344,9 +1564,124 @@ mod tests {
                 content_hash: Some(format!("hash_{}", i)),
                 video_id: Some(format!("vid{}", i)),
                 search_query: Some(format!("query {}", i)),
-            })
+             lexical_score: None, source_title: None, })
             .collect();
         let d = score_visual_repetition(&bgs);
-        assert!(d.score >= 14, "unique hashes should be high, got {}", d.score);
+        assert!(d.score >= 12, "unique hashes should be high, got {}", d.score);
+    }
+
+    #[test]
+    fn majority_procedural_hard_fails() {
+        let tl = empty_timeline();
+        let manifest = RenderManifest {
+            duration_ms: 20000,
+            backgrounds: vec![
+                BackgroundLayerInfo {
+                    path: "cache/yt_real.mp4".into(),
+                    start_ms: 0,
+                    end_ms: 4000,
+                    source_hint: Some("youtube".into()),
+                    content_hash: Some("real1".into()),
+                    video_id: Some("vid1".into()),
+                    search_query: Some("desk laptop".into()),
+                    lexical_score: Some(0.4),
+                    source_title: Some("Workspace laptop coffee".into()),
+                },
+                BackgroundLayerInfo {
+                    path: "mcp/assets/backgrounds/procedural_01.mp4".into(),
+                    start_ms: 4000,
+                    end_ms: 8000,
+                    content_hash: Some("p1".into()),
+                    ..Default::default()
+                },
+                BackgroundLayerInfo {
+                    path: "mcp/assets/backgrounds/procedural_02.mp4".into(),
+                    start_ms: 8000,
+                    end_ms: 12000,
+                    content_hash: Some("p2".into()),
+                    ..Default::default()
+                },
+                BackgroundLayerInfo {
+                    path: "mcp/assets/backgrounds/procedural_03.mp4".into(),
+                    start_ms: 12000,
+                    end_ms: 16000,
+                    content_hash: Some("p3".into()),
+                    ..Default::default()
+                },
+                BackgroundLayerInfo {
+                    path: "mcp/assets/backgrounds/procedural_04.mp4".into(),
+                    start_ms: 16000,
+                    end_ms: 20000,
+                    content_hash: Some("p4".into()),
+                    ..Default::default()
+                },
+            ],
+            has_dialogue: true,
+            rms_ok: true,
+            captions_path: Some("captions.ass".into()),
+            video_keywords: vec!["desk".into(), "focus".into()],
+            theme: Some("calm".into()),
+            ..Default::default()
+        };
+        let report = evaluate_production_quality(&tl, &manifest);
+        assert!(
+            !report.hard_fails.is_empty(),
+            "majority procedural must hard-fail: {:?}",
+            report.hard_fails
+        );
+        assert!(
+            report.hard_fails.iter().any(|f| f.contains("majority procedural")
+                || f.contains("HARD:")),
+            "{:?}",
+            report.hard_fails
+        );
+        assert!(
+            grade_rank(&report.grade) <= grade_rank("D"),
+            "grade capped D, got {}",
+            report.grade
+        );
+    }
+
+    #[test]
+    fn parade_music_on_focus_hard_fails() {
+        let tl = empty_timeline();
+        let music = std::env::temp_dir().join("parade_bed.mp3");
+        std::fs::write(&music, vec![3u8; 12000]).unwrap();
+        let caps = std::env::temp_dir().join("pq_caps2.ass");
+        std::fs::write(&caps, b"[Script Info]\n").unwrap();
+        let manifest = RenderManifest {
+            duration_ms: 10000,
+            backgrounds: vec![BackgroundLayerInfo {
+                path: "cache/yt_1.mp4".into(),
+                start_ms: 0,
+                end_ms: 10000,
+                source_hint: Some("youtube".into()),
+                content_hash: Some("h1".into()),
+                search_query: Some("desk focus".into()),
+                ..Default::default()
+            }],
+            music: Some(MusicLayerInfo {
+                path: music.to_string_lossy().into(),
+                gain_db: -10.0,
+                ducking: true,
+                mood: Some("energetic".into()),
+                tags: vec!["parade".into(), "march".into()],
+                selection_query: Some("upbeat parade march".into()),
+                source: Some("youtube".into()),
+                energy: Some("high".into()),
+            }),
+            has_dialogue: true,
+            rms_ok: true,
+            captions_path: Some(caps.to_string_lossy().into()),
+            video_keywords: vec!["desk".into(), "focus".into()],
+            theme: Some("calm".into()),
+            ..Default::default()
+        };
+        let report = evaluate_production_quality(&tl, &manifest);
+        assert!(
+            report.hard_fails.iter().any(|f| f.contains("music") || f.contains("parade") || f.contains("mismatch")),
+            "parade on focus must hard-fail: {:?}",
+            report.hard_fails
+        );
     }
 }

@@ -80,6 +80,8 @@ pub struct MultiLayerRenderSpec {
     /// Unlike stickers (small overlays), meme clips replace the background
     /// for their duration — like TikTok reaction cuts.
     pub meme_clips: Vec<MemeClip>,
+    /// Short SFX hits (whoosh/stinger) mixed under VO at start_s.
+    pub sfx: Vec<SfxHit>,
 }
 
 /// A full-screen meme b-roll clip from GIPHY.
@@ -88,6 +90,15 @@ pub struct MemeClip {
     pub path: String,
     pub start_s: f64,
     pub end_s: f64,
+}
+
+/// One-shot SFX event mixed into the final audio.
+#[derive(Debug, Clone)]
+pub struct SfxHit {
+    pub path: String,
+    pub start_s: f64,
+    /// Linear volume (e.g. 0.25).
+    pub volume: f64,
 }
 
 /// Parse a position string to:
@@ -268,6 +279,8 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         }
     }
 
+    // SFX inputs added after meme clips (see below) so video input indices stay stable.
+
     // Build filter complex
     let mut filters: Vec<String> = Vec::new();
 
@@ -367,6 +380,17 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             meme_input_start += 1;
         } else {
             tracing::warn!("[render] Meme input file not found: {}", meme.path);
+        }
+    }
+
+    // SFX audio inputs after all video inputs (memes/stickers)
+    let mut sfx_inputs: Vec<(usize, &SfxHit)> = Vec::new();
+    let mut sfx_idx = meme_input_start;
+    for sfx in &spec.sfx {
+        if std::path::Path::new(&sfx.path).exists() {
+            cmd.arg("-i").arg(&sfx.path);
+            sfx_inputs.push((sfx_idx, sfx));
+            sfx_idx += 1;
         }
     }
 
@@ -551,22 +575,45 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     // the caller now passes a higher default volume (-12 dB instead of -18).
     if has_music {
         // Sidechain compression: duck music when voice is present.
-        // threshold=0.05: only trigger on moderate voice (not background noise)
-        // ratio=4: 4:1 compression
-        // makeup=2: boost music 2x after compression so it stays audible
         filters.push(format!("[{}:a]asplit=2[vo_out][vo_sc]", vo_input_idx));
         filters.push(format!(
             "[{}:a]volume={}[music_vol]",
             music_input_idx, spec.music_volume
         ));
-        filters.push(format!(
-            "[music_vol][vo_sc]sidechaincompress=threshold=0.05:ratio=4:attack=50:release=200:makeup=2:level_sc=1[music_ducked]"
-        ));
-        filters.push(format!(
-            "[vo_out][music_ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout_raw]"
-        ));
+        filters.push(
+            "[music_vol][vo_sc]sidechaincompress=threshold=0.05:ratio=4:attack=50:release=200:makeup=2:level_sc=1[music_ducked]".into(),
+        );
+        filters.push(
+            "[vo_out][music_ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a_base]".into(),
+        );
     } else {
-        filters.push(format!("[{}:a]anull[aout_raw]", vo_input_idx));
+        filters.push(format!("[{}:a]anull[a_base]", vo_input_idx));
+    }
+
+    // Mix timed SFX under the base bed (whooshes / stingers)
+    if sfx_inputs.is_empty() {
+        filters.push("[a_base]anull[aout_raw]".into());
+    } else {
+        let mut labels = vec!["[a_base]".to_string()];
+        for (i, (idx, sfx)) in sfx_inputs.iter().enumerate() {
+            let delay_ms = (sfx.start_s * 1000.0).max(0.0) as i64;
+            // adelay needs channel count match; use all=1 for multi-channel
+            filters.push(format!(
+                "[{}:a]volume={},adelay={}|{}:all=1,aformat=sample_rates=48000:channel_layouts=stereo[sfx{}]",
+                idx,
+                sfx.volume.clamp(0.05, 1.0),
+                delay_ms,
+                delay_ms,
+                i
+            ));
+            labels.push(format!("[sfx{}]", i));
+        }
+        let n = labels.len();
+        filters.push(format!(
+            "{}amix=inputs={}:duration=first:dropout_transition=1:normalize=0[aout_raw]",
+            labels.join(""),
+            n
+        ));
     }
 
     // Loudness normalization
