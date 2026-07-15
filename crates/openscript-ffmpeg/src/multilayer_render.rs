@@ -279,30 +279,24 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             spec.width, spec.height, spec.width, spec.height, spec.fps, spec.total_duration_s
         ));
     } else {
-        // Multiple backgrounds — concat then scale
-        let bg_durations: Vec<String> = filtered_bgs
-            .iter()
-            .map(|bg| format!("trim=duration={}", bg.duration_s))
-            .collect();
-
-        // Trim each background to its scene duration
-        for (i, dur_filter) in bg_durations.iter().enumerate() {
+        // Multiple backgrounds — normalize EACH clip to identical size+SAR
+        // before concat. YouTube stock often carries non-1:1 SAR; concat fails
+        // with "parameters do not match" when SARs differ across inputs.
+        // (Phase CG: multi-broll stock render fix.)
+        for (i, bg) in filtered_bgs.iter().enumerate() {
             filters.push(format!(
-                "[{}:v]{},setpts=PTS-STARTPTS[bg{}]",
-                i, dur_filter, i
+                "[{}:v]trim=duration={},setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},setsar=1,fps={}[bg{}]",
+                i, bg.duration_s, spec.width, spec.height, spec.width, spec.height, spec.fps, i
             ));
         }
 
-        // Concat all trimmed backgrounds
         let concat_labels: String = (0..bg_count)
             .map(|i| format!("[bg{}]", i))
             .collect::<String>();
-        filters.push(format!("{}concat=n={}[vcat]", concat_labels, bg_count));
-
-        // Scale the concatenated video
+        // n= clips, v=1 (video only) — audio handled separately
         filters.push(format!(
-            "[vcat]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={}[vbg]",
-            spec.width, spec.height, spec.width, spec.height, spec.fps
+            "{}concat=n={}:v=1:a=0[vbg]",
+            concat_labels, bg_count
         ));
     }
 

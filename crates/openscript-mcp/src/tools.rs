@@ -5730,8 +5730,10 @@ async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
         .unwrap_or_default();
     let mut mean_db = -100.0_f64;
     for line in stderr.lines() {
-        if let Some(rest) = line.trim().strip_prefix("mean_volume:") {
-            let num = rest.trim().trim_end_matches(" dB").trim();
+        // ffmpeg prints: "[Parsed_volumedetect_0 @ 0x…] mean_volume: -16.5 dB"
+        if let Some(idx) = line.find("mean_volume:") {
+            let rest = &line[idx + "mean_volume:".len()..];
+            let num = rest.trim().split_whitespace().next().unwrap_or("");
             if let Ok(v) = num.parse::<f64>() {
                 mean_db = v;
             }
@@ -7515,16 +7517,23 @@ async fn fetch_youtube_music_bed(theme: &str) -> Option<String> {
         _ => "cinematic royalty free background music no copyright",
     };
     let out_tmpl = format!("{}/yt_music_%(id)s.%(ext)s", cache_dir);
+    // Constrain size/duration — unrestricted ytsearch can pull 800MB+ streams.
     let result = tokio::process::Command::new("yt-dlp")
         .args([
             "-x",
             "--audio-format",
             "mp3",
             "--audio-quality",
-            "5",
+            "7",
+            "-f",
+            "bestaudio[filesize<12M]/bestaudio/best[filesize<12M]",
+            "--max-filesize",
+            "15M",
             "--no-playlist",
             "--quiet",
             "--no-warnings",
+            "--socket-timeout",
+            "20",
             "-o",
             &out_tmpl,
             &format!("ytsearch1:{}", query),
