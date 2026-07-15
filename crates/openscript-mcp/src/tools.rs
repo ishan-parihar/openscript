@@ -393,16 +393,16 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "music.search",
-            "description": "Search the music index by mood, energy, and structural properties. Mood: 'energetic', 'calm', 'dramatic', 'neutral'. Energy: 'high', 'medium', 'low'. intro_friendly tracks have a clean opening for voiceover. cta_friendly tracks build to a natural ending for call-to-action. loopable tracks repeat seamlessly. Returns: results with title, artist, path, duration_ms, mood, energy.",
+            "description": "Search the music index by mood, energy, and structural properties. Mood: 'energetic', 'calm', 'dramatic', 'neutral'. Energy: 'high', 'medium', 'low'. Optional boolean filters (intro_friendly, cta_friendly, loopable) apply ONLY when explicitly set — omit them to search all tracks. Returns: results with title, artist, path, duration_ms, mood, energy; warnings if results are synthetic stock placeholders.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "default": "", "description": "Keyword search in title/artist"},
                     "mood": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Emotional mood: 'energetic', 'calm', 'dramatic', 'neutral', 'uplifting'"},
                     "energy": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Intensity level: 'high', 'medium', 'low'"},
-                    "intro_friendly": {"type": "boolean", "default": false, "description": "Has a clean opening suitable for voiceover intro"},
-                    "cta_friendly": {"type": "boolean", "default": false, "description": "Builds to a natural ending suitable for call-to-action"},
-                    "loopable": {"type": "boolean", "default": false, "description": "Can loop seamlessly for background use"},
+                    "intro_friendly": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "description": "When true/false, filter by clean-opening intro suitability. Omit to ignore this flag."},
+                    "cta_friendly": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "description": "When true/false, filter by CTA-friendly ending. Omit to ignore this flag."},
+                    "loopable": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "description": "When true/false, filter by seamless loopability. Omit to ignore this flag."},
                     "limit": {"type": "integer", "default": 10, "description": "Max results to return"}
                 }
             }
@@ -1268,6 +1268,13 @@ fn default_i64(args: &serde_json::Value, key: &str, default: i64) -> i64 {
 
 fn default_bool(args: &serde_json::Value, key: &str, default: bool) -> bool {
     args.get(key).and_then(|v| v.as_bool()).unwrap_or(default)
+}
+
+/// Optional boolean: `None` when the key is absent so callers can omit filters.
+/// Explicit `true`/`false` are preserved. Used by `music.search` so default
+/// omission does not mean "only tracks with flag=false".
+fn default_opt_bool(args: &serde_json::Value, key: &str) -> Option<bool> {
+    args.get(key).and_then(|v| v.as_bool())
 }
 
 fn default_opt_str(args: &serde_json::Value, key: &str) -> Option<String> {
@@ -2878,14 +2885,23 @@ async fn handle_music_index(args: serde_json::Value) -> Result<serde_json::Value
         std::fs::create_dir_all(parent).ok();
     }
 
-    let default_paths = vec![std::env::var("OPENSCRIPT_MUSIC_PATH")
+    // Prefer committed stock dir so `music.index` does not silently overwrite
+    // mcp/assets/music_index.json with an empty/unrelated ~/Videos/Assets/Music scan.
+    let stock_music = "mcp/assets/music".to_string();
+    let home_music = std::env::var("HOME")
         .ok()
+        .map(|h| format!("{}/Videos/Assets/Music", h));
+    let env_music = std::env::var("OPENSCRIPT_MUSIC_PATH").ok();
+    let default_path = env_music
         .or_else(|| {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| format!("{}/Videos/Assets/Music", h))
+            if std::path::Path::new(&stock_music).is_dir() {
+                Some(stock_music.clone())
+            } else {
+                home_music
+            }
         })
-        .unwrap_or_else(|| "./mcp/assets/music".to_string())];
+        .unwrap_or(stock_music);
+    let default_paths = vec![default_path];
     let paths = music_paths.as_deref().unwrap_or(&default_paths);
 
     report_progress(0.0, 100.0, "Scanning music directories...")
@@ -2921,9 +2937,12 @@ async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Valu
     let query = default_str(&args, "query", "");
     let mood = default_opt_str(&args, "mood");
     let energy = default_opt_str(&args, "energy");
-    let intro_friendly = default_bool(&args, "intro_friendly", false);
-    let cta_friendly = default_bool(&args, "cta_friendly", false);
-    let loopable = default_bool(&args, "loopable", false);
+    // Optional filters: omit key → None (no filter). Explicit true/false apply.
+    // Prior bug: default_bool(..., false) forced Some(false), which excluded
+    // all stock tracks that are loopable/intro_friendly=true (always 0 results).
+    let intro_friendly = default_opt_bool(&args, "intro_friendly");
+    let cta_friendly = default_opt_bool(&args, "cta_friendly");
+    let loopable = default_opt_bool(&args, "loopable");
     let limit = default_u32(&args, "limit", 10) as usize;
 
     let index_path = std::env::var("OPENSCRIPT_MUSIC_INDEX")
@@ -2935,9 +2954,9 @@ async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Valu
         &query,
         mood.as_deref(),
         energy.as_deref(),
-        Some(intro_friendly),
-        Some(cta_friendly),
-        Some(loopable),
+        intro_friendly,
+        cta_friendly,
+        loopable,
         limit,
     );
 
@@ -2959,22 +2978,20 @@ async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Valu
         })
         .collect();
 
-    // P1-3 fix: surface a warning when the caller requested loopable/intro_friendly/
-    // cta_friendly filters but the index has no tracks with those flags set true.
-    // Prior versions silently returned 0 results, leaving agents confused.
+    // Surface a warning when the caller requested a filter that matched nothing
+    // while the index still has tracks (agent can drop the filter).
     let mut warnings: Vec<String> = Vec::new();
-    if loopable || intro_friendly || cta_friendly {
-        let total_indexed = index.len();
-        let any_loopable = results.iter().any(|m| m.loopability);
-        let any_intro = results.iter().any(|m| m.intro_friendly);
-        let any_cta = results.iter().any(|m| m.cta_friendly);
-        if total_indexed > 0 && (loopable && !any_loopable)
-            || (intro_friendly && !any_intro)
-            || (cta_friendly && !any_cta)
+    if results.is_empty() && index.len() > 0 {
+        if intro_friendly == Some(true)
+            || cta_friendly == Some(true)
+            || loopable == Some(true)
+            || intro_friendly == Some(false)
+            || cta_friendly == Some(false)
+            || loopable == Some(false)
         {
             warnings.push(format!(
-                "Filter requested (loopable={}, intro_friendly={}, cta_friendly={}) but no tracks in the index ({} indexed) have these flags set. Run music.index with a directory containing tagged files, or set the flags manually in the index JSON. As a workaround, omit these filters and search by mood/energy.",
-                loopable, intro_friendly, cta_friendly, total_indexed
+                "Filter requested (loopable={:?}, intro_friendly={:?}, cta_friendly={:?}) matched 0 of {} indexed tracks. Omit these filters or flip their values; search by mood/energy/query instead.",
+                loopable, intro_friendly, cta_friendly, index.len()
             ));
         }
     }
@@ -7518,150 +7535,8 @@ fn score_gif_relevance(gif: &serde_json::Value, query: &str) -> u32 {
     score.min(100)
 }
 
-fn build_meme_search_query(
-    scene_text: &str,
-    video_keywords: &[String],
-    theme: &str,
-) -> String {
-    // Step 1: Extract content keywords from the scene text
-    let stop_words = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "have",
-        "has", "had", "do", "does", "did", "will", "would", "could", "should",
-        "can", "may", "might", "it", "its", "this", "that", "these", "those",
-        "i", "you", "he", "she", "we", "they", "what", "which", "who", "when",
-        "where", "why", "how", "all", "each", "every", "both", "few", "more",
-        "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-        "same", "so", "than", "too", "very", "just", "but", "and", "or", "if",
-        "then", "else", "for", "of", "to", "in", "on", "at", "by", "with",
-        "from", "as", "into", "through", "during", "before", "after", "about",
-        "your", "yours", "their", "them", "our", "us", "my", "me",
-    ];
-
-    let scene_words: Vec<String> = scene_text
-        .split_whitespace()
-        .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
-        .filter(|w| !w.is_empty() && w.len() > 2 && !stop_words.contains(&w.as_str()))
-        .take(3) // Top 3 content words from the scene
-        .collect();
-
-    // Step 2: Combine with topic keywords
-    let topic_words: Vec<&str> = video_keywords.iter().take(2).map(|s| s.as_str()).collect();
-
-    // Step 3: Build the query — topic + scene content words
-    let mut query_parts: Vec<String> = Vec::new();
-
-    // Add 1-2 topic keywords for context
-    for tw in &topic_words {
-        query_parts.push(tw.to_string());
-    }
-
-    // Add 1-2 scene-specific content words for specificity
-    for sw in scene_words.iter().take(2) {
-        // Don't duplicate topic keywords
-        if !topic_words.contains(&sw.as_str()) {
-            query_parts.push(sw.clone());
-        }
-    }
-
-    // Step 4: Add a content-type suffix to bias GIPHY toward video/animation
-    // clips rather than static reaction memes. Using "animation" or "clip"
-    // helps GIPHY return actual animated content.
-    let suffix = match theme {
-        "calm" => "calm",
-        "energetic" => "energy",
-        _ => "",
-    };
-    if !suffix.is_empty() {
-        query_parts.push(suffix.to_string());
-    }
-
-    let query = query_parts.join(" ");
-
-    if query.is_empty() {
-        // Fallback: just use the first topic keyword
-        video_keywords.first().map(|s| s.clone()).unwrap_or_else(|| "animation".to_string())
-    } else {
-        query
-    }
-}
-
-fn extract_emotion_query(text: &str, emote: Option<&str>, theme: &str) -> String {
-    let lower = text.to_lowercase();
-
-    // Emotion detection priority:
-    // 1. Explicit scene emote field
-    // 2. Keyword-based detection in scene text
-    // 3. Theme-based default
-
-    // 1. Check scene emote
-    if let Some(e) = emote {
-        if !e.is_empty() {
-            return match e.to_lowercase().as_str() {
-                "happy" | "joy" | "excited" => "happy reaction".to_string(),
-                "sad" | "emotional" => "sad reaction".to_string(),
-                "surprised" | "shocked" => "mind blown reaction".to_string(),
-                "angry" | "frustrated" => "angry reaction".to_string(),
-                "thinking" | "confused" => "confused reaction".to_string(),
-                "neutral" | "calm" => "calm reaction".to_string(),
-                _ => format!("{} reaction", e.to_lowercase()),
-            };
-        }
-    }
-
-    // 2. Keyword-based detection
-    let emotion_pairs: &[(&str, &str)] = &[
-        ("surprising", "mind blown reaction"),
-        ("surprise", "mind blown reaction"),
-        ("shocking", "shocked reaction"),
-        ("amazing", "amazing reaction"),
-        ("incredible", "mind blown reaction"),
-        ("did you know", "mind blown reaction"),
-        ("fact", "mind blown reaction"),
-        ("funny", "laughing reaction"),
-        ("joke", "laughing reaction"),
-        ("hilarious", "laughing reaction"),
-        ("lol", "laughing reaction"),
-        ("motivat", "hype reaction"),
-        ("inspire", "motivated reaction"),
-        ("start today", "let's go reaction"),
-        ("you can", "hype reaction"),
-        ("sad", "sad reaction"),
-        ("depress", "sad reaction"),
-        ("grief", "sad reaction"),
-        ("angry", "angry reaction"),
-        ("frustrat", "frustrated reaction"),
-        ("confus", "confused reaction"),
-        ("what", "confused reaction"),
-        ("important", "attention reaction"),
-        ("warning", "warning reaction"),
-        ("danger", "warning reaction"),
-        ("love", "love reaction"),
-        ("heart", "love reaction"),
-        ("success", "success reaction"),
-        ("win", "celebration reaction"),
-        ("celebrate", "celebration reaction"),
-        ("fail", "fail reaction"),
-        ("error", "error reaction"),
-        ("money", "money reaction"),
-        ("rich", "money reaction"),
-        ("scared", "scared reaction"),
-        ("afraid", "scared reaction"),
-        ("fear", "scared reaction"),
-    ];
-
-    for (keyword, query) in emotion_pairs {
-        if lower.contains(keyword) {
-            return query.to_string();
-        }
-    }
-
-    // 3. Theme-based default
-    match theme {
-        "calm" => "calm peaceful reaction".to_string(),
-        "energetic" => "hype reaction".to_string(),
-        _ => "reaction".to_string(),
-    }
-}
+// build_meme_search_query + extract_emotion_query removed (YAGNI):
+// superseded by build_meme_search_queries multi-query strategy (Phase BY/BZ).
 
 fn extract_salient_noun(text: &str) -> Option<String> {
     let stopwords = [
@@ -11689,25 +11564,54 @@ async fn handle_system_capabilities(
         },
     });
 
-    // Kokoro TTS (Python sidecar)
-    let kokoro_model =
-        std::env::var("KOKORO_MODEL").unwrap_or_else(|_| "mcp/assets/kokoro-v1.0.onnx".to_string());
-    let kokoro_voices =
-        std::env::var("KOKORO_VOICES").unwrap_or_else(|_| "mcp/assets/voices.json".to_string());
+    // Kokoro TTS (Python sidecar). Runtime expects:
+    //   model:  mcp/assets/kokoro/onnx/kokoro-v1.0.onnx  (or KOKORO_MODEL)
+    //   voices: mcp/assets/kokoro/voices/voices-v1.0.bin  (or KOKORO_VOICES)
+    //   sidecar script + optional voices.json profile registry
+    // Prior bug: only checked sidecar + voices.json and reported a wrong
+    // model path (mcp/assets/kokoro-v1.0.onnx), so available=true while
+    // script.to_video hard-failed with "Kokoro model not found".
+    let kokoro_model = std::env::var("KOKORO_MODEL").unwrap_or_else(|_| {
+        "mcp/assets/kokoro/onnx/kokoro-v1.0.onnx".to_string()
+    });
+    let kokoro_voices_bin = std::env::var("KOKORO_VOICES").unwrap_or_else(|_| {
+        "mcp/assets/kokoro/voices/voices-v1.0.bin".to_string()
+    });
+    let kokoro_profiles =
+        std::env::var("KOKORO_PROFILES").unwrap_or_else(|_| "mcp/assets/voices.json".to_string());
     let kokoro_sidecar = std::env::var("KOKORO_SIDECAR")
         .unwrap_or_else(|_| "mcp/scripts/kokoro_tts_sidecar.py".to_string());
-    let kokoro_available = path_exists(&kokoro_sidecar)
-        && path_exists(&kokoro_voices);
+    let kokoro_model_ok = path_exists(&kokoro_model);
+    let kokoro_voices_ok = path_exists(&kokoro_voices_bin);
+    let kokoro_sidecar_ok = path_exists(&kokoro_sidecar);
+    let kokoro_available = kokoro_model_ok && kokoro_voices_ok && kokoro_sidecar_ok;
+    let kokoro_reason = if kokoro_available {
+        serde_json::Value::Null
+    } else {
+        let mut missing = Vec::new();
+        if !kokoro_model_ok {
+            missing.push(format!("model ({})", kokoro_model));
+        }
+        if !kokoro_voices_ok {
+            missing.push(format!("voices bin ({})", kokoro_voices_bin));
+        }
+        if !kokoro_sidecar_ok {
+            missing.push(format!("sidecar ({})", kokoro_sidecar));
+        }
+        format!(
+            "Kokoro incomplete — missing: {}. Run: bash setup.sh (downloads model+voices, installs kokoro-onnx). Or set KOKORO_MODEL / KOKORO_VOICES / KOKORO_SIDECAR.",
+            missing.join(", ")
+        )
+        .into()
+    };
     let kokoro = json!({
         "available": kokoro_available,
         "sidecar_path": kokoro_sidecar,
         "model_path": kokoro_model,
-        "voices_path": kokoro_voices,
-        "reason": if kokoro_available {
-            serde_json::Value::Null
-        } else {
-            "Kokoro sidecar script or voices.json not found. script.generate_voices / script.to_video will fail until these are in place.".into()
-        },
+        "voices_path": kokoro_voices_bin,
+        "profiles_path": kokoro_profiles,
+        "profiles_available": path_exists(&kokoro_profiles),
+        "reason": kokoro_reason,
     });
 
     // Transcription engine (Apex)
@@ -11953,29 +11857,114 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         }));
     }
 
+    // Detect NLE / existing-footage intent so we do not boost from-scratch
+    // orchestrators (script.to_video) for "edit existing footage" queries.
+    // Strong markers alone are enough; "edit"/"clip" only count with video context.
+    let nle_intent = {
+        let q = query.to_lowercase();
+        let strong = [
+            "existing",
+            "footage",
+            "transcribe",
+            "raw video",
+            "reelize",
+            "nle",
+            "recording",
+            "source video",
+            "hinglish",
+        ]
+        .iter()
+        .any(|m| q.contains(m));
+        let soft_edit = (q.contains("edit") || q.contains("cut"))
+            && (q.contains("video")
+                || q.contains("footage")
+                || q.contains("clip")
+                || q.contains("reel")
+                || q.contains("timeline"));
+        (strong || soft_edit)
+            && !q.contains("from scratch")
+            && !q.contains("script json")
+            && !q.contains("from a script")
+    };
+    let from_scratch_intent = {
+        let q = query.to_lowercase();
+        q.contains("script")
+            || q.contains("from scratch")
+            || q.contains("tts")
+            || q.contains("create a video")
+            || q.contains("generate a video")
+    };
+
     // Tool weight table: golden-path tools get a base boost, orchestrators get
-    // a medium boost, primitives get no boost. This replaces the alphabetical
-    // tie-breaking that routinely demoted script.to_video below script.parse.
+    // a medium boost, primitives get no boost. Trajectory-aware: NLE queries
+    // boost transcribe/reelize/timeline; from-scratch boosts script.to_video.
     let tool_weight = |name: &str| -> f64 {
-        // Golden-path: the tools an agent should reach for first
-        if matches!(name,
-            "script.to_video" | "script.parse" | "transcribe" | "timeline.render"
-            | "system.capabilities" | "help.tool"
+        if nle_intent {
+            if matches!(
+                name,
+                "transcribe"
+                    | "reelize.timeline"
+                    | "reelize.direct"
+                    | "reelize.brief"
+                    | "timeline.render"
+                    | "timeline.build"
+                    | "broll.director"
+                    | "srt.prepare"
+                    | "edl.build"
+            ) {
+                return 0.20;
+            }
+            // Demote from-scratch golden path on NLE queries
+            if matches!(name, "script.to_video" | "script.parse" | "script.to_timeline") {
+                return 0.0;
+            }
+        }
+        if from_scratch_intent && !nle_intent {
+            if matches!(name, "script.to_video" | "script.parse") {
+                return 0.20;
+            }
+        }
+        // Golden-path defaults
+        if matches!(
+            name,
+            "script.to_video"
+                | "script.parse"
+                | "transcribe"
+                | "timeline.render"
+                | "system.capabilities"
+                | "help.tool"
         ) {
             0.15
-        // Orchestrators: one-call or multi-step pipelines
-        } else if matches!(name,
-            "reelize.timeline" | "reelize.direct" | "broll.director"
-            | "composition.render" | "tts.commentary" | "script.to_timeline"
-            | "script.generate_voices" | "script.build_captions"
+        // Orchestrators
+        } else if matches!(
+            name,
+            "reelize.timeline"
+                | "reelize.direct"
+                | "broll.director"
+                | "composition.render"
+                | "tts.commentary"
+                | "script.to_timeline"
+                | "script.generate_voices"
+                | "script.build_captions"
         ) {
             0.10
         // Common operations
-        } else if matches!(name,
-            "music.assign" | "sfx.assign" | "broll.assign" | "overlay.assign"
-            | "voiceover.generate" | "tts.generate" | "background.fetch"
-            | "music.search" | "sfx.search" | "broll.fetch" | "gif.search"
-            | "media.search" | "library.search" | "stock.search"
+        } else if matches!(
+            name,
+            "music.assign"
+                | "sfx.assign"
+                | "broll.assign"
+                | "overlay.assign"
+                | "voiceover.generate"
+                | "tts.generate"
+                | "background.fetch"
+                | "music.search"
+                | "sfx.search"
+                | "broll.fetch"
+                | "gif.search"
+                | "media.search"
+                | "library.search"
+                | "stock.search"
         ) {
             0.05
         } else {
@@ -12050,7 +12039,7 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
             "query": query,
             "results": [],
             "count": 0,
-            "message": "No tools matched. Try tools/list to browse all 75 tools, or system.capabilities to probe available subsystems."
+            "message": "No tools matched. Try tools/list to browse all 76 tools, or system.capabilities to probe available subsystems."
         }));
     }
 
@@ -12065,6 +12054,97 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// music.search without boolean filters must return stock tracks (not 0).
+    /// Regression for default_bool(..., false) forcing flag=false filters.
+    #[tokio::test]
+    async fn test_music_search_omitted_filters_returns_results() {
+        let cwd = std::env::current_dir().expect("cwd");
+        // Resolve index relative to workspace (mcp crate runs tests from crate dir sometimes)
+        let candidates = [
+            cwd.join("mcp/assets/music_index.json"),
+            cwd.join("../mcp/assets/music_index.json"),
+            cwd.join("../../mcp/assets/music_index.json"),
+        ];
+        let index_path = candidates
+            .iter()
+            .find(|p| p.exists())
+            .cloned()
+            .expect("music_index.json must exist for this regression test");
+        std::env::set_var("OPENSCRIPT_MUSIC_INDEX", &index_path);
+
+        let resp = handle_music_search(json!({"query": "chill", "limit": 5}))
+            .await
+            .expect("music.search should succeed");
+        assert_eq!(resp["status"], "success");
+        let count = resp["count"].as_u64().unwrap_or(0);
+        assert!(
+            count > 0,
+            "omitted boolean filters must not empty the result set; got count={} resp={}",
+            count,
+            resp
+        );
+
+        // Explicit loopable:true should still match stock (loopable=true) tracks
+        let resp2 = handle_music_search(json!({"loopable": true, "limit": 5}))
+            .await
+            .expect("music.search loopable");
+        assert!(resp2["count"].as_u64().unwrap_or(0) > 0);
+
+        std::env::remove_var("OPENSCRIPT_MUSIC_INDEX");
+    }
+
+    /// default_opt_bool: absent key → None; explicit true/false preserved.
+    #[test]
+    fn test_default_opt_bool_semantics() {
+        assert_eq!(default_opt_bool(&json!({}), "loopable"), None);
+        assert_eq!(
+            default_opt_bool(&json!({"loopable": true}), "loopable"),
+            Some(true)
+        );
+        assert_eq!(
+            default_opt_bool(&json!({"loopable": false}), "loopable"),
+            Some(false)
+        );
+    }
+
+    /// help.tool for NLE queries must prefer transcribe/reelize over script.to_video.
+    #[tokio::test]
+    async fn test_help_tool_nle_prefers_transcribe_over_script_to_video() {
+        let resp = handle_help_tool(json!({
+            "query": "edit existing footage with broll and captions",
+            "limit": 8
+        }))
+        .await
+        .expect("help.tool");
+        assert_eq!(resp["status"], "success");
+        let results = resp["results"].as_array().expect("results array");
+        assert!(!results.is_empty());
+        let names: Vec<&str> = results
+            .iter()
+            .filter_map(|r| r.get("name").and_then(|n| n.as_str()))
+            .collect();
+        // script.to_video must not be the top hit for NLE wording
+        assert_ne!(
+            names.first().copied(),
+            Some("script.to_video"),
+            "NLE query should not rank script.to_video first; got {:?}",
+            names
+        );
+        // At least one NLE tool should appear in top results
+        let nle_hit = names.iter().any(|n| {
+            matches!(
+                *n,
+                "transcribe"
+                    | "reelize.timeline"
+                    | "reelize.direct"
+                    | "broll.director"
+                    | "timeline.render"
+                    | "timeline.build"
+            )
+        });
+        assert!(nle_hit, "expected an NLE tool in top results: {:?}", names);
+    }
 
     /// broll.fetch with no API key and no fallback_pool should return
     /// status:warning with missing_key:true (NOT hard-fail with an Err).
