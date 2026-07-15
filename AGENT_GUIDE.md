@@ -1,17 +1,16 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (83 tools)
+## Tool Taxonomy (84 tools)
 
-> **Always start a new environment with `system.capabilities`.** It reports
-> ffmpeg, Kokoro (real ONNX + voices.bin), Parakeet, Pexels/GIPHY/Pixabay keys,
-> music/SFX indices, yt-dlp, HyperFrames, and the **LLM/vision cascade**
-> (`llm.local` Ollama Qwen3.5-4B GGUF + `llm.openrouter` free multimodal).
-> Do not assume TTS works until `kokoro.available` is true and `model_path`
-> exists on disk.
+> **Always start a new environment with `system.doctor` (or `system.capabilities`).**
+> `system.doctor` returns `ready_for_production` + `next_actions` for cold-start.
+> `system.capabilities` reports ffmpeg, Kokoro, Parakeet, Pexels/GIPHY/Pixabay,
+> music/SFX (including `music_production` pack), yt-dlp, HyperFrames, and the
+> LLM/vision cascade. Do not assume TTS works until `kokoro.available` is true.
 >
 > **User config lives at `~/.openscript/config.json`** (mode 0600). Manage it with
-> `system.config.get` / `system.config.set`. Env vars still override. Never put
-> API keys in the git repo.
+> `system.config.get` / `system.config.set` or `scripts/setup_openscript_config.sh`.
+> Env vars still override. **Never put API keys in the git repo.**
 
 ### 1. SCRIPT CREATION (5 tools)
 Create a video from scratch — define scenes, speakers, backgrounds.

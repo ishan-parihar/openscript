@@ -1,6 +1,6 @@
 # Fresh Install: Media & Asset Dependencies Plan
 
-**Status:** Plan + local keys applied · bootstrap doctor landed  
+**Status:** Implemented (Phase CO–CS foundations) — portable packs + fail-closed + doctor  
 **Date:** 2026-07-16  
 **Goal:** Every new OpenScript install goes from `git clone` → production-grade render without scavenger hunts or silent gradient “success.”
 

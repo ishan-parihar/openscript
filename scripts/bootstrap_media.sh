@@ -128,30 +128,51 @@ if has("giphy"):
 # Indexes
 print("")
 print("Local indexes")
-lib = Path("mcp/assets/music_library_index.json")
-if lib.exists():
-    print("  [✓] music_library_index.json")
+prod = Path("mcp/assets/music_production/index.json")
+if prod.exists():
+    print("  [✓] music_production pack (cold-start beds)")
 else:
-    print("  [✗] music_library_index.json missing — run: bootstrap_media.sh --with-library")
+    print("  [✗] music_production pack missing")
     ready = False
 
+lib = Path("mcp/assets/music_library_index.json")
+if lib.exists():
+    print("  [✓] music_library_index.json (optional large index)")
+else:
+    print("  [!] music_library_index.json missing — optional: bootstrap_media.sh --with-library")
+
 sfx = Path("mcp/assets/sfx_index.json")
+sfx_pack = Path("mcp/assets/sfx_pack")
 if sfx.exists():
     print("  [✓] sfx_index.json")
     try:
         d = json.loads(sfx.read_text())
         assets = d.get("assets") or []
         missing = 0
+        ok_n = 0
         for a in assets[:50]:
             p = a.get("path") or ""
-            if p and not Path(p).exists():
+            if not p:
+                continue
+            if Path(p).exists():
+                ok_n += 1
+            else:
                 missing += 1
-        if missing:
-            print(f"  [!] {missing}/50 sampled SFX paths missing on disk (reindex or --with-sfx-pack)")
+        if missing and ok_n == 0:
+            print(f"  [!] {missing}/sampled SFX paths missing (use portable sfx_pack)")
+            if not sfx_pack.is_dir():
+                ready = False
+        elif missing:
+            print(f"  [!] {missing} missing, {ok_n} resolvable in sample")
+        else:
+            print(f"  [✓] SFX paths resolve ({ok_n} sampled)")
     except Exception:
         pass
+elif sfx_pack.is_dir():
+    print("  [!] sfx_index.json missing but sfx_pack present — run sfx.index")
 else:
-    print("  [!] sfx_index.json missing")
+    print("  [✗] no SFX pack/index")
+    ready = False
 
 kokoro = Path("mcp/assets/kokoro/onnx/kokoro-v1.0.onnx")
 if kokoro.exists():
@@ -160,12 +181,16 @@ else:
     print("  [✗] Kokoro model missing — run setup.sh")
     ready = False
 
+# Pexels key required for production_ready
+if not has("pexels") and not os.environ.get("PEXELS_API_KEY"):
+    ready = False
+
 print("")
 if ready:
-    print("production_ready: YES (keys + indexes look good)")
+    print("production_ready: YES (keys + portable packs look good)")
 else:
     print("production_ready: NO — fix items marked [✗]")
-    print("See docs/INSTALL_MEDIA_DEPS_PLAN.md")
+    print("See docs/INSTALL.md and docs/INSTALL_MEDIA_DEPS_PLAN.md")
 PY
 
 if [[ "$PROBE_ONLY" -eq 1 ]]; then

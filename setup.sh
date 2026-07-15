@@ -274,19 +274,33 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# Optional: Build the music library index
+# Media doctor (keys, portable packs, production readiness)
+# ----------------------------------------------------------------------------
+step "Media bootstrap doctor"
+if [ -x "scripts/bootstrap_media.sh" ]; then
+  bash scripts/bootstrap_media.sh --probe-only 2>&1 | tail -25 \
+    || warn "bootstrap_media probe reported issues (see docs/INSTALL.md)"
+  if [ -f "mcp/assets/music_production/index.json" ]; then
+    ok "music_production pack present (cold-start beds)"
+  fi
+  if [ -d "mcp/assets/sfx_pack" ]; then
+    ok "portable sfx_pack present"
+  fi
+else
+  warn "scripts/bootstrap_media.sh missing"
+fi
+
+# ----------------------------------------------------------------------------
+# Optional: Build the music library index (large; portable pack is enough for cold-start)
 # ----------------------------------------------------------------------------
 if [ -f "mcp/assets/music_library_index.json" ]; then
   ok "Music library index already present ($(du -h mcp/assets/music_library_index.json | cut -f1))"
 elif command -v yt-dlp >/dev/null 2>&1; then
   echo ""
-  info "Optional: building music library index (~2 minutes)..."
-  info "Skip this with Ctrl+C if you don't need library.search yet."
-  ./target/debug/openscript library build 2>&1 | tail -5 \
-    || warn "library build failed (not critical — library.search will return NotFound)"
+  info "Optional: tagged YT music library — run when you want library.search:"
+  info "  bash scripts/bootstrap_media.sh --with-library"
 else
-  warn "yt-dlp not found — skipping music library index build."
-  warn "Install yt-dlp (pip3 install --user yt-dlp) and run 'openscript library build' to enable library.search."
+  warn "yt-dlp not found — YouTube stock/music fallback unavailable."
 fi
 
 # ----------------------------------------------------------------------------
@@ -296,10 +310,10 @@ echo ""
 ok "Setup complete!"
 echo ""
 info "Next steps:"
-info "  1. Run the CLI:        ./target/debug/openscript --help"
-info "  2. Run the MCP server: ./target/release/mcp-server"
-info "  3. Run the Tauri app:  cd crates/openscript-tauri && cargo tauri dev"
-info "  4. Read AGENTS.md for the development protocol."
-info "  5. Read AGENT_GUIDE.md for the MCP tool catalog."
+info "  1. Keys:   bash scripts/setup_openscript_config.sh --pexels-key … --giphy-key …"
+info "  2. Doctor: bash scripts/bootstrap_media.sh   (or MCP system.doctor)"
+info "  3. CLI:    ./target/debug/openscript --help"
+info "  4. MCP:    ./target/release/mcp-server"
+info "  5. Docs:   docs/INSTALL.md · AGENT_GUIDE.md · AGENTS.md"
 echo ""
 info "If anything above failed, see AGENTS.md §16 (Getting Unstuck)."

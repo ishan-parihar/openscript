@@ -427,7 +427,35 @@ pub struct RankedCandidate {
     pub lexical: f64,
 }
 
-/// Rank (id, title) pairs by lexical relevance; drop below threshold.
+/// Titles that are almost always **audio beds**, not visual stock footage.
+/// Cold installs without Pexels used to rank "10 hours lofi focus music" as B-roll.
+const BROLL_TITLE_DENY: &[&str] = &[
+    "lofi", "lo-fi", "lo fi", "focus music", "study music", "sleep music",
+    "relaxing music", "chill music", "ambient music", "background music",
+    "no copyright music", "ncs", "hours of", "1 hour", "2 hour", "3 hour",
+    "10 hour", "12 hour", "24 hour", "playlist", "mix music", "music mix",
+    "beats to", "radio", "podcast", "audiobook", "asmr", "white noise",
+    "rain sounds", "meditation music", "yoga music", "spa music",
+    "copyright free music", "royalty free music only",
+];
+
+/// True when a YouTube title is almost certainly music/audio, not B-roll video.
+pub fn is_broll_title_denylisted(title: &str) -> bool {
+    let t = title.to_ascii_lowercase();
+    if BROLL_TITLE_DENY.iter().any(|d| t.contains(d)) {
+        return true;
+    }
+    // "music" without a visual cue → likely an audio stream
+    if t.contains("music") {
+        let visual = ["footage", "b-roll", "broll", "cinematic", "stock", "timelapse", "time-lapse", "drone", "city", "nature"];
+        if !visual.iter().any(|v| t.contains(v)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Rank (id, title) pairs by lexical relevance; drop denylist + below threshold.
 pub fn rank_and_filter_candidates(
     candidates: &[(String, String)],
     signal: &[String],
@@ -435,6 +463,7 @@ pub fn rank_and_filter_candidates(
 ) -> Vec<RankedCandidate> {
     let mut ranked: Vec<RankedCandidate> = candidates
         .iter()
+        .filter(|(_, title)| !is_broll_title_denylisted(title))
         .map(|(id, title)| RankedCandidate {
             lexical: lexical_relevance(title, signal),
             id: id.clone(),
@@ -465,6 +494,25 @@ mod tests {
         assert!(!sig.iter().any(|t| t == "one"));
         // visual nouns kept
         assert!(sig.iter().any(|t| t == "water" || t == "light" || t == "lock" || t == "screen" || t == "phone"));
+    }
+
+    #[test]
+    fn denylists_music_titles_as_broll() {
+        assert!(is_broll_title_denylisted("10 Hours Lofi Focus Music for Study"));
+        assert!(is_broll_title_denylisted("Relaxing Music Playlist Chill Beats"));
+        assert!(!is_broll_title_denylisted("Cinematic city drone stock footage vertical"));
+        assert!(!is_broll_title_denylisted("Morning coffee desk typing b-roll"));
+    }
+
+    #[test]
+    fn rank_filters_denylist_music() {
+        let cands = vec![
+            ("aaaaaa".into(), "10 hour lofi study music".into()),
+            ("bbbbbb".into(), "coffee desk morning stock footage".into()),
+        ];
+        let ranked = rank_and_filter_candidates(&cands, &["coffee".into(), "desk".into()], 0.01);
+        assert!(ranked.iter().all(|c| c.id != "aaaaaa"));
+        assert!(ranked.iter().any(|c| c.id == "bbbbbb"));
     }
 
     #[test]

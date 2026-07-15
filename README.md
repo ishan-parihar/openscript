@@ -38,7 +38,7 @@ Do **not** chain intermediate tools unless you need fine control. `script.to_vid
 - **Transcription** — Apex (Hinglish-oriented Whisper) with word/phrase SRT
 - **Asset search** — SFX (261), music index, Pexels / GIPHY / Pixabay / YouTube / library
 - **Render engines** — FFmpeg multilayer (default), HyperFrames (HTML+GSAP), Remotion escape hatch
-- **Agent meta-tools** — `system.capabilities`, `help.tool` (trajectory-aware ranking)
+- **Agent meta-tools** — `system.doctor`, `system.capabilities`, `help.tool` (trajectory-aware ranking)
 - **QA** — `verify.audio` / `verify.captions` / `verify.render`
 - **CLI + MCP + Tauri shell** — same `route_tool()` surface
 
@@ -48,7 +48,7 @@ Do **not** chain intermediate tools unless you need fine control. `script.to_vid
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│              MCP Server / CLI  (83 tools, stdio)                  │
+│              MCP Server / CLI  (84 tools, stdio)                  │
 │  AI agents  ── script.to_video / timeline.* / hf.* / verify.* ── │
 └──────┬──────────┬──────────┬──────────┬──────────┬───────────────┘
        │          │          │          │          │
@@ -146,7 +146,7 @@ High-level map (full “when to use” tables: [`AGENT_GUIDE.md`](./AGENT_GUIDE.
 | Category | Examples |
 |----------|----------|
 | **Script creation** | `script.parse`, `script.to_video`, `script.to_timeline`, `script.generate_voices`, `script.build_captions` |
-| **Discovery** | `system.capabilities`, `help.tool`, `voices.list` |
+| **Discovery** | `system.doctor`, `system.capabilities`, `help.tool`, `voices.list` |
 | **Timeline** | `timeline.build`, `timeline.preview`, `timeline.inspect`, `timeline.render`, `timeline.to_hyperframes`, … |
 | **Background / b-roll** | `background.fetch`, `background.search`, `broll.director`, `broll.fetch` |
 | **Media / stickers** | `gif.search`, `gif.download`, `media.search`, `media.download`, `overlay.assign`, `sticker.*` |

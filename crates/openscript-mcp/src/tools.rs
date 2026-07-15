@@ -1175,6 +1175,15 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "system.doctor",
+            "description": "Cold-start production readiness report. Checks ffmpeg/yt-dlp, API keys (Pexels/GIPHY), portable music_production pack, music_library_index, SFX pack, Kokoro models. Returns ready_for_production (bool), checklist, and next_actions. Prefer this over system.capabilities when deciding whether director.run will ship real stock. No arguments.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "help.tool",
             "description": "Find relevant MCP tools for a natural-language task description. Returns ranked tool suggestions with name, relevance score (0.0-1.0), and a short description. Example queries: 'add voiceover to a timeline', 'download background music', 'burn captions into video', 'transcribe Hindi audio'. Use this when you know WHAT you want to do but not WHICH tool to call. Returns up to 8 suggestions.",
             "inputSchema": {
@@ -1315,6 +1324,7 @@ pub fn route_tool(
         "library.build" => Box::pin(handle_library_build(args)),
         // Meta-tools (P1-2 + Rec 3.1 from prior audit)
         "system.capabilities" => Box::pin(handle_system_capabilities(args)),
+        "system.doctor" => Box::pin(handle_system_doctor(args)),
         "help.tool" => Box::pin(handle_help_tool(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
@@ -2742,14 +2752,22 @@ async fn handle_tts_estimate_duration(
 async fn handle_sfx_index(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_assets::sfx::SfxIndex;
 
+    // Prefer portable in-repo pack for cold-start, then env, then large local library.
     let sfx_path = default_opt_str(&args, "sfx_path")
         .or_else(|| std::env::var("OPENSCRIPT_SFX_PATH").ok())
-        .or_else(|| {
-            std::env::var("HOME")
-                .ok()
-                .map(|h| format!("{}/Videos/Assets/SFX", h))
-        })
-        .unwrap_or_else(|| "./mcp/assets/sfx".to_string());
+        .unwrap_or_else(|| {
+            let pack = resolve_repo_path("mcp/assets/sfx_pack");
+            if pack.is_dir() {
+                return pack.to_string_lossy().into_owned();
+            }
+            if let Ok(h) = std::env::var("HOME") {
+                let local = format!("{}/Videos/Assets/SFX", h);
+                if std::path::Path::new(&local).is_dir() {
+                    return local;
+                }
+            }
+            "mcp/assets/sfx_pack".to_string()
+        });
     let output_path = default_opt_str(&args, "output_path")
         .unwrap_or_else(|| "mcp/assets/sfx_index.json".to_string());
 
@@ -6208,11 +6226,14 @@ async fn fetch_youtube_stock_clip_signal(
         let full_path = format!("{}/yt_id_{}.mp4", cache_dir, video_id);
         if !Path::new(&full_path).exists() {
             let url = format!("https://www.youtube.com/watch?v={}", video_id);
-            // Prefer 720p mp4; cover-crop later handles landscape→portrait cleanly.
+            // Video-only preferred (avoid audio-only / music streams ranked as "stock").
+            // Cover-crop later handles landscape→portrait cleanly.
             let yt = tokio::process::Command::new("yt-dlp")
                 .args([
                     "--format",
-                    "best[height<=720][ext=mp4]/best[height<=720]/best",
+                    "bestvideo[height<=720][ext=mp4]+bestaudio/bestvideo[height<=720]+bestaudio/bestvideo[height<=720][ext=mp4]/bestvideo[height<=720]/best[vcodec!=none][height<=720]/best[vcodec!=none]/best",
+                    "--merge-output-format",
+                    "mp4",
                     "--output",
                     &full_path,
                     "--no-playlist",
@@ -7633,7 +7654,9 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     if !Path::new(&full_video_path).exists() {
         let yt_dlp_result = tokio::process::Command::new("yt-dlp")
             .arg("--format")
-            .arg("best[height<=720]")
+            .arg("bestvideo[height<=720][ext=mp4]+bestaudio/bestvideo[height<=720]+bestaudio/best[vcodec!=none][height<=720]/best[vcodec!=none]/best")
+            .arg("--merge-output-format")
+            .arg("mp4")
             .arg("--output")
             .arg(&full_video_path)
             .arg("--no-playlist")
@@ -8011,17 +8034,38 @@ fn auto_select_sfx_hits(scene_durations: &[f64]) -> Vec<openscript_ffmpeg::multi
         .cloned()
         .unwrap_or_default();
 
+    let sfx_root = index
+        .get("sfx_path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mcp/assets/sfx_pack");
     let resolve_path = |p: &str| -> Option<String> {
         let pb = std::path::Path::new(p);
         if pb.exists() {
             return Some(p.to_string());
         }
-        // Relative under OPENSCRIPT_SFX_PATH / ~/Videos/Assets/SFX
-        if let Ok(base) = std::env::var("OPENSCRIPT_SFX_PATH") {
-            let name = pb.file_name()?.to_string_lossy().into_owned();
-            let cand = std::path::Path::new(&base).join(&name);
+        let via_repo = resolve_repo_path(p);
+        if via_repo.exists() {
+            return Some(via_repo.to_string_lossy().into());
+        }
+        // Relative under index sfx_path / OPENSCRIPT_SFX_PATH
+        for base in [
+            Some(sfx_root.to_string()),
+            std::env::var("OPENSCRIPT_SFX_PATH").ok(),
+            Some("mcp/assets/sfx_pack".into()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let base_pb = resolve_repo_path(&base);
+            let cand = base_pb.join(p);
             if cand.exists() {
                 return Some(cand.to_string_lossy().into());
+            }
+            if let Some(name) = pb.file_name() {
+                let cand2 = base_pb.join(name);
+                if cand2.exists() {
+                    return Some(cand2.to_string_lossy().into());
+                }
             }
         }
         None
@@ -8087,7 +8131,75 @@ struct MusicSelection {
     source: String,
 }
 
-/// Topic-aware music: library index → Pixabay → yt-dlp (denylist parade/march on calm/focus).
+/// Offline production beds shipped in-repo for cold-start installs.
+fn select_music_production_pack(mood: &str, search_terms: &[&str]) -> Option<MusicSelection> {
+    let index_path = resolve_repo_path("mcp/assets/music_production/index.json");
+    let raw = std::fs::read_to_string(&index_path).ok()?;
+    let index: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let entries = index.get("entries")?.as_array()?;
+    let mut best: Option<(usize, MusicSelection)> = None;
+    for entry in entries {
+        let path = entry.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        if path.is_empty() {
+            continue;
+        }
+        let resolved = resolve_repo_path(path);
+        if !resolved.exists() {
+            continue;
+        }
+        let entry_mood = entry.get("mood").and_then(|v| v.as_str()).unwrap_or("neutral");
+        let tags: Vec<String> = entry
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let tag_blob = tags.join(" ").to_lowercase();
+        let title = entry
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if openscript_core::production_quality::music_hits_denylist(
+            &resolved.to_string_lossy(),
+            Some(mood),
+            &tags,
+            Some(&title),
+        ) {
+            continue;
+        }
+        let mut score = 0usize;
+        if entry_mood == mood {
+            score += 3;
+        }
+        for t in search_terms {
+            if tag_blob.contains(t) || title.contains(t) {
+                score += 1;
+            }
+        }
+        if score == 0 {
+            continue;
+        }
+        let sel = MusicSelection {
+            path: resolved.to_string_lossy().into(),
+            mood: mood.to_string(),
+            tags: tags.clone(),
+            selection_query: format!("music_production:{}", path),
+            source: "music_production".into(),
+        };
+        match &best {
+            None => best = Some((score, sel)),
+            Some((s, _)) if score > *s => best = Some((score, sel)),
+            _ => {}
+        }
+    }
+    best.map(|(_, s)| s)
+}
+
+/// Topic-aware music: production pack → library index → Pixabay → yt-dlp.
 async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<MusicSelection> {
     let calm = openscript_core::production_quality::is_calm_focus_context(Some(theme), video_keywords);
     let mood = if calm {
@@ -8109,6 +8221,11 @@ async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<Mus
         vec!["background", "chill", "lofi", "ambient"]
     };
     let deny = ["parade", "march", "military", "trailer", "stadium", "anthem", "circus"];
+
+    // Cold-start portable beds (committed under music_production/) — not synthetic sine stubs.
+    if let Some(sel) = select_music_production_pack(&mood, &search_terms) {
+        return Some(sel);
+    }
 
     let index_path = resolve_repo_path("mcp/assets/music_library_index.json");
     if index_path.exists() {
@@ -9323,7 +9440,7 @@ async fn handle_script_to_timeline(
 
 async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let script_input = extract_str(&args, "script")?;
-    let output_path = default_str(&args, "output_path", "output.mp4");
+    let mut output_path = default_str(&args, "output_path", "output.mp4");
     let output_dir = default_str(&args, "output_dir", "artifacts");
     let skip_background = default_bool(&args, "skip_background", false);
     let skip_stickers = default_bool(&args, "skip_stickers", false);
@@ -9794,6 +9911,31 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 proc_n,
                 per_scene_backgrounds.len()
             ));
+            let allow_proc = std::env::var("OPENSCRIPT_ALLOW_PROCEDURAL")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
+            if !allow_proc {
+                // Fail-closed: never present gradient-majority as a production final.
+                let draft = if output_path.ends_with(".draft.mp4") {
+                    output_path.clone()
+                } else if let Some(stripped) = output_path.strip_suffix(".mp4") {
+                    format!("{}.draft.mp4", stripped)
+                } else {
+                    format!("{}.draft.mp4", output_path)
+                };
+                tracing::warn!(
+                    "[script.to_video] fail-closed stock: rewriting output {} → {} (set OPENSCRIPT_ALLOW_PROCEDURAL=1 to override)",
+                    output_path,
+                    draft
+                );
+                render_warnings.push(format!(
+                    "FAIL_CLOSED: stock_ratio < 0.5 ({}/{} procedural). Writing draft output {} — not a production final. Set PEXELS_API_KEY or OPENSCRIPT_ALLOW_PROCEDURAL=1.",
+                    proc_n,
+                    per_scene_backgrounds.len(),
+                    draft
+                ));
+                output_path = draft;
+            }
         }
     }
 
@@ -10695,8 +10837,21 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let timeline_for_kpi = Timeline::load(&timeline_path)
                 .unwrap_or_else(|_| Timeline::new(std::path::PathBuf::from("out.mp4"), "9:16", 30, None));
             let pq = evaluate_production_quality(&timeline_for_kpi, &render_manifest);
-            // Fail closed: hard_fails or majority procedural never "success"
-            let delivery_status = if !pq.hard_fails.is_empty() {
+            // Fail closed: hard_fails, draft outputs, or majority procedural never "success"
+            let is_draft = out_path.contains(".draft.mp4")
+                || merged_warnings
+                    .as_array()
+                    .map(|a| {
+                        a.iter().any(|w| {
+                            w.as_str()
+                                .map(|s| s.contains("FAIL_CLOSED"))
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false);
+            let delivery_status = if is_draft {
+                "draft"
+            } else if !pq.hard_fails.is_empty() {
                 "rendered_production_fail"
             } else if pq.production_score >= 70 {
                 "rendered"
@@ -13143,19 +13298,23 @@ async fn handle_system_capabilities(
         .map(|idx| idx.len())
         .unwrap_or(0);
     // Stock mcp/assets/music/*.mp3 are synthetic sine tones — not production-usable.
+    // Portable beds live under mcp/assets/music_production/ for cold-start.
     let synthetic_stock = music_count > 0; // committed index is placeholders
     let music_library_index = resolve("mcp/assets/music_library_index.json");
     let real_library = music_library_index.exists();
+    let music_production_index = resolve("mcp/assets/music_production/index.json");
+    let music_production = music_production_index.exists();
     let music = json!({
-        "available": music_count > 0 || real_library,
+        "available": music_count > 0 || real_library || music_production,
         "indexed_count": music_count,
         "index_path": music_index_path,
-        "usable_for_production": real_library || !pixabay_key().is_empty(),
-        "synthetic_placeholder_index": synthetic_stock && !real_library,
-        "reason": if real_library {
+        "music_production_pack": music_production,
+        "usable_for_production": real_library || music_production || !pixabay_key().is_empty(),
+        "synthetic_placeholder_index": synthetic_stock && !real_library && !music_production,
+        "reason": if real_library || music_production {
             serde_json::Value::Null
         } else {
-            "Committed music_index tracks are synthetic sine stubs (not production music). Run library.build or set PIXABAY_API_KEY / use yt-dlp music fallback.".into()
+            "Committed music_index tracks are synthetic sine stubs. Use music_production pack, run library.build, or set PIXABAY_API_KEY.".into()
         },
     });
 
@@ -13390,6 +13549,203 @@ async fn handle_system_capabilities(
         "hyperframes": hyperframes,
         "llm": llm,
         "openscript_config": openscript_config,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: system.doctor — cold-start production readiness
+// ---------------------------------------------------------------------------
+
+async fn handle_system_doctor(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let ffmpeg_ok = std::process::Command::new("ffmpeg")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let ffprobe_ok = std::process::Command::new("ffprobe")
+        .arg("-version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let ytdlp_ok = std::process::Command::new("yt-dlp")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let pexels_ok = !pexels_key().is_empty();
+    let giphy_ok = !giphy_key().is_empty();
+    let music_prod = resolve_repo_path("mcp/assets/music_production/index.json").exists();
+    let music_lib = resolve_repo_path("mcp/assets/music_library_index.json").exists();
+    let music_ok = music_prod || music_lib || !pixabay_key().is_empty();
+    let sfx_index = resolve_repo_path("mcp/assets/sfx_index.json");
+    let sfx_pack = resolve_repo_path("mcp/assets/sfx_pack");
+    let mut sfx_resolvable = 0usize;
+    if let Ok(raw) = std::fs::read_to_string(&sfx_index) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(assets) = v.get("assets").and_then(|a| a.as_array()) {
+                for a in assets.iter().take(30) {
+                    let p = a.get("path").and_then(|x| x.as_str()).unwrap_or("");
+                    if Path::new(p).exists() || resolve_repo_path(p).exists() {
+                        sfx_resolvable += 1;
+                    }
+                }
+            }
+        }
+    }
+    let sfx_ok = sfx_resolvable >= 5 || sfx_pack.is_dir();
+    let kokoro_ok = resolve_repo_path("mcp/assets/kokoro/onnx/kokoro-v1.0.onnx").exists();
+    let config_ok = crate::config::config_file_path().exists() || pexels_ok;
+
+    let mut checklist = Vec::new();
+    let mut next_actions = Vec::new();
+    let push = |items: &mut Vec<serde_json::Value>,
+                next: &mut Vec<String>,
+                id: &str,
+                ok: bool,
+                detail: &str,
+                action: Option<&str>| {
+        items.push(json!({
+            "id": id,
+            "ok": ok,
+            "detail": detail,
+        }));
+        if !ok {
+            if let Some(a) = action {
+                next.push(a.to_string());
+            }
+        }
+    };
+
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "ffmpeg",
+        ffmpeg_ok && ffprobe_ok,
+        if ffmpeg_ok {
+            "ffmpeg + ffprobe on PATH"
+        } else {
+            "ffmpeg/ffprobe missing"
+        },
+        Some("Install ffmpeg (apt install ffmpeg / brew install ffmpeg)"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "yt_dlp",
+        ytdlp_ok,
+        if ytdlp_ok {
+            "yt-dlp on PATH"
+        } else {
+            "yt-dlp missing (YouTube stock/music fallback)"
+        },
+        Some("pip install --user yt-dlp"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "pexels",
+        pexels_ok,
+        if pexels_ok {
+            "PEXELS_API_KEY present (env or ~/.openscript/config.json)"
+        } else {
+            "Pexels key missing — multi-broll will fail-closed to draft without stock"
+        },
+        Some("bash scripts/setup_openscript_config.sh --pexels-key YOUR_KEY"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "giphy",
+        giphy_ok,
+        if giphy_ok {
+            "GIPHY_API_KEY present"
+        } else {
+            "GIPHY key missing (local sticker fallbacks only)"
+        },
+        Some("bash scripts/setup_openscript_config.sh --giphy-key YOUR_KEY"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "music",
+        music_ok,
+        if music_prod {
+            "music_production pack present (cold-start beds)"
+        } else if music_lib {
+            "music_library_index.json present"
+        } else {
+            "No production music path"
+        },
+        Some("Ensure mcp/assets/music_production/ exists or run library.build"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "sfx",
+        sfx_ok,
+        &format!(
+            "SFX: {} resolvable of first 30 index rows; pack_dir={}",
+            sfx_resolvable,
+            sfx_pack.is_dir()
+        ),
+        Some("Use mcp/assets/sfx_pack or sfx.index against OPENSCRIPT_SFX_PATH"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "kokoro",
+        kokoro_ok,
+        if kokoro_ok {
+            "Kokoro ONNX model present"
+        } else {
+            "Kokoro model missing"
+        },
+        Some("bash setup.sh  # downloads Kokoro models"),
+    );
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "config",
+        config_ok,
+        if crate::config::config_file_path().exists() {
+            "openscript config file present"
+        } else if pexels_ok {
+            "keys via env (config file optional)"
+        } else {
+            "no ~/.openscript/config.json"
+        },
+        Some("bash scripts/setup_openscript_config.sh"),
+    );
+
+    // Production-ready: binaries + pexels + music + kokoro. GIPHY optional.
+    let ready_for_production = ffmpeg_ok && ffprobe_ok && pexels_ok && music_ok && kokoro_ok;
+    if ready_for_production && next_actions.is_empty() {
+        next_actions.push(
+            "Run director.run on a 5-scene script; expect ≥4/5 non-procedural stock + music bed"
+                .into(),
+        );
+    } else if !ready_for_production {
+        next_actions.push("bash scripts/bootstrap_media.sh".into());
+        next_actions.push("See docs/INSTALL.md".into());
+    }
+
+    Ok(json!({
+        "status": if ready_for_production { "ready" } else { "not_ready" },
+        "ready_for_production": ready_for_production,
+        "checklist": checklist,
+        "next_actions": next_actions,
+        "hints": {
+            "allow_procedural": "OPENSCRIPT_ALLOW_PROCEDURAL=1 forces gradient B-roll (draft-grade only)",
+            "config": crate::config::config_file_path().display().to_string(),
+            "install_plan": "docs/INSTALL_MEDIA_DEPS_PLAN.md",
+        },
     }))
 }
 
@@ -13835,9 +14191,14 @@ mod tests {
     /// broll.fetch would succeed instead of returning the warning.
     #[tokio::test]
     async fn test_broll_fetch_no_key_no_fallback_returns_warning() {
-        // Ensure no Pexels key is set for this test.
+        // Ensure no Pexels key is set for this test (env + ~/.openscript).
         std::env::remove_var("PEXELS_API_KEY");
-        // Redirect OPENSCRIPT_ROOT to a temp dir so the config file is not found.
+        let temp_cfg = std::env::temp_dir().join("openscript_test_no_key_cfg");
+        let _ = std::fs::create_dir_all(&temp_cfg);
+        // Empty config so resolve_api_key("pexels") is empty.
+        let _ = std::fs::write(temp_cfg.join("config.json"), r#"{"version":1,"api_keys":{}}"#);
+        std::env::set_var("OPENSCRIPT_CONFIG_DIR", &temp_cfg);
+        crate::config::reload_config();
         let temp_root = std::env::temp_dir().join("openscript_test_no_key");
         let _ = std::fs::create_dir_all(&temp_root);
         std::env::set_var("OPENSCRIPT_ROOT", &temp_root);
@@ -13848,7 +14209,10 @@ mod tests {
 
         let result = handle_broll_fetch(args).await;
         std::env::remove_var("OPENSCRIPT_ROOT");
+        std::env::remove_var("OPENSCRIPT_CONFIG_DIR");
+        crate::config::reload_config();
         let _ = std::fs::remove_dir_all(&temp_root);
+        let _ = std::fs::remove_dir_all(&temp_cfg);
 
         assert!(result.is_ok(), "broll.fetch should not hard-fail without PEXELS_API_KEY");
         let resp = result.unwrap();
@@ -13862,6 +14226,11 @@ mod tests {
     #[tokio::test]
     async fn test_broll_fetch_no_key_with_fallback_uses_fallback_pool() {
         std::env::remove_var("PEXELS_API_KEY");
+        let temp_cfg = std::env::temp_dir().join("openscript_test_no_key_fb_cfg");
+        let _ = std::fs::create_dir_all(&temp_cfg);
+        let _ = std::fs::write(temp_cfg.join("config.json"), r#"{"version":1,"api_keys":{}}"#);
+        std::env::set_var("OPENSCRIPT_CONFIG_DIR", &temp_cfg);
+        crate::config::reload_config();
         let temp_root = std::env::temp_dir().join("openscript_test_no_key_fb");
         let _ = std::fs::create_dir_all(&temp_root);
         std::env::set_var("OPENSCRIPT_ROOT", &temp_root);
@@ -13874,7 +14243,10 @@ mod tests {
 
         let result = handle_broll_fetch(args).await;
         std::env::remove_var("OPENSCRIPT_ROOT");
+        std::env::remove_var("OPENSCRIPT_CONFIG_DIR");
+        crate::config::reload_config();
         let _ = std::fs::remove_dir_all(&temp_root);
+        let _ = std::fs::remove_dir_all(&temp_cfg);
 
         assert!(result.is_ok());
         let resp = result.unwrap();

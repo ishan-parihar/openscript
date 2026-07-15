@@ -151,13 +151,19 @@ impl SfxIndex {
     }
 
     /// Scan a directory recursively for audio files and build an index.
+    ///
+    /// Paths are stored **relative to `root`** when possible so the index is
+    /// portable across machines (cold-start). Callers should resolve via
+    /// `sfx_path` from the wrapper + relative path.
     pub fn scan_directory(root: &str) -> Result<Self, std::io::Error> {
         use std::ffi::OsStr;
 
         let mut assets = Vec::new();
         let mut id_counter = 0;
+        let root_path = std::path::Path::new(root);
 
         fn walk_dir(
+            root: &std::path::Path,
             dir: &std::path::Path,
             assets: &mut Vec<SfxAsset>,
             counter: &mut usize,
@@ -167,7 +173,7 @@ impl SfxIndex {
                     let entry = entry?;
                     let path = entry.path();
                     if path.is_dir() {
-                        walk_dir(&path, assets, counter)?;
+                        walk_dir(root, &path, assets, counter)?;
                     } else if let Some(ext) = path.extension().and_then(OsStr::to_str) {
                         if matches!(ext, "wav" | "mp3" | "ogg" | "flac" | "aac") {
                             let filename = path
@@ -176,16 +182,19 @@ impl SfxIndex {
                                 .unwrap_or("unknown")
                                 .to_string();
 
-                            let rel_path = path
-                                .parent()
-                                .map(|p| {
-                                    p.strip_prefix(dir)
-                                        .map(|p| p.to_string_lossy().to_string())
-                                        .unwrap_or_default()
-                                })
-                                .unwrap_or_default();
+                            // Category = first path segment under root (intro/, transition/, …)
+                            let rel_file = path
+                                .strip_prefix(root)
+                                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                                .unwrap_or_else(|_| path.to_string_lossy().to_string());
+                            let category = path
+                                .strip_prefix(root)
+                                .ok()
+                                .and_then(|p| p.components().next())
+                                .map(|c| c.as_os_str().to_string_lossy().to_string())
+                                .unwrap_or_else(|| "general".into());
 
-                            let path_str = path.to_string_lossy().to_lowercase();
+                            let path_str = rel_file.to_lowercase();
                             let editorial_role = if path_str.contains("intro")
                                 || path_str.contains("open")
                             {
@@ -228,10 +237,23 @@ impl SfxIndex {
                             let duration_ms =
                                 crate::probe_duration_ms(&path.to_string_lossy()).unwrap_or(0);
 
+                            // Prefer repo-relative when root itself is relative / under cwd
+                            let stored_path = if root.is_relative() {
+                                format!(
+                                    "{}/{}",
+                                    root.to_string_lossy().trim_end_matches('/'),
+                                    rel_file
+                                )
+                            } else {
+                                // Absolute root: still store relative-to-root so reindex is portable
+                                // when OPENSCRIPT_SFX_PATH points at the same tree.
+                                rel_file.clone()
+                            };
+
                             let asset = SfxAsset {
                                 id: format!("sfx_{:04}", *counter),
-                                path: path.to_string_lossy().to_string(),
-                                category: rel_path.clone(),
+                                path: stored_path,
+                                category: category.clone(),
                                 subcategory: filename.clone(),
                                 editorial_role: editorial_role.to_string(),
                                 duration_ms,
@@ -242,7 +264,7 @@ impl SfxIndex {
                                 recommended_gain_db: -6.0,
                                 recommended_use: recommended_use.to_string(),
                                 safe_overlay,
-                                tags: vec![filename.clone()],
+                                tags: vec![filename.clone(), category, editorial_role.to_string()],
                                 filename,
                             };
                             assets.push(asset);
@@ -254,7 +276,7 @@ impl SfxIndex {
             Ok(())
         }
 
-        walk_dir(std::path::Path::new(root), &mut assets, &mut id_counter)?;
+        walk_dir(root_path, root_path, &mut assets, &mut id_counter)?;
 
         Ok(Self {
             assets,
