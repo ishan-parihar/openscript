@@ -212,7 +212,7 @@ cargo build -p openscript-mcp --release --bin mcp-server
 bash scripts/smoke_test_mcp.sh
 ```
 
-Baseline: **239+** library/integration tests (see `AGENTS.md` §6).
+Baseline: **242+** library/integration tests (see `AGENTS.md` §6).
 
 ---
 

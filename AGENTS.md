@@ -316,7 +316,7 @@ cd /home/z/my-project/openscript && bash scripts/post-iteration.sh
 
 The script:
 1. Runs `cargo build` — fails on any warning
-2. Runs `cargo test` — fails if any test fails or the count drops below the baseline (216)
+2. Runs `cargo test` — fails if any test fails or the count drops below the baseline (242)
 3. Runs `npx tsc --noEmit` — fails on any TS error
 4. Runs `git status` — fails if there are uncommitted changes (you forgot to commit)
 5. Runs `git push origin main` — fails if push fails
