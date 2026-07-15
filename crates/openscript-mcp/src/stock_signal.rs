@@ -72,20 +72,15 @@ fn is_noise(tok: &str) -> bool {
 }
 
 /// Extract **visual signal** tokens from scene dialogue (not listicle noise).
+///
+/// **Scene-first:** concrete shot nouns from the spoken line outrank broad
+/// `video_keywords`, so multi-broll queries differ per scene instead of all
+/// collapsing to the same topic list.
 pub fn signal_tokens_from_scene(scene_text: &str, video_keywords: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out: Vec<String> = Vec::new();
 
-    // Topic keywords first (author intent)
-    for k in video_keywords {
-        for t in tokenize(k) {
-            if !is_noise(&t) && seen.insert(t.clone()) {
-                out.push(t);
-            }
-        }
-    }
-
-    // Scene tokens with visual boost sorted to the front
+    // 1) Scene tokens (visual-boosted) — per-scene specificity
     let mut scene: Vec<String> = tokenize(scene_text)
         .into_iter()
         .filter(|t| !is_noise(t))
@@ -100,6 +95,15 @@ pub fn signal_tokens_from_scene(scene_text: &str, video_keywords: &[String]) -> 
     for t in scene {
         if seen.insert(t.clone()) {
             out.push(t);
+        }
+    }
+
+    // 2) Topic keywords (whole-video context) — fill remaining slots
+    for k in video_keywords {
+        for t in tokenize(k) {
+            if !is_noise(&t) && seen.insert(t.clone()) {
+                out.push(t);
+            }
         }
     }
     out
@@ -438,25 +442,12 @@ pub fn rank_and_filter_candidates(
         })
         .collect();
     ranked.sort_by(|a, b| b.lexical.total_cmp(&a.lexical));
-    let filtered: Vec<_> = ranked
+    // Hard gate: never accept lex≈0 "noise" titles. Empty → call site falls
+    // back to procedural rather than shipping irrelevant stock.
+    ranked
         .into_iter()
         .filter(|c| c.lexical >= min_score)
-        .collect();
-    // If everything failed the gate, keep top-2 by score so we don't dead-end
-    // (procedural is still last-resort at call site).
-    if filtered.is_empty() {
-        let mut all: Vec<RankedCandidate> = candidates
-            .iter()
-            .map(|(id, title)| RankedCandidate {
-                lexical: lexical_relevance(title, signal),
-                id: id.clone(),
-                title: title.clone(),
-            })
-            .collect();
-        all.sort_by(|a, b| b.lexical.total_cmp(&a.lexical));
-        return all.into_iter().take(2).collect();
-    }
-    filtered
+        .collect()
 }
 
 #[cfg(test)]
@@ -535,5 +526,27 @@ mod tests {
         let signal = vec!["morning".into(), "coffee".into(), "phone".into()];
         let ranked = rank_and_filter_candidates(&cands, &signal, 0.12);
         assert_eq!(ranked[0].id, "b");
+    }
+
+    #[test]
+    fn rank_drops_all_noise_instead_of_accepting_zero() {
+        let cands = vec![
+            ("a".into(), "Everyone Mocked His Civilian Tech".into()),
+            ("b".into(), "Funny cat compilation hours".into()),
+        ];
+        let signal = vec!["desk".into(), "laptop".into(), "coffee".into()];
+        let ranked = rank_and_filter_candidates(&cands, &signal, 0.12);
+        assert!(ranked.is_empty(), "expected empty, got {:?}", ranked);
+    }
+
+    #[test]
+    fn scene_first_signal_differs_per_line() {
+        let kw = vec!["desk".into(), "focus".into()];
+        let a = signal_tokens_from_scene("Headphones on. One instrumental playlist.", &kw);
+        let b = signal_tokens_from_scene("Notebook beside the coffee. Capture thoughts.", &kw);
+        assert!(a.iter().any(|t| t == "headphones" || t == "playlist" || t == "instrumental"));
+        assert!(b.iter().any(|t| t == "notebook" || t == "coffee"));
+        // First tokens should be scene-specific, not only topic keywords
+        assert_ne!(a.first(), b.first());
     }
 }
