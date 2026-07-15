@@ -5589,6 +5589,9 @@ fn compute_production_score(
             start_ms: i as i64 * slice,
             end_ms: (i as i64 + 1) * slice,
             source_hint: None,
+            content_hash: Some(format!("shim_hash_{}", i)),
+            video_id: None,
+            search_query: Some(p.clone()),
         })
         .collect();
     let stickers: Vec<StickerLayerInfo> = (0..sticker_count)
@@ -5632,6 +5635,7 @@ fn compute_production_score(
         sections: vec![],
         has_dialogue,
         rms_ok,
+        video_keywords: vec![],
     };
     let report = evaluate_production_quality(&tl, &manifest);
     let dims = serde_json::to_value(&report.dimensions).unwrap_or(json!({}));
@@ -5751,6 +5755,9 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
                     start_ms: i as i64 * slice,
                     end_ms: (i as i64 + 1) * slice,
                     source_hint: None,
+                    content_hash: None,
+                    video_id: None,
+                    search_query: None,
                 })
                 .collect();
         }
@@ -5822,81 +5829,231 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
 }
 
 /// Download a short stock clip via yt-dlp (no API key). Used when Pexels is unavailable.
+/// Result of a unique stock fetch (path + identity for variance tracking).
+struct StockClipFetch {
+    path: String,
+    video_id: String,
+    content_hash: String,
+    search_query: String,
+}
+
+fn file_content_fingerprint(path: &str) -> Option<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut buf = vec![0u8; 256 * 1024];
+    let n = f.read(&mut buf).ok()?;
+    if n == 0 {
+        return None;
+    }
+    // FNV-1a 64-bit over first 256KiB — enough to catch identical YT re-downloads
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &b in &buf[..n] {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    // Include file size so different trims of same source still collide on full source
+    let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    Some(format!("{:016x}_{}", hash, size))
+}
+
+/// List up to `limit` YouTube video IDs for a search query (no download).
+async fn youtube_search_ids(query: &str, limit: usize) -> Vec<String> {
+    let out = tokio::process::Command::new("yt-dlp")
+        .args([
+            "--flat-playlist",
+            "--print",
+            "%(id)s",
+            "--no-warnings",
+            "--quiet",
+            &format!("ytsearch{}:{}", limit, query),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await;
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty() && l.len() >= 6 && !l.contains(' '))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Fetch a stock clip that is content-unique vs previously used IDs/hashes.
+/// Uses ytsearchN + per-ID download so similar queries cannot all collapse to
+/// the same viral result (Phase CI: visual variance enforcement).
+async fn fetch_youtube_stock_clip_unique(
+    query: &str,
+    duration_s: f64,
+    aspect: &str,
+    out_path: &str,
+    scene_idx: usize,
+    used_video_ids: &mut std::collections::HashSet<String>,
+    used_content_hashes: &mut std::collections::HashSet<String>,
+) -> Option<StockClipFetch> {
+    let cache_dir = "mcp/assets/background_cache";
+    std::fs::create_dir_all(cache_dir).ok()?;
+
+    // Diversify search: base query + rotated visual anchors so night-phone
+    // footage cannot monopolize every "morning routine" scene.
+    const ANCHORS: &[&str] = &[
+        "sunrise window natural light",
+        "coffee desk morning",
+        "notebook planning daylight",
+        "water glass kitchen morning",
+        "commute daylight outdoor",
+        "alarm clock bedroom morning light",
+        "stretch yoga daylight",
+        "healthy breakfast table",
+    ];
+    let anchor = ANCHORS[scene_idx % ANCHORS.len()];
+    let diversified = format!("{} {}", query, anchor);
+
+    let mut candidate_ids = youtube_search_ids(&diversified, 8).await;
+    if candidate_ids.is_empty() {
+        candidate_ids = youtube_search_ids(query, 8).await;
+    }
+    // Prefer unused IDs
+    candidate_ids.retain(|id| !used_video_ids.contains(id));
+    if candidate_ids.is_empty() {
+        tracing::warn!(
+            "[youtube stock] no unused video IDs for query='{}' / diversified='{}'",
+            query,
+            diversified
+        );
+        return None;
+    }
+
+    for video_id in candidate_ids.into_iter().take(6) {
+        let full_path = format!("{}/yt_id_{}.mp4", cache_dir, video_id);
+        if !Path::new(&full_path).exists() {
+            let url = format!("https://www.youtube.com/watch?v={}", video_id);
+            let yt = tokio::process::Command::new("yt-dlp")
+                .args([
+                    "--format",
+                    "best[height<=720][ext=mp4]/best[height<=720]/best",
+                    "--output",
+                    &full_path,
+                    "--no-playlist",
+                    "--quiet",
+                    "--no-warnings",
+                    "--socket-timeout",
+                    "25",
+                    &url,
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .output()
+                .await
+                .ok();
+            let ok = yt
+                .as_ref()
+                .map(|o| o.status.success() && Path::new(&full_path).exists())
+                .unwrap_or(false);
+            if !ok {
+                tracing::warn!(
+                    "[youtube stock] download failed id={} q={}",
+                    video_id,
+                    diversified
+                );
+                continue;
+            }
+        }
+
+        let content_hash = match file_content_fingerprint(&full_path) {
+            Some(h) => h,
+            None => continue,
+        };
+        if used_content_hashes.contains(&content_hash) {
+            tracing::info!(
+                "[youtube stock] skip duplicate content hash {} (id={})",
+                content_hash,
+                video_id
+            );
+            used_video_ids.insert(video_id);
+            continue;
+        }
+
+        // Vary start offset by scene so even partial reuse looks different
+        let start_s = 1.5 + (scene_idx as f64) * 2.7;
+        let crop = crop_filter_for_aspect(aspect);
+        let trim = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-ss",
+                &start_s.to_string(),
+                "-i",
+                &full_path,
+                "-t",
+                &duration_s.max(2.0).to_string(),
+                "-vf",
+                &crop,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-an",
+                out_path,
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .ok()?;
+        if !trim.status.success() || !Path::new(out_path).exists() {
+            continue;
+        }
+
+        // Fingerprint trimmed output too (catches same-source same-window)
+        let out_hash = file_content_fingerprint(out_path).unwrap_or_else(|| content_hash.clone());
+        if used_content_hashes.contains(&out_hash) {
+            let _ = std::fs::remove_file(out_path);
+            used_video_ids.insert(video_id);
+            continue;
+        }
+
+        used_video_ids.insert(video_id.clone());
+        used_content_hashes.insert(content_hash.clone());
+        used_content_hashes.insert(out_hash.clone());
+        tracing::info!(
+            "[youtube stock] UNIQUE id={} hash={} query='{}' -> {}",
+            video_id,
+            &out_hash[..out_hash.len().min(20)],
+            diversified,
+            out_path
+        );
+        return Some(StockClipFetch {
+            path: out_path.to_string(),
+            video_id,
+            content_hash: out_hash,
+            search_query: diversified,
+        });
+    }
+    None
+}
+
+/// Backward-compatible wrapper (no uniqueness set).
 async fn fetch_youtube_stock_clip(
     query: &str,
     duration_s: f64,
     aspect: &str,
     out_path: &str,
 ) -> Option<String> {
-    let cache_dir = "mcp/assets/background_cache";
-    std::fs::create_dir_all(cache_dir).ok()?;
-    let safe: String = query
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .take(48)
-        .collect();
-    let full_path = format!("{}/yt_{}.mp4", cache_dir, safe);
-    if !Path::new(&full_path).exists() {
-        let yt = tokio::process::Command::new("yt-dlp")
-            .args([
-                "--format",
-                "best[height<=720][ext=mp4]/best[height<=720]/best",
-                "--output",
-                &full_path,
-                "--no-playlist",
-                "--quiet",
-                "--no-warnings",
-                &format!("ytsearch1:{}", query),
-            ])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .output()
-            .await
-            .ok()?;
-        if !yt.status.success() || !Path::new(&full_path).exists() {
-            tracing::warn!(
-                "[youtube stock] yt-dlp failed for '{}': {}",
-                query,
-                String::from_utf8_lossy(&yt.stderr).chars().take(200).collect::<String>()
-            );
-            return None;
-        }
-    }
-    let crop = crop_filter_for_aspect(aspect);
-    let trim = tokio::process::Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-ss",
-            "2",
-            "-i",
-            &full_path,
-            "-t",
-            &duration_s.max(2.0).to_string(),
-            "-vf",
-            &crop,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "23",
-            "-an",
-            out_path,
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
+    let mut ids = std::collections::HashSet::new();
+    let mut hashes = std::collections::HashSet::new();
+    fetch_youtube_stock_clip_unique(query, duration_s, aspect, out_path, 0, &mut ids, &mut hashes)
         .await
-        .ok()?;
-    if trim.status.success() && Path::new(out_path).exists() {
-        Some(out_path.to_string())
-    } else {
-        None
-    }
+        .map(|f| f.path)
 }
 
 // ---------------------------------------------------------------------------
@@ -8838,10 +8995,12 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
-    // === MULTI-BROLL: Download a DIFFERENT Pexels clip per scene ===
+    // === MULTI-BROLL: Download a DIFFERENT stock clip per scene ===
     // Instead of looping one short clip, download a unique stock video
     // for each scene based on keywords extracted from the scene text.
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
+    // (video_id, content_hash, search_query) per scene for variance KPIs
+    let mut scene_stock_meta: Vec<Option<(String, String, String)>> = Vec::new();
     let pexels_key_val = pexels_key();
 
     // Multi-broll stock footage: unique clip per scene.
@@ -8880,6 +9039,12 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         // repeated video that might reduce the attention-hooking.")
         let mut used_pexels_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut used_yt_queries: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        // Content-level uniqueness (Phase CI): ytsearch1 often returns the SAME
+        // viral video for similar queries — track video IDs + file fingerprints.
+        let mut used_video_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut used_content_hashes: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
         for (scene_idx, &dur) in scene_durations.iter().enumerate() {
@@ -8941,6 +9106,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
             let mut scene_bg: Option<String> = None;
             let mut bg_source = "none";
+            let mut stock_meta: Option<(String, String, String)> = None; // id, hash, query
 
             // --- Priority 1: Pexels (requires API key) ---
             if !pexels_key_val.is_empty() {
@@ -9031,15 +9197,39 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                                     .kill_on_drop(true)
                                                                     .output()
                                                                     .await;
-                                                                if trim_result
+                                                                let chosen = if trim_result
                                                                     .as_ref()
                                                                     .map(|o| o.status.success())
                                                                     .unwrap_or(false)
                                                                 {
-                                                                    scene_bg = Some(trimmed);
+                                                                    trimmed
                                                                 } else {
-                                                                    scene_bg = Some(clip_path);
+                                                                    clip_path
+                                                                };
+                                                                // Fingerprint: reject if same bytes as prior scene
+                                                                if let Some(h) =
+                                                                    file_content_fingerprint(
+                                                                        &chosen,
+                                                                    )
+                                                                {
+                                                                    if used_content_hashes
+                                                                        .contains(&h)
+                                                                    {
+                                                                        let _ =
+                                                                            std::fs::remove_file(
+                                                                                &chosen,
+                                                                            );
+                                                                        continue;
+                                                                    }
+                                                                    used_content_hashes
+                                                                        .insert(h.clone());
+                                                                    stock_meta = Some((
+                                                                        format!("pexels_{}", vid_id),
+                                                                        h,
+                                                                        query.clone(),
+                                                                    ));
                                                                 }
+                                                                scene_bg = Some(chosen);
                                                                 used_pexels_ids.insert(vid_id);
                                                                 bg_source = "pexels";
                                                                 break;
@@ -9076,17 +9266,32 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             if scene_bg.is_none() {
                 let mut yt_q = format!("{} stock footage cinematic", query);
                 if used_yt_queries.contains(&yt_q) {
-                    yt_q = format!("{} b-roll vertical", query);
+                    yt_q = format!("{} vertical b-roll unique scene {}", query, scene_idx + 1);
                 }
                 used_yt_queries.insert(yt_q.clone());
                 let yt_out = format!("{}/scene_{:03}_yt.mp4", cache_dir, scene_idx + 1);
-                if let Some(path) =
-                    fetch_youtube_stock_clip(&yt_q, dur, &spec.meta.aspect, &yt_out).await
+                if let Some(fetch) = fetch_youtube_stock_clip_unique(
+                    &yt_q,
+                    dur,
+                    &spec.meta.aspect,
+                    &yt_out,
+                    scene_idx,
+                    &mut used_video_ids,
+                    &mut used_content_hashes,
+                )
+                .await
                 {
-                    scene_bg = Some(path);
+                    stock_meta = Some((
+                        fetch.video_id,
+                        fetch.content_hash,
+                        fetch.search_query,
+                    ));
+                    scene_bg = Some(fetch.path);
                     bg_source = "youtube";
                 }
             }
+
+            scene_stock_meta.push(stock_meta);
 
             if let Some(path) = scene_bg {
                 tracing::info!(
@@ -9109,7 +9314,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 };
                 per_scene_backgrounds.push(procedural_path.clone());
                 render_warnings.push(format!(
-                    "PRODUCTION_FAIL stock_visuals scene {}: Pexels+YouTube failed — SYNTHETIC procedural ({}) used. Set PEXELS_API_KEY and/or fix yt-dlp. Grade will be capped.",
+                    "PRODUCTION_FAIL stock_visuals scene {}: Pexels+YouTube failed / no unique unused stock — SYNTHETIC procedural ({}) used. Grade will be capped. Check visual_repetition KPI.",
                     scene_idx + 1,
                     procedural_path
                 ));
@@ -9862,12 +10067,15 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let (has_dialogue, rms_ok) = probe_dialogue_rms(&out_path).await;
             let mut t_cursor = 0i64;
             let mut bg_layers = Vec::new();
-            for b in &render_spec.backgrounds {
+            for (i, b) in render_spec.backgrounds.iter().enumerate() {
                 let dur_ms = (b.duration_s * 1000.0) as i64;
+                let meta = scene_stock_meta.get(i).and_then(|m| m.as_ref());
                 let hint = if is_procedural_media_path(&b.path) {
                     Some("procedural".into())
                 } else if b.path.contains("_yt") || b.path.contains("background_cache") {
                     Some("youtube".into())
+                } else if meta.map(|(id, _, _)| id.starts_with("pexels_")).unwrap_or(false) {
+                    Some("pexels".into())
                 } else {
                     None
                 };
@@ -9876,6 +10084,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     start_ms: t_cursor,
                     end_ms: t_cursor + dur_ms,
                     source_hint: hint,
+                    content_hash: meta.map(|(_, h, _)| h.clone()),
+                    video_id: meta.map(|(id, _, _)| id.clone()),
+                    search_query: meta.map(|(_, _, q)| q.clone()),
                 });
                 t_cursor += dur_ms;
             }
@@ -9955,6 +10166,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 sections,
                 has_dialogue,
                 rms_ok,
+                video_keywords: spec.video_keywords.clone(),
             };
             let manifest_out = format!("{}/render_manifest.json", output_dir);
             if let Ok(s) = serde_json::to_string_pretty(&render_manifest) {

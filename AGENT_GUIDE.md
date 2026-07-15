@@ -110,16 +110,22 @@ the timeline so re-validation does not lose multi-scene stock paths.
 
 | Dimension | Weight | What it measures |
 |-----------|-------:|------------------|
-| `video_source_quality` | 20 | Pexels > YouTube > local stock > unknown > **procedural=0** |
-| `cuts_pacing` | 12 | **cuts/sec** + uniqueness (ideal **0.12–0.55**/s) |
-| `music_variance` | 12 | Real bed + **ducking** + mood/energy tags + audible gain |
-| `sticker_design` | 12 | Scale **0.20–0.45**, not fighting captions, uniqueness, GIF motion |
-| `section_composition` | 12 | Hook/body/cta text, **title cards**, meme placement in body |
-| `speech_audio` | 10 | Dialogue + loudness |
-| `captions` | 10 | ASS/SRT present |
-| `timeline_editor` | 12 | Multi-track use, unique visuals, gaps/overlaps, SFX presence |
+| `video_source_quality` | 14 | Pexels > YouTube > local stock > unknown > **procedural=0** |
+| **`visual_repetition`** | **16** | **Content-hash / video-id uniqueness** — same YT video under different paths is a HARD fail |
+| **`context_relevance`** | **12** | Search query vs scene text + `video_keywords` (topic-aware variance) |
+| `cuts_pacing` | 8 | **cuts/sec** band (ideal **0.12–0.55**/s) using identity transitions |
+| `music_variance` | 10 | Real bed + ducking + mood/energy tags + audible gain |
+| `sticker_design` | 10 | Scale **0.20–0.45**, caption-safe position, uniqueness, GIF motion |
+| `section_composition` | 10 | Hook/body/cta text, **title cards**, meme placement in body |
+| `speech_audio` | 8 | Dialogue + loudness |
+| `captions` | 8 | ASS/SRT present |
+| `timeline_editor` | 4 | Multi-track use, unique visuals, gaps/overlaps, SFX |
 
-Also returns: `cuts_per_second`, `video_source_mix`, `timeline_editor` findings.
+**Critical:** path uniqueness is **not** enough. v2.1 fingerprints clip bytes + YouTube IDs so “5 cuts of the same night-phone video” scores `visual_repetition=0` with a **REPETITION** hard fail.
+
+Also returns: `cuts_per_second`, `video_source_mix`, `timeline_editor` findings, per-clip `content_hash` / `video_id` / `search_query` on the render manifest.
+
+**Fetch path:** multi-broll uses `ytsearchN` + per-ID download + content-hash reject + per-scene query diversifiers (sunrise / coffee desk / notebook / …).
 
 `script.to_video` embeds full `production_quality` report. Status becomes
 `rendered_below_production_grade` / `rendered_production_fail` when KPIs fail —
