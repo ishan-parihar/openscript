@@ -1449,13 +1449,14 @@ fn aspect_to_orientation(aspect: &str) -> &'static str {
     }
 }
 
-/// Build an ffmpeg `-vf` filter string that scales + center-crops to the
-/// target aspect ratio. Consolidates the 3 duplicate
-/// `format!("scale={}:{},crop={}:{}", w, h, w, h)` patterns in
-/// handle_background_fetch / handle_script_to_video / handle_youtube_download.
+/// Build an ffmpeg `-vf` filter that **cover-crops** to the target aspect
+/// without stretching, and forces square pixels (`setsar=1`).
+///
+/// Prior `scale=W:H,crop=W:H` stretched landscape stock into 9:16 frames with
+/// non-square SAR (display aspect stayed ~16:9) — visible distortion.
+/// Delegates to `stock_signal::cover_crop_filter_for_aspect`.
 fn crop_filter_for_aspect(aspect: &str) -> String {
-    let (w, h) = aspect_to_crop_dims(aspect);
-    format!("scale={}:{},crop={}:{}", w, h, w, h)
+    crate::stock_signal::cover_crop_filter_for_aspect(aspect)
 }
 
 /// Resolve a repo-relative path CWD-independently.
@@ -5948,12 +5949,22 @@ fn file_content_fingerprint(path: &str) -> Option<String> {
 }
 
 /// List up to `limit` YouTube video IDs for a search query (no download).
+#[allow(dead_code)]
 async fn youtube_search_ids(query: &str, limit: usize) -> Vec<String> {
+    youtube_search_id_titles(query, limit)
+        .await
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
+/// YouTube search returning `(id, title)` for lexical relevance ranking.
+async fn youtube_search_id_titles(query: &str, limit: usize) -> Vec<(String, String)> {
     let out = tokio::process::Command::new("yt-dlp")
         .args([
             "--flat-playlist",
             "--print",
-            "%(id)s",
+            "%(id)s\t%(title)s",
             "--no-warnings",
             "--quiet",
             &format!("ytsearch{}:{}", limit, query),
@@ -5967,18 +5978,59 @@ async fn youtube_search_ids(query: &str, limit: usize) -> Vec<String> {
     match out {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
             .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty() && l.len() >= 6 && !l.contains(' '))
+            .filter_map(|l| {
+                let l = l.trim();
+                if l.is_empty() {
+                    return None;
+                }
+                let (id, title) = match l.split_once('\t') {
+                    Some((i, t)) => (i.trim(), t.trim()),
+                    None => (l, ""),
+                };
+                if id.len() >= 6 && !id.contains(' ') {
+                    Some((id.to_string(), title.to_string()))
+                } else {
+                    None
+                }
+            })
             .collect(),
         _ => Vec::new(),
     }
 }
 
-/// Fetch a stock clip that is content-unique vs previously used IDs/hashes.
-/// Uses ytsearchN + per-ID download so similar queries cannot all collapse to
-/// the same viral result (Phase CI: visual variance enforcement).
+/// Fetch a stock clip that is content-unique **and** context-relevant.
+///
+/// Signal/noise gates (Phase CM):
+/// 1. Prefer titles that lexically match scene signal tokens
+/// 2. Unique video id + content hash
+/// 3. Cover-crop with `setsar=1` (no stretch)
+/// 4. Geometry probe rejects non-square SAR / wrong display aspect
 async fn fetch_youtube_stock_clip_unique(
     query: &str,
+    duration_s: f64,
+    aspect: &str,
+    out_path: &str,
+    scene_idx: usize,
+    used_video_ids: &mut std::collections::HashSet<String>,
+    used_content_hashes: &mut std::collections::HashSet<String>,
+) -> Option<StockClipFetch> {
+    fetch_youtube_stock_clip_signal(
+        query,
+        &[],
+        duration_s,
+        aspect,
+        out_path,
+        scene_idx,
+        used_video_ids,
+        used_content_hashes,
+    )
+    .await
+}
+
+/// Full signal-aware YouTube stock fetch.
+async fn fetch_youtube_stock_clip_signal(
+    query: &str,
+    signal_tokens: &[String],
     duration_s: f64,
     aspect: &str,
     out_path: &str,
@@ -5989,40 +6041,54 @@ async fn fetch_youtube_stock_clip_unique(
     let cache_dir = "mcp/assets/background_cache";
     std::fs::create_dir_all(cache_dir).ok()?;
 
-    // Diversify search: base query + rotated visual anchors so night-phone
-    // footage cannot monopolize every "morning routine" scene.
-    const ANCHORS: &[&str] = &[
-        "sunrise window natural light",
-        "coffee desk morning",
-        "notebook planning daylight",
-        "water glass kitchen morning",
-        "commute daylight outdoor",
-        "alarm clock bedroom morning light",
-        "stretch yoga daylight",
-        "healthy breakfast table",
-    ];
-    let anchor = ANCHORS[scene_idx % ANCHORS.len()];
-    let diversified = format!("{} {}", query, anchor);
-
-    let mut candidate_ids = youtube_search_ids(&diversified, 8).await;
-    if candidate_ids.is_empty() {
-        candidate_ids = youtube_search_ids(query, 8).await;
+    let diversified = query.to_string();
+    let mut candidates = youtube_search_id_titles(&diversified, 12).await;
+    if candidates.is_empty() {
+        // Fallback: shorter query (first 6 tokens)
+        let short: String = query
+            .split_whitespace()
+            .take(6)
+            .collect::<Vec<_>>()
+            .join(" ");
+        candidates = youtube_search_id_titles(&short, 10).await;
     }
-    // Prefer unused IDs
-    candidate_ids.retain(|id| !used_video_ids.contains(id));
-    if candidate_ids.is_empty() {
+
+    // Drop already-used IDs
+    candidates.retain(|(id, _)| !used_video_ids.contains(id));
+    if candidates.is_empty() {
         tracing::warn!(
-            "[youtube stock] no unused video IDs for query='{}' / diversified='{}'",
-            query,
+            "[youtube stock] no unused video IDs for query='{}'",
             diversified
         );
         return None;
     }
 
-    for video_id in candidate_ids.into_iter().take(6) {
+    let signal: Vec<String> = if signal_tokens.is_empty() {
+        crate::stock_signal::tokenize(&diversified)
+    } else {
+        signal_tokens.to_vec()
+    };
+    let min_lex = crate::stock_signal::min_lexical_accept();
+    let ranked =
+        crate::stock_signal::rank_and_filter_candidates(&candidates, &signal, min_lex);
+    tracing::info!(
+        "[youtube stock] ranked {} candidates (min_lex={:.2}) top={}",
+        ranked.len(),
+        min_lex,
+        ranked
+            .first()
+            .map(|c| format!("{}:{:.2}:{}", c.id, c.lexical, &c.title[..c.title.len().min(40)]))
+            .unwrap_or_else(|| "none".into())
+    );
+
+    for cand in ranked.into_iter().take(8) {
+        let video_id = cand.id.clone();
+        let title = cand.title.clone();
+        let lex = cand.lexical;
         let full_path = format!("{}/yt_id_{}.mp4", cache_dir, video_id);
         if !Path::new(&full_path).exists() {
             let url = format!("https://www.youtube.com/watch?v={}", video_id);
+            // Prefer 720p mp4; cover-crop later handles landscape→portrait cleanly.
             let yt = tokio::process::Command::new("yt-dlp")
                 .args([
                     "--format",
@@ -6049,8 +6115,9 @@ async fn fetch_youtube_stock_clip_unique(
                 .unwrap_or(false);
             if !ok {
                 tracing::warn!(
-                    "[youtube stock] download failed id={} q={}",
+                    "[youtube stock] download failed id={} title='{}' q={}",
                     video_id,
+                    &title[..title.len().min(50)],
                     diversified
                 );
                 continue;
@@ -6071,7 +6138,7 @@ async fn fetch_youtube_stock_clip_unique(
             continue;
         }
 
-        // Vary start offset by scene so even partial reuse looks different
+        // Cover-crop (no stretch) + square SAR
         let start_s = 1.5 + (scene_idx as f64) * 2.7;
         let crop = crop_filter_for_aspect(aspect);
         let trim = tokio::process::Command::new("ffmpeg")
@@ -6105,7 +6172,25 @@ async fn fetch_youtube_stock_clip_unique(
             continue;
         }
 
-        // Fingerprint trimmed output too (catches same-source same-window)
+        // Geometry gate: reject stretch / wrong display aspect
+        let geo = crate::stock_signal::probe_geometry(out_path, aspect);
+        if !geo.ok {
+            tracing::warn!(
+                "[youtube stock] geometry reject id={} reasons={:?} {}x{} sar={}:{}",
+                video_id,
+                geo.reasons,
+                geo.width,
+                geo.height,
+                geo.sar_num,
+                geo.sar_den
+            );
+            let _ = std::fs::remove_file(out_path);
+            // Don't permanently burn the id — source may re-encode cleanly later;
+            // still mark used to avoid tight loops on same bad file.
+            used_video_ids.insert(video_id);
+            continue;
+        }
+
         let out_hash = file_content_fingerprint(out_path).unwrap_or_else(|| content_hash.clone());
         if used_content_hashes.contains(&out_hash) {
             let _ = std::fs::remove_file(out_path);
@@ -6117,9 +6202,11 @@ async fn fetch_youtube_stock_clip_unique(
         used_content_hashes.insert(content_hash.clone());
         used_content_hashes.insert(out_hash.clone());
         tracing::info!(
-            "[youtube stock] UNIQUE id={} hash={} query='{}' -> {}",
+            "[youtube stock] ACCEPT id={} lex={:.2} hash={} title='{}' query='{}' -> {}",
             video_id,
+            lex,
             &out_hash[..out_hash.len().min(20)],
+            &title[..title.len().min(50)],
             diversified,
             out_path
         );
@@ -6127,7 +6214,7 @@ async fn fetch_youtube_stock_clip_unique(
             path: out_path.to_string(),
             video_id,
             content_hash: out_hash,
-            search_query: diversified,
+            search_query: format!("{} | title={}", diversified, title),
         });
     }
     None
@@ -8307,32 +8394,14 @@ fn safe_search_query(raw_keywords: &str, theme: &str) -> String {
     enrich_query_for_theme(&safe_query, theme)
 }
 
+/// Legacy helper — prefer `stock_signal::build_scene_stock_query` for multi-broll.
+#[allow(dead_code)]
 fn extract_keywords(text: &str, fallback_query: &str) -> String {
-    let stop_words = [
-        "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
-        "can", "need", "it", "its", "this", "that", "these", "those", "i", "you", "he", "she",
-        "we", "they", "what", "which", "who", "when", "where", "why", "how", "all", "each",
-        "every", "both", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
-        "only", "own", "same", "so", "than", "too", "very", "just", "but", "and", "or", "if",
-        "then", "else", "for", "of", "to", "in", "on", "at", "by", "with", "from", "as", "into",
-        "through", "during", "before", "after", "above", "below", "up", "down", "out", "off",
-        "over", "under", "again", "further", "once", "here", "there", "now",
-    ];
-
-    let words: Vec<&str> = text
-        .split_whitespace()
-        .filter(|w| {
-            let cleaned = w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase();
-            !cleaned.is_empty() && !stop_words.contains(&cleaned.as_str()) && cleaned.len() > 2
-        })
-        .take(4)
-        .collect();
-
-    if words.is_empty() {
+    let toks = crate::stock_signal::signal_tokens_from_scene(text, &[]);
+    if toks.is_empty() {
         fallback_query.to_string()
     } else {
-        words.join(" ")
+        toks.into_iter().take(5).collect::<Vec<_>>().join(" ")
     }
 }
 
@@ -9150,36 +9219,23 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            // Build a topic-aware search query for Pexels.
-            // (Round-13: topic-aware video search upgrade.)
-            //
-            // The query combines:
-            // 1. Video topic keywords (from spec.video_keywords) — provides CONTEXT
-            // 2. Scene-specific keywords (from extract_keywords) — provides SPECIFICITY
-            // 3. Theme context (from safe_search_query) — provides MOOD
-            //
-            // Example: video about "brain neuroscience" + scene "86 billion neurons"
-            // → query: "brain neurons" (not "did you know 86 billion neurons")
-            let scene_keywords = extract_keywords(scene_text, &spec.background.query);
-            let topic_str = if spec.video_keywords.is_empty() {
-                String::new()
-            } else {
-                // Use first 2 topic keywords + first 2 scene keywords
-                let topic_part: Vec<&str> = spec.video_keywords.iter().take(2).map(|s| s.as_str()).collect();
-                let scene_part: Vec<&str> = scene_keywords.split_whitespace().take(2).collect::<Vec<_>>();
-                format!("{} {}", topic_part.join(" "), scene_part.join(" ")).trim().to_string()
-            };
-            let query_source = if topic_str.is_empty() {
-                scene_keywords.clone()
-            } else {
-                topic_str
-            };
-            let query = safe_search_query(&query_source, &spec.output.theme);
+            // Phase CM signal/noise query: strip listicle noise, bias to visual
+            // nouns + video_keywords, attach context-matched visual anchor.
+            let stock_q = crate::stock_signal::build_scene_stock_query(
+                scene_text,
+                &spec.video_keywords,
+                &spec.output.theme,
+                &spec.meta.aspect,
+                scene_idx,
+            );
+            // Keep unsafe-keyword rewrite for edge terms (blood → calm nature)
+            let query = safe_search_query(&stock_q.query, &spec.output.theme);
+            let signal_tokens = stock_q.signal_tokens.clone();
             tracing::info!(
-                "[script.to_video] Pexels search for scene {}: topic='{:?}' scene='{}' → query='{}'",
+                "[script.to_video] stock query scene {}: signal={:?} anchor='{}' → query='{}'",
                 scene_idx + 1,
-                spec.video_keywords.iter().take(2).collect::<Vec<_>>(),
-                scene_keywords,
+                signal_tokens.iter().take(6).collect::<Vec<_>>(),
+                stock_q.visual_anchor,
                 query
             );
 
@@ -9299,6 +9355,20 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                                 } else {
                                                                     clip_path
                                                                 };
+                                                                // Geometry gate (no stretch)
+                                                                let geo = crate::stock_signal::probe_geometry(
+                                                                    &chosen,
+                                                                    &spec.meta.aspect,
+                                                                );
+                                                                if !geo.ok {
+                                                                    tracing::warn!(
+                                                                        "[pexels stock] geometry reject id={} {:?}",
+                                                                        vid_id,
+                                                                        geo.reasons
+                                                                    );
+                                                                    let _ = std::fs::remove_file(&chosen);
+                                                                    continue;
+                                                                }
                                                                 // Fingerprint: reject if same bytes as prior scene
                                                                 if let Some(h) =
                                                                     file_content_fingerprint(
@@ -9357,14 +9427,17 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 }
             }
             if scene_bg.is_none() {
-                let mut yt_q = format!("{} stock footage cinematic", query);
+                // Query already includes stock/vertical bias from stock_signal.
+                // Diversify only if we already tried the exact same query string.
+                let mut yt_q = query.clone();
                 if used_yt_queries.contains(&yt_q) {
-                    yt_q = format!("{} vertical b-roll unique scene {}", query, scene_idx + 1);
+                    yt_q = format!("{} scene{}", query, scene_idx + 1);
                 }
                 used_yt_queries.insert(yt_q.clone());
                 let yt_out = format!("{}/scene_{:03}_yt.mp4", cache_dir, scene_idx + 1);
-                if let Some(fetch) = fetch_youtube_stock_clip_unique(
+                if let Some(fetch) = fetch_youtube_stock_clip_signal(
                     &yt_q,
+                    &signal_tokens,
                     dur,
                     &spec.meta.aspect,
                     &yt_out,

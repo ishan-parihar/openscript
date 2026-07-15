@@ -116,6 +116,17 @@ Local GGUF + OpenRouter free multimodal cascade for director reasoning and clip 
 - Inspect: `system.config.get` / `system.capabilities` → `openscript_config` + `llm`
 - Force backend: `llm.complete` with `backend: "local"` or `"openrouter"`
 
+### Stock B-roll signal vs noise (Phase CM)
+
+Multi-broll selection (`script.to_video`) now gates **signal vs noise**:
+
+1. **Query sanitizer** (`stock_signal::build_scene_stock_query`) — strips listicle noise (`Swap one`, etc.), keeps visual nouns + `video_keywords`, attaches a **context-matched** visual anchor (phone → smartphone lock screen, not a fixed rotation).
+2. **Lexical title rank** — YouTube candidates ranked by title overlap with signal tokens; low-overlap viral noise is deprioritized (`OPENSCRIPT_STOCK_MIN_LEXICAL`, default `0.12`).
+3. **Cover-crop geometry** — `scale=W:H:force_original_aspect_ratio=increase,crop=W:H,setsar=1` (no stretch). Old `scale=W:H,crop=W:H` left non-square SAR and distorted 16:9 stock inside 9:16 frames.
+4. **Geometry probe** — rejects outputs with non-square SAR or wrong display aspect before accept.
+
+Set rich `video_keywords` on every script. Prefer concrete scene nouns (phone, coffee, notebook) over abstract dialogue.
+
 #### Production KPI baseline v2 (`verify.production` + `render_manifest.json`)
 
 **Architecture:** quality is computed in `openscript_core::production_quality` from a
