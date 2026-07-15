@@ -321,8 +321,13 @@ pub struct PexelsClient {
 
 impl PexelsClient {
     pub fn new(api_key: &str, cache_dir: &str) -> Self {
+        // Explicit UA: some edges (Cloudflare 1010) block empty/default clients.
+        let http = Client::builder()
+            .user_agent("OpenScript/1.0 (+https://github.com/ishan-parihar/openscript)")
+            .build()
+            .unwrap_or_else(|_| Client::new());
         Self {
-            http: Client::new(),
+            http,
             api_key: api_key.to_string(),
             cache: HashMap::new(),
             cache_dir: PathBuf::from(cache_dir),
