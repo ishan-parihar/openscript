@@ -311,7 +311,6 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     // visible ON TOP of full-screen meme cuts). This step is intentionally
     // a no-op.
     let _ = &spec.captions_path;
-    let current_video_label = "[vbg]";
 
     // 3. Overlay meme b-rolls (full-screen GIPHY video clips) and stickers
     //
@@ -395,9 +394,6 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             "[render] Meme b-roll {} ({}): FULLSCREEN size={}x{}, time={:.1}-{:.1}s",
             idx, meme.path, meme_w, meme_h, meme.start_s, meme.end_s
         );
-
-        let meme_label = format!("[mb{}]", idx);
-        let out_label = format!("[vmb{}]", idx);
 
         // Blurred letterbox: scale the clip to fill the canvas (increase),
         // blur it heavily, then overlay the properly-scaled (decrease) clip

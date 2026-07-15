@@ -12004,7 +12004,18 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
             }
             let coverage = matches as f64 / query_tokens.len() as f64;
             let weight = tool_weight(name);
-            let score = (coverage + name_boost + weight).min(1.0);
+            let mut score = (coverage + name_boost + weight).min(1.0);
+            // Hard demote from-scratch tools on NLE queries even if token
+            // overlap is high (e.g. "captions" matches script.to_video desc).
+            if nle_intent
+                && matches!(
+                    name,
+                    "script.to_video" | "script.parse" | "script.to_timeline"
+                        | "script.generate_voices" | "script.build_captions"
+                )
+            {
+                score *= 0.35;
+            }
 
             if score > 0.0 {
                 // Short description = first sentence of the description, capped at 180 chars.
@@ -12131,19 +12142,32 @@ mod tests {
             "NLE query should not rank script.to_video first; got {:?}",
             names
         );
-        // At least one NLE tool should appear in top results
-        let nle_hit = names.iter().any(|n| {
+        // Prefer NLE tools over script.to_video in the ranking
+        let script_pos = names.iter().position(|n| *n == "script.to_video");
+        let nle_pos = names.iter().position(|n| {
             matches!(
                 *n,
                 "transcribe"
                     | "reelize.timeline"
                     | "reelize.direct"
+                    | "reelize.brief"
                     | "broll.director"
                     | "timeline.render"
                     | "timeline.build"
             )
         });
-        assert!(nle_hit, "expected an NLE tool in top results: {:?}", names);
+        assert!(
+            nle_pos.is_some(),
+            "expected an NLE tool in top results: {:?}",
+            names
+        );
+        if let (Some(sp), Some(np)) = (script_pos, nle_pos) {
+            assert!(
+                np < sp,
+                "NLE tool should rank above script.to_video; got {:?}",
+                names
+            );
+        }
     }
 
     /// broll.fetch with no API key and no fallback_pool should return
