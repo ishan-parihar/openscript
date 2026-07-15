@@ -94,18 +94,36 @@ Post-render quality checks.
 | `verify.render` | **Technical only** — duration/aspect/file integrity (score 100 ≠ beautiful video) |
 | `verify.production` | **Production KPI gate** — stock visuals, real music, stickers, memes, speech, captions → grade A–F |
 
-#### Production KPI baseline (verify.production)
+#### Production KPI baseline v2 (`verify.production` + `render_manifest.json`)
+
+**Architecture:** quality is computed in `openscript_core::production_quality` from a
+`RenderManifest` (authoritative multi-broll / stickers / memes / sections) **plus**
+timeline editor utilization. `script.to_video` writes `render_manifest.json` next to
+the timeline so re-validation does not lose multi-scene stock paths.
 
 | Grade | Score | Meaning |
 |-------|------:|---------|
-| **A** | 85–100 | Delivery-ready: stock footage + real music + overlays |
-| **B** | 70–84 | Acceptable short; minor layer gaps |
-| **C** | 55–69 | Watchable draft; missing beauty layers |
-| **D/F** | <55 | Not production — typically procedural-only + no music/stickers |
+| **A** | 85–100 | Delivery-ready director stack |
+| **B** | 70–84 | Acceptable social short |
+| **C** | 55–69 | Watchable draft |
+| **D/F** | <55 | Not production |
 
-Weights: stock_visuals 30 · music 15 · overlays 15 · memes 10 · speech 15 · captions 15.
+| Dimension | Weight | What it measures |
+|-----------|-------:|------------------|
+| `video_source_quality` | 20 | Pexels > YouTube > local stock > unknown > **procedural=0** |
+| `cuts_pacing` | 12 | **cuts/sec** + uniqueness (ideal **0.12–0.55**/s) |
+| `music_variance` | 12 | Real bed + **ducking** + mood/energy tags + audible gain |
+| `sticker_design` | 12 | Scale **0.20–0.45**, not fighting captions, uniqueness, GIF motion |
+| `section_composition` | 12 | Hook/body/cta text, **title cards**, meme placement in body |
+| `speech_audio` | 10 | Dialogue + loudness |
+| `captions` | 10 | ASS/SRT present |
+| `timeline_editor` | 12 | Multi-track use, unique visuals, gaps/overlaps, SFX presence |
 
-`script.to_video` now returns `production_quality` with the same grade. Status becomes `rendered_below_production_grade` or `rendered_production_fail` when beauty KPIs fail — **do not treat verify.render=100 as success.**
+Also returns: `cuts_per_second`, `video_source_mix`, `timeline_editor` findings.
+
+`script.to_video` embeds full `production_quality` report. Status becomes
+`rendered_below_production_grade` / `rendered_production_fail` when KPIs fail —
+**never treat `verify.render=100` as ship quality.**
 
 ---
 

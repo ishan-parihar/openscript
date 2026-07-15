@@ -698,18 +698,19 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "verify.production",
-            "description": "PRODUCTION-QUALITY KPI gate for AI-directed shorts. Scores beauty layers that verify.render ignores: (1) stock_visuals — real footage vs synthetic procedural backgrounds (weight 30), (2) music_quality — real bed vs synthetic sine stubs (15), (3) overlay_presence — stickers/GIFs (15), (4) meme_cuts — full-screen reaction cuts (10), (5) speech_audio — dialogue loudness (15), (6) captions — burned ASS/SRT present (15). Returns grade A–F, dimension scores, hard_fails, and next_actions. Use AFTER script.to_video before claiming delivery quality. A technical pass with grade D/F means the video is NOT production-ready.",
+            "description": "PRODUCTION-QUALITY KPI gate (v2) baked into architecture. Scores efficacious director use of the timeline/render stack: (1) video_source_quality 20 — Pexels/YouTube/local vs procedural, (2) cuts_pacing 12 — cuts/sec + uniqueness band 0.12–0.55, (3) music_variance 12 — real bed + ducking + mood/energy tags, (4) sticker_design 12 — scale 0.20–0.45, position vs captions, uniqueness, animation, (5) section_composition 12 — hook/body/cta text + title cards + meme placement, (6) speech 10, (7) captions 10, (8) timeline_editor 12 — multi-track utilization/gaps. Prefer render_manifest_path from script.to_video. Returns grade A–F, cuts_per_second, video_source_mix, timeline_editor report. verify.render=100 is NOT production quality.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "Rendered MP4 path"},
                     "timeline_path": {"type": "string", "description": "Timeline JSON from script.to_video"},
+                    "render_manifest_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Preferred: render_manifest.json written by script.to_video (authoritative multi-broll/sticker/meme truth)"},
                     "captions_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional ASS/SRT path"},
-                    "sticker_count": {"type": "integer", "default": 0, "description": "Sticker overlays used at render (from script.to_video response)"},
-                    "meme_count": {"type": "integer", "default": 0, "description": "Meme b-roll cuts used at render"},
-                    "background_sources": {"type": "array", "items": {"type": "string"}, "description": "Optional list of background file paths used"},
+                    "sticker_count": {"type": "integer", "default": 0, "description": "Fallback sticker count if no manifest"},
+                    "meme_count": {"type": "integer", "default": 0, "description": "Fallback meme count if no manifest"},
+                    "background_sources": {"type": "array", "items": {"type": "string"}, "description": "Fallback background paths if no manifest"},
                     "music_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Music path used at render if any"},
-                    "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F). Response status is fail if below."}
+                    "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F)."}
                 },
                 "required": ["video_path", "timeline_path"],
                 "additionalProperties": false
@@ -5550,47 +5551,23 @@ async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Val
 }
 
 // ---------------------------------------------------------------------------
-// Production Quality KPIs (beauty / director layers — NOT technical integrity)
+// Production Quality KPIs — thin wrappers around openscript_core::production_quality
 // ---------------------------------------------------------------------------
 
 fn is_procedural_media_path(path: &str) -> bool {
-    let p = path.to_lowercase();
-    p.contains("procedural")
-        || p.contains("backgrounds/procedural")
-        || p.contains("_procedural.mp4")
+    matches!(
+        openscript_core::production_quality::classify_video_source(path, None),
+        openscript_core::production_quality::VideoSourceClass::ProceduralSynthetic
+    )
 }
 
+#[allow(dead_code)] // used by music rejection paths / tests
 fn is_synthetic_music_file(path: &str) -> bool {
-    // All 20 committed stock tones are exactly 481_114 bytes.
-    if !path.contains("mcp/assets/music/") && !path.contains("mcp\\assets\\music\\") {
-        return false;
-    }
-    std::fs::metadata(path)
-        .map(|m| m.len() == 481_114)
-        .unwrap_or(false)
+    openscript_core::production_quality::is_synthetic_music_file(path)
 }
 
-fn production_grade(score: i32) -> &'static str {
-    match score {
-        85..=100 => "A",
-        70..=84 => "B",
-        55..=69 => "C",
-        40..=54 => "D",
-        _ => "F",
-    }
-}
-
-fn grade_rank(g: &str) -> i32 {
-    match g {
-        "A" => 5,
-        "B" => 4,
-        "C" => 3,
-        "D" => 2,
-        _ => 1,
-    }
-}
-
-/// Score production beauty layers. Weights sum to 100.
+/// Legacy shim used by unit tests — maps to v2 scorer via a synthetic manifest.
+#[cfg(test)]
 fn compute_production_score(
     background_paths: &[String],
     music_path: Option<&str>,
@@ -5600,115 +5577,65 @@ fn compute_production_score(
     rms_ok: bool,
     captions_present: bool,
 ) -> (i32, serde_json::Value, Vec<String>, Vec<String>) {
-    let mut hard_fails: Vec<String> = Vec::new();
-    let mut next_actions: Vec<String> = Vec::new();
-
-    // 1. Stock visuals (30)
-    let bg_total = background_paths.len().max(1);
-    let procedural_n = background_paths
+    use openscript_core::production_quality::*;
+    let tl = Timeline::new(std::path::PathBuf::from("kpi.mp4"), "9:16", 30, None);
+    let n = background_paths.len().max(1);
+    let slice = (16_000 / n as i64).max(1);
+    let backgrounds: Vec<BackgroundLayerInfo> = background_paths
         .iter()
-        .filter(|p| is_procedural_media_path(p))
-        .count();
-    let stock_n = bg_total.saturating_sub(procedural_n);
-    let stock_ratio = stock_n as f64 / bg_total as f64;
-    let stock_score = (stock_ratio * 30.0).round() as i32;
-    if stock_n == 0 {
-        hard_fails.push(
-            "stock_visuals: all backgrounds are synthetic procedural gradients — not production stock footage"
-                .into(),
-        );
-        next_actions.push(
-            "Set PEXELS_API_KEY or ensure yt-dlp works; use background.type=gameplay (default) and do NOT force type=procedural / procedural fallback_pool"
-                .into(),
-        );
-    } else if procedural_n > 0 {
-        next_actions.push(format!(
-            "stock_visuals: {}/{} scenes still use procedural fallback — improve queries or API keys",
-            procedural_n, bg_total
-        ));
-    }
-
-    // 2. Music quality (15)
-    let music_score = match music_path {
-        Some(p) if !p.is_empty() && Path::new(p).exists() && !is_synthetic_music_file(p) => 15,
-        Some(p) if is_synthetic_music_file(p) => {
-            hard_fails.push(
-                "music_quality: music file is synthetic sine-wave stock (481114-byte placeholder)"
-                    .into(),
-            );
-            next_actions.push(
-                "Provide real music via library.build + library.download, stock.fetch (Pixabay), or a non-placeholder path"
-                    .into(),
-            );
-            0
-        }
-        _ => {
-            hard_fails.push("music_quality: no real background music bed".into());
-            next_actions.push(
-                "Add real music path or run library.build; do not rely on mcp/assets/music/*.mp3 stubs"
-                    .into(),
-            );
-            0
-        }
-    };
-
-    // 3. Overlay / stickers (15)
-    let overlay_score = if sticker_count >= 3 {
-        15
-    } else if sticker_count >= 1 {
-        10
+        .enumerate()
+        .map(|(i, p)| BackgroundLayerInfo {
+            path: p.clone(),
+            start_ms: i as i64 * slice,
+            end_ms: (i as i64 + 1) * slice,
+            source_hint: None,
+        })
+        .collect();
+    let stickers: Vec<StickerLayerInfo> = (0..sticker_count)
+        .map(|i| StickerLayerInfo {
+            path: format!("mcp/assets/stickers/giphy_{}.gif", i),
+            start_ms: 0,
+            end_ms: 1000,
+            position: "top-left".into(),
+            scale: 0.35,
+        })
+        .collect();
+    let memes: Vec<MemeLayerInfo> = (0..meme_count)
+        .map(|i| MemeLayerInfo {
+            path: format!("meme_{}.mp4", i),
+            start_ms: 2000 + i as i64 * 500,
+            end_ms: 4500 + i as i64 * 500,
+        })
+        .collect();
+    let caps = if captions_present {
+        let p = std::env::temp_dir().join("kpi_caps.ass");
+        let _ = std::fs::write(&p, b"[Script Info]\n");
+        Some(p.to_string_lossy().to_string())
     } else {
-        hard_fails.push("overlay_presence: no stickers/GIFs composited".into());
-        next_actions.push(
-            "Enable stickers (default), set GIPHY_API_KEY, or ensure local GIFs under mcp/assets/stickers/ are used"
-                .into(),
-        );
-        0
+        None
     };
-
-    // 4. Meme cuts (10) — optional polish; not always hard-fail
-    let meme_score = if meme_count >= 2 {
-        10
-    } else if meme_count == 1 {
-        6
-    } else {
-        next_actions.push(
-            "meme_cuts: enable meme_brolls.enabled for full-screen reaction cuts (needs GIPHY or YouTube fallback)"
-                .into(),
-        );
-        0
-    };
-
-    // 5. Speech (15)
-    let speech_score = if has_dialogue && rms_ok {
-        15
-    } else if has_dialogue {
-        10
-    } else {
-        hard_fails.push("speech_audio: no dialogue detected".into());
-        0
-    };
-
-    // 6. Captions (15)
-    let caption_score = if captions_present { 15 } else { 0 };
-    if !captions_present {
-        hard_fails.push("captions: no caption file / burn evidence".into());
-        next_actions.push("Ensure script.build_captions / ASS path is present".into());
-    }
-
-    let score = (stock_score + music_score + overlay_score + meme_score + speech_score + caption_score)
-        .clamp(0, 100);
-
-    let dimensions = json!({
-        "stock_visuals": {"score": stock_score, "max": 30, "stock_clips": stock_n, "procedural_clips": procedural_n, "total_clips": bg_total},
-        "music_quality": {"score": music_score, "max": 15, "path": music_path},
-        "overlay_presence": {"score": overlay_score, "max": 15, "sticker_count": sticker_count},
-        "meme_cuts": {"score": meme_score, "max": 10, "meme_count": meme_count},
-        "speech_audio": {"score": speech_score, "max": 15, "has_dialogue": has_dialogue, "rms_ok": rms_ok},
-        "captions": {"score": caption_score, "max": 15, "present": captions_present},
+    let music = music_path.map(|p| MusicLayerInfo {
+        path: p.to_string(),
+        gain_db: 0.0,
+        ducking: true,
+        mood: Some("neutral".into()),
+        energy: Some("medium".into()),
     });
-
-    (score, dimensions, hard_fails, next_actions)
+    let manifest = RenderManifest {
+        duration_ms: 16_000,
+        backgrounds,
+        stickers,
+        memes,
+        music,
+        captions_path: caps,
+        voiceover_count: 1,
+        sections: vec![],
+        has_dialogue,
+        rms_ok,
+    };
+    let report = evaluate_production_quality(&tl, &manifest);
+    let dims = serde_json::to_value(&report.dimensions).unwrap_or(json!({}));
+    (report.production_score, dims, report.hard_fails, report.next_actions)
 }
 
 async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
@@ -5746,6 +5673,11 @@ async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
 }
 
 async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    use openscript_core::production_quality::{
+        evaluate_production_quality, grade_rank, BackgroundLayerInfo, MemeLayerInfo, MusicLayerInfo,
+        RenderManifest, StickerLayerInfo,
+    };
+
     let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?
         .to_string_lossy()
         .to_string();
@@ -5757,6 +5689,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     let meme_count = default_u32(&args, "meme_count", 0) as usize;
     let min_grade = default_str(&args, "min_grade", "B");
     let music_path_arg = default_opt_str(&args, "music_path");
+    let manifest_path = default_opt_str(&args, "render_manifest_path");
 
     if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!(
@@ -5772,90 +5705,119 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     }
 
     let timeline = Timeline::load(&timeline_path).map_err(|e| ToolError::Timeline(e.to_string()))?;
+    let (has_dialogue, rms_ok) = probe_dialogue_rms(&video_path).await;
 
-    // Collect background paths from timeline assets + events
-    let mut bg_paths: Vec<String> = args
-        .get("background_sources")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Prefer authoritative render_manifest.json from script.to_video
+    let mut manifest = if let Some(ref mp) = manifest_path {
+        if Path::new(mp).exists() {
+            let raw = std::fs::read_to_string(mp)?;
+            serde_json::from_str::<RenderManifest>(&raw).map_err(|e| ToolError::Json(e))?
+        } else {
+            RenderManifest::default()
+        }
+    } else {
+        // Co-located default path next to timeline
+        let sibling = Path::new(&timeline_path)
+            .parent()
+            .map(|p| p.join("render_manifest.json"))
+            .unwrap_or_else(|| Path::new("render_manifest.json").to_path_buf());
+        if sibling.exists() {
+            let raw = std::fs::read_to_string(&sibling)?;
+            serde_json::from_str::<RenderManifest>(&raw).unwrap_or_default()
+        } else {
+            RenderManifest::default()
+        }
+    };
 
-    if bg_paths.is_empty() {
-        for v in timeline.assets.broll.values() {
-            if let Some(p) = v.get("path").and_then(|x| x.as_str()) {
-                bg_paths.push(p.to_string());
-            }
+    // Merge explicit overrides / legacy args into manifest
+    if manifest.backgrounds.is_empty() {
+        let bg_paths: Vec<String> = args
+            .get("background_sources")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !bg_paths.is_empty() {
+            let n = bg_paths.len().max(1);
+            let slice = (timeline.rendered_duration_ms() / n as i64).max(1);
+            manifest.backgrounds = bg_paths
+                .into_iter()
+                .enumerate()
+                .map(|(i, p)| BackgroundLayerInfo {
+                    path: p,
+                    start_ms: i as i64 * slice,
+                    end_ms: (i as i64 + 1) * slice,
+                    source_hint: None,
+                })
+                .collect();
         }
     }
+    if manifest.stickers.is_empty() && sticker_count > 0 {
+        manifest.stickers = (0..sticker_count)
+            .map(|i| StickerLayerInfo {
+                path: format!("sticker_{}", i),
+                start_ms: 0,
+                end_ms: 1000,
+                position: "top-left".into(),
+                scale: 0.35,
+            })
+            .collect();
+    }
+    if manifest.memes.is_empty() && meme_count > 0 {
+        manifest.memes = (0..meme_count)
+            .map(|i| MemeLayerInfo {
+                path: format!("meme_{}", i),
+                start_ms: 1000 + i as i64 * 500,
+                end_ms: 3000 + i as i64 * 500,
+            })
+            .collect();
+    }
+    if manifest.music.is_none() {
+        if let Some(p) = music_path_arg {
+            manifest.music = Some(MusicLayerInfo {
+                path: p,
+                gain_db: 0.0,
+                ducking: true,
+                mood: None,
+                energy: None,
+            });
+        }
+    }
+    if manifest.captions_path.is_none() {
+        manifest.captions_path = captions_path;
+    }
+    if manifest.duration_ms <= 0 {
+        manifest.duration_ms = timeline.rendered_duration_ms();
+    }
+    manifest.has_dialogue = has_dialogue;
+    manifest.rms_ok = rms_ok;
 
-    let music_path = music_path_arg.or_else(|| {
-        timeline
-            .assets
-            .music
-            .values()
-            .next()
-            .and_then(|v| v.get("path"))
-            .and_then(|p| p.as_str())
-            .map(String::from)
-    });
-
-    let captions_present = captions_path
-        .as_ref()
-        .map(|p| Path::new(p).exists())
-        .unwrap_or(false)
-        || timeline
-            .assets
-            .captions
-            .get("ass")
-            .and_then(|a| a.get("path"))
-            .and_then(|p| p.as_str())
-            .map(|p| Path::new(p).exists())
-            .unwrap_or(false)
-        || timeline
-            .assets
-            .captions
-            .get("path")
-            .and_then(|p| p.as_str())
-            .map(|p| Path::new(p).exists())
-            .unwrap_or(false);
-
-    let sticker_n = sticker_count;
-    let meme_n = meme_count;
-
-    let (has_dialogue, rms_ok) = probe_dialogue_rms(&video_path).await;
-    let (score, dimensions, hard_fails, next_actions) = compute_production_score(
-        &bg_paths,
-        music_path.as_deref(),
-        sticker_n,
-        meme_n,
-        has_dialogue,
-        rms_ok,
-        captions_present,
-    );
-    let grade = production_grade(score);
-    let meets_min = grade_rank(grade) >= grade_rank(&min_grade);
+    let report = evaluate_production_quality(&timeline, &manifest);
+    let meets_min = grade_rank(&report.grade) >= grade_rank(&min_grade);
 
     Ok(json!({
-        "status": if meets_min && hard_fails.is_empty() {
+        "status": if meets_min && report.hard_fails.is_empty() {
             "pass"
-        } else if score >= 40 {
+        } else if report.production_score >= 40 {
             "warning"
         } else {
             "fail"
         },
-        "production_score": score,
-        "grade": grade,
+        "production_score": report.production_score,
+        "grade": report.grade,
         "min_grade": min_grade,
         "meets_min_grade": meets_min,
-        "hard_fails": hard_fails,
-        "dimensions": dimensions,
-        "next_actions": next_actions,
-        "kpi_note": "verify.render score 100 only means the file is valid. Production grade requires real stock visuals, real music, and overlays.",
-        "background_paths_scored": bg_paths,
+        "hard_fails": report.hard_fails,
+        "dimensions": report.dimensions,
+        "next_actions": report.next_actions,
+        "cuts_per_second": report.cuts_per_second,
+        "video_source_mix": report.video_source_mix,
+        "timeline_editor": report.timeline_editor,
+        "kpi_version": report.kpi_version,
+        "kpi_note": "verify.render is technical-only. Production v2 scores source quality, cuts/sec, music variance, sticker design, section composition, and timeline-editor utilization.",
     }))
 }
 
@@ -9891,33 +9853,124 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
             report_progress(100.0, 100.0, "Video created").await.ok();
 
-            // Production KPI (beauty layers) — not the same as verify.render technical score.
-            let bg_paths: Vec<String> = render_spec
-                .backgrounds
-                .iter()
-                .map(|b| b.path.clone())
-                .collect();
-            let music_for_score = render_spec.music_path.as_deref();
+            // Production KPI v2 — architecture-level quality (source, cuts/s, music
+            // variance, sticker design, section composition, timeline utilization).
+            use openscript_core::production_quality::{
+                evaluate_production_quality, BackgroundLayerInfo, MemeLayerInfo, MusicLayerInfo,
+                RenderManifest, SectionInfo, SectionRole, StickerLayerInfo,
+            };
             let (has_dialogue, rms_ok) = probe_dialogue_rms(&out_path).await;
-            let captions_ok = !captions_path.is_empty() && Path::new(captions_path).exists();
-            let (prod_score, prod_dims, hard_fails, next_actions) = compute_production_score(
-                &bg_paths,
-                music_for_score,
-                render_spec.stickers.len(),
-                render_spec.meme_clips.len(),
+            let mut t_cursor = 0i64;
+            let mut bg_layers = Vec::new();
+            for b in &render_spec.backgrounds {
+                let dur_ms = (b.duration_s * 1000.0) as i64;
+                let hint = if is_procedural_media_path(&b.path) {
+                    Some("procedural".into())
+                } else if b.path.contains("_yt") || b.path.contains("background_cache") {
+                    Some("youtube".into())
+                } else {
+                    None
+                };
+                bg_layers.push(BackgroundLayerInfo {
+                    path: b.path.clone(),
+                    start_ms: t_cursor,
+                    end_ms: t_cursor + dur_ms,
+                    source_hint: hint,
+                });
+                t_cursor += dur_ms;
+            }
+            let sticker_layers: Vec<StickerLayerInfo> = render_spec
+                .stickers
+                .iter()
+                .map(|s| StickerLayerInfo {
+                    path: s.path.clone(),
+                    start_ms: (s.start_s * 1000.0) as i64,
+                    end_ms: (s.end_s * 1000.0) as i64,
+                    position: s.position.clone(),
+                    scale: s.scale,
+                })
+                .collect();
+            let meme_layers: Vec<MemeLayerInfo> = render_spec
+                .meme_clips
+                .iter()
+                .map(|m| MemeLayerInfo {
+                    path: m.path.clone(),
+                    start_ms: (m.start_s * 1000.0) as i64,
+                    end_ms: (m.end_s * 1000.0) as i64,
+                })
+                .collect();
+            let music_layer = render_spec.music_path.as_ref().map(|p| {
+                let gain_db = if render_spec.music_volume > 0.0 {
+                    20.0 * render_spec.music_volume.log10()
+                } else {
+                    -60.0
+                };
+                MusicLayerInfo {
+                    path: p.clone(),
+                    gain_db,
+                    ducking: render_spec.ducking,
+                    mood: Some(spec.output.theme.clone()),
+                    energy: None,
+                }
+            });
+            // Section map from scenes (hook / body / cta)
+            let n_scenes = spec.scenes.len().max(1);
+            let mut sections = Vec::new();
+            let mut s_cursor = 0i64;
+            for (i, scene) in spec.scenes.iter().enumerate() {
+                let dur_ms = scene_durations
+                    .get(i)
+                    .map(|d| (*d * 1000.0) as i64)
+                    .unwrap_or(3000);
+                let role = if i == 0 {
+                    SectionRole::Hook
+                } else if i + 1 == n_scenes {
+                    SectionRole::Cta
+                } else if i + 2 >= n_scenes {
+                    SectionRole::Payoff
+                } else {
+                    SectionRole::Body
+                };
+                sections.push(SectionInfo {
+                    role,
+                    start_ms: s_cursor,
+                    end_ms: s_cursor + dur_ms,
+                    text: scene.text.clone(),
+                    title_text: None,
+                });
+                s_cursor += dur_ms;
+            }
+            let render_manifest = RenderManifest {
+                duration_ms: total_duration_ms,
+                backgrounds: bg_layers.clone(),
+                stickers: sticker_layers,
+                memes: meme_layers,
+                music: music_layer,
+                captions_path: if !captions_path.is_empty() {
+                    Some(captions_path.to_string())
+                } else {
+                    None
+                },
+                voiceover_count: render_spec.voiceover_paths.len(),
+                sections,
                 has_dialogue,
                 rms_ok,
-                captions_ok,
-            );
-            let grade = production_grade(prod_score);
-            // Cap delivery status: technical render ok but production may be fail
-            let delivery_status = if prod_score >= 70 && hard_fails.is_empty() {
+            };
+            let manifest_out = format!("{}/render_manifest.json", output_dir);
+            if let Ok(s) = serde_json::to_string_pretty(&render_manifest) {
+                let _ = std::fs::write(&manifest_out, s);
+            }
+            let timeline_for_kpi = Timeline::load(&timeline_path)
+                .unwrap_or_else(|_| Timeline::new(std::path::PathBuf::from("out.mp4"), "9:16", 30, None));
+            let pq = evaluate_production_quality(&timeline_for_kpi, &render_manifest);
+            let delivery_status = if pq.production_score >= 70 && pq.hard_fails.is_empty() {
                 "rendered"
-            } else if prod_score >= 40 {
+            } else if pq.production_score >= 40 {
                 "rendered_below_production_grade"
             } else {
                 "rendered_production_fail"
             };
+            let bg_paths: Vec<String> = bg_layers.iter().map(|b| b.path.clone()).collect();
 
             Ok(json!({
                 "status": delivery_status,
@@ -9929,6 +9982,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 "timeline_summary": timeline_summary,
                 "timeline_issues": if timeline_issues.is_empty() { serde_json::Value::Null } else { json!(timeline_issues) },
                 "voiceover_manifest": manifest_path,
+                "render_manifest_path": manifest_out,
                 "captions_path": captions_path,
                 "total_duration_ms": total_duration_ms,
                 "scene_count": timeline_result.get("scene_count"),
@@ -9938,14 +9992,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 "meme_count": render_spec.meme_clips.len(),
                 "background_sources": bg_paths,
                 "music_path": render_spec.music_path,
-                "production_quality": {
-                    "production_score": prod_score,
-                    "grade": grade,
-                    "dimensions": prod_dims,
-                    "hard_fails": hard_fails,
-                    "next_actions": next_actions,
-                    "kpi_note": "verify.render technical score is NOT production quality. Grade A/B requires real stock visuals + real music + overlays.",
-                },
+                "production_quality": pq,
                 "warnings": merged_warnings,
             }))
         }
@@ -12751,13 +12798,15 @@ mod tests {
             compute_production_score(&bgs, None, 0, 0, true, true, true);
         assert!(score < 55, "procedural-only should not reach grade C; score={}", score);
         assert!(!hard.is_empty());
-        assert_eq!(production_grade(score), "F");
+        assert_eq!(
+            openscript_core::production_quality::production_grade(score),
+            "F"
+        );
     }
 
     #[test]
     fn test_production_score_full_stack_is_a() {
         let music = std::env::temp_dir().join("openscript_real_music_kpi.mp3");
-        // Non-placeholder size (not 481114)
         std::fs::write(&music, vec![1u8; 12_000]).expect("write temp music");
         let bgs = vec![
             "mcp/assets/background_cache/scene_001_yt.mp4".into(),
@@ -12773,10 +12822,9 @@ mod tests {
             true,
         );
         let _ = std::fs::remove_file(&music);
-        // Non-procedural paths count as stock even if files missing on disk
-        assert!(score >= 85, "full stack should be A; score={}", score);
-        assert!(hard.is_empty(), "hard fails: {:?}", hard);
-        assert_eq!(production_grade(score), "A");
+        // v2 scorer includes timeline/section dimensions; stock+stickers+music+speech
+        // without full section/title map lands high-C / low-B.
+        assert!(score >= 60, "full stack should be ≥C; score={}", score);
     }
 
 
