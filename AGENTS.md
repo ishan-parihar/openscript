@@ -395,7 +395,7 @@ whatever blocked the push. No new work until the push succeeds.
 
 ```
 [ ] 1. cargo build --workspace --exclude openscript-tauri  →  zero warnings
-[ ] 2. cargo test --workspace --exclude openscript-tauri --lib --bins --tests  →  216+ pass
+[ ] 2. cargo test --workspace --exclude openscript-tauri --lib --bins --tests  →  242+ pass
 [ ] 3. (if frontend changed) npx tsc --noEmit  →  clean
 [ ] 4. git add -A && git commit -m "<Phase>: <summary>"
 [ ] 5. git push origin main  →  prints "main -> main"

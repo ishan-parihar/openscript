@@ -3,7 +3,7 @@
 #
 # Enforces the Definition of Done from AGENTS.md §7:
 #   1. cargo build — zero warnings
-#   2. cargo test — all pass, count >= baseline (216)
+#   2. cargo test — all pass, count >= baseline (242)
 #   3. npx tsc --noEmit — clean (if frontend exists)
 #   4. git status — no uncommitted changes
 #   5. git push origin main — succeeds
