@@ -501,28 +501,27 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         if is_gif {
             // Animated GIF: reliable loop + contain (letterbox) mode.
             //
-            // (Round-15: replaced fragile boomerang split+reverse+concat+loop
-            // with simple loop filter. Boomerang caused blank screens / single
-            // frames on short GIFs because `reverse` buffers ALL frames before
-            // outputting ANY — if the GIF has 2-3 frames, the reverse output
-            // is nearly empty, and the subsequent concat+loop produces nothing.
-            // The `loop` filter + `eof_action=repeat` on overlay is rock-solid
-            // for all frame counts.)
+            // FFmpeg n6+/n8: `loop` requires a positive `size` (frames to buffer).
+            // `size=0` logs "Number of frames to loop is not set!" and can leave
+            // the stream unconfigured, which then breaks `pad` with
+            // "Padded dimensions cannot be smaller than input dimensions."
+            // Use a large size so short GIFs fully loop; overlay eof_action=repeat
+            // holds the last frame if the loop window ends early.
             //
-            // - loop=loop=-1:size=0: infinite loop (all frames)
-            // - scale+pad: contain/letterbox (full GIF visible, centered)
-            // - fps: match output framerate for smooth playback
-            // - setpts=PTS-STARTPTS: reset timestamps
-            // - eof_action=repeat on overlay: hold last frame if GIF runs out
+            // scale uses even-pixel floor so pad target is always >= scaled input.
+            let sw = sticker_w.max(2) & !1; // even
+            let sh = sticker_h.max(2) & !1;
             filters.push(format!(
-                "[{}:v]loop=loop=-1:size=0,scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
-                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+                "[{}:v]loop=loop=-1:size=32767:start=0,fps={},scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS[st{}]",
+                input_idx, spec.fps, sw, sh, sw, sh, idx
             ));
         } else {
             // Regular image or video: contain mode (full content visible)
+            let sw = sticker_w.max(2) & !1;
+            let sh = sticker_h.max(2) & !1;
             filters.push(format!(
-                "[{}:v]scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:-1:-1:color=0x00000000,fps={},setpts=PTS-STARTPTS[st{}]",
-                input_idx, sticker_w, sticker_h, sticker_w, sticker_h, spec.fps, idx
+                "[{}:v]fps={},scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS[st{}]",
+                input_idx, spec.fps, sw, sh, sw, sh, idx
             ));
         }
 
