@@ -1,6 +1,6 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (80 tools)
+## Tool Taxonomy (82 tools)
 
 > **Always start a new environment with `system.capabilities`.** It reports
 > ffmpeg, Kokoro (real ONNX + voices.bin), Parakeet, Pexels/GIPHY/Pixabay keys,
@@ -8,6 +8,10 @@
 > (`llm.local` Ollama Qwen3.5-4B GGUF + `llm.openrouter` free multimodal).
 > Do not assume TTS works until `kokoro.available` is true and `model_path`
 > exists on disk.
+>
+> **User config lives at `~/.openscript/config.json`** (mode 0600). Manage it with
+> `system.config.get` / `system.config.set`. Env vars still override. Never put
+> API keys in the git repo.
 
 ### 1. SCRIPT CREATION (5 tools)
 Create a video from scratch — define scenes, speakers, backgrounds.
@@ -106,9 +110,11 @@ Local GGUF + OpenRouter free multimodal cascade for director reasoning and clip 
 | `vision.score_clip` | Score stock-clip relevance vs scene dialogue + `video_keywords` (0–1 + match/reason) |
 
 **Setup**
-- Local: `ollama serve` + `ollama run qwen3.5-4b` (or `bash scripts/import_local_gguf.sh` after downloading the Unsloth GGUF)
-- Vision free fallbacks: set `OPENROUTER_API_KEY`
-- Override models: `OPENSCRIPT_LOCAL_MODEL`, `OPENSCRIPT_OPENROUTER_VISION_MODEL`, `OPENSCRIPT_OPENROUTER_VISION_FALLBACK`, `OPENSCRIPT_GGUF_PATH`
+- Write config: `bash scripts/setup_openscript_config.sh` (creates `~/.openscript/config.json`)
+- Local: `ollama serve` + `bash scripts/import_local_gguf.sh` (Unsloth Qwen3.5-4B GGUF)
+- Vision free fallbacks: `api_keys.openrouter` in config or `OPENROUTER_API_KEY`
+- Inspect: `system.config.get` / `system.capabilities` → `openscript_config` + `llm`
+- Force backend: `llm.complete` with `backend: "local"` or `"openrouter"`
 
 #### Production KPI baseline v2 (`verify.production` + `render_manifest.json`)
 

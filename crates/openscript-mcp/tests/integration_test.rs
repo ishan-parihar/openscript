@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 80 tools: prior 77 + llm.complete + vision.analyze_clip + vision.score_clip
+    // 82 tools: prior 80 + system.config.get + system.config.set
     assert_eq!(
         tools.len(),
-        80,
-        "Expected 80 MCP tools, got {}",
+        82,
+        "Expected 82 MCP tools, got {}",
         tools.len()
     );
 
@@ -192,6 +192,8 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"llm.complete"));
     assert!(tool_names.contains(&"vision.analyze_clip"));
     assert!(tool_names.contains(&"vision.score_clip"));
+    assert!(tool_names.contains(&"system.config.get"));
+    assert!(tool_names.contains(&"system.config.set"));
 
     // Original tools (8)
     assert!(tool_names.contains(&"transcribe"));

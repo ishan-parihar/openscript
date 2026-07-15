@@ -1,16 +1,17 @@
 //! Multi-backend LLM / vision inference for OpenScript directors.
 //!
-//! Cascade (first success wins):
-//!   1. **Local** — Ollama OpenAI-compatible API (`qwen3.5-4b` / GGUF at
-//!      `~/Downloads/Qwen3.5-4B-Q4_K_M.gguf` via `OPENSCRIPT_GGUF_PATH`)
-//!   2. **OpenRouter free multimodal** —
-//!      `google/gemma-4-31b-it:free` then
-//!      `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`
+//! Config: `~/.openscript/config.json` (see `crate::config`) + env overrides.
 //!
-//! Vision: extract mid-frame JPEG with ffmpeg, send as base64 `image_url` to
-//! backends that support multimodal. Local Qwen3.5-4B text model can still
-//! score relevance from scene text + search query when vision is unavailable.
+//! **Text cascade** (first success wins):
+//!   1. Local Ollama (`llm.local_model`, default `qwen3.5-4b` / GGUF)
+//!   2. OpenRouter free models (`llm.openrouter_models`)
+//!
+//! **Vision cascade** (when an image is attached):
+//!   1. OpenRouter free multimodal (if key set and `prefer_openrouter_vision`)
+//!   2. Local Ollama with image only if `llm.local_vision` / `OPENSCRIPT_LOCAL_VISION`
+//!   3. Local text-only fallback (scene keywords only)
 
+use crate::config;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -48,68 +49,27 @@ pub struct LlmCascade {
 impl Default for LlmCascade {
     fn default() -> Self {
         Self {
-            local_model: std::env::var("OPENSCRIPT_LOCAL_MODEL")
-                .unwrap_or_else(|_| "qwen3.5-4b".to_string()),
-            local_base_url: std::env::var("OPENSCRIPT_LLM_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:11434/v1".to_string()),
-            openrouter_models: vec![
-                std::env::var("OPENSCRIPT_OPENROUTER_VISION_MODEL")
-                    .unwrap_or_else(|_| "google/gemma-4-31b-it:free".to_string()),
-                std::env::var("OPENSCRIPT_OPENROUTER_VISION_FALLBACK")
-                    .unwrap_or_else(|_| {
-                        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free".to_string()
-                    }),
-            ],
-            openrouter_base_url: std::env::var("OPENROUTER_BASE_URL")
-                .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string()),
-            gguf_path: resolve_gguf_path(),
-            mmproj_path: resolve_mmproj_path(),
+            local_model: config::resolve_local_model(),
+            local_base_url: config::resolve_local_base_url(),
+            openrouter_models: config::resolve_openrouter_models(),
+            openrouter_base_url: config::resolve_openrouter_base_url(),
+            gguf_path: config::resolve_gguf_path(),
+            mmproj_path: config::resolve_mmproj_path(),
         }
     }
 }
 
-fn home_dir() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
-}
-
-/// Resolve local GGUF: env → ~/Downloads → mcp/models
+/// Resolve local GGUF: env → ~/.openscript/config → Downloads → mcp/models
 pub fn resolve_gguf_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("OPENSCRIPT_GGUF_PATH") {
-        let pb = PathBuf::from(&p);
-        if pb.exists() {
-            return Some(pb);
-        }
-    }
-    let candidates = [
-        home_dir().join("Downloads/Qwen3.5-4B-Q4_K_M.gguf"),
-        home_dir().join("Downloads/Qwen3.5-4B-Q4_K_S.gguf"),
-        PathBuf::from("mcp/models/Qwen3.5-4B-Q4_K_M.gguf"),
-        PathBuf::from("mcp/assets/models/Qwen3.5-4B-Q4_K_M.gguf"),
-    ];
-    candidates.into_iter().find(|p| p.exists())
+    config::resolve_gguf_path()
 }
 
 pub fn resolve_mmproj_path() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("OPENSCRIPT_MMPROJ_PATH") {
-        let pb = PathBuf::from(&p);
-        if pb.exists() {
-            return Some(pb);
-        }
-    }
-    let candidates = [
-        home_dir().join("Downloads/mmproj-F16.gguf"),
-        home_dir().join("Downloads/mmproj-BF16.gguf"),
-        PathBuf::from("mcp/models/mmproj-F16.gguf"),
-    ];
-    candidates.into_iter().find(|p| p.exists())
+    config::resolve_mmproj_path()
 }
 
 fn openrouter_key() -> String {
-    std::env::var("OPENROUTER_API_KEY")
-        .or_else(|_| std::env::var("OPENROUTER_KEY"))
-        .unwrap_or_default()
+    config::resolve_api_key("openrouter")
 }
 
 /// Probe which backends are usable.
@@ -117,7 +77,9 @@ pub async fn probe_llm_capabilities() -> Value {
     let cascade = LlmCascade::default();
     let local_ok = probe_openai_compatible(&cascade.local_base_url, None).await;
     let or_key = !openrouter_key().is_empty();
+    let cfg_view = config::config_public_view();
     json!({
+        "config_file": cfg_view.get("config_file").cloned().unwrap_or(Value::Null),
         "local": {
             "available": local_ok,
             "base_url": cascade.local_base_url,
@@ -126,13 +88,13 @@ pub async fn probe_llm_capabilities() -> Value {
             "gguf_present": cascade.gguf_path.is_some(),
             "mmproj_path": cascade.mmproj_path.as_ref().map(|p| p.display().to_string()),
             "mmproj_present": cascade.mmproj_path.is_some(),
+            "local_vision": config::resolve_local_vision(),
             "reason": if local_ok {
                 Value::Null
             } else {
                 Value::String(
-                    "Ollama not reachable at OPENSCRIPT_LLM_URL (default http://127.0.0.1:11434/v1). \
-                     Start: ollama serve && ollama run qwen3.5-4b. \
-                     GGUF: ~/Downloads/Qwen3.5-4B-Q4_K_M.gguf — import with scripts/import_local_gguf.sh"
+                    "Ollama not reachable. Start: ollama serve && bash scripts/import_local_gguf.sh. \
+                     Configure model in ~/.openscript/config.json (llm.local_model / llm.gguf_path)."
                         .into(),
                 )
             },
@@ -141,16 +103,26 @@ pub async fn probe_llm_capabilities() -> Value {
             "available": or_key,
             "models": cascade.openrouter_models,
             "base_url": cascade.openrouter_base_url,
+            "prefer_for_vision": config::resolve_prefer_openrouter_vision(),
             "reason": if or_key {
                 Value::Null
             } else {
-                Value::String("OPENROUTER_API_KEY not set — free multimodal fallbacks disabled".into())
+                Value::String(
+                    "OpenRouter key not set. Add api_keys.openrouter in ~/.openscript/config.json \
+                     or set OPENROUTER_API_KEY — free multimodal fallbacks disabled."
+                        .into(),
+                )
             },
         },
-        "cascade": [
+        "cascade_text": [
             format!("local:{}", cascade.local_model),
             format!("openrouter:{}", cascade.openrouter_models.first().cloned().unwrap_or_default()),
             format!("openrouter:{}", cascade.openrouter_models.get(1).cloned().unwrap_or_default()),
+        ],
+        "cascade_vision": [
+            "openrouter (if key + prefer_openrouter_vision)",
+            "local vision (if llm.local_vision)",
+            "local text fallback",
         ],
     })
 }
@@ -197,72 +169,53 @@ fn strip_think_tags(s: &str) -> String {
     out.trim().to_string()
 }
 
-/// Chat completion with cascade. `image_b64` enables multimodal when provided.
+/// Chat completion with cascade.
+///
+/// `backend_force`: `"auto"` (default), `"local"`, or `"openrouter"`.
+/// `image_b64_jpeg`: when set, prefers OpenRouter multimodal (see config).
 pub async fn chat_complete(
     system: &str,
     user: &str,
     image_b64_jpeg: Option<&str>,
 ) -> Result<ChatResult, LlmError> {
+    chat_complete_with_backend(system, user, image_b64_jpeg, "auto").await
+}
+
+pub async fn chat_complete_with_backend(
+    system: &str,
+    user: &str,
+    image_b64_jpeg: Option<&str>,
+    backend_force: &str,
+) -> Result<ChatResult, LlmError> {
     let cascade = LlmCascade::default();
     let mut errors: Vec<String> = Vec::new();
-
-    // 1) Local Ollama (text always; vision only if image + mmproj-capable model)
-    if probe_openai_compatible(&cascade.local_base_url, None).await {
-        // Prefer text-only for local Qwen unless OPENSCRIPT_LOCAL_VISION=1
-        let use_image = image_b64_jpeg.is_some()
-            && std::env::var("OPENSCRIPT_LOCAL_VISION")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false);
-        match openai_chat(
-            &cascade.local_base_url,
-            &cascade.local_model,
-            None,
-            system,
-            user,
-            if use_image { image_b64_jpeg } else { None },
-        )
-        .await
-        {
-            Ok(text) => {
-                return Ok(ChatResult {
-                    text: strip_think_tags(&text),
-                    backend: "local_ollama".into(),
-                    model: cascade.local_model.clone(),
-                });
-            }
-            Err(e) => errors.push(format!("local:{}", e)),
-        }
-        // If vision was requested but local failed with image, retry text-only
-        if use_image {
-            if let Ok(text) = openai_chat(
-                &cascade.local_base_url,
-                &cascade.local_model,
-                None,
-                system,
-                user,
-                None,
-            )
-            .await
-            {
-                return Ok(ChatResult {
-                    text: strip_think_tags(&text),
-                    backend: "local_ollama_text".into(),
-                    model: cascade.local_model.clone(),
-                });
-            }
-        }
-    } else {
-        errors.push("local:ollama unreachable".into());
-    }
-
-    // 2) OpenRouter free multimodal cascade
+    let force = backend_force.trim().to_ascii_lowercase();
+    let has_image = image_b64_jpeg.is_some();
+    let prefer_or_vision = has_image && config::resolve_prefer_openrouter_vision();
     let key = openrouter_key();
-    if !key.is_empty() {
+    let local_up = probe_openai_compatible(&cascade.local_base_url, None).await;
+    let local_vision = config::resolve_local_vision();
+
+    // --- helpers as local async blocks via nested calls ---
+    async fn run_openrouter(
+        cascade: &LlmCascade,
+        key: &str,
+        system: &str,
+        user: &str,
+        image_b64_jpeg: Option<&str>,
+        errors: &mut Vec<String>,
+    ) -> Option<ChatResult> {
+        if key.is_empty() {
+            errors.push(
+                "openrouter: no key (set api_keys.openrouter in ~/.openscript/config.json)".into(),
+            );
+            return None;
+        }
         for model in &cascade.openrouter_models {
             match openai_chat(
                 &cascade.openrouter_base_url,
                 model,
-                Some(&key),
+                Some(key),
                 system,
                 user,
                 image_b64_jpeg,
@@ -270,7 +223,7 @@ pub async fn chat_complete(
             .await
             {
                 Ok(text) => {
-                    return Ok(ChatResult {
+                    return Some(ChatResult {
                         text: strip_think_tags(&text),
                         backend: "openrouter".into(),
                         model: model.clone(),
@@ -279,8 +232,168 @@ pub async fn chat_complete(
                 Err(e) => errors.push(format!("openrouter/{}: {}", model, e)),
             }
         }
-    } else {
-        errors.push("openrouter: no OPENROUTER_API_KEY".into());
+        None
+    }
+
+    async fn run_local(
+        cascade: &LlmCascade,
+        local_up: bool,
+        system: &str,
+        user: &str,
+        image_b64_jpeg: Option<&str>,
+        with_image: bool,
+        has_image: bool,
+        errors: &mut Vec<String>,
+    ) -> Option<ChatResult> {
+        if !local_up {
+            errors.push("local:ollama unreachable".into());
+            return None;
+        }
+        let img = if with_image { image_b64_jpeg } else { None };
+        match openai_chat(
+            &cascade.local_base_url,
+            &cascade.local_model,
+            None,
+            system,
+            user,
+            img,
+        )
+        .await
+        {
+            Ok(text) => Some(ChatResult {
+                text: strip_think_tags(&text),
+                backend: if with_image {
+                    "local_ollama".into()
+                } else if has_image {
+                    "local_ollama_text".into()
+                } else {
+                    "local_ollama".into()
+                },
+                model: cascade.local_model.clone(),
+            }),
+            Err(e) => {
+                errors.push(format!("local:{}", e));
+                None
+            }
+        }
+    }
+
+    match force.as_str() {
+        "local" => {
+            if let Some(r) = run_local(
+                &cascade,
+                local_up,
+                system,
+                user,
+                image_b64_jpeg,
+                has_image && local_vision,
+                has_image,
+                &mut errors,
+            )
+            .await
+            {
+                return Ok(r);
+            }
+            if has_image {
+                if let Some(r) = run_local(
+                    &cascade,
+                    local_up,
+                    system,
+                    user,
+                    image_b64_jpeg,
+                    false,
+                    has_image,
+                    &mut errors,
+                )
+                .await
+                {
+                    return Ok(r);
+                }
+            }
+        }
+        "openrouter" => {
+            if let Some(r) =
+                run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
+            {
+                return Ok(r);
+            }
+        }
+        _ => {
+            // auto: vision prefers OpenRouter; text prefers local
+            if prefer_or_vision {
+                if let Some(r) =
+                    run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
+                {
+                    return Ok(r);
+                }
+                if local_vision {
+                    if let Some(r) = run_local(
+                        &cascade,
+                        local_up,
+                        system,
+                        user,
+                        image_b64_jpeg,
+                        true,
+                        has_image,
+                        &mut errors,
+                    )
+                    .await
+                    {
+                        return Ok(r);
+                    }
+                }
+                if let Some(r) = run_local(
+                    &cascade,
+                    local_up,
+                    system,
+                    user,
+                    image_b64_jpeg,
+                    false,
+                    has_image,
+                    &mut errors,
+                )
+                .await
+                {
+                    return Ok(r);
+                }
+            } else {
+                if let Some(r) = run_local(
+                    &cascade,
+                    local_up,
+                    system,
+                    user,
+                    image_b64_jpeg,
+                    has_image && local_vision,
+                    has_image,
+                    &mut errors,
+                )
+                .await
+                {
+                    return Ok(r);
+                }
+                if let Some(r) =
+                    run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
+                {
+                    return Ok(r);
+                }
+                if has_image {
+                    if let Some(r) = run_local(
+                        &cascade,
+                        local_up,
+                        system,
+                        user,
+                        image_b64_jpeg,
+                        false,
+                        has_image,
+                        &mut errors,
+                    )
+                    .await
+                    {
+                        return Ok(r);
+                    }
+                }
+            }
+        }
     }
 
     Err(LlmError::NoBackend(errors.join(" | ")))

@@ -698,14 +698,37 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "llm.complete",
-            "description": "Run a text LLM completion through the director cascade: local Ollama (qwen3.5-4b / GGUF at OPENSCRIPT_GGUF_PATH or ~/Downloads/Qwen3.5-4B-Q4_K_M.gguf) → OpenRouter free models google/gemma-4-31b-it:free → nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free. Returns: text, backend, model.",
+            "description": "Run a text LLM completion through the director cascade configured in ~/.openscript/config.json: local Ollama (qwen3.5-4b / GGUF) → OpenRouter free models. Returns: text, backend, model.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string", "description": "User prompt"},
-                    "system": {"type": "string", "default": "You are a helpful video director assistant.", "description": "System prompt"}
+                    "system": {"type": "string", "default": "You are a helpful video director assistant.", "description": "System prompt"},
+                    "backend": {"type": "string", "default": "auto", "description": "Force backend: auto | local | openrouter"}
                 },
                 "required": ["prompt"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "system.config.get",
+            "description": "Return the effective OpenScript configuration (redacted secrets) from ~/.openscript/config.json with env overrides applied. Use to verify LLM models, GGUF path, and which API keys are set.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "system.config.set",
+            "description": "Merge keys into ~/.openscript/config.json (mode 0600). Supports nested paths via object: {api_keys:{openrouter:'…'}, llm:{local_model:'qwen3.5-4b'}}. Does not echo secrets back. Returns redacted config view.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "patch": {"type": "object", "description": "Partial config object to deep-merge into user config"}
+                },
+                "required": ["patch"],
                 "additionalProperties": false
             }
         },
@@ -1216,6 +1239,8 @@ pub fn route_tool(
         "llm.complete" => Box::pin(handle_llm_complete(args)),
         "vision.analyze_clip" => Box::pin(handle_vision_analyze_clip(args)),
         "vision.score_clip" => Box::pin(handle_vision_score_clip(args)),
+        "system.config.get" => Box::pin(handle_system_config_get(args)),
+        "system.config.set" => Box::pin(handle_system_config_set(args)),
         // HyperFrames tools
         "hf.lint" => Box::pin(async move {
             crate::hf::handle_hf_lint(args)
@@ -1372,47 +1397,18 @@ fn track_count(timeline: &Timeline, track_type: &TrackType) -> usize {
         .unwrap_or(0)
 }
 
-/// Read an API key from the config file first, then fall back to env var.
-/// The config file is at mcp/assets/.openscript_config.json and contains
-/// keys in snake_case (e.g. "pexels_api_key"). The env var is UPPER_SNAKE
-/// (e.g. "PEXELS_API_KEY"). This lets the system work out-of-the-box with
-/// bundled keys without requiring agents to set env vars.
-fn get_api_key(config_name: &str, env_name: &str) -> String {
-    // Resolve the config file path CWD-independently. Priority matches
-    // system.capabilities' repo_root resolution:
-    //   1. OPENSCRIPT_ROOT env var
-    //   2. CARGO_MANIFEST_DIR (compile-time, workspace-relative)
-    //   3. CWD (last resort — only works if run from repo root)
-    //
-    // The fresh-agent UX audit (round 2, GAP #7) found that system.capabilities
-    // reported PEXELS/GIPHY as unavailable even though the config file had
-    // valid keys — because get_api_key used a relative path that only worked
-    // when CWD was the repo root.
-    let config_path = {
-        let p = std::path::Path::new("mcp/assets/.openscript_config.json");
-        if p.exists() {
-            p.to_path_buf()
-        } else if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
-            std::path::PathBuf::from(root).join("mcp/assets/.openscript_config.json")
-        } else if let Some(d) = option_env!("CARGO_MANIFEST_DIR") {
-            std::path::Path::new(d)
-                .join("../../mcp/assets/.openscript_config.json")
-        } else {
-            p.to_path_buf()
-        }
+/// Read an API key via the unified config cascade:
+/// env → `~/.openscript/config.json` → legacy `mcp/assets/.openscript_config.json`.
+fn get_api_key(config_name: &str, _env_name: &str) -> String {
+    // Map legacy flat names + nested kinds onto config::resolve_api_key
+    let kind = match config_name {
+        "pexels_api_key" | "pexels" => "pexels",
+        "giphy_api_key" | "giphy" => "giphy",
+        "pixabay_api_key" | "pixabay" => "pixabay",
+        "openrouter_api_key" | "openrouter" | "openrouter_key" => "openrouter",
+        other => other,
     };
-
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        if let Ok(map) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&content) {
-            if let Some(val) = map.get(config_name).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    return val.to_string();
-                }
-            }
-        }
-    }
-    // Fall back to env var
-    std::env::var(env_name).unwrap_or_default()
+    crate::config::resolve_api_key(kind)
 }
 
 /// Convenience: get Pexels API key (config file or env var)
@@ -12423,7 +12419,8 @@ async fn handle_llm_complete(args: serde_json::Value) -> Result<serde_json::Valu
         "system",
         "You are a helpful short-form video director assistant.",
     );
-    let result = crate::llm::chat_complete(&system, prompt, None)
+    let backend = default_str(&args, "backend", "auto");
+    let result = crate::llm::chat_complete_with_backend(&system, prompt, None, &backend)
         .await
         .map_err(|e| ToolError::Asset(format!("LLM cascade failed: {}", e)))?;
     Ok(json!({
@@ -12431,6 +12428,135 @@ async fn handle_llm_complete(args: serde_json::Value) -> Result<serde_json::Valu
         "text": result.text,
         "backend": result.backend,
         "model": result.model,
+        "backend_requested": backend,
+    }))
+}
+
+/// Redacted view of ~/.openscript/config.json + env overrides.
+async fn handle_system_config_get(
+    _args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    // Ensure directory exists so agents always know where to write keys
+    let _ = crate::config::ensure_user_config(None);
+    crate::config::reload_config();
+    Ok(json!({
+        "status": "success",
+        "config": crate::config::config_public_view(),
+    }))
+}
+
+/// Deep-merge a patch into ~/.openscript/config.json.
+async fn handle_system_config_set(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let patch = args
+        .get("patch")
+        .cloned()
+        .ok_or_else(|| ToolError::MissingArg("patch".into()))?;
+    if !patch.is_object() {
+        return Err(ToolError::InvalidArg(
+            "patch must be a JSON object".into(),
+        ));
+    }
+    let _ = crate::config::ensure_user_config(None);
+    crate::config::reload_config();
+    let mut cfg = crate::config::config();
+
+    // api_keys
+    if let Some(keys) = patch.get("api_keys").and_then(|v| v.as_object()) {
+        if let Some(s) = keys.get("pexels").and_then(|v| v.as_str()) {
+            cfg.api_keys.pexels = s.to_string();
+        }
+        if let Some(s) = keys.get("giphy").and_then(|v| v.as_str()) {
+            cfg.api_keys.giphy = s.to_string();
+        }
+        if let Some(s) = keys.get("pixabay").and_then(|v| v.as_str()) {
+            cfg.api_keys.pixabay = s.to_string();
+        }
+        if let Some(s) = keys.get("openrouter").and_then(|v| v.as_str()) {
+            cfg.api_keys.openrouter = s.to_string();
+        }
+        // legacy aliases inside patch.api_keys
+        if let Some(s) = keys.get("openrouter_api_key").and_then(|v| v.as_str()) {
+            cfg.api_keys.openrouter = s.to_string();
+        }
+    }
+    // top-level legacy
+    if let Some(s) = patch.get("openrouter_api_key").and_then(|v| v.as_str()) {
+        cfg.api_keys.openrouter = s.to_string();
+    }
+    if let Some(s) = patch.get("pexels_api_key").and_then(|v| v.as_str()) {
+        cfg.api_keys.pexels = s.to_string();
+    }
+    if let Some(s) = patch.get("giphy_api_key").and_then(|v| v.as_str()) {
+        cfg.api_keys.giphy = s.to_string();
+    }
+    if let Some(s) = patch.get("pixabay_api_key").and_then(|v| v.as_str()) {
+        cfg.api_keys.pixabay = s.to_string();
+    }
+
+    // llm
+    if let Some(llm) = patch.get("llm").and_then(|v| v.as_object()) {
+        if let Some(s) = llm.get("local_model").and_then(|v| v.as_str()) {
+            cfg.llm.local_model = s.to_string();
+        }
+        if let Some(s) = llm.get("local_base_url").and_then(|v| v.as_str()) {
+            cfg.llm.local_base_url = s.to_string();
+        }
+        if let Some(s) = llm.get("gguf_path").and_then(|v| v.as_str()) {
+            cfg.llm.gguf_path = Some(s.to_string());
+        }
+        if let Some(s) = llm.get("mmproj_path").and_then(|v| v.as_str()) {
+            cfg.llm.mmproj_path = Some(s.to_string());
+        }
+        if let Some(b) = llm.get("local_vision").and_then(|v| v.as_bool()) {
+            cfg.llm.local_vision = b;
+        }
+        if let Some(b) = llm.get("prefer_openrouter_vision").and_then(|v| v.as_bool()) {
+            cfg.llm.prefer_openrouter_vision = b;
+        }
+        if let Some(s) = llm.get("openrouter_base_url").and_then(|v| v.as_str()) {
+            cfg.llm.openrouter_base_url = s.to_string();
+        }
+        if let Some(arr) = llm.get("openrouter_models").and_then(|v| v.as_array()) {
+            cfg.llm.openrouter_models = arr
+                .iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect();
+        }
+    }
+
+    // paths
+    if let Some(paths) = patch.get("paths").and_then(|v| v.as_object()) {
+        if let Some(s) = paths.get("sfx_path").and_then(|v| v.as_str()) {
+            cfg.paths.sfx_path = Some(s.to_string());
+        }
+        if let Some(s) = paths.get("music_path").and_then(|v| v.as_str()) {
+            cfg.paths.music_path = Some(s.to_string());
+        }
+        if let Some(s) = paths.get("tts_url").and_then(|v| v.as_str()) {
+            cfg.paths.tts_url = Some(s.to_string());
+        }
+        if let Some(s) = paths.get("workspace_root").and_then(|v| v.as_str()) {
+            cfg.paths.workspace_root = Some(s.to_string());
+        }
+    }
+
+    // render
+    if let Some(render) = patch.get("render").and_then(|v| v.as_object()) {
+        if let Some(s) = render.get("default_aspect").and_then(|v| v.as_str()) {
+            cfg.render.default_aspect = s.to_string();
+        }
+        if let Some(n) = render.get("normalize_lufs").and_then(|v| v.as_f64()) {
+            cfg.render.normalize_lufs = n;
+        }
+    }
+
+    let path = crate::config::write_user_config(&cfg)
+        .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+    Ok(json!({
+        "status": "success",
+        "written": path.display().to_string(),
+        "config": crate::config::config_public_view(),
     }))
 }
 
@@ -12813,6 +12939,7 @@ async fn handle_system_capabilities(
 
     // LLM / vision cascade: local Ollama Qwen3.5-4B GGUF + OpenRouter free multimodal
     let llm = crate::llm::probe_llm_capabilities().await;
+    let openscript_config = crate::config::config_public_view();
 
     Ok(json!({
         "status": "success",
@@ -12832,6 +12959,7 @@ async fn handle_system_capabilities(
         "svg_presets": svg_presets,
         "hyperframes": hyperframes,
         "llm": llm,
+        "openscript_config": openscript_config,
     }))
 }
 
