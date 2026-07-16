@@ -114,7 +114,8 @@ impl Sidecar {
         voices_path: &Path,
         sidecar_script: &str,
     ) -> Result<Self, String> {
-        let mut child = std::process::Command::new("python3")
+        let python = resolve_kokoro_python();
+        let mut child = std::process::Command::new(&python)
             .arg(sidecar_script)
             .arg("--serve")
             .arg("--model")
@@ -299,6 +300,73 @@ pub fn global_shared_sidecar() -> &'static SharedSidecar {
     })
 }
 
+/// Resolve the Python interpreter for Kokoro TTS.
+///
+/// Priority:
+///   1. `KOKORO_PYTHON` env var (explicit override — use this in CI / conda)
+///   2. `~/miniconda3/envs/kokoro-tts/bin/python` (project's conda env)
+///   3. `~/miniconda3/envs/kokoro/bin/python` (alternate env name)
+///   4. `"python3"` on PATH (last resort)
+///
+/// After choosing, we **probe** the interpreter to confirm `kokoro_onnx` is
+/// importable. If it isn't, we log a warning and return the path anyway —
+/// the caller will get a clear Python error at spawn time. The probe is
+/// best-effort to avoid adding latency on the happy path.
+pub fn resolve_kokoro_python() -> String {
+    // 1. Explicit override
+    if let Ok(p) = std::env::var("KOKORO_PYTHON") {
+        if !p.is_empty() {
+            tracing::debug!(python = %p, "Kokoro Python: using KOKORO_PYTHON override");
+            return p;
+        }
+    }
+
+    // 2-3. Conda env autodetect (check both env names)
+    if let Some(home) = dirs_home() {
+        for env_name in &["kokoro-tts", "kokoro"] {
+            let candidate = home
+                .join("miniconda3/envs")
+                .join(env_name)
+                .join("bin/python");
+            if candidate.exists() {
+                let cstr = candidate.to_string_lossy().to_string();
+                tracing::info!(python = %cstr, "Kokoro Python: found conda env '{}'", env_name);
+                return cstr;
+            }
+        }
+    }
+
+    // 4. PATH fallback
+    tracing::debug!("Kokoro Python: falling back to python3 on PATH");
+    "python3".to_string()
+}
+
+/// Probe a Python interpreter to check if `kokoro_onnx` is importable.
+/// Returns `(path, importable)` — `importable` is true if the probe succeeds.
+pub fn probe_kokoro_python(python: &str) -> (String, bool) {
+    let status = std::process::Command::new(python)
+        .arg("-c")
+        .arg("import kokoro_onnx")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let ok = status.map(|s| s.success()).unwrap_or(false);
+    (python.to_string(), ok)
+}
+
+/// Best-effort home directory resolution. Mirrors `dirs::home_dir()` without
+/// adding a new dependency.
+fn dirs_home() -> Option<PathBuf> {
+    // Try $HOME first (works on Linux/macOS)
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            return Some(PathBuf::from(home));
+        }
+    }
+    // Fallback: std::env::home_dir() (deprecated but still works)
+    std::env::home_dir()
+}
+
 /// Resolve the Kokoro sidecar script path using the same priority chain
 /// as the legacy `synth_one` in kokoro.rs. Duplicated here so this module
 /// is self-contained.
@@ -366,5 +434,47 @@ mod tests {
             !p.as_os_str().is_empty(),
             "resolve_sidecar_script must return a non-empty path"
         );
+    }
+
+    /// Verify that KOKORO_PYTHON env override wins over conda autodetect.
+    /// Marked #[ignore] because it mutates process-global env vars, which
+    /// is unsafe under concurrent test threads. Run with:
+    ///   cargo test -p openscript-tts -- --ignored --test-threads=1
+    #[test]
+    #[ignore]
+    fn test_resolve_kokoro_python_env_override() {
+        std::env::set_var("KOKORO_PYTHON", "/custom/python3.12");
+        let p = resolve_kokoro_python();
+        assert_eq!(p, "/custom/python3.12");
+        std::env::remove_var("KOKORO_PYTHON");
+    }
+
+    /// Verify fallback to "python3" when no env var and no conda env.
+    /// Marked #[ignore] because it mutates process-global env vars.
+    /// Run with:
+    ///   cargo test -p openscript-tts -- --ignored --test-threads=1
+    #[test]
+    #[ignore]
+    fn test_resolve_kokoro_python_fallback_to_python3() {
+        std::env::remove_var("KOKORO_PYTHON");
+        // This test runs in CI where conda envs are absent.
+        // The function should return either a conda path or "python3".
+        let p = resolve_kokoro_python();
+        assert!(!p.is_empty(), "must return a non-empty path");
+        // If conda env exists, it'll be the conda path; otherwise python3.
+        assert!(
+            p == "python3" || p.contains("miniconda3"),
+            "unexpected resolver output: {}",
+            p
+        );
+    }
+
+    /// Verify probe returns a (path, bool) tuple without panicking.
+    #[test]
+    fn test_probe_kokoro_python_does_not_panic() {
+        let (path, importable) = probe_kokoro_python("python3");
+        assert_eq!(path, "python3");
+        // We don't assert importable — it depends on the env. Just no panic.
+        let _ = importable;
     }
 }

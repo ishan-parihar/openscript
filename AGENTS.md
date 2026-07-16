@@ -445,7 +445,7 @@ OpenScript must work on any developer's machine, not just the original
 author's. **Never hardcode a home directory.** Path resolution priority:
 
 1. **Explicit env var** (e.g. `OPENSCRIPT_SFX_PATH`, `OPENSCRIPT_APEX_WRAPPER`,
-   `KOKORO_SIDECAR`, `PEXELS_API_KEY`)
+   `KOKORO_SIDECAR`, `KOKORO_PYTHON`, `PEXELS_API_KEY`)
 2. **`CARGO_MANIFEST_DIR`** (compile-time workspace path; works in dev)
 3. **`OPENSCRIPT_ROOT`** (deployment override)
 4. **`$HOME/Videos/Assets`** (XDG-ish default for media libraries)
@@ -453,7 +453,7 @@ author's. **Never hardcode a home directory.** Path resolution priority:
 
 This is implemented in:
 - `crates/openscript-tauri/src/state/app_state.rs::AppState::new()` (assets base)
-- `crates/openscript-tts/src/kokoro.rs::synth_one()` (Kokoro sidecar)
+- `crates/openscript-tts/src/kokoro_sidecar::resolve_kokoro_python()` (Kokoro Python interpreter)
 - `crates/openscript-transcribe/src/transcriber.rs::find_apex_script()` (Apex wrapper)
 
 If you add a new path resolution site, follow the same priority chain and add

@@ -134,6 +134,11 @@ if command -v pip3 >/dev/null 2>&1; then
     ok "kokoro-onnx importable ($(python3 -c 'import kokoro_onnx,inspect; print(getattr(kokoro_onnx,\"__file__\",\"ok\"))' 2>/dev/null || echo ok))"
   else
     warn "kokoro-onnx still not importable — script.to_video TTS will fail until fixed"
+    # Check if the user has a conda env with kokoro_onnx installed
+    if [ -f "$HOME/miniconda3/envs/kokoro-tts/bin/python" ]; then
+      info "Detected conda env at ~/miniconda3/envs/kokoro-tts — it may have kokoro_onnx."
+      info "Set KOKORO_PYTHON=$HOME/miniconda3/envs/kokoro-tts/bin/python in your shell profile."
+    fi
   fi
   ok "Python deps step finished"
 else

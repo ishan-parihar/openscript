@@ -24,6 +24,7 @@
 //! is not inserted — the Kokoro model already produces natural inter-sentence
 //! pauses.
 
+use crate::kokoro_sidecar::resolve_kokoro_python;
 use crate::profiles::VoiceProfile;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -188,7 +189,8 @@ impl KokoroEngine {
         // Spawns a new Python process for this one chunk. Pays the full
         // ~360ms cold-start. Used when the long-lived sidecar is unavailable.
         if !sidecar_ok {
-            let output = std::process::Command::new("python3")
+            let python = resolve_kokoro_python();
+            let output = std::process::Command::new(&python)
                 .arg(&sidecar_script)
                 .arg("--text")
                 .arg(text)

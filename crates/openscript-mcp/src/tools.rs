@@ -13352,7 +13352,31 @@ async fn handle_system_capabilities(
     let kokoro_model_ok = path_exists(&kokoro_model);
     let kokoro_voices_ok = path_exists(&kokoro_voices_bin);
     let kokoro_sidecar_ok = path_exists(&kokoro_sidecar);
-    let kokoro_available = kokoro_model_ok && kokoro_voices_ok && kokoro_sidecar_ok;
+    // Probe the resolved Python interpreter for kokoro_onnx importability.
+    // This catches the common case: assets are on disk but the Python env
+    // doesn't have kokoro_onnx installed (conda env mismatch, PEP-668, etc).
+    let kokoro_python = std::env::var("KOKORO_PYTHON").unwrap_or_else(|_| {
+        // Mirror the priority from kokoro_sidecar::resolve_kokoro_python()
+        // inline to avoid importing the whole module in doctor context.
+        if let Some(home) = std::env::var("HOME").ok().filter(|h| !h.is_empty()).map(std::path::PathBuf::from) {
+            for env_name in &["kokoro-tts", "kokoro"] {
+                let candidate = home.join("miniconda3/envs").join(env_name).join("bin/python");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+        "python3".to_string()
+    });
+    let kokoro_python_ok = std::process::Command::new(&kokoro_python)
+        .arg("-c")
+        .arg("import kokoro_onnx")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let kokoro_available = kokoro_model_ok && kokoro_voices_ok && kokoro_sidecar_ok && kokoro_python_ok;
     let kokoro_reason = if kokoro_available {
         serde_json::Value::Null
     } else {
@@ -13366,8 +13390,14 @@ async fn handle_system_capabilities(
         if !kokoro_sidecar_ok {
             missing.push(format!("sidecar ({})", kokoro_sidecar));
         }
+        if !kokoro_python_ok {
+            missing.push(format!(
+                "Python module 'kokoro_onnx' not importable via {} — set KOKORO_PYTHON to a Python with kokoro_onnx installed",
+                kokoro_python
+            ));
+        }
         format!(
-            "Kokoro incomplete — missing: {}. Run: bash setup.sh (downloads model+voices, installs kokoro-onnx). Or set KOKORO_MODEL / KOKORO_VOICES / KOKORO_SIDECAR.",
+            "Kokoro incomplete — missing: {}. Run: bash setup.sh (downloads model+voices, installs kokoro-onnx). Or set KOKORO_PYTHON.",
             missing.join(", ")
         )
         .into()
@@ -13379,6 +13409,8 @@ async fn handle_system_capabilities(
         "voices_path": kokoro_voices_bin,
         "profiles_path": kokoro_profiles,
         "profiles_available": path_exists(&kokoro_profiles),
+        "python_path": kokoro_python,
+        "python_module_ok": kokoro_python_ok,
         "reason": kokoro_reason,
     });
 
