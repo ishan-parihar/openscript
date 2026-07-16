@@ -184,6 +184,58 @@ else
 fi
 
 # ----------------------------------------------------------------------------
+# Step 3b: Download Parakeet TDT ONNX models (for caption alignment)
+# Parakeet TDT 0.6b v3 — accurate word-level timestamps for captions.
+# Without these, script.build_captions falls back to even-spacing estimation.
+# Total download: ~320MB (encoder ~310MB int8 + decoder ~5MB + vocab <1KB).
+# Skipped if models already present. Source: huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx
+# ----------------------------------------------------------------------------
+PARAKEET_DIR="mcp/assets/parakeet"
+PARAKEET_BASE_URL="https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main"
+PARAKEET_ENCODER="$PARAKEET_DIR/encoder-model.int8.onnx"
+PARAKEET_DECODER="$PARAKEET_DIR/decoder_joint-model.int8.onnx"
+PARAKEET_VOCAB="$PARAKEET_DIR/vocab.txt"
+
+mkdir -p "$PARAKEET_DIR"
+
+if [ "$SKIP_MODELS" = "1" ]; then
+  warn "Skipping Parakeet model downloads (--skip-models)"
+else
+  if [ -f "$PARAKEET_ENCODER" ] && [ -f "$PARAKEET_DECODER" ] && [ -f "$PARAKEET_VOCAB" ]; then
+    ok "Parakeet TDT models already present ($(du -sh "$PARAKEET_DIR" | cut -f1))"
+  else
+    info "Downloading Parakeet TDT ONNX models (~320MB)..."
+    curl -L --fail --progress-bar -o "$PARAKEET_ENCODER" "$PARAKEET_BASE_URL/encoder-model.int8.onnx" \
+      || fail "Download failed: encoder-model.int8.onnx"
+    curl -L --fail --progress-bar -o "$PARAKEET_DECODER" "$PARAKEET_BASE_URL/decoder_joint-model.int8.onnx" \
+      || fail "Download failed: decoder_joint-model.int8.onnx"
+    curl -L --fail --progress-bar -o "$PARAKEET_VOCAB" "$PARAKEET_BASE_URL/vocab.txt" \
+      || fail "Download failed: vocab.txt"
+    ok "Parakeet TDT models downloaded"
+  fi
+fi
+
+# Also ensure onnxruntime is installed (needed by parakeet_align.py)
+if python3 -c "import onnxruntime" 2>/dev/null; then
+  ok "onnxruntime already installed"
+elif python3 -c "import onnxruntime" 2>/dev/null; then
+  ok "onnxruntime already installed (conda)"
+else
+  info "Installing onnxruntime for Parakeet alignment..."
+  pip3 install --user onnxruntime 2>&1 | tail -3 \
+    || warn "onnxruntime install failed — Parakeet alignment will be unavailable"
+fi
+
+# Also ensure librosa is installed (needed by parakeet_align.py)
+if python3 -c "import librosa" 2>/dev/null; then
+  ok "librosa already installed"
+else
+  info "Installing librosa for Parakeet alignment..."
+  pip3 install --user librosa 2>&1 | tail -3 \
+    || warn "librosa install failed — Parakeet alignment will be unavailable"
+fi
+
+# ----------------------------------------------------------------------------
 # Step 4: Build the Rust workspace
 # ----------------------------------------------------------------------------
 step "4/8 — Building Rust workspace"

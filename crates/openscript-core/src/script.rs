@@ -867,6 +867,17 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
         spec.video_keywords = extract_topic_keywords(&spec.title);
     }
 
+    // Auto-upgrade background type: if the caller set type="static" but
+    // provided video_keywords, silently upgrade to "gameplay" so stock
+    // backgrounds are fetched instead of procedural gradients. The caller
+    // likely wrote "static" by mistake — type="static" is an explicit opt-out
+    // of stock footage, which contradicts providing video search keywords.
+    // (Director v5 trial: cold-agent wrote type="static", bypassing all
+    // Pexels fetches, producing 0/12 video_source_quality.)
+    if spec.background.r#type == "static" && !spec.video_keywords.is_empty() {
+        spec.background.r#type = "gameplay".to_string();
+    }
+
     // Apply theme preset.
     apply_theme(&mut spec);
 

@@ -9457,10 +9457,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .ok();
 
     // Step 1: Build the timeline
+    // ponytail: skip_background=true for timeline handler — this function does
+    // its own per-scene multi-broll fetch below. The timeline handler only
+    // fetched ONE clip for the whole video (inconsistent with multi-scene).
     let mut timeline_args = json!({
         "script": script_input,
         "output_dir": output_dir,
-        "skip_background": skip_background,
+        "skip_background": true,
         "skip_stickers": skip_stickers,
     });
     if let Some(ref path) = voiceover_manifest_path {
@@ -10577,7 +10580,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         &manifest,
         &bg_assignments,
         music_path.as_deref(),
-        spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
+        // ponytail: ducking defaults to true whenever music is present — auto-selected
+        // music should always duck under voiceover to avoid masking speech.
+        spec.music.as_ref().map(|m| m.ducking).unwrap_or(music_path.is_some()),
         &sticker_assignments,
         Some(captions_path),
         &spec.captions.style,
@@ -10604,13 +10609,18 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let sfx_hits = auto_select_sfx_hits(&scene_durations);
     let music_sel_sfx_count = sfx_hits.len();
 
+    // ponytail: compute ducking BEFORE moving music_path into the struct.
+    // Ducking defaults to true whenever music is present — auto-selected
+    // music should always duck under voiceover to avoid masking speech.
+    let should_duck = spec.music.as_ref().map(|m| m.ducking).unwrap_or(music_path.is_some());
+
     let render_spec = MultiLayerRenderSpec {
         backgrounds,
         voiceover_paths,
         stickers,
         music_path,
         music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(6.0) / 20.0),
-        ducking: spec.music.as_ref().map(|m| m.ducking).unwrap_or(false),
+        ducking: should_duck,
         ducking_depth_db: spec
             .music
             .as_ref()
