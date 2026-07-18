@@ -10599,14 +10599,182 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let preview_path = format!("{}/timeline_preview.txt", output_dir);
     std::fs::write(&preview_path, &timeline_preview)?;
 
+    // ponytail: Update timeline JSON tracks with broll/music/caption/SFX events.
+    // handle_script_to_timeline wrote sparse tracks (broll=1, music=0, captions=0, sfx=0).
+    // The per-scene multi-broll, music selection, and SFX auto-generation happened AFTER
+    // that, so the timeline JSON is stale. Reload, populate, and save so the KPI evaluation
+    // (which reads Timeline::load()) sees the correct event counts.
+    let sfx_hits = auto_select_sfx_hits(&scene_durations);
+    {
+        if let Ok(mut tl) = openscript_core::timeline::Timeline::load(&timeline_path) {
+            use openscript_core::types::TrackType;
+            use openscript_core::timeline::{EventKind, TimelineEvent};
+
+            // Clear sparse tracks from handle_script_to_timeline before repopulating.
+            // The sparse handler wrote broll=1 event covering the full video; we now have
+            // per-scene broll assignments, music, captions, and SFX. Clear each track to
+            // avoid duplicate/overlapping events.
+            for track_type in [TrackType::Broll, TrackType::Music, TrackType::Captions, TrackType::Sfx] {
+                if let Some(events) = tl.tracks.get_mut(&track_type) {
+                    events.clear();
+                }
+            }
+
+            // Broll track: one event per scene from bg_assignments.
+            // Use accumulated scene_durations for timing (not bg.start/end_ms which use the
+            // clip's raw duration and compound floating-point drift across scenes).
+            let mut cumulative_ms: i64 = 0;
+            for (i, bg) in bg_assignments.iter().enumerate() {
+                let scene_ms = (scene_durations[i] * 1000.0) as i64;
+                let start_ms = cumulative_ms;
+                let end_ms = start_ms + scene_ms;
+                cumulative_ms = end_ms;
+                tl.add_track_event(
+                    TrackType::Broll,
+                    TimelineEvent {
+                        id: format!("broll_{}", i + 1),
+                        asset_id: bg.path.clone(),
+                        start_ms,
+                        end_ms,
+                        offset_ms: 0,
+                        gain_db: 0.0,
+                        fade_in_ms: 0,
+                        fade_out_ms: 0,
+                        tags: vec![],
+                        provenance: None,
+                        kind: EventKind::Broll {
+                            concept: String::new(),
+                            source_provider: "multi_broll".into(),
+                            transition_style: "cut".into(),
+                            crop_mode: "center".into(),
+                            orientation: "portrait".into(),
+                            motion_intensity: "low".into(),
+                        },
+                    },
+                );
+            }
+
+            // Music track: single event spanning the full duration
+            if let Some(ref mp) = music_path {
+                tl.add_track_event(
+                    TrackType::Music,
+                    TimelineEvent {
+                        id: "music_bg".into(),
+                        asset_id: mp.clone(),
+                        start_ms: 0,
+                        end_ms: total_duration_ms,
+                        offset_ms: 0,
+                        gain_db: spec.music.as_ref().map(|m| m.gain_db).unwrap_or(6.0),
+                        fade_in_ms: 500,
+                        fade_out_ms: 1000,
+                        tags: music_sel_tags.clone(),
+                        provenance: None,
+                        kind: EventKind::Music {
+                            mood: spec.output.theme.clone(),
+                            energy: "low".into(),
+                            bpm: None,
+                            loopability: true,
+                            intro_friendly: true,
+                            cta_friendly: true,
+                            loudness_target_lufs: -14.0,
+                            loop_mode: "trim".into(),
+                            ducking_policy: if spec.music.as_ref().map(|m| m.ducking).unwrap_or(music_path.is_some()) { "auto".into() } else { "none".into() },
+                        },
+                    },
+                );
+            }
+
+            // Captions track: summary event if captions file exists
+            if !captions_path.is_empty() {
+                tl.add_track_event(
+                    TrackType::Captions,
+                    TimelineEvent {
+                        id: "captions_all".into(),
+                        asset_id: captions_path.to_string(),
+                        start_ms: 0,
+                        end_ms: total_duration_ms,
+                        offset_ms: 0,
+                        gain_db: 0.0,
+                        fade_in_ms: 0,
+                        fade_out_ms: 0,
+                        tags: vec![],
+                        provenance: None,
+                        kind: EventKind::Caption {
+                            text: String::new(),
+                            style: spec.captions.style.clone(),
+                            word_timings: vec![],
+                        },
+                    },
+                );
+            }
+
+            // SFX track: one event per auto-selected SFX hit
+            for (i, sfx) in sfx_hits.iter().enumerate() {
+                let start_ms = (sfx.start_s * 1000.0) as i64;
+                // SFX are short (<1s typically), assume 500ms duration for timeline display
+                let end_ms = start_ms + 500;
+                let gain_db = if sfx.volume > 0.0 {
+                    20.0 * sfx.volume.log10()
+                } else {
+                    -60.0
+                };
+                tl.add_track_event(
+                    TrackType::Sfx,
+                    TimelineEvent {
+                        id: format!("sfx_{}", i + 1),
+                        asset_id: sfx.path.clone(),
+                        start_ms,
+                        end_ms,
+                        offset_ms: 0,
+                        gain_db,
+                        fade_in_ms: 0,
+                        fade_out_ms: 50,
+                        tags: vec![],
+                        provenance: None,
+                        kind: EventKind::Sfx {
+                            editorial_role: "transition".into(),
+                            category: "whoosh".into(),
+                            subcategory: String::new(),
+                            duration_ms: 500,
+                            sample_rate: 44100,
+                            peak_db: 0.0,
+                            loudness_lufs: -14.0,
+                            recommended_gain_db: gain_db,
+                            recommended_use: "scene_transition".into(),
+                            safe_overlay: true,
+                        },
+                    },
+                );
+            }
+
+            // Register broll assets for unique-visual-asset count
+            for (i, bg) in bg_assignments.iter().enumerate() {
+                let asset_id = format!("broll_{}", i + 1);
+                tl.add_asset(
+                    "broll",
+                    asset_id,
+                    serde_json::json!({"path": bg.path, "start_ms": bg.start_ms, "end_ms": bg.end_ms}),
+                );
+            }
+
+            // Save updated timeline
+            let _ = tl.save(&timeline_path);
+            tracing::info!(
+                "[script.to_video] Updated timeline tracks: broll={} music={} captions={} sfx={}",
+                bg_assignments.len(),
+                if music_path.is_some() { 1 } else { 0 },
+                if !captions_path.is_empty() { 1 } else { 0 },
+                sfx_hits.len(),
+            );
+        }
+    }
+
     report_progress(60.0, 100.0, "Phase 3/3: Rendering multi-layer video...")
         .await
         .ok();
 
     // Build multi-layer render spec
     use openscript_ffmpeg::multilayer_render::{render_multilayer, MultiLayerRenderSpec};
-    // Phase D: auto SFX from tagged index (intro + per-cut transitions)
-    let sfx_hits = auto_select_sfx_hits(&scene_durations);
     let music_sel_sfx_count = sfx_hits.len();
 
     // ponytail: compute ducking BEFORE moving music_path into the struct.
