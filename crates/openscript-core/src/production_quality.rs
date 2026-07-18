@@ -801,6 +801,15 @@ fn score_music_variance(
             } else {
                 findings.push(format!("music gain_db={:.1} may be inaudible", m.gain_db));
             }
+            // Music gain > 0dB means boosted above unity — louder than the
+            // voiceover, which is typically at -6dB. This is a mixing error.
+            if m.gain_db > 0.0 {
+                findings.push(format!(
+                    "music gain_db={:.1} is boosted above unity — louder than voice, use -8 to -14dB",
+                    m.gain_db
+                ));
+                s = (s - 1).max(0);
+            }
             s.min(10)
         }
     };
@@ -1069,6 +1078,30 @@ pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
     }
     if !timeline.tracks.get(&TrackType::Sfx).map(|v| !v.is_empty()).unwrap_or(false) {
         findings.push("sfx track empty — no punctuation whooshes/hits".into());
+    } else if let Some(sfx_events) = timeline.tracks.get(&TrackType::Sfx) {
+        // Detect SFX repetition: same asset_id used at multiple transitions
+        // sounds amateur — a real editor rotates through different SFX.
+        let mut asset_counts = std::collections::HashMap::new();
+        for e in sfx_events {
+            *asset_counts.entry(e.asset_id.clone()).or_insert(0) += 1;
+        }
+        let repeated: Vec<_> = asset_counts.iter().filter(|(_, &c)| c > 1).collect();
+        if !repeated.is_empty() {
+            let detail: Vec<_> = repeated
+                .iter()
+                .map(|(id, c)| format!("'{}' used {}x", id.split('/').last().unwrap_or(id), c))
+                .collect();
+            findings.push(format!("repetitive sfx: {}", detail.join(", ")));
+        }
+        // Penalize if fewer than 2 unique SFX assets across >4s video.
+        let unique_sfx: std::collections::HashSet<_> = sfx_events.iter().map(|e| &e.asset_id).collect();
+        if unique_sfx.len() < 2 && timeline.rendered_duration_ms() > 4000 {
+            findings.push(format!(
+                "only {} unique sfx asset(s) across {}s video — add variety",
+                unique_sfx.len(),
+                timeline.rendered_duration_ms() / 1000
+            ));
+        }
     }
     if !timeline.tracks.get(&TrackType::Captions).map(|v| !v.is_empty()).unwrap_or(false)
         && timeline.assets.captions.is_empty()
@@ -1093,6 +1126,15 @@ pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
     }
     if timeline.tracks.get(&TrackType::Sfx).map(|v| !v.is_empty()).unwrap_or(false) {
         util += 10;
+    }
+    // Penalize repetitive SFX: using the same sound at every transition
+    // scores lower than rotating through different assets.
+    if let Some(sfx_events) = timeline.tracks.get(&TrackType::Sfx) {
+        let unique_sfx: std::collections::HashSet<_> = sfx_events.iter().map(|e| &e.asset_id).collect();
+        if sfx_events.len() >= 3 && unique_sfx.len() <= 1 {
+            findings.push("sfx repetitive — same sound at every transition, rotate assets".into());
+            util = (util - 5).max(0);
+        }
     }
     if gap_ms > 500 {
         findings.push(format!("background gaps totaling {}ms on broll track", gap_ms));

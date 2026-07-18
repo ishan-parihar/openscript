@@ -8071,45 +8071,62 @@ fn auto_select_sfx_hits(scene_durations: &[f64]) -> Vec<openscript_ffmpeg::multi
         None
     };
 
-    let find = |role: &str, tag: &str| -> Option<String> {
-        for a in &assets {
-            let er = a.get("editorial_role").and_then(|v| v.as_str()).unwrap_or("");
-            let tags = a
-                .get("tags")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|x| x.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                })
-                .unwrap_or_default();
-            let path = a.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            if (er == role || tags.contains(tag) || path.to_lowercase().contains(tag))
-                && !path.is_empty()
-            {
-                if let Some(rp) = resolve_path(path) {
-                    return Some(rp);
-                }
+    // Collect all resolvable SFX paths tagged by role for rotation.
+    let mut intro_sfx: Vec<String> = Vec::new();
+    let mut transition_sfx: Vec<String> = Vec::new();
+    for a in &assets {
+        let er = a.get("editorial_role").and_then(|v| v.as_str()).unwrap_or("");
+        let tags = a
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+        let path = a.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        if path.is_empty() {
+            continue;
+        }
+        let tag_blob = format!("{} {} {}", er, tags, path.to_lowercase());
+        if let Some(rp) = resolve_path(path) {
+            if er == "intro" || tag_blob.contains("rise") || tag_blob.contains("whoosh") && er != "transition" {
+                intro_sfx.push(rp.clone());
+            }
+            if er == "transition" || tag_blob.contains("transition") {
+                transition_sfx.push(rp);
+            } else if tag_blob.contains("whoosh") || tag_blob.contains("swish") || tag_blob.contains("hit") {
+                transition_sfx.push(intro_sfx.last().cloned().unwrap_or(rp));
             }
         }
-        None
-    };
+    }
+    // Deduplicate each pool while preserving order.
+    intro_sfx.dedup();
+    transition_sfx.dedup();
 
-    if let Some(p) = find("intro", "rise").or_else(|| find("intro", "whoosh")) {
+    // Intro: pick first, or fallback to first transition SFX.
+    let intro = intro_sfx.first().or(transition_sfx.first()).cloned();
+    if let Some(p) = intro {
         hits.push(openscript_ffmpeg::multilayer_render::SfxHit {
             path: p,
             start_s: 0.05,
             volume: 0.28,
         });
     }
+    // Transitions: rotate through available SFX to avoid repetition.
     let mut t = 0.0;
+    let mut sfx_idx = 0usize;
     for (i, d) in scene_durations.iter().enumerate() {
         if i == 0 {
             t += *d;
             continue;
         }
-        if let Some(p) = find("transition", "whoosh").or_else(|| find("transition", "swish")) {
+        let pool = if transition_sfx.is_empty() { &intro_sfx } else { &transition_sfx };
+        if !pool.is_empty() {
+            let p = pool[sfx_idx % pool.len()].clone();
+            sfx_idx += 1;
             hits.push(openscript_ffmpeg::multilayer_render::SfxHit {
                 path: p,
                 start_s: (t - 0.05).max(0.0),
@@ -10664,7 +10681,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                         start_ms: 0,
                         end_ms: total_duration_ms,
                         offset_ms: 0,
-                        gain_db: spec.music.as_ref().map(|m| m.gain_db).unwrap_or(6.0),
+                        gain_db: spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-12.0),
                         fade_in_ms: 500,
                         fade_out_ms: 1000,
                         tags: music_sel_tags.clone(),
@@ -10682,6 +10699,15 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                         },
                     },
                 );
+            }
+
+            // Wire ducking directives so the filter graph sidechain compressor
+            // ducks music during speech (was previously empty — music never ducked).
+            let has_speech = !tl.tracks.get(&TrackType::Dialogue).map(|v| v.is_empty()).unwrap_or(true)
+                || !tl.tracks.get(&TrackType::Voiceover).map(|v| v.is_empty()).unwrap_or(true);
+            let music_has_ducking = spec.music.as_ref().map(|m| m.ducking).unwrap_or(music_path.is_some());
+            if has_speech && music_has_ducking {
+                tl.add_ducking_directive("dialogue_active", "music", 10.0, 50, 200);
             }
 
             // Captions track: summary event if captions file exists
@@ -10757,6 +10783,16 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 );
             }
 
+            // Register SFX assets so the validator can detect repetition.
+            for (i, sfx) in sfx_hits.iter().enumerate() {
+                let asset_id = format!("sfx_{}", i + 1);
+                tl.add_asset(
+                    "sfx",
+                    asset_id,
+                    serde_json::json!({"path": sfx.path, "volume": sfx.volume}),
+                );
+            }
+
             // Save updated timeline
             let _ = tl.save(&timeline_path);
             tracing::info!(
@@ -10787,7 +10823,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         voiceover_paths,
         stickers,
         music_path,
-        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(6.0) / 20.0),
+        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-12.0) / 20.0),
         ducking: should_duck,
         ducking_depth_db: spec
             .music
