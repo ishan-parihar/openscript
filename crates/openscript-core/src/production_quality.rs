@@ -171,6 +171,18 @@ pub struct RenderManifest {
     /// Count of auto-assigned SFX events (hook punctuation).
     #[serde(default)]
     pub sfx_count: usize,
+    /// Caption style: "word_highlight", "sentence_fade", "karaoke", "burn_in".
+    #[serde(default)]
+    pub caption_style: Option<String>,
+    /// Fraction of voiceover duration covered by captions (0.0–1.0).
+    #[serde(default)]
+    pub caption_coverage_ratio: f64,
+    /// Average words per caption line.
+    #[serde(default)]
+    pub caption_words_per_line: Option<f64>,
+    /// Average characters per second (reading speed).
+    #[serde(default)]
+    pub caption_chars_per_second: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1154,23 +1166,105 @@ fn score_speech(has_dialogue: bool, rms_ok: bool) -> DimensionScore {
     }
 }
 
-/// Weight 6 — captions present.
-fn score_captions(captions_path: Option<&str>) -> DimensionScore {
+/// Weight 6 — caption quality: presence, style, coverage, readability.
+fn score_caption_quality(
+    captions_path: Option<&str>,
+    coverage_ratio: f64,
+    style: Option<&str>,
+    chars_per_second: Option<f64>,
+    words_per_line: Option<f64>,
+) -> DimensionScore {
+    let mut findings = Vec::new();
+
     let present = captions_path
         .map(|p| !p.is_empty() && Path::new(p).exists())
         .unwrap_or(false);
-    let mut findings = Vec::new();
+
     if !present {
-        findings.push("captions file missing".into());
+        findings.push("HARD: captions file absent — word-highlight captions required for retention and accessibility".into());
+        return DimensionScore {
+            id: "caption_quality".into(),
+            label: "Caption quality & coverage".into(),
+            score: 0,
+            max: 6,
+            detail: serde_json::json!({ "present": false }),
+            findings,
+        };
     }
+
+    let mut s = 1; // base for file existing
+
+    // Coverage
+    if coverage_ratio >= 0.90 {
+        s += 2;
+    } else if coverage_ratio >= 0.70 {
+        s += 1;
+        findings.push(format!(
+            "caption coverage {:.0}% — target >=90% of speech duration",
+            coverage_ratio * 100.0
+        ));
+    } else if coverage_ratio > 0.0 {
+        findings.push(format!(
+            "caption coverage {:.0}% is low — many speech segments uncaptioned",
+            coverage_ratio * 100.0
+        ));
+    }
+
+    // Reading speed
+    if let Some(cps) = chars_per_second {
+        if cps > 25.0 {
+            findings.push(format!(
+                "caption CPS={:.1} exceeds 25 — unreadable at normal viewing speed; target <=20 CPS",
+                cps
+            ));
+            s = (s - 1).max(0);
+        } else if cps <= 20.0 {
+            s += 1;
+        }
+    }
+
+    // Words per line
+    if let Some(wpl) = words_per_line {
+        if wpl > 5.0 {
+            findings.push(format!(
+                "caption avg {:.1} words/line — prefer <=4 words for short-form readability",
+                wpl
+            ));
+        } else {
+            s += 1;
+        }
+    }
+
+    // Style
+    match style {
+        Some(st) if st == "word_highlight" || st == "karaoke" => { s += 1; }
+        Some(st) if !st.is_empty() => { /* acceptable */ }
+        _ => {
+            findings.push("caption_style not set — prefer word_highlight for engagement".into());
+        }
+    }
+
     DimensionScore {
-        id: "captions".into(),
-        label: "Captions".into(),
-        score: if present { 6 } else { 0 },
+        id: "caption_quality".into(),
+        label: "Caption quality & coverage".into(),
+        score: s.min(6),
         max: 6,
-        detail: serde_json::json!({ "captions_path": captions_path, "present": present }),
+        detail: serde_json::json!({
+            "present": true,
+            "captions_path": captions_path,
+            "coverage_ratio": coverage_ratio,
+            "style": style,
+            "chars_per_second": chars_per_second,
+            "words_per_line": words_per_line,
+        }),
         findings,
     }
+}
+
+#[allow(dead_code)]
+fn score_captions(captions_path: Option<&str>) -> DimensionScore {
+    let cov = if captions_path.is_some() { 1.0 } else { 0.0 };
+    score_caption_quality(captions_path, cov, None, None, None)
 }
 
 /// Weight 12 — efficacious use of the multi-track timeline editor.
@@ -1701,7 +1795,10 @@ mod tests {
             has_dialogue: true,
             rms_ok: true,
             video_keywords: vec!["morning".into(), "habit".into()],
-         theme: None, sfx_count: 0, };
+            theme: None,
+            sfx_count: 0,
+            ..Default::default()
+        };
         let report = evaluate_production_quality(&tl, &manifest);
         let _ = std::fs::remove_file(&music);
         let _ = std::fs::remove_file(&caps);
@@ -2049,7 +2146,49 @@ mod tests {
             "always-on sticker should be flagged: {:?}", d.findings
         );
     }
+
+    #[test]
+    fn caption_quality_missing_scores_zero() {
+        let d = score_caption_quality(None, 0.0, None, None, None);
+        assert_eq!(d.id, "caption_quality");
+        assert_eq!(d.score, 0);
+        assert!(d.findings.iter().any(|f| f.contains("absent") || f.contains("missing")));
+    }
+
+    #[test]
+    fn caption_quality_low_coverage_penalized() {
+        let path = "/tmp/cap_low_cov.ass";
+        std::fs::write(path, b"[Script Info]\n").unwrap();
+        let d = score_caption_quality(Some(path), 0.30, None, None, None);
+        std::fs::remove_file(path).ok();
+        assert!(d.findings.iter().any(|f| f.contains("coverage")));
+        assert!(d.score <= 4, "30% coverage should score <=4, got {}", d.score);
+    }
+
+    #[test]
+    fn caption_quality_fast_cps_penalized() {
+        let path = "/tmp/cap_fast.ass";
+        std::fs::write(path, b"[Script Info]\n").unwrap();
+        let d = score_caption_quality(Some(path), 0.95, None, Some(30.0), None);
+        std::fs::remove_file(path).ok();
+        assert!(
+            d.findings.iter().any(|f| f.contains("fast") || f.contains("CPS") || f.contains("unreadable")),
+            "fast CPS should be flagged: {:?}", d.findings
+        );
+    }
+
+    #[test]
+    fn caption_quality_full_marks() {
+        let path = "/tmp/cap_full.ass";
+        std::fs::write(path, b"[Script Info]\n").unwrap();
+        let d = score_caption_quality(
+            Some(path), 0.95, Some("word_highlight"), Some(12.0), Some(2.5),
+        );
+        std::fs::remove_file(path).ok();
+        assert!(d.score >= 5, "full marks caption should score >=5/6, got {}", d.score);
+    }
 }
+
 
 
 
