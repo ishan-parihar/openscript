@@ -131,7 +131,7 @@ files:
   "*.wav":
     # WAVs live in multiple legitimate locations: sfx_library/, sfx_pack/, artifacts/
     # Do not enforce a single preferred_dir.
-    max_size_kb: 100000   # SFX library WAVs can be large (up to ~80MB)
+    max_size_kb: 350000   # SFX library ambient WAVs can be large (up to ~300MB)
   "*.svg":
     preferred_dir: mcp/assets/svg_presets
     max_size_kb: 50
