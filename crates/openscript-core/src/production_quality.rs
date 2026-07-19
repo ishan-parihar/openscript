@@ -192,6 +192,15 @@ pub struct RenderManifest {
     /// True when TTS emote tags align to content sentiment.
     #[serde(default)]
     pub emote_alignment_ok: bool,
+    /// Integrated loudness in LUFS (EBU R128). Target: -16 ± 2.
+    #[serde(default)]
+    pub lufs: Option<f64>,
+    /// True peak level in dBFS. Must be < -1.
+    #[serde(default)]
+    pub peak_dbfs: Option<f64>,
+    /// Measured music ducking depth in dB during speech. Target: >=10 dB.
+    #[serde(default)]
+    pub ducking_depth_db: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1349,6 +1358,92 @@ fn score_voiceover_quality(
     }
 }
 
+/// Weight 5 — audio mix quality: LUFS compliance, clipping, ducking depth, gain balance.
+#[allow(dead_code)]
+fn score_audio_mix_quality(
+    lufs: Option<f64>,
+    peak_dbfs: Option<f64>,
+    ducking_depth_db: Option<f64>,
+    music_gain_db: f64,
+    has_dialogue: bool,
+) -> DimensionScore {
+    let mut findings = Vec::new();
+    let mut s = 0i32;
+
+    // Music gain compliance
+    if (-18.0..=-6.0).contains(&music_gain_db) {
+        s += 1;
+    } else {
+        findings.push(format!("music gain_db={:.1} outside -18 to -6 dB safe band", music_gain_db));
+    }
+
+    // Peak level
+    match peak_dbfs {
+        Some(pk) if pk > -1.0 => {
+            findings.push(format!(
+                "HARD: audio clipping detected (peak={:.1} dBFS > -1 dBFS) — will distort on platforms",
+                pk
+            ));
+        }
+        Some(_) => { s += 1; }
+        None => {
+            findings.push("peak_dbfs not measured — run verify.render to check clipping".into());
+        }
+    }
+
+    // LUFS compliance: -18 to -14 is the sweet spot
+    match lufs {
+        Some(l) if l > -14.0 => {
+            findings.push(format!(
+                "HARD: LUFS={:.1} exceeds -14 — too loud; normalize to -16 +/- 2",
+                l
+            ));
+        }
+        Some(l) if l < -18.0 => {
+            findings.push(format!("LUFS={:.1} too quiet; target -16 +/- 2", l));
+        }
+        Some(_) => { s += 2; }
+        None => {
+            findings.push("lufs not measured — add loudnorm filter or run EBU R128 analysis".into());
+        }
+    }
+
+    // Ducking effectiveness
+    if has_dialogue {
+        match ducking_depth_db {
+            Some(d) if d >= 10.0 => { s += 1; }
+            Some(d) if d >= 6.0 => {
+                findings.push(format!("ducking depth {:.1} dB — target >=10 dB for clear speech", d));
+            }
+            Some(d) => {
+                findings.push(format!(
+                    "ducking depth {:.1} dB insufficient — music may mask speech (need >=10 dB)", d
+                ));
+            }
+            None => {
+                findings.push("ducking_depth_db not measured — verify sidechain ducking is active".into());
+            }
+        }
+    } else {
+        s += 1; // no speech = no ducking needed
+    }
+
+    DimensionScore {
+        id: "audio_mix_quality".into(),
+        label: "Audio mix quality (LUFS, peak, ducking)".into(),
+        score: s.min(5),
+        max: 5,
+        detail: serde_json::json!({
+            "lufs": lufs,
+            "peak_dbfs": peak_dbfs,
+            "ducking_depth_db": ducking_depth_db,
+            "music_gain_db": music_gain_db,
+            "has_dialogue": has_dialogue,
+        }),
+        findings,
+    }
+}
+
 /// Weight 12 — efficacious use of the multi-track timeline editor.
 pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
     let mut findings = Vec::new();
@@ -2301,7 +2396,40 @@ mod tests {
         );
         assert!(d.score <= 4, "fast WPM should score <=4, got {}", d.score);
     }
+
+    #[test]
+    fn audio_mix_no_data_partial_score() {
+        let d = score_audio_mix_quality(None, None, None, -12.0, true);
+        assert_eq!(d.id, "audio_mix_quality");
+        assert_eq!(d.max, 5);
+        assert!(d.score <= 3);
+    }
+
+    #[test]
+    fn audio_mix_clipping_penalized() {
+        let d = score_audio_mix_quality(Some(-14.0), Some(0.5), Some(12.0), -12.0, true);
+        assert!(
+            d.findings.iter().any(|f| f.contains("clip") || f.contains("peak")),
+            "clipping should be flagged: {:?}", d.findings
+        );
+    }
+
+    #[test]
+    fn audio_mix_lufs_out_of_range_penalized() {
+        let d = score_audio_mix_quality(Some(-6.0), Some(-2.0), Some(10.0), -12.0, true);
+        assert!(
+            d.findings.iter().any(|f| f.contains("LUFS") || f.contains("loudness")),
+            "LUFS violation should be flagged: {:?}", d.findings
+        );
+    }
+
+    #[test]
+    fn audio_mix_ideal_scores_high() {
+        let d = score_audio_mix_quality(Some(-16.0), Some(-3.0), Some(14.0), -12.0, true);
+        assert!(d.score >= 4, "ideal audio mix should score >=4/5, got {}", d.score);
+    }
 }
+
 
 
 
