@@ -773,7 +773,7 @@ mod tests {
         assert!(ranked.is_empty(), "expected empty, got {:?}", ranked);
     }
 
-    #[test]
+#[test]
     fn scene_first_signal_differs_per_line() {
         let kw = vec!["desk".into(), "focus".into()];
         let a = signal_tokens_from_scene("Headphones on. One instrumental playlist.", &kw);
@@ -782,6 +782,13 @@ mod tests {
         assert!(b.iter().any(|t| t == "notebook" || t == "coffee"));
         // First tokens should be scene-specific, not only topic keywords
         assert_ne!(a.first(), b.first());
+    }
+
+    #[test]
+    fn photosynthesis_topic_detected_as_science() {
+        let video_keywords = vec!["photosynthesis".into(), "plants".into(), "chlorophyll".into(), "sunlight".into(), "biology".into()];
+        let topic = detect_topic(&video_keywords);
+        assert_eq!(topic, TopicCategory::Science, "Expected Science, got {:?}", topic);
     }
 
     #[test]
