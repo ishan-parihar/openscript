@@ -47,6 +47,10 @@ artifacts/
 Thumbs.db
 snapshots/
 renders/
+# Downloaded media assets (fetched on-demand via tools, never commit binaries)
+mcp/assets/sfx_library/
+mcp/assets/music_cache/
+
 mcp/assets/.openscript_config.json
 mcp/assets/kokoro/
 mcp/assets/parakeet/

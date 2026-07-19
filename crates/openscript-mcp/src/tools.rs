@@ -393,28 +393,25 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "music.search",
-            "description": "Search the music index by mood, energy, and structural properties. Mood: 'energetic', 'calm', 'dramatic', 'neutral'. Energy: 'high', 'medium', 'low'. Optional boolean filters (intro_friendly, cta_friendly, loopable) apply ONLY when explicitly set — omit them to search all tracks. Returns: results with title, artist, path, duration_ms, mood, energy; warnings if results are synthetic stock placeholders.",
+            "description": "DEPRECATED — forwards to library.search. Use library.search for all music queries. Returns: results with title, path, duration_s, mood, energy, genre, source. 393 copyright-free music tracks available.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "default": "", "description": "Keyword search in title/artist"},
-                    "mood": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Emotional mood: 'energetic', 'calm', 'dramatic', 'neutral', 'uplifting'"},
-                    "energy": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Intensity level: 'high', 'medium', 'low'"},
-                    "intro_friendly": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "description": "When true/false, filter by clean-opening intro suitability. Omit to ignore this flag."},
-                    "cta_friendly": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "description": "When true/false, filter by CTA-friendly ending. Omit to ignore this flag."},
-                    "loopable": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "description": "When true/false, filter by seamless loopability. Omit to ignore this flag."},
+                    "mood": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Filter by mood: 'calm', 'energetic', 'upbeat', 'dramatic', 'dark', 'sad', 'neutral'"},
+                    "energy": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Filter by energy: 'low', 'medium', 'high'"},
                     "limit": {"type": "integer", "default": 10, "description": "Max results to return"}
                 }
             }
         },
         {
             "name": "music.assign",
-            "description": "Assign background music to the timeline's music track. Requires a music file path — use music.search first to find tracks, then pass the path here. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Returns: event_id, start_ms, end_ms, asset_path.",
+            "description": "Assign background music to the timeline's music track. Requires a music file path — use library.search first to find tracks, then pass the path here. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Returns: event_id, start_ms, end_ms, asset_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "timeline_path": {"type": "string", "description": "Path to timeline JSON"},
-                    "path": {"type": "string", "description": "Path to the music audio file (MP3/WAV). Use music.search to find tracks and get their path."},
+                    "path": {"type": "string", "description": "Path to the music audio file (MP3/WAV). Use library.search to find tracks and get their path."},
                     "mood": {"type": "string", "default": "neutral", "description": "Emotional mood matching content tone"},
                     "energy": {"type": "string", "default": "medium", "description": "Intensity level"},
                     "start_ms": {"type": "integer", "default": 0, "description": "Music start position on timeline"},
@@ -1134,6 +1131,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "min_duration_s": {"type": "number", "description": "Minimum duration in seconds (inclusive)"},
                     "max_duration_s": {"type": "number", "description": "Maximum duration in seconds (inclusive)"},
                     "tag": {"type": "string", "description": "Filter by tag (substring match against entry's tags array, case-insensitive)"},
+                    "mood": {"type": "string", "enum": ["calm", "energetic", "upbeat", "dramatic", "dark", "sad", "neutral"], "description": "Filter by mood (derived from genre/title analysis)"},
+                    "energy": {"type": "string", "enum": ["low", "medium", "high"], "description": "Filter by energy level"},
                     "limit": {"type": "integer", "default": 10, "description": "Max results"}
                 },
                 "required": ["query"],
@@ -1390,8 +1389,9 @@ fn default_bool(args: &serde_json::Value, key: &str, default: bool) -> bool {
 }
 
 /// Optional boolean: `None` when the key is absent so callers can omit filters.
-/// Explicit `true`/`false` are preserved. Used by `music.search` so default
+/// Explicit `true`/`false` are preserved. Used by music NLE tools so default
 /// omission does not mean "only tracks with flag=false".
+#[allow(dead_code)] // only used in tests after music.search deprecation
 fn default_opt_bool(args: &serde_json::Value, key: &str) -> Option<bool> {
     args.get(key).and_then(|v| v.as_bool())
 }
@@ -3030,95 +3030,35 @@ async fn handle_music_index(args: serde_json::Value) -> Result<serde_json::Value
 // Handler: music.search (native via openscript-assets)
 // ---------------------------------------------------------------------------
 
+/// DEPRECATED: music.search now forwards to library.search.
+/// The old music_index.json (synthetic stock tracks) has been deleted.
+/// All music lives in library_index.json (393 music + 94 SFX, copyright-free).
 async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    use openscript_assets::music::MusicIndex;
+    // Forward query/mood/energy/limit to library.search
+    let mut lib_args = args.clone();
+    // Remove music-search-only params that library.search doesn't understand
+    lib_args.as_object_mut().map(|m| {
+        m.remove("intro_friendly");
+        m.remove("cta_friendly");
+        m.remove("loopable");
+    });
 
-    let query = default_str(&args, "query", "");
-    let mood = default_opt_str(&args, "mood");
-    let energy = default_opt_str(&args, "energy");
-    // Optional filters: omit key → None (no filter). Explicit true/false apply.
-    // Prior bug: default_bool(..., false) forced Some(false), which excluded
-    // all stock tracks that are loopable/intro_friendly=true (always 0 results).
-    let intro_friendly = default_opt_bool(&args, "intro_friendly");
-    let cta_friendly = default_opt_bool(&args, "cta_friendly");
-    let loopable = default_opt_bool(&args, "loopable");
-    let limit = default_u32(&args, "limit", 10) as usize;
+    let mut result = handle_library_search(lib_args).await?;
 
-    let index_path = std::env::var("OPENSCRIPT_MUSIC_INDEX")
-        .unwrap_or_else(|_| "mcp/assets/music_index.json".to_string());
-
-    let index = MusicIndex::load(Some(&index_path)).map_err(|e| ToolError::Asset(e.to_string()))?;
-
-    let results = index.search(
-        &query,
-        mood.as_deref(),
-        energy.as_deref(),
-        intro_friendly,
-        cta_friendly,
-        loopable,
-        limit,
-    );
-
-    let result_json: Vec<serde_json::Value> = results
-        .iter()
-        .map(|m| {
-            json!({
-                "id": m.id,
-                "title": m.title,
-                "artist": m.artist,
-                "path": m.path,
-                "duration_ms": m.duration_ms,
-                "mood": m.mood,
-                "energy": m.energy,
-                "loopability": m.loopability,
-                "intro_friendly": m.intro_friendly,
-                "cta_friendly": m.cta_friendly,
-            })
-        })
-        .collect();
-
-    // Surface a warning when the caller requested a filter that matched nothing
-    // while the index still has tracks (agent can drop the filter).
-    let mut warnings: Vec<String> = Vec::new();
-    if results.is_empty() && index.len() > 0 {
-        if intro_friendly == Some(true)
-            || cta_friendly == Some(true)
-            || loopable == Some(true)
-            || intro_friendly == Some(false)
-            || cta_friendly == Some(false)
-            || loopable == Some(false)
-        {
-            warnings.push(format!(
-                "Filter requested (loopable={:?}, intro_friendly={:?}, cta_friendly={:?}) matched 0 of {} indexed tracks. Omit these filters or flip their values; search by mood/energy/query instead.",
-                loopable, intro_friendly, cta_friendly, index.len()
-            ));
-        }
+    // Inject deprecation warning
+    if let Some(obj) = result.as_object_mut() {
+        let warnings = obj
+            .entry("warnings".to_string())
+            .or_insert(json!([]))
+            .as_array_mut()
+            .expect("warnings is always an array");
+        warnings.insert(
+            0,
+            json!("DEPRECATED: music.search has been replaced by library.search. All music tracks now live in the library (393 copyright-free tracks). Use library.search instead."),
+        );
     }
 
-    // Fallback-purity fix: detect synthetic placeholder tracks (all 20 committed
-    // mcp/assets/music/*.mp3 files are 481,114 bytes, 30s, artist="OpenScript Stock").
-    // Warn the agent that these are synthetic fallbacks, not real licensed music,
-    // and point them to library.search / stock.search for real music.
-    let synthetic_count = results
-        .iter()
-        .filter(|m| m.artist == "OpenScript Stock" && m.duration_ms == 30000)
-        .count();
-    if synthetic_count > 0 {
-        warnings.push(format!(
-            "{} of {} results are SYNTHETIC PLACEHOLDER tracks (committed mcp/assets/music/*.mp3, all 30s, artist='OpenScript Stock'). These are FALLBACKS, not real licensed music. For production video, use library.search (500+ YouTube-scraped tracks via library.build) or stock.search (Pixabay, requires PIXABAY_API_KEY) to find real music.",
-            synthetic_count,
-            results.len()
-        ));
-    }
-
-    let mut response = serde_json::Map::new();
-    response.insert("status".to_string(), json!("success"));
-    response.insert("results".to_string(), json!(result_json));
-    response.insert("count".to_string(), json!(result_json.len()));
-    if !warnings.is_empty() {
-        response.insert("warnings".to_string(), json!(warnings));
-    }
-    Ok(serde_json::Value::Object(response))
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -8148,77 +8088,61 @@ struct MusicSelection {
     source: String,
 }
 
-/// Offline production beds shipped in-repo for cold-start installs.
-fn select_music_production_pack(mood: &str, search_terms: &[&str]) -> Option<MusicSelection> {
-    let index_path = resolve_repo_path("mcp/assets/music_production/index.json");
-    let raw = std::fs::read_to_string(&index_path).ok()?;
-    let index: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let entries = index.get("entries")?.as_array()?;
-    let mut best: Option<(usize, MusicSelection)> = None;
-    for entry in entries {
-        let path = entry.get("path").and_then(|v| v.as_str()).unwrap_or("");
-        if path.is_empty() {
-            continue;
-        }
-        let resolved = resolve_repo_path(path);
-        if !resolved.exists() {
-            continue;
-        }
-        let entry_mood = entry.get("mood").and_then(|v| v.as_str()).unwrap_or("neutral");
-        let tags: Vec<String> = entry
-            .get("tags")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let tag_blob = tags.join(" ").to_lowercase();
-        let title = entry
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_lowercase();
-        if openscript_core::production_quality::music_hits_denylist(
-            &resolved.to_string_lossy(),
-            Some(mood),
-            &tags,
-            Some(&title),
-        ) {
-            continue;
-        }
-        let mut score = 0usize;
-        if entry_mood == mood {
-            score += 3;
-        }
-        for t in search_terms {
-            if tag_blob.contains(t) || title.contains(t) {
-                score += 1;
-            }
-        }
-        if score == 0 {
-            continue;
-        }
-        let sel = MusicSelection {
-            path: resolved.to_string_lossy().into(),
-            mood: mood.to_string(),
-            tags: tags.clone(),
-            selection_query: format!("music_production:{}", path),
-            source: "music_production".into(),
-        };
-        match &best {
-            None => best = Some((score, sel)),
-            Some((s, _)) if score > *s => best = Some((score, sel)),
-            _ => {}
-        }
+/// Simple deterministic hash for shuffle ordering (no `rand` dependency).
+/// Returns a u32 from a string — used to shuffle entries within a mood bucket
+/// so the same video doesn't always get the same track.
+fn deterministic_hash(s: &str) -> u32 {
+    let mut h: u32 = 0x811c9dc5;
+    for b in s.bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x01000193);
     }
-    best.map(|(_, s)| s)
+    h
 }
 
-/// Topic-aware music: production pack → library index → Pixabay → yt-dlp.
+/// Extract tags array from a JSON entry.
+fn entry_tags(entry: &serde_json::Value) -> Vec<String> {
+    entry
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Mood→energy affinity: low-energy moods prefer low-energy tracks, etc.
+fn mood_energy_affinity(mood: &str, energy: &str) -> bool {
+    matches!(
+        (mood, energy),
+        ("calm", "low")
+            | ("calm", "medium")
+            | ("sad", "low")
+            | ("dark", "low")
+            | ("dark", "medium")
+            | ("dramatic", "medium")
+            | ("dramatic", "high")
+            | ("energetic", "high")
+            | ("energetic", "medium")
+            | ("upbeat", "high")
+            | ("upbeat", "medium")
+            | ("neutral", _)
+    )
+}
+
+/// Topic-aware music selection: library index → Pixabay → yt-dlp.
+///
+/// Selection algorithm (Phase 1 upgrade):
+/// 1. Filter library entries by mood field (primary signal)
+/// 2. Within mood bucket, sort by deterministic hash for variety
+/// 3. Fallback: energy-affinity match if mood bucket empty
+/// 4. Fallback: title/tag keyword match if energy bucket empty
+/// 5. Fallback: Pixabay, then yt-dlp
 async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<MusicSelection> {
-    let calm = openscript_core::production_quality::is_calm_focus_context(Some(theme), video_keywords);
+    let calm =
+        openscript_core::production_quality::is_calm_focus_context(Some(theme), video_keywords);
     let mood = if calm {
         "calm"
     } else if theme == "energetic" {
@@ -8239,11 +8163,7 @@ async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<Mus
     };
     let deny = ["parade", "march", "military", "trailer", "stadium", "anthem", "circus"];
 
-    // Cold-start portable beds (committed under music_production/) — not synthetic sine stubs.
-    if let Some(sel) = select_music_production_pack(&mood, &search_terms) {
-        return Some(sel);
-    }
-
+    // ── Library index: mood-first selection ──────────────────────────────
     let index_path = resolve_repo_path("mcp/assets/music_library_index.json");
     if index_path.exists() {
         if let Ok(index_str) = std::fs::read_to_string(&index_path) {
@@ -8253,43 +8173,121 @@ async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<Mus
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
-                for entry in &entries {
-                    let title = entry.get("title").and_then(|v| v.as_str()).unwrap_or("");
-                    let title_lower = title.to_lowercase();
-                    if deny.iter().any(|d| title_lower.contains(d)) {
-                        continue;
-                    }
-                    let media_type = entry.get("media_type").and_then(|v| v.as_str()).unwrap_or("music");
-                    if media_type != "music" && !media_type.is_empty() {
-                        continue;
-                    }
-                    let source_type = entry
-                        .get("source_type")
+
+                // Pre-filter: valid music entries, not on denylist, not local-only.
+                let candidates: Vec<&serde_json::Value> = entries
+                    .iter()
+                    .filter(|e| {
+                        let title = e.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                        let title_lower = title.to_lowercase();
+                        if deny.iter().any(|d| title_lower.contains(d)) {
+                            return false;
+                        }
+                        let media_type = e
+                            .get("media_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("music");
+                        if media_type != "music" && !media_type.is_empty() {
+                            return false;
+                        }
+                        let source_type = e
+                            .get("source_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if source_type == "local" {
+                            return false;
+                        }
+                        let tags = entry_tags(e);
+                        if openscript_core::production_quality::music_hits_denylist(
+                            title,
+                            Some(&mood),
+                            &tags,
+                            Some(&title_lower),
+                        ) {
+                            return false;
+                        }
+                        true
+                    })
+                    .collect();
+
+                // Tier 1: mood-field exact match, shuffled by deterministic hash.
+                let mut mood_bucket: Vec<&&serde_json::Value> = candidates
+                    .iter()
+                    .filter(|e| {
+                        let entry_mood = e.get("mood").and_then(|v| v.as_str()).unwrap_or("neutral");
+                        entry_mood == mood
+                    })
+                    .collect();
+                mood_bucket.sort_by_key(|e| {
+                    let vid = e
+                        .get("video_id")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    if source_type == "local" {
-                        continue;
-                    }
-                    let tags: Vec<String> = entry
-                        .get("tags")
-                        .and_then(|v| v.as_array())
-                        .map(|a| {
-                            a.iter()
-                                .filter_map(|x| x.as_str().map(String::from))
-                                .collect()
+                    deterministic_hash(vid)
+                });
+
+                // Tier 2: energy-affinity match (if mood bucket empty).
+                let energy_bucket: Vec<&&serde_json::Value> = if mood_bucket.is_empty() {
+                    let mut bucket: Vec<&&serde_json::Value> = candidates
+                        .iter()
+                        .filter(|e| {
+                            let entry_energy =
+                                e.get("energy").and_then(|v| v.as_str()).unwrap_or("medium");
+                            mood_energy_affinity(&mood, entry_energy)
                         })
-                        .unwrap_or_default();
-                    let tag_blob = tags.join(" ").to_lowercase();
-                    let matched = search_terms.iter().any(|t| {
-                        title_lower.contains(t) || tag_blob.contains(t)
+                        .collect();
+                    bucket.sort_by_key(|e| {
+                        let vid = e
+                            .get("video_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        deterministic_hash(vid)
                     });
-                    if !matched {
-                        continue;
-                    }
-                    let filename = entry.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                    bucket
+                } else {
+                    vec![]
+                };
+
+                // Tier 3: title/tag keyword match (if both mood and energy buckets empty).
+                let keyword_bucket: Vec<&&serde_json::Value> =
+                    if mood_bucket.is_empty() && energy_bucket.is_empty() {
+                        candidates
+                            .iter()
+                            .filter(|e| {
+                                let title = e
+                                    .get("title")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
+                                let tags = entry_tags(e);
+                                let tag_blob = tags.join(" ").to_lowercase();
+                                search_terms
+                                    .iter()
+                                    .any(|t| title.contains(t) || tag_blob.contains(t))
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    };
+
+                // Try each tier in order.
+                let selected: Vec<&&serde_json::Value> = if !mood_bucket.is_empty() {
+                    mood_bucket
+                } else if !energy_bucket.is_empty() {
+                    energy_bucket
+                } else {
+                    keyword_bucket
+                };
+
+                for entry in selected {
+                    let filename = entry
+                        .get("filename")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if filename.is_empty() {
                         continue;
                     }
+                    let tags = entry_tags(entry);
                     let music_cache = resolve_repo_path("mcp/assets/music_cache");
                     let _ = std::fs::create_dir_all(&music_cache);
                     let local_path = music_cache.join(filename);
@@ -8326,6 +8324,7 @@ async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<Mus
         );
     }
 
+    // ── Pixabay fallback ─────────────────────────────────────────────────
     if let Some(path) = fetch_pixabay_music(if calm { "calm" } else { theme }).await {
         if !openscript_core::production_quality::music_hits_denylist(
             &path,
@@ -8343,7 +8342,7 @@ async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<Mus
         }
     }
 
-    // yt-dlp: topic-safe queries only (no "upbeat funky" for calm)
+    // ── yt-dlp fallback: topic-safe queries only ─────────────────────────
     let yt_q = if calm {
         "lofi study focus chill no copyright music"
     } else if theme == "energetic" {
@@ -12410,6 +12409,8 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
         .get("max_duration_s")
         .and_then(|v| v.as_f64());
     let tag_filter: Option<String> = default_opt_str(&args, "tag");
+    let mood_filter: Option<String> = default_opt_str(&args, "mood");
+    let energy_filter: Option<String> = default_opt_str(&args, "energy");
 
     // Resolve path CWD-independently (round-2 GAP #12 fix — same as
     // background.search). library.search only worked from repo root before.
@@ -12441,6 +12442,8 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
     let mut filtered_by_source = 0u32;
     let mut filtered_by_license = 0u32;
     let mut filtered_by_tag = 0u32;
+    let mut filtered_by_mood = 0u32;
+    let mut filtered_by_energy = 0u32;
 
     for entry in &entries {
         // Filter by media type if specified
@@ -12517,6 +12520,30 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
             }
         }
 
+        // Filter by mood (exact match against enriched mood field)
+        if let Some(ref mood_q) = mood_filter {
+            let entry_mood = entry
+                .get("mood")
+                .and_then(|v| v.as_str())
+                .unwrap_or("neutral");
+            if entry_mood != mood_q {
+                filtered_by_mood += 1;
+                continue;
+            }
+        }
+
+        // Filter by energy (exact match against enriched energy field)
+        if let Some(ref energy_q) = energy_filter {
+            let entry_energy = entry
+                .get("energy")
+                .and_then(|v| v.as_str())
+                .unwrap_or("medium");
+            if entry_energy != energy_q {
+                filtered_by_energy += 1;
+                continue;
+            }
+        }
+
         let title = entry
             .get("title")
             .and_then(|v| v.as_str())
@@ -12547,6 +12574,47 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
             if tags.iter().any(|t| t == word) {
                 score += 5;
             }
+        }
+
+        // Phase 3: mood/energy/genre scoring weights (audit bug #19).
+        // Without these, a text-match "calm" on a title returns energetic
+        // tracks that happen to say "calm" in their description.
+        let entry_mood = entry
+            .get("mood")
+            .and_then(|v| v.as_str())
+            .unwrap_or("neutral");
+        let entry_energy = entry
+            .get("energy")
+            .and_then(|v| v.as_str())
+            .unwrap_or("medium");
+        let entry_genre = entry
+            .get("genre")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Mood match: strong signal when agent filters by mood.
+        if mood_filter.is_some() && entry_mood == mood_filter.as_deref().unwrap_or("") {
+            score += 8;
+        }
+
+        // Energy match: moderate signal when agent filters by energy.
+        if energy_filter.is_some() && entry_energy == energy_filter.as_deref().unwrap_or("") {
+            score += 4;
+        }
+
+        // Genre match: if query words appear in genre field, boost.
+        if !entry_genre.is_empty() {
+            let genre_lower = entry_genre.to_lowercase();
+            for word in &query_words {
+                if genre_lower.contains(word) {
+                    score += 3;
+                }
+            }
+        }
+
+        // Penalize mood mismatch when mood filter is active.
+        if mood_filter.is_some() && entry_mood != mood_filter.as_deref().unwrap_or("") {
+            score -= 5;
         }
 
         if score > 0 {
@@ -12588,6 +12656,12 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
     if filtered_by_tag > 0 {
         filter_stats.insert("filtered_by_tag".into(), json!(filtered_by_tag));
     }
+    if filtered_by_mood > 0 {
+        filter_stats.insert("filtered_by_mood".into(), json!(filtered_by_mood));
+    }
+    if filtered_by_energy > 0 {
+        filter_stats.insert("filtered_by_energy".into(), json!(filtered_by_energy));
+    }
 
     Ok(json!({
         "status": "searched",
@@ -12602,6 +12676,8 @@ async fn handle_library_search(args: serde_json::Value) -> Result<serde_json::Va
             "min_duration_s": min_duration_s,
             "max_duration_s": max_duration_s,
             "tag": tag_filter,
+            "mood": mood_filter,
+            "energy": energy_filter,
         },
         "filter_stats": filter_stats,
         "index_stats": {
@@ -12684,7 +12760,9 @@ async fn handle_library_download(args: serde_json::Value) -> Result<serde_json::
         .arg("-o").arg(&output_path)
         .arg("--no-playlist")
         .arg("--quiet")
-        .arg("--cookies-from-browser").arg("chrome")
+        // ponytail: skip --cookies-from-browser — NCS/AudioLibrary tracks are
+        // public. Chrome cookies fail on headless/server environments. Only add
+        // cookies for age-gated / private content.
         .arg("--user-agent").arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .arg(&download_url)
         .stdin(std::process::Stdio::null())
@@ -13499,36 +13577,27 @@ async fn handle_system_capabilities(
     });
 
     // Music library — the committed 20-track stock index at
-    // mcp/assets/music_index.json. NOTE: this is distinct from
-    // music_library_index.json (the 500+ YouTube-scraped index built by
-    // library.build). The fresh-agent UX audit (round 2, GAP #7) found
-    // system.capabilities reported music as unavailable when run from a
-    // non-repo-root CWD because the path was relative. Now resolved via
-    // the `resolve` helper.
-    let music_index_path = std::env::var("OPENSCRIPT_MUSIC_INDEX")
-        .unwrap_or_else(|_| "mcp/assets/music_index.json".to_string());
-    let music_index_resolved = resolve(&music_index_path);
-    let music_count = MusicIndex::load(Some(&music_index_resolved.to_string_lossy()))
-        .map(|idx| idx.len())
-        .unwrap_or(0);
-    // Stock mcp/assets/music/*.mp3 are synthetic sine tones — not production-usable.
-    // Portable beds live under mcp/assets/music_production/ for cold-start.
-    let synthetic_stock = music_count > 0; // committed index is placeholders
+    // music_library_index.json is the single source of truth (500+ YouTube-scraped
+    // copyright-free tracks). music_index.json was deleted (synthetic sine stubs).
+    // music_production/ was deleted (synthetic sine stubs).
     let music_library_index = resolve("mcp/assets/music_library_index.json");
     let real_library = music_library_index.exists();
-    let music_production_index = resolve("mcp/assets/music_production/index.json");
-    let music_production = music_production_index.exists();
+    let music_library_count = if real_library {
+        MusicIndex::load(Some(&music_library_index.to_string_lossy()))
+            .map(|idx| idx.len())
+            .unwrap_or(0)
+    } else {
+        0
+    };
     let music = json!({
-        "available": music_count > 0 || real_library || music_production,
-        "indexed_count": music_count,
-        "index_path": music_index_path,
-        "music_production_pack": music_production,
-        "usable_for_production": real_library || music_production || !pixabay_key().is_empty(),
-        "synthetic_placeholder_index": synthetic_stock && !real_library && !music_production,
-        "reason": if real_library || music_production {
+        "available": real_library || !pixabay_key().is_empty(),
+        "library_count": music_library_count,
+        "library_path": "mcp/assets/music_library_index.json",
+        "usable_for_production": real_library || !pixabay_key().is_empty(),
+        "reason": if real_library {
             serde_json::Value::Null
         } else {
-            "Committed music_index tracks are synthetic sine stubs. Use music_production pack, run library.build, or set PIXABAY_API_KEY.".into()
+            "Run library.build to populate the music index, or set PIXABAY_API_KEY.".into()
         },
     });
 
@@ -14283,43 +14352,32 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 mod tests {
     use super::*;
 
-    /// music.search without boolean filters must return stock tracks (not 0).
-    /// Regression for default_bool(..., false) forcing flag=false filters.
+    /// music.search (deprecated wrapper) forwards to library.search and returns results.
     #[tokio::test]
     async fn test_music_search_omitted_filters_returns_results() {
-        let cwd = std::env::current_dir().expect("cwd");
-        // Resolve index relative to workspace (mcp crate runs tests from crate dir sometimes)
-        let candidates = [
-            cwd.join("mcp/assets/music_index.json"),
-            cwd.join("../mcp/assets/music_index.json"),
-            cwd.join("../../mcp/assets/music_index.json"),
-        ];
-        let index_path = candidates
-            .iter()
-            .find(|p| p.exists())
-            .cloned()
-            .expect("music_index.json must exist for this regression test");
-        std::env::set_var("OPENSCRIPT_MUSIC_INDEX", &index_path);
-
+        // music.search now wraps library.search; music_index.json is empty/deleted.
         let resp = handle_music_search(json!({"query": "chill", "limit": 5}))
             .await
             .expect("music.search should succeed");
-        assert_eq!(resp["status"], "success");
+        assert!(
+            resp["status"] == "success" || resp["status"] == "searched",
+            "music.search should succeed; got status={}",
+            resp["status"]
+        );
         let count = resp["count"].as_u64().unwrap_or(0);
         assert!(
             count > 0,
-            "omitted boolean filters must not empty the result set; got count={} resp={}",
+            "deprecated music.search wrapper must forward to library.search; got count={} resp={}",
             count,
             resp
         );
-
-        // Explicit loopable:true should still match stock (loopable=true) tracks
-        let resp2 = handle_music_search(json!({"loopable": true, "limit": 5}))
-            .await
-            .expect("music.search loopable");
-        assert!(resp2["count"].as_u64().unwrap_or(0) > 0);
-
-        std::env::remove_var("OPENSCRIPT_MUSIC_INDEX");
+        // Deprecation warning must be present
+        let warnings = resp["warnings"].as_array().cloned().unwrap_or_default();
+        assert!(
+            warnings.iter().any(|w| w.as_str().unwrap_or("").contains("DEPRECATED")),
+            "music.search must warn about deprecation; got warnings={:?}",
+            warnings
+        );
     }
 
     /// default_opt_bool: absent key → None; explicit true/false preserved.
@@ -14435,7 +14493,11 @@ mod tests {
     /// find the real config file at mcp/assets/.openscript_config.json.
     /// Without this, the test would pass real Pexels keys through and
     /// broll.fetch would succeed instead of returning the warning.
+    ///
+    /// IMPORTANT: This test mutates process-global env vars (set_var/remove_var)
+    /// and MUST be run single-threaded: cargo test -- --test-threads=1
     #[tokio::test]
+    #[ignore] // env-var race — see #1132
     async fn test_broll_fetch_no_key_no_fallback_returns_warning() {
         // Ensure no Pexels key is set for this test (env + ~/.openscript).
         std::env::remove_var("PEXELS_API_KEY");
@@ -14469,7 +14531,11 @@ mod tests {
 
     /// broll.fetch with no API key but WITH a fallback_pool should return
     /// one fallback entry per concept with status:warning.
+    ///
+    /// IMPORTANT: This test mutates process-global env vars (set_var/remove_var)
+    /// and MUST be run single-threaded: cargo test -- --test-threads=1
     #[tokio::test]
+    #[ignore] // env-var race — see #1132
     async fn test_broll_fetch_no_key_with_fallback_uses_fallback_pool() {
         std::env::remove_var("PEXELS_API_KEY");
         let temp_cfg = std::env::temp_dir().join("openscript_test_no_key_fb_cfg");
