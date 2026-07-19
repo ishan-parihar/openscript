@@ -201,6 +201,9 @@ pub struct RenderManifest {
     /// Measured music ducking depth in dB during speech. Target: >=10 dB.
     #[serde(default)]
     pub ducking_depth_db: Option<f64>,
+    /// Output aspect ratio (e.g. "9:16", "16:9", "1:1").
+    #[serde(default)]
+    pub aspect_ratio: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1444,6 +1447,103 @@ fn score_audio_mix_quality(
     }
 }
 
+/// Weight 5 — visual hierarchy: layered elements with clear focal points.
+#[allow(dead_code)]
+fn score_visual_hierarchy(
+    stickers: &[StickerLayerInfo],
+    memes: &[MemeLayerInfo],
+    sections: &[SectionInfo],
+    captions_present: bool,
+) -> DimensionScore {
+    let mut findings = Vec::new();
+    let mut s = 0i32;
+
+    let has_title_card = sections.iter().any(|sec| {
+        sec.title_text.as_ref().map(|t| !t.is_empty()).unwrap_or(false)
+    });
+    if has_title_card { s += 1; }
+    else { findings.push("no title cards — add title_text to hook/payoff sections".into()); }
+
+    if !memes.is_empty() { s += 1; }
+    else { findings.push("no reaction meme cuts — memes create motion hierarchy above static stickers".into()); }
+
+    if !stickers.is_empty() { s += 1; }
+    else { findings.push("no stickers — mid-level motion layer missing from visual hierarchy".into()); }
+
+    if captions_present { s += 1; }
+    else { findings.push("no captions — text anchor layer missing from visual hierarchy".into()); }
+
+    let hook_has_visual = sections.iter().any(|sec| {
+        matches!(sec.role, SectionRole::Hook) && sec.start_ms < 3000
+    }) && (!stickers.is_empty() || has_title_card);
+    if hook_has_visual { s += 1; }
+    else { findings.push("hook lacks immediate visual element (sticker or title card in first 3s)".into()); }
+
+    DimensionScore {
+        id: "visual_hierarchy".into(),
+        label: "Visual hierarchy (layers & focus)".into(),
+        score: s.min(5),
+        max: 5,
+        detail: serde_json::json!({
+            "has_title_card": has_title_card,
+            "has_memes": !memes.is_empty(),
+            "has_stickers": !stickers.is_empty(),
+            "captions_present": captions_present,
+            "hook_has_visual": hook_has_visual,
+        }),
+        findings,
+    }
+}
+
+/// Weight 5 — platform optimization: aspect ratio, duration sweet spot.
+#[allow(dead_code)]
+fn score_platform_optimization(duration_ms: i64, aspect_ratio: Option<&str>) -> DimensionScore {
+    let mut findings = Vec::new();
+    let mut s = 0i32;
+
+    match aspect_ratio {
+        Some(ar) if ar == "9:16" => { s += 2; }
+        Some(ar) if ar == "1:1" => {
+            s += 1;
+            findings.push("1:1 aspect — 9:16 vertical preferred for Shorts/Reels/TikTok".into());
+        }
+        Some(ar) => {
+            findings.push(format!("aspect ratio '{}' not optimal — use 9:16", ar));
+        }
+        None => {
+            s += 1; // assume correct if not reported
+            findings.push("aspect_ratio not set in manifest — verify render config".into());
+        }
+    }
+
+    let duration_s = duration_ms / 1000;
+    if (15..=60).contains(&duration_s) {
+        s += 2;
+    } else if (60..=90).contains(&duration_s) {
+        s += 1;
+        findings.push(format!("duration {}s acceptable; 15-60s maximizes algorithm boost", duration_s));
+    } else if duration_s < 15 {
+        findings.push(format!("duration {}s too short — platform minimum ~15s", duration_s));
+    } else {
+        findings.push(format!("duration {}s exceeds 90s — keep short-form under 90s for retention", duration_s));
+    }
+
+    s += 1; // first-frame quality: award by default
+
+    DimensionScore {
+        id: "platform_optimization".into(),
+        label: "Platform optimization (ratio, duration)".into(),
+        score: s.min(5),
+        max: 5,
+        detail: serde_json::json!({
+            "aspect_ratio": aspect_ratio,
+            "duration_s": duration_s,
+            "sweet_spot_s": [15, 60],
+        }),
+        findings,
+    }
+}
+
 /// Weight 12 — efficacious use of the multi-track timeline editor.
 pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
     let mut findings = Vec::new();
@@ -2428,7 +2528,47 @@ mod tests {
         let d = score_audio_mix_quality(Some(-16.0), Some(-3.0), Some(14.0), -12.0, true);
         assert!(d.score >= 4, "ideal audio mix should score >=4/5, got {}", d.score);
     }
+
+    #[test]
+    fn visual_hierarchy_no_elements_low_score() {
+        let d = score_visual_hierarchy(&[], &[], &[], false);
+        assert_eq!(d.id, "visual_hierarchy");
+        assert_eq!(d.max, 5);
+        assert!(d.score <= 1);
+    }
+
+    #[test]
+    fn visual_hierarchy_full_stack_scores_high() {
+        let stickers = vec![StickerLayerInfo {
+            path: "a.gif".into(), start_ms: 0, end_ms: 5000,
+            position: "top-left".into(), scale: 0.30,
+        }];
+        let memes = vec![MemeLayerInfo { path: "m.mp4".into(), start_ms: 5000, end_ms: 8000 }];
+        let sections = vec![SectionInfo {
+            role: SectionRole::Hook, start_ms: 0, end_ms: 5000,
+            text: "Hook".into(), title_text: Some("BIG TITLE".into()),
+        }];
+        let d = score_visual_hierarchy(&stickers, &memes, &sections, true);
+        assert!(d.score >= 4, "full stack should score >=4/5, got {}", d.score);
+    }
+
+    #[test]
+    fn platform_opt_vertical_short_scores_high() {
+        let d = score_platform_optimization(30000, Some("9:16"));
+        assert_eq!(d.id, "platform_optimization");
+        assert_eq!(d.max, 5);
+        assert!(d.score >= 4, "30s vertical should score >=4/5, got {}", d.score);
+    }
+
+    #[test]
+    fn platform_opt_landscape_too_long_penalized() {
+        let d = score_platform_optimization(180000, Some("16:9"));
+        assert!(d.findings.iter().any(|f| f.contains("9:16") || f.contains("aspect")));
+        assert!(d.findings.iter().any(|f| f.contains("duration") || f.contains("long") || f.contains("90s")));
+        assert!(d.score <= 2, "landscape+too-long should score <=2, got {}", d.score);
+    }
 }
+
 
 
 
