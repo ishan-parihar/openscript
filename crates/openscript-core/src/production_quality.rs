@@ -823,6 +823,96 @@ fn score_music_variance(
     }
 }
 
+/// Weight 6 — SFX punctuation presence, variety, and gain compliance.
+#[allow(dead_code)]
+fn score_sfx_quality(sfx_count: usize, timeline: &Timeline) -> DimensionScore {
+    let mut findings = Vec::new();
+
+    let sfx_events: Vec<_> = timeline
+        .tracks
+        .get(&TrackType::Sfx)
+        .cloned()
+        .unwrap_or_default();
+
+    if sfx_count == 0 && sfx_events.is_empty() {
+        findings.push(
+            "HARD: no SFX at any transition — add whoosh/pop/riser via sfx.assign".into(),
+        );
+        return DimensionScore {
+            id: "sfx_quality".into(),
+            label: "SFX punctuation & variety".into(),
+            score: 0,
+            max: 6,
+            detail: serde_json::json!({ "sfx_count": 0, "unique_assets": 0 }),
+            findings,
+        };
+    }
+
+    let mut s = 2; // base for having any SFX
+
+    let unique_sfx: HashSet<_> = sfx_events.iter().map(|e| e.asset_id.as_str()).collect();
+    let unique_count = unique_sfx.len().max(sfx_count.min(1));
+
+    if unique_count >= 3 {
+        s += 2;
+    } else if unique_count >= 2 {
+        s += 1;
+    } else {
+        findings.push(format!(
+            "repetitive sfx: only {} unique asset(s) — rotate through >=3 different sounds",
+            unique_count
+        ));
+    }
+
+    let mut asset_counts: HashMap<&str, usize> = HashMap::new();
+    for e in &sfx_events {
+        *asset_counts.entry(e.asset_id.as_str()).or_insert(0) += 1;
+    }
+    let max_repeat = asset_counts.values().copied().max().unwrap_or(0);
+    if max_repeat > 2 {
+        findings.push(format!(
+            "sfx asset repeated {}x — a real editor rotates different SFX per transition",
+            max_repeat
+        ));
+        s = (s - 1).max(0);
+    }
+
+    let mut gain_violations = 0usize;
+    for e in &sfx_events {
+        if let EventKind::Sfx { recommended_gain_db, .. } = &e.kind {
+            if *recommended_gain_db > -3.0 || *recommended_gain_db < -20.0 {
+                gain_violations += 1;
+            }
+        }
+    }
+    if gain_violations > 0 {
+        findings.push(format!(
+            "{} sfx event(s) with gain outside -20 to -3 dB — risk of clipping or inaudibility",
+            gain_violations
+        ));
+    } else if !sfx_events.is_empty() {
+        s += 1;
+    }
+
+    let coverage = (sfx_count.max(sfx_events.len()) >= 2) as i32;
+    s += coverage;
+
+    DimensionScore {
+        id: "sfx_quality".into(),
+        label: "SFX punctuation & variety".into(),
+        score: s.min(6),
+        max: 6,
+        detail: serde_json::json!({
+            "sfx_count": sfx_count,
+            "timeline_sfx_events": sfx_events.len(),
+            "unique_assets": unique_count,
+            "max_repeat": max_repeat,
+            "gain_violations": gain_violations,
+        }),
+        findings,
+    }
+}
+
 /// Weight 8 — sticker design principles.
 fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
     let mut findings = Vec::new();
@@ -1726,4 +1816,85 @@ mod tests {
             report.hard_fails
         );
     }
+
+    #[test]
+    fn sfx_quality_no_sfx_scores_zero() {
+        let tl = empty_timeline();
+        let d = score_sfx_quality(0, &tl);
+        assert_eq!(d.score, 0);
+        assert_eq!(d.max, 6);
+        assert!(d.findings.iter().any(|f| f.contains("sfx") || f.contains("SFX")));
+    }
+
+    #[test]
+    fn sfx_quality_present_unique_scores_high() {
+        use crate::timeline::{EventKind, TimelineEvent};
+        use crate::types::TrackType;
+        let mut tl = empty_timeline();
+        for (i, asset_id) in ["whoosh_a", "pop_b"].iter().enumerate() {
+            tl.tracks.entry(TrackType::Sfx).or_default().push(TimelineEvent {
+                id: format!("sfx_{}", i),
+                asset_id: asset_id.to_string(),
+                start_ms: (i as i64) * 4000,
+                end_ms: (i as i64) * 4000 + 500,
+                offset_ms: 0,
+                gain_db: 0.0,
+                fade_in_ms: 0,
+                fade_out_ms: 0,
+                tags: vec![],
+                provenance: None,
+                kind: EventKind::Sfx {
+                    editorial_role: "transition".to_string(),
+                    category: String::new(),
+                    subcategory: String::new(),
+                    duration_ms: 400,
+                    sample_rate: 44100,
+                    peak_db: -10.0,
+                    loudness_lufs: -18.0,
+                    recommended_gain_db: -10.0,
+                    recommended_use: String::new(),
+                    safe_overlay: true,
+                },
+            });
+        }
+        let d = score_sfx_quality(2, &tl);
+        assert!(d.score >= 4, "two unique SFX assets should score >=4, got {}", d.score);
+    }
+
+    #[test]
+    fn sfx_quality_repeated_asset_penalized() {
+        use crate::timeline::{EventKind, TimelineEvent};
+        use crate::types::TrackType;
+        let mut tl = empty_timeline();
+        for i in 0..4 {
+            tl.tracks.entry(TrackType::Sfx).or_default().push(TimelineEvent {
+                id: format!("sfx_{}", i),
+                asset_id: "whoosh_a".to_string(),
+                start_ms: (i as i64) * 3000,
+                end_ms: (i as i64) * 3000 + 400,
+                offset_ms: 0,
+                gain_db: 0.0,
+                fade_in_ms: 0,
+                fade_out_ms: 0,
+                tags: vec![],
+                provenance: None,
+                kind: EventKind::Sfx {
+                    editorial_role: "transition".to_string(),
+                    category: String::new(),
+                    subcategory: String::new(),
+                    duration_ms: 400,
+                    sample_rate: 44100,
+                    peak_db: -10.0,
+                    loudness_lufs: -18.0,
+                    recommended_gain_db: -10.0,
+                    recommended_use: String::new(),
+                    safe_overlay: true,
+                },
+            });
+        }
+        let d = score_sfx_quality(4, &tl);
+        assert!(d.findings.iter().any(|f| f.contains("repetitive") || f.contains("repeat")));
+        assert!(d.score <= 4, "repetitive sfx should score <=4, got {}", d.score);
+    }
 }
+
