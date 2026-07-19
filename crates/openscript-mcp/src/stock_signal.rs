@@ -41,6 +41,14 @@ const NOISE_TOKENS: &[&str] = &[
     "your", "you", "our", "their", "thing", "things", "whole", "single", "must",
     "exactly", "really", "just", "like", "also", "even", "still", "don", "doesn",
     "isn", "aren", "wasn", "won", "can", "cant", "dont",
+    // stop words (articles, prepositions, conjunctions)
+    "the", "and", "or", "but", "for", "nor", "yet", "so", "a", "an", "in", "on",
+    "at", "to", "of", "by", "with", "from", "into", "during", "including",
+    "until", "against", "among", "throughout", "despite", "towards", "upon",
+    "within", "without", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could",
+    "should", "may", "might", "must", "shall", "that", "this", "these", "those",
+    "it", "its", "as", "if", "then", "than", "when", "where", "why", "how",
     // meta
     "stock", "footage", "cinematic", "video", "clip", "free", "royalty",
 ];
@@ -80,6 +88,10 @@ fn detect_topic(video_keywords: &[String]) -> TopicCategory {
                 "biology", "atom", "molecule", "research", "hypothesis",
                 "microscope", "genetics", "dna", "quantum", "formula",
                 "equation", "discovery", "innovation", "medical", "anatomy",
+                // Biology / photosynthesis
+                "photosynthesis", "chloroplast", "chlorophyll", "thylakoid", "photosystem",
+                "stomata", "guard cell", "calvin cycle", "glucose", "photon",
+                "leaf", "plant", "seedling", "germination", "green",
             ],
         ),
         (
@@ -136,11 +148,15 @@ fn topic_visual_boost(cat: TopicCategory) -> Vec<&'static str> {
             "solar", "lunar", "telescope", "cosmic", "black hole",
             "constellation", "satellite", "rocket", "spacecraft",
         ],
-        TopicCategory::Science => vec![
+TopicCategory::Science => vec![
             "laboratory", "experiment", "microscope", "atom", "molecule",
             "dna", "formula", "research", "discovery", "genetics",
             "chemistry", "physics", "quantum", "equation", "anatomy",
             "medical", "hypothesis", "specimen", "pipette", "centrifuge",
+            // Biology / photosynthesis - specific visual terms (common terms like leaf/plant/sunlight in topic_anchors)
+            "photosynthesis", "stomata", "glucose", "calvin", "cycle",
+            "carbon", "sugar", "energy", "thylakoid", "granum", "photosystem",
+            "rubisco", "carbon fixation", "triose phosphate", "seedling", "sprout", "growth",
         ],
         TopicCategory::Nature => vec![
             "forest", "ocean", "mountain", "river", "waterfall", "wildlife",
@@ -195,6 +211,13 @@ fn topic_anchors(cat: TopicCategory) -> Vec<(&'static str, Vec<&'static str>)> {
             ("formula derivation", vec!["formula", "equation", "mathematics", "derivation"]),
             ("robot arm assembly", vec!["robot", "assembly", "automation", "manufacturing"]),
             ("data visualization", vec!["data", "chart", "graph", "visualization"]),
+            // Biology / photosynthesis specific anchors - specific visual terms only
+            ("leaf surface timelapse", vec!["leaf surface", "epidermis", "mesophyll", "cuticle", "stomata"]),
+            ("chloroplast closeup", vec!["chloroplast", "thylakoid", "granum", "photosystem", "stroma"]),
+            ("sunlight through leaves", vec!["sunbeams", "light rays", "canopy", "dappled light", "leaf canopy", "crepuscular rays"]),
+            ("stomata microscopic", vec!["stomata", "guard cell", "pores", "gas exchange", "transpiration"]),
+            ("plant growth timelapse", vec!["seedling", "sprout", "germination", "cotyledon", "meristem"]),
+            ("glucose energy", vec!["glucose", "calvin cycle", "rubisco", "carbon fixation", "triose phosphate"]),
         ],
         TopicCategory::Nature => vec![
             ("forest aerial", vec!["forest", "trees", "aerial", "canopy"]),
@@ -782,6 +805,50 @@ mod tests {
         assert!(b.iter().any(|t| t == "notebook" || t == "coffee"));
         // First tokens should be scene-specific, not only topic keywords
         assert_ne!(a.first(), b.first());
+    }
+
+    #[test]
+    fn photosynthesis_anchors_diversify_per_scene() {
+        let video_keywords = vec![
+            "photosynthesis".into(),
+            "plants".into(),
+            "chlorophyll".into(),
+            "sunlight".into(),
+            "biology".into(),
+        ];
+        let scenes = vec![
+            "Photosynthesis is the process by which plants convert sunlight into chemical energy. Every breath you take depends on this ancient biological machinery.",
+            "In the chloroplasts, chlorophyll captures photons and uses them to split water molecules. The oxygen released becomes the air we breathe.",
+            "Carbon dioxide enters the leaf through tiny pores called stomata. Inside, the Calvin cycle stitches carbon atoms into glucose, the fuel of life.",
+            "The energy stored in glucose powers every cell in the plant. And when we eat plants, that same solar energy powers us.",
+            "Photosynthesis connects the sun to every living thing. It is the quiet engine of the biosphere, running since the dawn of life.",
+        ];
+        let mut anchors = Vec::new();
+        for (i, scene) in scenes.iter().enumerate() {
+            let q = build_scene_stock_query(scene, &video_keywords, "neutral", "9:16", i);
+            eprintln!("Scene {}: anchor='{}' query='{}'", i+1, q.visual_anchor, q.query);
+            anchors.push(q.visual_anchor.clone());
+        }
+        // Should have at least 3 different anchors across 5 scenes
+        let unique: std::collections::HashSet<_> = anchors.iter().collect();
+        assert!(unique.len() >= 3, "Expected at least 3 unique anchors, got {:?}", unique);
+    }
+
+    #[test]
+    fn photosynthesis_signal_tokens() {
+        let video_keywords = vec!["photosynthesis".into(), "plants".into(), "chlorophyll".into(), "sunlight".into(), "biology".into()];
+        let scene = "Photosynthesis is the process by which plants convert sunlight into chemical energy. Every breath you take depends on this ancient biological machinery.";
+        let signal = signal_tokens_from_scene(scene, &video_keywords);
+        eprintln!("Photosynthesis signal: {:?}", signal);
+        // Should contain photosynthesis, plants, chlorophyll, biology
+        assert!(signal.iter().any(|t| t == "photosynthesis"));
+        assert!(signal.iter().any(|t| t == "plants"));
+        assert!(signal.iter().any(|t| t == "chlorophyll"));
+        assert!(signal.iter().any(|t| t == "biology"));
+        // Should NOT contain noise words
+        assert!(!signal.iter().any(|t| t == "the"), "Noise word 'the' should be filtered");
+        assert!(!signal.iter().any(|t| t == "is"), "Noise word 'is' should be filtered");
+        assert!(!signal.iter().any(|t| t == "by"), "Noise word 'by' should be filtered");
     }
 
     #[test]
