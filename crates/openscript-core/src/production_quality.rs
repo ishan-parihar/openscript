@@ -926,8 +926,11 @@ fn score_sfx_quality(sfx_count: usize, timeline: &Timeline) -> DimensionScore {
     }
 }
 
-/// Weight 8 — sticker design principles.
-fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
+/// Weight 8 — sticker design (full analysis with duration context).
+fn score_sticker_design_with_duration(
+    stickers: &[StickerLayerInfo],
+    duration_ms: i64,
+) -> DimensionScore {
     let mut findings = Vec::new();
     if stickers.is_empty() {
         findings.push("no stickers/GIFs composited".into());
@@ -952,36 +955,75 @@ fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
     let mut scale_ok = 0;
     let mut pos_risk = 0;
     let mut animated = 0;
+    let mut off_screen = 0usize;
+
     for st in stickers {
         if (0.20..=0.45).contains(&st.scale) {
             scale_ok += 1;
         } else {
-            findings.push(format!(
-                "sticker scale={:.2} outside design band 0.20–0.45",
-                st.scale
-            ));
+            findings.push(format!("sticker scale={:.2} outside design band 0.20-0.45", st.scale));
         }
-        if st.position.to_lowercase().contains("bottom") {
-            pos_risk += 1;
+        let pos_lower = st.position.to_lowercase();
+        if pos_lower.is_empty() || pos_lower == "off" || pos_lower == "hidden" || pos_lower == "none" {
+            off_screen += 1;
             findings.push(format!(
-                "sticker position '{}' may collide with caption rail",
+                "sticker position '{}' is off-screen or undefined — set a valid position",
                 st.position
             ));
+        } else if pos_lower.contains("bottom") {
+            pos_risk += 1;
+            findings.push(format!("sticker position '{}' may collide with caption rail", st.position));
         }
         if st.path.ends_with(".gif") || st.path.ends_with(".webp") {
             animated += 1;
         }
     }
-    if scale_ok * 2 >= stickers.len() {
+
+    if scale_ok * 2 >= stickers.len() { s += 2; }
+    if pos_risk == 0 && off_screen == 0 {
         s += 2;
-    }
-    if pos_risk == 0 {
-        s += 2;
+    } else if off_screen > 0 {
+        s = (s - 1).max(0);
     }
     if animated > 0 {
         s += 1;
     } else {
-        findings.push("no animated GIF stickers — static PNG only".into());
+        findings.push("no animated GIF stickers — static PNG only reduces visual energy".into());
+    }
+
+    // Temporal overlap check
+    let mut overlap_pairs = 0usize;
+    for i in 0..stickers.len() {
+        for j in (i + 1)..stickers.len() {
+            let a = &stickers[i];
+            let b = &stickers[j];
+            let overlap = a.end_ms.min(b.end_ms) - a.start_ms.max(b.start_ms);
+            if overlap > 500 {
+                overlap_pairs += 1;
+            }
+        }
+    }
+    if overlap_pairs > 0 {
+        findings.push(format!(
+            "{} sticker pair(s) overlap >500ms simultaneously — competing for attention",
+            overlap_pairs
+        ));
+        s = (s - 1).max(0);
+    }
+
+    // Always-on: sticker spanning >=90% of video
+    if duration_ms > 0 {
+        for st in stickers {
+            let span = st.end_ms - st.start_ms;
+            if span as f64 >= duration_ms as f64 * 0.90 {
+                findings.push(format!(
+                    "sticker '{}' is always-on ({:.0}% of video) — dynamic placement increases engagement",
+                    st.path.split('/').last().unwrap_or(&st.path),
+                    span as f64 / duration_ms as f64 * 100.0
+                ));
+                break;
+            }
+        }
     }
 
     DimensionScore {
@@ -995,10 +1037,18 @@ fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
             "animated_count": animated,
             "scale_ok_count": scale_ok,
             "bottom_position_risk": pos_risk,
+            "off_screen_count": off_screen,
+            "overlap_pairs": overlap_pairs,
             "design_band_scale": [0.20, 0.45],
         }),
         findings,
     }
+}
+
+/// Backward-compat wrapper — no duration = no always-on check.
+#[allow(dead_code)]
+fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
+    score_sticker_design_with_duration(stickers, 0)
 }
 
 /// Weight 8 — section composition.
@@ -1954,6 +2004,52 @@ mod tests {
         std::fs::remove_file("/tmp/test_music_sweet.mp3").ok();
         assert!(d.score >= 6, "sweet spot music should score >=6/8, got {}", d.score);
     }
+
+    #[test]
+    fn sticker_overlap_flagged() {
+        let stickers = vec![
+            StickerLayerInfo {
+                path: "a.gif".into(), start_ms: 0, end_ms: 8000,
+                position: "top-left".into(), scale: 0.35,
+            },
+            StickerLayerInfo {
+                path: "b.gif".into(), start_ms: 3000, end_ms: 11000,
+                position: "top-right".into(), scale: 0.30,
+            },
+        ];
+        let d = score_sticker_design_with_duration(&stickers, 11000);
+        assert!(
+            d.findings.iter().any(|f| f.contains("overlap") || f.contains("compete")),
+            "overlapping stickers should be flagged: {:?}", d.findings
+        );
+    }
+
+    #[test]
+    fn sticker_empty_position_flagged() {
+        let stickers = vec![StickerLayerInfo {
+            path: "a.gif".into(), start_ms: 0, end_ms: 5000,
+            position: "".into(), scale: 0.30,
+        }];
+        let d = score_sticker_design_with_duration(&stickers, 5000);
+        assert!(
+            d.findings.iter().any(|f| f.contains("position") || f.contains("off-screen") || f.contains("undefined")),
+            "empty position should be flagged: {:?}", d.findings
+        );
+    }
+
+    #[test]
+    fn sticker_always_on_flagged() {
+        let stickers = vec![StickerLayerInfo {
+            path: "a.gif".into(), start_ms: 0, end_ms: 20000,
+            position: "top-left".into(), scale: 0.30,
+        }];
+        let d = score_sticker_design_with_duration(&stickers, 20000);
+        assert!(
+            d.findings.iter().any(|f| f.contains("always") || f.contains("whole video") || f.contains("100%")),
+            "always-on sticker should be flagged: {:?}", d.findings
+        );
+    }
 }
+
 
 
