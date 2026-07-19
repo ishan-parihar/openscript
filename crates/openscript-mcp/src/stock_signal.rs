@@ -67,9 +67,10 @@ fn detect_topic(video_keywords: &[String]) -> TopicCategory {
             TopicCategory::Space,
             &[
                 "space", "galaxy", "nebula", "universe", "cosmos", "star",
-                "planet", "black hole", "gravity", "astronomy", "telescope",
+                "planet", "black hole", "black", "hole", "gravity", "astronomy", "telescope",
                 "aurora", "milky way", "solar", "lunar", "comet", "asteroid",
                 "constellation", "supernova", "cosmic", "orbit", "satellite",
+                "event horizon", "singularity", "spacetime", "dark matter",
             ],
         ),
         (
@@ -781,5 +782,12 @@ mod tests {
         assert!(b.iter().any(|t| t == "notebook" || t == "coffee"));
         // First tokens should be scene-specific, not only topic keywords
         assert_ne!(a.first(), b.first());
+    }
+
+    #[test]
+    fn black_holes_topic_detected_as_space() {
+        let video_keywords = vec!["science".into(), "black".into(), "holes".into()];
+        let topic = detect_topic(&video_keywords);
+        assert_eq!(topic, TopicCategory::Space, "Expected Space, got {:?}", topic);
     }
 }
