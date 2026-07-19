@@ -138,18 +138,24 @@ if [ -n "$UNCOMMITTED" ]; then
 fi
 echo -e "${GREEN}OK${NC}"
 
-# ---- Step 6: git push origin main ----
-echo -n "[6/7] git push origin main... "
-PUSH_OUTPUT=$(git push origin main 2>&1) || {
+# Determine git remote
+REMOTE="origin"
+if ! git remote get-url origin >/dev/null 2>&1; then
+  REMOTE="github"
+fi
+
+# ---- Step 6: git push $REMOTE main ----
+echo -n "[6/7] git push $REMOTE main... "
+PUSH_OUTPUT=$(git push "$REMOTE" main 2>&1) || {
   echo -e "${RED}FAILED${NC}"
   echo "$PUSH_OUTPUT"
   FAIL "git push failed — see AGENTS.md §7.5 for the push-failure hard-stop protocol"
 }
 echo -e "${GREEN}OK${NC}"
 
-# ---- Step 7: git log origin/main..HEAD (nothing unpushed) ----
-echo -n "[7/7] git log origin/main..HEAD (nothing unpushed)... "
-UNPUSHED=$(git log origin/main..HEAD --oneline 2>&1)
+# ---- Step 7: git log $REMOTE/main..HEAD (nothing unpushed) ----
+echo -n "[7/7] git log $REMOTE/main..HEAD (nothing unpushed)... "
+UNPUSHED=$(git log "$REMOTE/main..HEAD" --oneline 2>&1)
 if [ -n "$UNPUSHED" ]; then
   echo -e "${RED}FAILED${NC}"
   echo "$UNPUSHED"
