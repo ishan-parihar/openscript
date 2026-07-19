@@ -2,17 +2,22 @@
 //!
 //! `verify.render` is **technical integrity** only. This module scores whether the
 //! timeline/render actually uses the editor like a director:
-//! video source quality, visual hooks, cut pacing, music variance, sticker design,
-//! section composition, and track utilization.
+//! video source quality, visual hooks, cut pacing, music quality, sfx quality,
+//! sticker design, caption quality, voiceover quality, audio mix quality,
+//! section composition, visual hierarchy, platform optimization, and track utilization.
 //!
 //! Weights sum to 100. Grade bands:
 //!   A 85–100 · B 70–84 · C 55–69 · D 40–54 · F <40
 //!
-//! v3.0 (Phase A pipeline fix):
-//! - **visual_hooks** dimension — real stock in the open + cut presence
-//! - **HARD:** majority procedural (≥50%) always hard-fails and caps grade ≤ D
-//! - music denylist / synthetic hard-fails
-//! - findings with `HARD:` prefix always hard-fail
+//! v4.0 (2026-07-20):
+//! - sfx_quality (6 pts) — SFX punctuation & variety
+//! - music_quality (8 pts, expanded from music_variance)
+//! - caption_quality (6 pts, expanded from captions)
+//! - voiceover_quality (6 pts, new)
+//! - audio_mix_quality (5 pts, new) — LUFS, peak, ducking
+//! - visual_hierarchy (5 pts, new)
+//! - platform_optimization (5 pts, new)
+//! - hard gates: no-SFX->C, CPS>25->C, LUFS out-of-range->C, clipping->D
 
 use crate::timeline::{EventKind, Timeline};
 use crate::types::TrackType;
@@ -382,7 +387,7 @@ fn score_video_source(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
         mix_counts.insert(key.to_string(), serde_json::json!(c));
     }
     let avg = tier_sum / n as f64;
-    let mut score = (avg * 12.0).round() as i32;
+    let mut score = (avg * 10.0).round() as i32;
     let ratio = procedural_n as f64 / n as f64;
     if procedural_n == n && n > 0 {
         findings.push(
@@ -403,7 +408,7 @@ fn score_video_source(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
         id: "video_source_quality".into(),
         label: "Video source quality".into(),
         score,
-        max: 12,
+        max: 10,
         detail: serde_json::json!({
             "clip_count": bgs.len(),
             "procedural_count": procedural_n,
@@ -457,9 +462,9 @@ fn score_visual_hooks(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> Dimensio
         );
         0
     } else {
-        let mut s = (real_ratio * 7.0).round() as i32; // up to 7 for coverage
+        let mut s = (real_ratio * 6.0).round() as i32; // up to 6 for coverage
         if hook_has_real {
-            s += 3;
+            s += 2;
         } else {
             findings.push("opening 3s lacks real stock visual hook".into());
             s = s.saturating_sub(1);
@@ -470,20 +475,20 @@ fn score_visual_hooks(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> Dimensio
             .filter(|b| b.lexical_score.unwrap_or(0.0) >= 0.12)
             .count();
         if lex_ok > 0 {
-            s = (s + 1).min(10);
+            s = (s + 1).min(8);
         }
         s
     };
     let mut score = score;
     if duration_ms > 8000 && real_n < 2 && bgs.len() >= 3 {
         findings.push("multi-scene short with <2 real stock clips — weak visual variety".into());
-        score = score.min(4);
+        score = score.min(3);
     }
     DimensionScore {
         id: "visual_hooks".into(),
         label: "Visual hooks (real stock / open)".into(),
-        score: score.clamp(0, 10),
-        max: 10,
+        score: score.clamp(0, 8),
+        max: 8,
         detail: serde_json::json!({
             "real_stock_count": real_n,
             "total_clips": bgs.len(),
@@ -549,26 +554,26 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     let max_freq = freq.values().copied().max().unwrap_or(1);
     let dominant_share = max_freq as f64 / n as f64;
 
-    let mut score = (uniqueness * 12.0).round() as i32;
+    let mut score = (uniqueness * 8.0).round() as i32;
     if max_run >= 3 && n >= 3 {
         findings.push(format!(
             "REPETITION: same visual identity runs for {} consecutive cuts — looks like one clip looping",
             max_run
         ));
-        score = (score - 6).max(0);
+        score = (score - 4).max(0);
     } else if max_run >= 2 && n >= 4 {
         findings.push(format!(
             "back-to-back repeat of same visual for {} cuts",
             max_run
         ));
-        score = (score - 3).max(0);
+        score = (score - 2).max(0);
     }
     if dominant_share > 0.5 && n >= 3 {
         findings.push(format!(
             "REPETITION: one source used in {:.0}% of scenes — lack of context-relevant variance",
             dominant_share * 100.0
         ));
-        score = (score - 4).max(0);
+        score = (score - 3).max(0);
     }
     if uniqueness < 0.5 && n >= 3 {
         findings.push(format!(
@@ -587,8 +592,8 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     DimensionScore {
         id: "visual_repetition".into(),
         label: "Visual variance / anti-repeat".into(),
-        score: score.min(12),
-        max: 12,
+        score: score.min(8),
+        max: 8,
         detail: serde_json::json!({
             "unique_identities": unique.len(),
             "total_clips": n,
@@ -682,17 +687,17 @@ fn score_context_relevance(
     };
     // Low avg still gets partial credit if keywords present in queries
     let score = if avg >= 0.15 {
-        12
+        8
     } else if avg >= 0.08 {
-        9
-    } else if avg >= 0.04 {
         6
+    } else if avg >= 0.04 {
+        4
     } else if !kw.is_empty() {
         findings.push(
             "search queries weakly aligned with video_keywords / scene text — diversify per-scene queries"
                 .into(),
         );
-        4
+        3
     } else {
         findings.push(
             "no video_keywords and weak query/text overlap — set video_keywords for topic-aware stock"
@@ -705,7 +710,7 @@ fn score_context_relevance(
         id: "context_relevance".into(),
         label: "Context-relevant visual variance".into(),
         score,
-        max: 12,
+        max: 8,
         detail: serde_json::json!({
             "avg_jaccard": (avg * 1000.0).round() / 1000.0,
             "per_scene": scores.iter().map(|v| (v * 1000.0).round() / 1000.0).collect::<Vec<_>>(),
@@ -738,13 +743,13 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
         findings.push("single background path for whole video".into());
         2
     } else if (0.12..=0.55).contains(&cps) {
-        6
+        5
     } else if (0.08..0.12).contains(&cps) || (0.55..0.75).contains(&cps) {
         findings.push(format!(
             "cuts_per_second={:.2} slightly outside ideal 0.12–0.55 band",
             cps
         ));
-        4
+        3
     } else if cps < 0.08 {
         findings.push(format!(
             "cuts_per_second={:.2} too static (want ≥0.12)",
@@ -764,7 +769,7 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
             id: "cuts_pacing".into(),
             label: "Cuts / visual pacing".into(),
             score,
-            max: 6,
+            max: 5,
             detail: serde_json::json!({
                 "cuts_per_second": (cps * 1000.0).round() / 1000.0,
                 "visual_changes": visual_changes,
@@ -1165,7 +1170,8 @@ fn score_section_composition(
     }
 }
 
-/// Weight 8 — speech.
+/// Weight 8 — speech (legacy v3.0, replaced by score_voiceover_quality in v4.0).
+#[allow(dead_code)]
 fn score_speech(has_dialogue: bool, rms_ok: bool) -> DimensionScore {
     let mut findings = Vec::new();
     let score = if has_dialogue && rms_ok {
@@ -1817,44 +1823,67 @@ pub fn evaluate_production_quality(
     });
 
     let theme = manifest.theme.as_deref();
-    let d_source = score_video_source(&backgrounds);
-    let d_hooks = score_visual_hooks(&backgrounds, duration_ms);
-    let d_repeat = score_visual_repetition(&backgrounds);
-    let d_context =
-        score_context_relevance(&backgrounds, &sections, &manifest.video_keywords);
+    let music_gain = manifest.music.as_ref().map(|m| m.gain_db).unwrap_or(-12.0);
+    let captions_present = captions_path
+        .as_deref()
+        .map(|p| !p.is_empty() && Path::new(p).exists())
+        .unwrap_or(false);
+
+    let d_source  = score_video_source(&backgrounds);
+    let d_hooks   = score_visual_hooks(&backgrounds, duration_ms);
+    let d_repeat  = score_visual_repetition(&backgrounds);
+    let d_context = score_context_relevance(&backgrounds, &sections, &manifest.video_keywords);
     let (d_cuts, cps) = score_cuts_pacing(&backgrounds, duration_ms);
-    let d_music =
-        score_music_quality(music.as_ref(), theme, &manifest.video_keywords);
-    let d_sticker = score_sticker_design(&manifest.stickers);
+    let d_music   = score_music_quality(music.as_ref(), theme, &manifest.video_keywords);
+    let d_sfx     = score_sfx_quality(manifest.sfx_count, timeline);
+    let d_sticker = score_sticker_design_with_duration(&manifest.stickers, duration_ms);
+    let d_cap     = score_caption_quality(
+        captions_path.as_deref(),
+        manifest.caption_coverage_ratio,
+        manifest.caption_style.as_deref(),
+        manifest.caption_chars_per_second,
+        manifest.caption_words_per_line,
+    );
+    let d_vo      = score_voiceover_quality(
+        manifest.has_dialogue,
+        manifest.voiceover_count,
+        manifest.voiceover_wpm,
+        &manifest.voice_ids,
+        manifest.emote_alignment_ok,
+    );
+    let d_audio   = score_audio_mix_quality(
+        manifest.lufs,
+        manifest.peak_dbfs,
+        manifest.ducking_depth_db,
+        music_gain,
+        manifest.has_dialogue,
+    );
     let d_section = score_section_composition(&sections, &manifest.memes);
-    let d_speech = score_speech(manifest.has_dialogue, manifest.rms_ok);
-    let d_cap = score_captions(captions_path.as_deref());
+    let d_hier    = score_visual_hierarchy(
+        &manifest.stickers,
+        &manifest.memes,
+        &sections,
+        captions_present,
+    );
+    let d_plat    = score_platform_optimization(duration_ms, manifest.aspect_ratio.as_deref());
     let timeline_editor = score_timeline_editor(timeline);
 
-    // max 8 from editor utilization (sfx/hooks included in findings)
-    let editor_score = ((timeline_editor.utilization_score as f64) * 0.08).round() as i32;
+    // Scale utilization 0-100 → 0-4 pts (down from 0-8 in v3)
+    let editor_score = ((timeline_editor.utilization_score as f64) * 0.04).round() as i32;
     let d_editor = DimensionScore {
         id: "timeline_editor".into(),
         label: "Timeline editor efficacious use".into(),
-        score: editor_score.min(8),
-        max: 8,
+        score: editor_score.min(4),
+        max: 4,
         detail: serde_json::to_value(&timeline_editor).unwrap_or(serde_json::json!({})),
         findings: timeline_editor.findings.clone(),
     };
 
-    // Weights v3: 12+10+12+12+6+10+8+8+8+6+8 = 100
+    // v4.0: 10+8+8+8+5+8+6+8+6+6+5+8+5+5+4 = 100
     let dimensions = vec![
-        d_source,
-        d_hooks,
-        d_repeat,
-        d_context,
-        d_cuts,
-        d_music,
-        d_sticker,
-        d_section,
-        d_speech,
-        d_cap,
-        d_editor,
+        d_source, d_hooks, d_repeat, d_context, d_cuts,
+        d_music, d_sfx, d_sticker, d_cap, d_vo,
+        d_audio, d_section, d_hier, d_plat, d_editor,
     ];
 
     let mut production_score: i32 =
@@ -1870,9 +1899,10 @@ pub fn evaluate_production_quality(
                     "video_source_quality"
                         | "visual_hooks"
                         | "visual_repetition"
-                        | "music_variance"
+                        | "music_quality"
+                        | "sfx_quality"
                         | "speech_audio"
-                        | "captions"
+                        | "caption_quality"
                 )
             {
                 hard_fails.push(format!("{}: {}", d.id, f));
@@ -1897,6 +1927,41 @@ pub fn evaluate_production_quality(
                     .unwrap_or_else(|| "see detail".into())
             ));
         }
+    }
+
+    // v4.0 grade caps for new hard gates
+    let sfx_hard = dimensions.iter()
+        .find(|d| d.id == "sfx_quality")
+        .map(|d| d.score == 0 && d.findings.iter().any(|f| f.contains("HARD")))
+        .unwrap_or(false);
+    let lufs_hard = dimensions.iter()
+        .find(|d| d.id == "audio_mix_quality")
+        .map(|d| d.findings.iter().any(|f| f.contains("LUFS") && f.contains("HARD")))
+        .unwrap_or(false);
+    let clip_hard = dimensions.iter()
+        .find(|d| d.id == "audio_mix_quality")
+        .map(|d| d.findings.iter().any(|f| f.contains("clipping") && f.contains("HARD")))
+        .unwrap_or(false);
+    let cap_cps_hard = dimensions.iter()
+        .find(|d| d.id == "caption_quality")
+        .map(|d| d.findings.iter().any(|f| f.contains("CPS") && f.contains("unreadable")))
+        .unwrap_or(false);
+
+    if sfx_hard && production_score > 69 {
+        production_score = 69;
+        hard_fails.push("SFX hard gate: no SFX -> grade capped C".into());
+    }
+    if lufs_hard && production_score > 69 {
+        production_score = 69;
+        hard_fails.push("LUFS hard gate: loudness out of -14 to -18 range -> grade capped C".into());
+    }
+    if cap_cps_hard && production_score > 69 {
+        production_score = 69;
+        hard_fails.push("Caption hard gate: CPS > 25 (unreadable) -> grade capped C".into());
+    }
+    if clip_hard && production_score > 54 {
+        production_score = 54;
+        hard_fails.push("Clipping hard gate: peak > -1 dBFS -> grade capped D".into());
     }
 
     // Cap grade when hard fails present (fail closed on synthetic majority)
@@ -1934,7 +1999,7 @@ pub fn evaluate_production_quality(
         timeline_editor,
         cuts_per_second: (cps * 1000.0).round() / 1000.0,
         video_source_mix: serde_json::Value::Object(mix),
-        kpi_version: "3.0.0".into(),
+        kpi_version: "4.0.0".into(),
     }
 }
 
@@ -2006,7 +2071,35 @@ mod tests {
 
     #[test]
     fn rich_manifest_scores_high() {
-        let tl = empty_timeline();
+        use crate::timeline::{EventKind, TimelineEvent};
+        use crate::types::TrackType;
+        let mut tl = empty_timeline();
+        for (i, asset_id) in ["whoosh_a", "pop_b", "riser_c"].iter().enumerate() {
+            tl.tracks.entry(TrackType::Sfx).or_default().push(TimelineEvent {
+                id: format!("sfx_{}", i),
+                asset_id: asset_id.to_string(),
+                start_ms: (i as i64) * 6000,
+                end_ms: (i as i64) * 6000 + 400,
+                offset_ms: 0,
+                gain_db: 0.0,
+                fade_in_ms: 0,
+                fade_out_ms: 0,
+                tags: vec![],
+                provenance: None,
+                kind: EventKind::Sfx {
+                    editorial_role: "transition".to_string(),
+                    category: String::new(),
+                    subcategory: String::new(),
+                    duration_ms: 400,
+                    sample_rate: 44100,
+                    peak_db: -10.0,
+                    loudness_lufs: -18.0,
+                    recommended_gain_db: -10.0,
+                    recommended_use: String::new(),
+                    safe_overlay: true,
+                },
+            });
+        }
         let music = std::env::temp_dir().join("pq_music.mp3");
         std::fs::write(&music, vec![2u8; 9000]).unwrap();
         let caps = std::env::temp_dir().join("pq_caps.ass");
@@ -2028,7 +2121,7 @@ mod tests {
             stickers: vec![StickerLayerInfo {
                 path: "mcp/assets/stickers/giphy_alice.gif".into(),
                 start_ms: 0,
-                end_ms: 20000,
+                end_ms: 5000,
                 position: "top-left".into(),
                 scale: 0.35,
             }],
@@ -2039,11 +2132,14 @@ mod tests {
             }],
             music: Some(MusicLayerInfo {
                 path: music.to_string_lossy().to_string(),
-                gain_db: 0.0,
+                gain_db: -12.0,
                 ducking: true,
                 mood: Some("calm".into()),
                 energy: Some("low".into()),
-             tags: vec![], selection_query: None, source: None, }),
+                tags: vec!["lofi".into()],
+                selection_query: Some("lofi chill".into()),
+                source: Some("library".into()),
+            }),
             captions_path: Some(caps.to_string_lossy().to_string()),
             voiceover_count: 5,
             sections: vec![
@@ -2072,8 +2168,14 @@ mod tests {
             has_dialogue: true,
             rms_ok: true,
             video_keywords: vec!["morning".into(), "habit".into()],
-            theme: None,
-            sfx_count: 0,
+            theme: Some("calm".into()),
+            sfx_count: 3,
+            caption_coverage_ratio: 0.95,
+            caption_style: Some("word_highlight".into()),
+            voiceover_wpm: Some(145.0),
+            voice_ids: vec!["af_heart".into(), "bm_lewis".into()],
+            emote_alignment_ok: true,
+            aspect_ratio: Some("9:16".into()),
             ..Default::default()
         };
         let report = evaluate_production_quality(&tl, &manifest);
@@ -2136,7 +2238,7 @@ mod tests {
              lexical_score: None, source_title: None, })
             .collect();
         let d = score_visual_repetition(&bgs);
-        assert!(d.score >= 12, "unique hashes should be high, got {}", d.score);
+        assert!(d.score >= 8, "unique hashes should be high, got {}", d.score);
     }
 
     #[test]

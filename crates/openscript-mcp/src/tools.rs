@@ -5636,11 +5636,14 @@ fn compute_production_score(
     };
     let music = music_path.map(|p| MusicLayerInfo {
         path: p.to_string(),
-        gain_db: 0.0,
+        gain_db: -12.0,
         ducking: true,
         mood: Some("neutral".into()),
         energy: Some("medium".into()),
-     tags: vec![], selection_query: None, source: None, });
+        tags: vec!["pop".into()],
+        selection_query: None,
+        source: Some("library".into()),
+    });
     let manifest = RenderManifest {
         duration_ms: 16_000,
         backgrounds,
@@ -5653,7 +5656,13 @@ fn compute_production_score(
         has_dialogue,
         rms_ok,
         video_keywords: vec![],
-     theme: None, sfx_count: 0, };
+        theme: None,
+        sfx_count: 2,
+        caption_coverage_ratio: if captions_present { 0.95 } else { 0.0 },
+        caption_style: if captions_present { Some("word_highlight".into()) } else { None },
+        aspect_ratio: Some("9:16".into()),
+        ..Default::default()
+    };
     let report = evaluate_production_quality(&tl, &manifest);
     let dims = serde_json::to_value(&report.dimensions).unwrap_or(json!({}));
     (report.production_score, dims, report.hard_fails, report.next_actions)
@@ -11042,6 +11051,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 video_keywords: spec.video_keywords.clone(),
                 theme: Some(spec.output.theme.clone()),
                 sfx_count: music_sel_sfx_count,
+                ..Default::default()
             };
             let manifest_out = format!("{}/render_manifest.json", output_dir);
             if let Ok(s) = serde_json::to_string_pretty(&render_manifest) {
