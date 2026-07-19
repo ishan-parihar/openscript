@@ -20,6 +20,18 @@ ignore_dirs:
   - gen                # Tauri generated schemas (build artifact)
   - dist               # build output within node_modules packages
   - build              # build output within node_modules packages
+  - background_cache   # runtime cache — fetched Pexels/yt-dlp clips
+  - music_cache        # runtime cache — fetched music tracks
+  - broll_cache        # runtime cache — fetched b-roll clips
+  - third_party        # vendored deps (PupCaps, short-video-maker) — do not enforce placement
+  - ".ruff_cache"      # Python linter cache
+  - ".memsearch"       # search index
+  - ".contexty"        # session state
+  - ".cortexkit"       # magic-context state
+  - ".sisyphus"        # plan/feedback state
+  - ".benchmarks"      # benchmark outputs
+  - ".worktrees"       # git worktrees
+  - ".hive"            # hive feature state
 
 structure:
   canonical:
@@ -62,6 +74,9 @@ root:
     - Cargo.lock
     - TOOL_AUDIT_REPORT.md
     - workspace-lint.yaml
+    - setup.sh
+    - openscript.env.example
+    - lifeos.config.json
   forbidden_files:
     - "*.pyc"
     - "*.pyo"
@@ -77,10 +92,11 @@ root:
     - "*.render.log"    # Render logs — never commit
     - "*.concat.txt"    # FFmpeg concat lists — never commit
     - "*.align.json"    # Whisper alignment output — never commit
+    - "*.debug.log"     # Debug logs — never commit
 
 files:
   "*.rs":
-    max_size_kb: 500
+    max_size_kb: 700    # tools.rs is a mega-file (~607KB); bump limit to avoid false positives
   "*.py":
     # Python lives in mcp/scripts (sidecars), skills/ (reference docs),
     # and scripts/ (tooling). Do not enforce a single preferred_dir.
@@ -98,11 +114,24 @@ files:
   "*.json":
     max_size_kb: 500    # Generated indices can be large; warn if > 500KB
   "*.mp4":
-    preferred_dir: mcp/assets/backgrounds
+    preferred_dir: mcp/assets   # Render output and backgrounds live in mcp/assets/
     max_size_kb: 5000
   "*.mp3":
     preferred_dir: mcp/assets/music
     max_size_kb: 2000
+  "*.ass":
+    preferred_dir: artifacts   # Generated caption files go in artifacts/
+    max_size_kb: 500
+  "*.timeline.json":
+    preferred_dir: artifacts   # Timeline scratch files go in artifacts/
+    max_size_kb: 500
+  "*.edl.json":
+    preferred_dir: artifacts   # EDL scratch files go in artifacts/
+    max_size_kb: 500
+  "*.wav":
+    # WAVs live in multiple legitimate locations: sfx_library/, sfx_pack/, artifacts/
+    # Do not enforce a single preferred_dir.
+    max_size_kb: 100000   # SFX library WAVs can be large (up to ~80MB)
   "*.svg":
     preferred_dir: mcp/assets/svg_presets
     max_size_kb: 50

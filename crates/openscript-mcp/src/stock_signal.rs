@@ -45,15 +45,224 @@ const NOISE_TOKENS: &[&str] = &[
     "stock", "footage", "cinematic", "video", "clip", "free", "royalty",
 ];
 
-/// Prefer concrete **shot** nouns when ranking tokens (not broad topic words
-/// like "morning"/"routine" which match every lifestyle clip).
-const VISUAL_BOOST: &[&str] = &[
-    "phone", "lock", "screen", "coffee", "water", "glass", "light", "sunrise",
-    "window", "desk", "notebook", "paper", "note", "pen", "music", "headphones",
-    "kitchen", "bed", "bedroom", "alarm", "clock", "commute", "outdoor", "sun",
-    "breakfast", "yoga", "stretch", "hand", "typing", "laptop",
-    "message", "app", "scroll", "smartphone", "mug", "steam",
-];
+// ---------------------------------------------------------------------------
+// Topic detection + topic-aware visual boost + anchor banks
+// ---------------------------------------------------------------------------
+
+/// Broad topic categories derived from `spec.video_keywords`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TopicCategory {
+    Space,
+    Science,
+    Nature,
+    Tech,
+    Lifestyle, // default fallback
+}
+
+/// Detect the dominant topic from video_keywords.
+/// Counts hits against per-topic seed words; highest wins.
+fn detect_topic(video_keywords: &[String]) -> TopicCategory {
+    let seeds: &[(TopicCategory, &[&str])] = &[
+        (
+            TopicCategory::Space,
+            &[
+                "space", "galaxy", "nebula", "universe", "cosmos", "star",
+                "planet", "black hole", "gravity", "astronomy", "telescope",
+                "aurora", "milky way", "solar", "lunar", "comet", "asteroid",
+                "constellation", "supernova", "cosmic", "orbit", "satellite",
+            ],
+        ),
+        (
+            TopicCategory::Science,
+            &[
+                "science", "experiment", "laboratory", "chemistry", "physics",
+                "biology", "atom", "molecule", "research", "hypothesis",
+                "microscope", "genetics", "dna", "quantum", "formula",
+                "equation", "discovery", "innovation", "medical", "anatomy",
+            ],
+        ),
+        (
+            TopicCategory::Nature,
+            &[
+                "nature", "forest", "ocean", "mountain", "river", "wildlife",
+                "animal", "bird", "tree", "flower", "landscape", "waterfall",
+                "beach", "desert", "jungle", "coral", "reef", "canyon",
+                "glacier", "volcano", "ecosystem", "biodiversity", "flora",
+                "fauna", "wilderness", "sunrise", "sunset", "cloud",
+            ],
+        ),
+        (
+            TopicCategory::Tech,
+            &[
+                "technology", "computer", "software", "hardware", "ai",
+                "robot", "circuit", "data", "code", "programming", "digital",
+                "cyber", "network", "server", "chip", "processor", "screen",
+                "display", "virtual", "augmented", "machine learning",
+                "algorithm", "startup", "innovation", "device", "gadget",
+            ],
+        ),
+    ];
+
+    let lower_kw: Vec<String> = video_keywords
+        .iter()
+        .map(|k| k.to_ascii_lowercase())
+        .collect();
+
+    let mut best = TopicCategory::Lifestyle;
+    let mut best_count = 0;
+
+    for &(cat, words) in seeds {
+        let count = lower_kw
+            .iter()
+            .filter(|kw| words.iter().any(|w| kw.contains(w)))
+            .count();
+        if count > best_count {
+            best_count = count;
+            best = cat;
+        }
+    }
+
+    best
+}
+
+/// Topic-specific visual-boost nouns (weighted 2x in relevance scoring).
+/// Replaces the old hardcoded VISUAL_BOOST that was lifestyle-only.
+fn topic_visual_boost(cat: TopicCategory) -> Vec<&'static str> {
+    match cat {
+        TopicCategory::Space => vec![
+            "galaxy", "nebula", "star", "planet", "universe", "cosmos",
+            "aurora", "orbit", "comet", "asteroid", "supernova", "milky",
+            "solar", "lunar", "telescope", "cosmic", "black hole",
+            "constellation", "satellite", "rocket", "spacecraft",
+        ],
+        TopicCategory::Science => vec![
+            "laboratory", "experiment", "microscope", "atom", "molecule",
+            "dna", "formula", "research", "discovery", "genetics",
+            "chemistry", "physics", "quantum", "equation", "anatomy",
+            "medical", "hypothesis", "specimen", "pipette", "centrifuge",
+        ],
+        TopicCategory::Nature => vec![
+            "forest", "ocean", "mountain", "river", "waterfall", "wildlife",
+            "bird", "flower", "tree", "landscape", "sunset", "sunrise",
+            "coral", "reef", "canyon", "glacier", "cloud", "rain",
+            "meadow", "cliff", "cave", "spring", "autumn", "leaf",
+        ],
+        TopicCategory::Tech => vec![
+            "screen", "code", "circuit", "chip", "robot", "data",
+            "server", "display", "device", "gadget", "keyboard", "monitor",
+            "fiber", "laser", "drone", "sensor", "wifi", "bluetooth",
+            "interface", "dashboard", "analytics", "binary",
+        ],
+        TopicCategory::Lifestyle => vec![
+            "phone", "lock", "screen", "coffee", "water", "glass", "light",
+            "sunrise", "window", "desk", "notebook", "paper", "note", "pen",
+            "music", "headphones", "kitchen", "bed", "bedroom", "alarm",
+            "clock", "commute", "outdoor", "sun", "breakfast", "yoga",
+            "stretch", "hand", "typing", "laptop", "message", "app",
+            "scroll", "smartphone", "mug", "steam",
+        ],
+    }
+}
+
+/// Topic-specific anchor banks for `pick_visual_anchor`.
+fn topic_anchors(cat: TopicCategory) -> Vec<(&'static str, Vec<&'static str>)> {
+    match cat {
+        TopicCategory::Space => vec![
+            ("galaxy timelapse", vec!["galaxy", "space", "universe", "cosmos"]),
+            ("nebula deep field", vec!["nebula", "cosmos", "space", "stars"]),
+            ("aurora borealis", vec!["aurora", "sky", "space", "night"]),
+            ("planet orbit", vec!["planet", "orbit", "solar", "space"]),
+            ("star field", vec!["star", "stars", "constellation", "night sky"]),
+            ("rocket launch", vec!["rocket", "launch", "spacecraft", "mission"]),
+            ("black hole visualization", vec!["black hole", "gravity", "spacetime"]),
+            ("milky way timelapse", vec!["milky way", "stars", "night sky", "telescope"]),
+            ("solar flare", vec!["sun", "solar", "flare", "plasma"]),
+            ("comet trail", vec!["comet", "asteroid", "meteor", "space"]),
+            ("astronaut floating", vec!["astronaut", "space station", "zero gravity"]),
+            ("satellite orbiting", vec!["satellite", "orbit", "earth", "space"]),
+        ],
+        TopicCategory::Science => vec![
+            ("laboratory work", vec!["laboratory", "lab", "experiment", "research"]),
+            ("microscope view", vec!["microscope", "cell", "biology", "specimen"]),
+            ("dna helix", vec!["dna", "genetics", "genome", "molecular"]),
+            ("physics apparatus", vec!["physics", "quantum", "particle", "atom"]),
+            ("chemistry reaction", vec!["chemistry", "reaction", "molecule", "formula"]),
+            ("brain scan", vec!["brain", "neuroscience", "medical", "anatomy"]),
+            ("telescope observatory", vec!["telescope", "astronomy", "observation"]),
+            ("petri dish culture", vec!["culture", "bacteria", "microbiology", "growth"]),
+            ("skeleton anatomy", vec!["skeleton", "anatomy", "bone", "medical"]),
+            ("formula derivation", vec!["formula", "equation", "mathematics", "derivation"]),
+            ("robot arm assembly", vec!["robot", "assembly", "automation", "manufacturing"]),
+            ("data visualization", vec!["data", "chart", "graph", "visualization"]),
+        ],
+        TopicCategory::Nature => vec![
+            ("forest aerial", vec!["forest", "trees", "aerial", "canopy"]),
+            ("ocean waves", vec!["ocean", "waves", "sea", "water"]),
+            ("mountain panorama", vec!["mountain", "peak", "summit", "alpine"]),
+            ("waterfall", vec!["waterfall", "cascade", "river", "rapids"]),
+            ("wildlife safari", vec!["wildlife", "animal", "safari", "savanna"]),
+            ("underwater reef", vec!["coral", "reef", "underwater", "marine"]),
+            ("desert dunes", vec!["desert", "dunes", "sand", "arid"]),
+            ("flower bloom timelapse", vec!["flower", "bloom", "garden", "petal"]),
+            ("rainforest canopy", vec!["rainforest", "jungle", "tropical", "canopy"]),
+            ("northern lights", vec!["aurora", "northern lights", "night sky"]),
+            ("canyon landscape", vec!["canyon", "cliff", "gorge", "erosion"]),
+            ("glacier calving", vec!["glacier", "iceberg", "arctic", "frozen"]),
+        ],
+        TopicCategory::Tech => vec![
+            ("code on screen", vec!["code", "programming", "software", "developer"]),
+            ("circuit board closeup", vec!["circuit", "chip", "electronics", "hardware"]),
+            ("data center", vec!["server", "data center", "network", "infrastructure"]),
+            ("robot movement", vec!["robot", "robotics", "automation", "actuator"]),
+            ("holographic display", vec!["hologram", "display", "interface", "futuristic"]),
+            ("drone flight", vec!["drone", "aerial", "uav", "flight"]),
+            ("keyboard typing", vec!["keyboard", "typing", "input", "workstation"]),
+            ("fiber optic", vec!["fiber", "optics", "network", "speed"]),
+            ("ai visualization", vec!["ai", "artificial intelligence", "neural", "machine learning"]),
+            ("smartphone usage", vec!["smartphone", "mobile", "app", "touchscreen"]),
+            ("3d printing", vec!["3d print", "additive", "prototyping", "model"]),
+            ("laser cutting", vec!["laser", "cutting", "precision", "manufacturing"]),
+        ],
+        TopicCategory::Lifestyle => vec![
+            (
+                "sunrise window natural light bedroom",
+                vec!["light", "sun", "window", "morning", "bed", "bedroom", "alarm", "wake"],
+            ),
+            (
+                "coffee mug steam desk morning",
+                vec!["coffee", "mug", "desk", "steam", "drink", "cup"],
+            ),
+            (
+                "hand writing notebook paper daylight",
+                vec!["write", "paper", "note", "notebook", "pen", "plan", "journal"],
+            ),
+            (
+                "pouring water glass kitchen morning",
+                vec!["water", "glass", "drink", "kitchen", "pour"],
+            ),
+            (
+                "smartphone lock screen hands close up",
+                vec!["phone", "lock", "screen", "scroll", "message", "app", "mobile"],
+            ),
+            (
+                "headphones music listening daylight",
+                vec!["music", "song", "headphones", "audio", "listen"],
+            ),
+            (
+                "commute outdoor daylight walking",
+                vec!["commute", "outdoor", "walk", "street", "outside", "presence"],
+            ),
+            (
+                "yoga stretch morning home light",
+                vec!["yoga", "stretch", "focus", "body", "breath"],
+            ),
+            (
+                "healthy breakfast table natural light",
+                vec!["breakfast", "food", "table", "eat", "meal"],
+            ),
+        ],
+    }
+}
 
 fn is_alpha_token(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphabetic())
@@ -85,8 +294,9 @@ pub fn signal_tokens_from_scene(scene_text: &str, video_keywords: &[String]) -> 
         .into_iter()
         .filter(|t| !is_noise(t))
         .collect();
+    let topic = detect_topic(video_keywords);
     scene.sort_by_key(|t| {
-        if VISUAL_BOOST.contains(&t.as_str()) {
+        if topic_visual_boost(topic).contains(&t.as_str()) {
             0
         } else {
             1
@@ -109,55 +319,20 @@ pub fn signal_tokens_from_scene(scene_text: &str, video_keywords: &[String]) -> 
     out
 }
 
-/// Visual anchors chosen by **matching** scene signal, not fixed rotation alone.
-const ANCHOR_BANK: &[(&str, &[&str])] = &[
-    (
-        "sunrise window natural light bedroom",
-        &["light", "sun", "window", "morning", "bed", "bedroom", "alarm", "wake"],
-    ),
-    (
-        "coffee mug steam desk morning",
-        &["coffee", "mug", "desk", "steam", "drink", "cup"],
-    ),
-    (
-        "hand writing notebook paper daylight",
-        &["write", "paper", "note", "notebook", "pen", "plan", "journal"],
-    ),
-    (
-        "pouring water glass kitchen morning",
-        &["water", "glass", "drink", "kitchen", "pour"],
-    ),
-    (
-        "smartphone lock screen hands close up",
-        &["phone", "lock", "screen", "scroll", "message", "app", "mobile"],
-    ),
-    (
-        "headphones music listening daylight",
-        &["music", "song", "headphones", "audio", "listen"],
-    ),
-    (
-        "commute outdoor daylight walking",
-        &["commute", "outdoor", "walk", "street", "outside", "presence"],
-    ),
-    (
-        "yoga stretch morning home light",
-        &["yoga", "stretch", "focus", "body", "breath"],
-    ),
-    (
-        "healthy breakfast table natural light",
-        &["breakfast", "food", "table", "eat", "meal"],
-    ),
-];
+// ANCHOR_BANK removed — replaced by topic_anchors() which routes to topic-specific banks.
 
-fn pick_visual_anchor(signal: &[String], scene_idx: usize) -> String {
+fn pick_visual_anchor(signal: &[String], video_keywords: &[String], scene_idx: usize) -> String {
     let set: HashSet<&str> = signal.iter().map(|s| s.as_str()).collect();
-    // Weight concrete visual nouns higher than broad topic words ("morning").
+    let topic = detect_topic(video_keywords);
+    let boost = topic_visual_boost(topic);
+    let bank = topic_anchors(topic);
+    // Weight concrete visual nouns higher than broad topic words.
     let mut best: Option<(i32, &str)> = None;
-    for (anchor, keys) in ANCHOR_BANK {
+    for (anchor, keys) in &bank {
         let mut score = 0i32;
-        for k in *keys {
+        for k in keys {
             if set.contains(k) {
-                score += if VISUAL_BOOST.contains(k) { 4 } else { 1 };
+                score += if boost.contains(&k) { 4 } else { 1 };
             }
         }
         if score > 0 {
@@ -171,7 +346,7 @@ fn pick_visual_anchor(signal: &[String], scene_idx: usize) -> String {
         return a.to_string();
     }
     // Fall back to rotated bank so multi-scene still diversifies
-    ANCHOR_BANK[scene_idx % ANCHOR_BANK.len()].0.to_string()
+    bank[scene_idx % bank.len()].0.to_string()
 }
 
 /// Build a clean stock search query: signal tokens + theme + visual anchor + orientation bias.
@@ -197,14 +372,16 @@ pub fn build_scene_stock_query(
         // Prefer "lifestyle" over "energetic" for stock search — less sports noise
         parts.push("lifestyle".into());
     }
-    let anchor = pick_visual_anchor(&signal, scene_idx);
+    let anchor = pick_visual_anchor(&signal, video_keywords, scene_idx);
     parts.push(anchor.clone());
     // Orientation bias for vertical shorts
     if aspect == "9:16" || aspect.is_empty() {
         parts.push("vertical video".into());
     }
-    // Always bias to stock-style footage, not vlogs with talking heads
-    parts.push("stock footage b-roll".into());
+    // ponytail: removed "stock footage b-roll" filler — dilutes topic signal
+    // for non-lifestyle topics (black holes query became "gravity universe
+    // coffee mug desk stock footage b-roll"). The anchor + signal tokens
+    // already bias toward stock footage.
 
     let query = parts
         .join(" ")
@@ -233,6 +410,7 @@ pub struct SceneStockQuery {
 // ---------------------------------------------------------------------------
 
 /// Jaccard-like overlap + visual boost. Returns 0.0–1.0.
+/// Uses a generic visual boost set since we don't have topic context here.
 pub fn lexical_relevance(candidate_text: &str, signal: &[String]) -> f64 {
     if signal.is_empty() {
         return 0.5; // unknown — neutral
@@ -241,14 +419,21 @@ pub fn lexical_relevance(candidate_text: &str, signal: &[String]) -> f64 {
     if cand.is_empty() {
         return 0.0;
     }
+    // Use a union of all topic boost lists for relevance scoring
+    let all_boost: HashSet<&str> = [
+        topic_visual_boost(TopicCategory::Space),
+        topic_visual_boost(TopicCategory::Science),
+        topic_visual_boost(TopicCategory::Nature),
+        topic_visual_boost(TopicCategory::Tech),
+        topic_visual_boost(TopicCategory::Lifestyle),
+    ]
+    .iter()
+    .flat_map(|v| v.iter().copied())
+    .collect();
     let mut hits = 0.0;
     let mut weight_sum = 0.0;
     for s in signal {
-        let w = if VISUAL_BOOST.contains(&s.as_str()) {
-            2.0
-        } else {
-            1.0
-        };
+        let w = if all_boost.contains(s.as_str()) { 2.0 } else { 1.0 };
         weight_sum += w;
         if cand.contains(s) {
             hits += w;

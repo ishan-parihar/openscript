@@ -796,7 +796,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "script.parse",
-            "description": "Parse and validate a from-scratch video creation script (JSON). The script is the single source of truth for AI-agent-driven video creation — it describes speakers, scenes, backgrounds, captions, music, and output. Returns the parsed ScriptSpec with defaults applied, plus validation errors (if any). Use BEFORE script.to_timeline / script.to_video to catch schema issues early. See openscript-core/src/script.rs for the full schema. Kokoro is the default TTS backend.",
+            "description": "Parse and validate a from-scratch video creation script (JSON). The script is the single source of truth for AI-agent-driven video creation — it describes speakers, scenes, backgrounds, captions, music, and output. Returns the parsed ScriptSpec with defaults applied, plus validation errors (if any). Use BEFORE script.to_timeline / script.to_video to catch schema issues early. See openscript-core/src/script.rs for the full schema. Kokoro is the default TTS backend. IMPORTANT: background.type must be one of: 'gameplay' (Pexels stock footage, requires PEXELS_API_KEY), 'procedural' (generated motion backgrounds), or 'static' (solid color/gradient). 'stock' is NOT a valid value — using it will cause errors.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

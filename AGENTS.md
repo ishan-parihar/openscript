@@ -892,3 +892,64 @@ Do not write another line of code. Resolve the push first:
 **Never have more than ONE unpushed commit on local disk.** The moment you
 have an unpushed commit, the next action is either pushing it or fixing
 whatever blocked the push. No new work until the push succeeds.
+
+---
+
+## 20. R&D Protocol — Refactor/Upgrade Gate
+
+> **Every refactor or upgrade is an iteration. It MUST end with verification,
+> lint, commit, and push — no exceptions.**
+
+### What counts as a refactor/upgrade
+
+Any change that modifies code structure, dependencies, tool schemas, render
+paths, or documentation — even if no new features are added. Examples:
+- Renaming a function, moving a module, extracting a helper
+- Updating a dependency version
+- Changing a tool's `inputSchema` or `description`
+- Modifying the render pipeline or filter graph
+- Updating AGENTS.md, AGENT_GUIDE.md, or README.md
+
+### The gate (mandatory after every refactor/upgrade)
+
+```
+1. cargo build --workspace --exclude openscript-tauri   →  zero warnings
+2. cargo test --workspace --exclude openscript-tauri --lib --bins --tests  →  pass
+3. npx tsc --noEmit  (if frontend changed)              →  clean
+4. python3 scripts/workspace-lint/workspace_lint.py --root .  →  zero errors
+5. git add -A && git commit -m "<Phase>: <summary>"
+6. git push github main
+7. git status  →  "working tree clean"
+```
+
+**Steps 1-4 are verification. Steps 5-7 are commit/push.** All 7 must pass.
+If any verification step fails, fix it before committing. If push fails,
+STOP — see §7.5.
+
+### Why workspace lint matters
+
+The workspace-lint validator (`workspace-lint.yaml` + `scripts/workspace-lint/workspace_lint.py`)
+catches:
+- **Scratch files at root** — `.timeline.json`, `.edl.json`, `.ass`, `.wav`,
+  `output.mp4` that should be in `artifacts/`
+- **Forbidden files** — `.log`, `.tmp`, `.pyc`, render artifacts
+- **Oversized files** — binaries or assets that exceed size limits
+- **Misplaced assets** — files in the wrong directory
+
+Without the lint gate, scratch files accumulate at root and eventually get
+committed by accident. The lint run takes <1s and prevents this.
+
+### Quick reference
+
+```bash
+# Full R&D gate (all steps):
+cargo build --workspace --exclude openscript-tauri && \
+cargo test --workspace --exclude openscript-tauri --lib --bins --tests && \
+python3 scripts/workspace-lint/workspace_lint.py --root . && \
+git add -A && git commit -m "Phase X: <summary>" && \
+git push github main && \
+git status
+
+# Lint only (fast check):
+python3 scripts/workspace-lint/workspace_lint.py --root .
+```

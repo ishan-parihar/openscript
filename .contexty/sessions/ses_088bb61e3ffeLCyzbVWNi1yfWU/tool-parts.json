@@ -1,0 +1,447 @@
+{
+  "parts": [
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-83929f19-f013-453a-abb2-30a2d44e99bc",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "crates/openscript-mcp/src/tools.rs"
+        },
+        "output": "§3§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs",
+        "metadata": {
+          "count": 1,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449449,
+          "end": 1784412449530
+        }
+      },
+      "id": "prt_f77452a9f001XFn0xP0HW3R5KW",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-0fb44215-0a50-4109-b47c-d83f0c0d25fc",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "crates/openscript-tts/src/kokoro_sidecar.rs"
+        },
+        "output": "§4§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-tts/src/kokoro_sidecar.rs",
+        "metadata": {
+          "count": 1,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449457,
+          "end": 1784412449520
+        }
+      },
+      "id": "prt_f77452aac001snemc2GonddbUE",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-711bfc43-a8bf-4cfd-8de6-b303ed49af3a",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "crates/openscript-mcp/src/library_indexer.rs"
+        },
+        "output": "§5§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/library_indexer.rs",
+        "metadata": {
+          "count": 1,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449462,
+          "end": 1784412449510
+        }
+      },
+      "id": "prt_f77452ab3001FE3YffMRvT62AR",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-eccc219c-0e7e-4804-8a34-fef2845d3c09",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "crates/openscript-assets/src/*.rs"
+        },
+        "output": "§6§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/sfx.rs\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/pexels.rs\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/music.rs\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/lib.rs",
+        "metadata": {
+          "count": 4,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449468,
+          "end": 1784412449523
+        }
+      },
+      "id": "prt_f77452ab8001IRDoVojLm3t1AO",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-7d17abe5-bfe7-4da4-af6c-20694b780343",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "mcp/assets/music_production/**"
+        },
+        "output": "§7§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/index.json\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/focus_soft_drone.mp3\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/chill_study_pad.mp3\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/ambient_desk_soft.mp3\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/calm_lofi_focus.mp3",
+        "metadata": {
+          "count": 5,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449473,
+          "end": 1784412449515
+        }
+      },
+      "id": "prt_f77452abd001FsNM68wflR7Fcm",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-2da9cf03-36f6-4411-b52d-c1de4316faa0",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "setup.sh"
+        },
+        "output": "§8§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/setup.sh",
+        "metadata": {
+          "count": 1,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449479,
+          "end": 1784412449517
+        }
+      },
+      "id": "prt_f77452ac30011EU84JfkFHnQR1",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-6f34e5e6-5596-45f0-b8b3-38a759f5445c",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "crates/openscript-mcp/src/error.rs"
+        },
+        "output": "§9§ /home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/error.rs",
+        "metadata": {
+          "count": 1,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412449486,
+          "end": 1784412449526
+        }
+      },
+      "id": "prt_f77452aca001UkwoBhyiKcvVCS",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7744a2f4001qnnxusto59R8IC"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-6f0d0714-ef7e-4fbb-af51-586547388d88",
+      "state": {
+        "status": "completed",
+        "input": {
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs",
+          "pattern": "skip_background|handle_script_to_video|handle_script_to_timeline"
+        },
+        "output": "§11§ Found 14 matches\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs:\n  Line 927:                     \"skip_background\": {\"type\": \"boolean\", \"default\": false, \"description\": \"Skip background fetching (use fallback pool only)\"},\n\n  Line 944:                     \"skip_background\": {\"type\": \"boolean\", \"default\": false, \"description\": \"Skip background fetching\"},\n\n  Line 1308:         \"script.to_timeline\" => Box::pin(handle_script_to_timeline(args)),\n\n  Line 1309:         \"script.to_video\" => Box::pin(handle_script_to_video(args)),\n\n  Line 6013:     let to_video = handle_script_to_video(json!({\n\n  Line 9034: async fn handle_script_to_timeline(\n\n  Line 9039:     let skip_background = default_bool(&args, \"skip_background\", false);\n\n  Line 9143:     if !skip_background && spec.background.r#type == \"gameplay\" && !spec.background.query.is_empty()\n\n  Line 9441: async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {\n\n  Line 9445:     let skip_background = default_bool(&args, \"skip_background\", false);\n\n  Line 9460:     // ponytail: skip_background=true for timeline handler — this function does\n\n  Line 9466:         \"skip_background\": true,\n\n  Line 9472:     let timeline_result = handle_script_to_timeline(timeline_args).await?;\n\n  Line 9541:     if !skip_background && spec.background.r#type != \"static\" {\n",
+        "metadata": {
+          "matches": 14,
+          "truncated": false
+        },
+        "title": "skip_background|handle_script_to_video|handle_script_to_timeline",
+        "time": {
+          "start": 1784412493697,
+          "end": 1784412493742
+        }
+      },
+      "id": "prt_f7745d77c001BqtUYqXbIAUhC7",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f77452bb1001Zod0RktBy1LUFt"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-9790ab0b-1a8f-49d6-a2ad-3ec34f042c12",
+      "state": {
+        "status": "completed",
+        "input": {
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-tts/src/kokoro_sidecar.rs",
+          "pattern": "KOKORO_PYTHON|resolve_kokoro_python|kokoro-tts|conda"
+        },
+        "output": "§12§ Found 27 matches\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-tts/src/kokoro_sidecar.rs:\n  Line 117:         let python = resolve_kokoro_python();\n\n  Line 306: ///   1. `KOKORO_PYTHON` env var (explicit override — use this in CI / conda)\n\n  Line 307: ///   2. `~/miniconda3/envs/kokoro-tts/bin/python` (project's conda env)\n\n  Line 308: ///   3. `~/miniconda3/envs/kokoro/bin/python` (alternate env name)\n\n  Line 315: pub fn resolve_kokoro_python() -> String {\n\n  Line 317:     if let Ok(p) = std::env::var(\"KOKORO_PYTHON\") {\n\n  Line 319:             tracing::debug!(python = %p, \"Kokoro Python: using KOKORO_PYTHON override\");\n\n  Line 326:         for env_name in &[\"kokoro-tts\", \"kokoro\"] {\n\n  Line 328:                 .join(\"miniconda3/envs\")\n\n  Line 333:                 tracing::info!(python = %cstr, \"Kokoro Python: found conda env '{}'\", env_name);\n\n  Line 439:     /// Verify that KOKORO_PYTHON env override wins over conda autodetect.\n\n  Line 445:     fn test_resolve_kokoro_python_env_override() {\n\n  Line 446:         std::env::set_var(\"KOKORO_PYTHON\", \"/custom/python3.12\");\n\n  Line 447:         let p = resolve_kokoro_python();\n\n  Line 449:         std::env::remove_var(\"KOKORO_PYTHON\");\n\n  Line 452:     /// Verify fallback to \"python3\" when no env var and no conda env.\n\n  Line 458:     fn test_resolve_kokoro_python_fallback_to_python3() {\n\n  Line 459:         std::env::remove_var(\"KOKORO_PYTHON\");\n\n  Line 460:         // This test runs in CI where conda envs are absent.\n\n  Line 461:         // The function should return either a conda path or \"python3\".\n\n  Line 462:         let p = resolve_kokoro_python();\n\n  Line 464:         // If conda env exists, it'll be the conda path; otherwise python3.\n\n  Line 466:             p == \"python3\" || p.contains(\"miniconda3\"),\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-tts/src/kokoro.rs:\n  Line 12: //! Recommended engine crate: `kokoro-tts` (mzdk100, v0.3.x, ONNX/ort 2.x, Apache-2.0).\n\n  Line 27: use crate::kokoro_sidecar::resolve_kokoro_python;\n\n  Line 55:     // the rest of openscript-tts doesn't need to depend on `ort`/`kokoro-tts`\n\n  Line 192:             let python = resolve_kokoro_python();\n",
+        "metadata": {
+          "matches": 27,
+          "truncated": false
+        },
+        "title": "KOKORO_PYTHON|resolve_kokoro_python|kokoro-tts|conda",
+        "time": {
+          "start": 1784412493703,
+          "end": 1784412493747
+        }
+      },
+      "id": "prt_f7745d783001kyNUnhgR9csODM",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f77452bb1001Zod0RktBy1LUFt"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-985d04bf-301c-43ee-9db2-b2f54dd37f27",
+      "state": {
+        "status": "completed",
+        "input": {
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/library_indexer.rs",
+          "pattern": "music_production|library_index|Pixabay|yt-dlp"
+        },
+        "output": "§13§ Found 100 matches (more matches available)\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/stock_signal.rs:\n  Line 5: //!    leak into yt-dlp/Pexels searches and pull irrelevant viral clips.\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/lib.rs:\n  Line 6: pub mod library_indexer;\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/library_indexer.rs:\n  Line 1: //! Music/SFX library indexer — Rust port of `mcp/scripts/music_library_indexer.py`.\n\n  Line 4: //! runtime (shelled out to `music_library_indexer.py --build`). This module\n\n  Line 5: //! reimplements the `--build` path in pure Rust, shelling out to `yt-dlp`\n\n  Line 134: /// Scrape video titles and IDs from a YouTube channel using `yt-dlp\n\n  Line 144:         \"[library_indexer] Scraping {} ({})\",\n\n  Line 149:     let result = Command::new(\"yt-dlp\")\n\n  Line 168:                 \"[library_indexer] yt-dlp failed for {}: {}\",\n\n  Line 176:                 \"[library_indexer] Failed to spawn yt-dlp for {}: {}\",\n\n  Line 244:         \"[library_indexer]   Found {} entries from {}\",\n\n  Line 252: /// `mcp/assets/music_library_index.json`. This is the Rust equivalent of the\n\n  Line 357:         \"[library_indexer] Index built: {} entries ({} music, {} SFX) → {}\",\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/server.rs:\n  Line 175:         \"instructions\": \"OpenScript MCP server — 84 tools for AI-directed video creation.\\n\\nConfig: ~/.openscript/config.json. Prefer director.run for one-shot creation. Call system.doctor for cold-start readiness. Production KPI v3 hard-fails majority procedural + wrong music; stock fail-closed writes .draft.mp4 unless OPENSCRIPT_ALLOW_PROCEDURAL=1.\\n\\nGOLDEN TRAJECTORY (from-scratch video creation):\\n1. system.doctor or system.capabilities — probe which subsystems are available\\n2. script.parse — validate your script JSON\\n3. script.to_video — ONE-CALL: script → MP4 (handles TTS, captions, multi-broll backgrounds, GIPHY stickers, music, rendering)\\n\\nThe script.to_video orchestrator automatically:\\n- Generates Kokoro TTS per scene with Parakeet force-alignment\\n- Builds word-highlight captions (4 styles, centered, animated)\\n- Downloads UNIQUE Pexels stock footage per scene (multi-broll)\\n- Downloads GIPHY sticker overlays per speaker\\n- Mixes background music with sidechain ducking\\n- Returns timeline_preview for inspection\\n\\nMANUAL CONTROL (optional, for fine-tuning):\\n- script.generate_voices → script.build_captions → background.fetch → script.to_timeline → composition.render\\n\\nNLE EDITING (existing footage):\\n- transcribe → srt.prepare → edl.build → timeline.build → broll.director → timeline.render\\n\\nRENDER ENGINE SELECTION:\\n- script.to_video: FFmpeg multilayer (default, fast, no custom animation)\\n- timeline.render: FFmpeg filter graph (for NLE editing of existing footage)\\n- composition.render: HyperFrames (HTML+GSAP motion graphics) or Remotion (React escape hatch)\\n- hf.render: Direct HyperFrames render (for pre-authored HF compositions)\\n\\nMEDIA SEARCH + DOWNLOAD + ASSIGN:\\n- Images: media.search → media.download → overlay.assign\\n- GIFs: gif.search → gif.download → overlay.assign\\n- B-roll: broll.fetch or background.fetch → broll.assign or timeline.add_track_event\\n- Music: music.search (local) or library.search (YouTube-scraped) or stock.search (Pi...\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs:\n  Line 842:             \"description\": \"Fetch a background video clip. Searches Pexels API FIRST (stock footage, requires PEXELS_API_KEY), then YouTube via yt-dlp as fallback. Downloads, extracts a random clip of desired duration, crops to target aspect ratio. For multi-broll: call once per scene with different queries to get topic-relevant backgrounds. Returns: clip_path, source (pexels/youtube/fallback/procedural), duration_s.\",\n\n  Line 955:             \"description\": \"Download stock music or videos from Pixabay API. Requires PIXABAY_API_KEY env var. Falls back to local stock library if API key not set. For music: downloads MP3 tracks by mood/genre query. For video: downloads animation/footage clips. Returns downloaded file paths. Use for sourcing royalty-free background music and video footage.\",\n\n  Line 987:             \"description\": \"Search YouTube for videos WITHOUT downloading. Returns video titles, URLs, durations, and view counts so agents can browse and pick the best video before downloading via youtube.download. Uses yt-dlp's search functionality. Requires yt-dlp installed.\",\n\n  Line 1000:             \"description\": \"Search Pixabay for stock music or videos WITHOUT downloading. Returns titles, durations, thumbnails, and URLs so agents can browse before downloading via stock.fetch. Requires PIXABAY_API_KEY env var. Falls back to local stock library listing if no API key.\",\n\n  Line 1145:             \"description\": \"Download a music/SFX file from the library index on demand. Uses yt-dlp to extract audio as MP3 from YouTube sources. Caches downloaded files for reuse. Use library.search first to find the filename, then library.download to fetch it.\",\n\n  Line 1170:             \"description\": \"Check which OpenScript subsystems are available BEFORE calling other tools. Returns availability status for: voicebox/TTS, Pexels API, GIPHY API, Pixabay API, SFX library, music library, transcription engine, Kokoro TTS, HyperFrames. Use this first when you're unsure which features are wired — avoids opaque failures from tools whose backing service is missing. Example: if voicebox.available is false, skip tts.generate and use Kokoro (script.generate_voices) instead. No arguments.\",\n\n  Line 1179:             \"description\": \"Cold-start production readiness report. Checks ffmpeg/yt-dlp, API keys (Pexels/GIPHY), portable music_production pack, music_library_index, SFX pack, Kokoro models. Returns ready_for_production (bool), checklist, and next_actions. Prefer this over system.capabilities when deciding whether director.run will ship real stock. No arguments.\",\n\n  Line 1450: /// Convenience: get Pixabay API key (config file or env var)\n\n  Line 3108:             \"{} of {} results are SYNTHETIC PLACEHOLDER tracks (committed mcp/assets/music/*.mp3, all 30s, artist='OpenScript Stock'). These are FALLBACKS, not real licensed music. For production video, use library.search (500+ YouTube-scraped tracks via library.build) or stock.search (Pixabay, requires PIXABAY_API_KEY) to find real music.\",\n\n  Line 5970:     let ytdlp = std::process::Command::new(\"yt-dlp\")\n\n  Line 5979:             \"director.run preflight failed: need PEXELS_API_KEY or yt-dlp for stock B-roll\"\n\n  Line 5990:     let lib = resolve_repo_path(\"mcp/assets/music_library_index.json\");\n\n  Line 5993:             \"music_library_index.json missing — run library.build for tagged music\".into(),\n\n  Line 6059: /// Download a short stock clip via yt-dlp (no API key). Used when Pexels is unavailable.\n\n  Line 6101:     let out = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 6231:             let yt = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 7650:     // === PRIORITY 2: YouTube via yt-dlp ===\n\n  Line 7655:         let yt_dlp_result = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 7790: /// Generate a procedural background via FFmpeg filters (fallback when yt-dlp unavailable).\n\n  Line 7842:         \"warning\": \"yt-dlp unavailable, generated procedural background\"\n\n  Line 7941: /// Format seconds as HH:MM:SS for yt-dlp --download-sections\n\n  Line 7954: /// Try to download a free/stock music bed via yt-dlp when placeholders are the only local option.\n\n  Line 7970:     let result = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 8135: fn select_music_production_pack(mood: &str, search_terms: &[&str]) -> Option<MusicSelection> {\n\n  Line 8136:     let index_path = resolve_repo_path(\"mcp/assets/music_production/index.json\");\n\n  Line 8190:             selection_query: format!(\"music_production:{}\", path),\n\n  Line 8191:             source: \"music_production\".into(),\n\n  Line 8202: /// Topic-aware music: production pack → library index → Pixabay → yt-dlp.\n\n  Line 8225:     // Cold-start portable beds (committed under music_production/) — not synthetic sine stubs.\n\n  Line 8226:     if let Some(sel) = select_music_production_pack(&mood, &search_terms) {\n\n  Line 8230:     let index_path = resolve_repo_path(\"mcp/assets/music_library_index.json\");\n\n  Line 8308:             \"[script.to_video] music_library_index.json missing — run library.build\"\n\n  Line 8329:     // yt-dlp: topic-safe queries only (no \"upbeat funky\" for calm)\n\n  Line 8358: /// Fetch royalty-free music from Pixabay's API.\n\n  Line 8359: /// Pixabay provides direct MP3 download URLs (no yt-dlp needed).\n\n  Line 8364:         tracing::info!(\"[script.to_video] PIXABAY_API_KEY not set — skipping Pixabay music fetch\");\n\n  Line 8380:     tracing::info!(\"[script.to_video] Fetching music from Pixabay: q='{}'\", search_query);\n\n  Line 8389:         tracing::warn!(\"[script.to_video] Pixabay API returned status: {}\", resp.status());\n\n  Line 8404:         tracing::info!(\"[script.to_video] Pixabay music found: '{}'\", title);\n\n  Line 8414:             tracing::info!(\"[script.to_video] Pixabay music already cached: {}\", local_path.display());\n\n  Line 8423:                         \"[script.to_video] Downloaded Pixabay music: {} ({} bytes)\",\n\n  Line 8432:     tracing::warn!(\"[script.to_video] No downloadable music found on Pixabay\");\n\n  Line 9537:     // Priority: Pexels (if key) → YouTube via yt-dlp (no key) → procedural (last resort).\n\n  Line 9786:             // --- Priority 2: YouTube stock via yt-dlp (no API key) ---\n\n  Line 10904: // Handler: stock.fetch — download stock music/videos from Pixabay/Pexels APIs\n\n  Line 10920:         // Try Pixabay music API\n\n  Line 10994:                 _ => tracing::warn!(\"[stock.fetch] Pixabay API failed\"),\n\n  Line 11006:             \"message\": \"Set PIXABAY_API_KEY env var to download from Pixabay. Using local stock library.\",\n\n  Line 11012:         // Try Pixabay video API\n\n  Line 11095:                 _ => tracing::warn!(\"[stock.fetch] Pixabay API failed\"),\n\n  Line 11107:             \"message\": \"Set PIXABAY_API_KEY env var to download from Pixabay. Using local stock library.\",\n\n  Line 11183:         let yt_result = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 11249:                 return Err(ToolError::Ffmpeg(format!(\"yt-dlp not available: {}\", e)));\n\n  Line 11263:         // Build yt-dlp command\n\n  Line 11279:                 // Only try one browser — if it fails, yt-dlp will continue without cookies\n\n  Line 11295:         let yt_result = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 11312:                 tracing::warn!(\"[youtube.download] yt-dlp failed: {}\", stderr);\n\n  Line 11320:                     \"yt-dlp not available: {}. Install with: pip install yt-dlp\",\n\n  Line 11424:     // Use yt-dlp to search (flat, no download)\n\n  Line 11427:     let result = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 11503:             \"yt-dlp not available: {}. Install with: pip install yt-dlp\",\n\n  Line 11510: // Handler: stock.search — search Pixabay without downloading\n\n  Line 11521:         &format!(\"Searching Pixabay for {}...\", media_type),\n\n  Line 11626:             _ => tracing::warn!(\"[stock.search] Pixabay API failed\"),\n\n  Line 11670:                     \"message\": \"Set PIXABAY_API_KEY to search Pixabay. Showing local library matches.\",\n\n  Line 11700:         \"message\": \"Set PIXABAY_API_KEY to search Pixabay. Showing local library.\",\n\n  Line 12213:         .unwrap_or_else(|_| \"mcp/assets/music_library_index.json\".to_string());\n\n  Line 12218:             \"Music library index not found at {} (resolved from {}). Run the library.build MCP tool to generate it (requires yt-dlp on PATH).\",\n\n  Line 12424:         .unwrap_or_else(|_| \"mcp/assets/music_library_index.json\".to_string());\n\n  Line 12472:     // Download with yt-dlp (include bot-detection evasion)\n\n  Line 12477:     let result = tokio::process::Command::new(\"yt-dlp\")\n\n  Line 12515:         Err(e) => Err(ToolError::Asset(format!(\"yt-dlp not available: {}\", e))),\n\n  Line 12528:     // C2 fix: prior versions shelled out to `python3 mcp/scripts/music_library_indexer.py --build`,\n\n  Line 12529:     // which required Python + yt-dlp at runtime. Now uses the native Rust port\n\n  Line 12530:     // in `library_indexer.rs`, which shells out to yt-dlp directly and builds\n\n  Line 12532:     let index_path = \"mcp/assets/music_library_index.json\";\n\n  Line 12533:     let index = crate::library_indexer::build_index(index_path)\n\n  Line 13273:     // Pixabay API key\n\n  Line 13299:     // music_library_index.json (the 500+ YouTube-scraped index built by\n\n  Line 13311:     // Portable beds live under mcp/assets/music_production/ for cold-start.\n\n  Line 13313:     let music_library_index = resolve(\"mcp/assets/music_library_index.json\");\n\n  Line 13314:     let real_library = music_library_index.exists();\n\n  Line 13315:     let music_production_index = resolve(\"mcp/assets/music_production/index.json\");\n\n  Line 13316:     let music_production = music_production_index.exists();\n\n  Line 13318:         \"available\": music_count > 0 || real_library || music_production,\n\n  Line 13321:         \"music_production_pack\": music_production,\n\n\n(Results truncated. Consider using a more specific path or pattern.)",
+        "metadata": {
+          "matches": 100,
+          "truncated": true
+        },
+        "title": "music_production|library_index|Pixabay|yt-dlp",
+        "time": {
+          "start": 1784412493709,
+          "end": 1784412493752
+        }
+      },
+      "id": "prt_f7745d788001WNxW05aoGDPPvd",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f77452bb1001Zod0RktBy1LUFt"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-4ec04cfc-f90c-412d-a45a-fdb5e10835b5",
+      "state": {
+        "status": "completed",
+        "input": {
+          "include": "*.rs",
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript",
+          "pattern": "director\\.run|system\\.capabilities|verify\\.production|system_preflight"
+        },
+        "output": "§14§ Found 31 matches\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-cli/src/main.rs:\n  Line 115:     /// Probe available subsystems (mirrors system.capabilities MCP tool)\n\n  Line 156:     /// Production beauty KPI gate (mirrors verify.production) — stock/music/stickers grade\n\n  Line 331:             let result = openscript_mcp::tools::route_tool(\"system.capabilities\", serde_json::json!({})).await;\n\n  Line 332:             print_cli_result(\"system.capabilities\", result);\n\n  Line 381:             let result = openscript_mcp::tools::route_tool(\"verify.production\", args).await;\n\n  Line 382:             print_cli_result(\"verify.production\", result);\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/tests/integration_test.rs:\n  Line 191:     assert!(tool_names.contains(&\"verify.production\"));\n\n  Line 197:     assert!(tool_names.contains(&\"director.run\"));\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/config.rs:\n  Line 533: /// Redacted public view for system.capabilities / system.config.get\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/music.rs:\n  Line 74:                 // system.capabilities reported music as unavailable because\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs:\n  Line 685:             \"description\": \"TECHNICAL integrity check only (duration/aspect/file size). Does NOT measure production beauty. For stock footage, stickers, music quality use verify.production. Returns: overall_score (0-100 technical).\",\n\n  Line 736:             \"name\": \"director.run\",\n\n  Line 737:             \"description\": \"ONE-SHOT director: system preflight + script.parse + script.to_video + verify.production. Returns video path, production grade, hard_fails, next_actions. Prefer this for cold agents. Fails closed when majority procedural or music topic mismatch.\",\n\n  Line 766:             \"description\": \"Vision+LLM relevance score of a stock clip vs scene dialogue and video_keywords. Uses local GGUF/Ollama when possible and OpenRouter free multimodal fallbacks. Returns relevance 0–1, time_of_day, match, reason. Wire into multi-broll QA and verify.production context_relevance.\",\n\n  Line 780:             \"name\": \"verify.production\",\n\n  Line 1169:             \"name\": \"system.capabilities\",\n\n  Line 1179:             \"description\": \"Cold-start production readiness report. Checks ffmpeg/yt-dlp, API keys (Pexels/GIPHY), portable music_production pack, music_library_index, SFX pack, Kokoro models. Returns ready_for_production (bool), checklist, and next_actions. Prefer this over system.capabilities when deciding whether director.run will ship real stock. No arguments.\",\n\n  Line 1262:         \"verify.production\" => Box::pin(handle_verify_production(args)),\n\n  Line 1268:         \"director.run\" => Box::pin(handle_director_run(args)),\n\n  Line 1326:         \"system.capabilities\" => Box::pin(handle_system_capabilities(args)),\n\n  Line 5626:         \"note\": \"Technical integrity only. Call verify.production for stock/music/sticker beauty KPIs.\",\n\n  Line 5960: /// ONE-SHOT director: preflight → parse → to_video → verify.production.\n\n  Line 5979:             \"director.run preflight failed: need PEXELS_API_KEY or yt-dlp for stock B-roll\"\n\n  Line 13211: // Handler: system.capabilities (P1-2 from prior audit)\n\n  Line 13224:     // The fresh-agent UX audit found that system.capabilities returned false\n\n  Line 13301:     // system.capabilities reported music as unavailable when run from a\n\n  Line 13773:             \"Run director.run on a 5-scene script; expect ≥4/5 non-procedural stock + music bed\"\n\n  Line 13947:                 | \"system.capabilities\"\n\n  Line 14066:             \"message\": \"No tools matched. Try tools/list to browse all 76 tools, or system.capabilities to probe available subsystems.\"\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-tauri/src/commands/invoke_tool.rs:\n  Line 23: //! Read-only tools (system.capabilities, help.tool, sfx.search, hf.classify,\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/server.rs:\n  Line 175:         \"instructions\": \"OpenScript MCP server — 84 tools for AI-directed video creation.\\n\\nConfig: ~/.openscript/config.json. Prefer director.run for one-shot creation. Call system.doctor for cold-start readiness. Production KPI v3 hard-fails majority procedural + wrong music; stock fail-closed writes .draft.mp4 unless OPENSCRIPT_ALLOW_PROCEDURAL=1.\\n\\nGOLDEN TRAJECTORY (from-scratch video creation):\\n1. system.doctor or system.capabilities — probe which subsystems are available\\n2. script.parse — validate your script JSON\\n3. script.to_video — ONE-CALL: script → MP4 (handles TTS, captions, multi-broll backgrounds, GIPHY stickers, music, rendering)\\n\\nThe script.to_video orchestrator automatically:\\n- Generates Kokoro TTS per scene with Parakeet force-alignment\\n- Builds word-highlight captions (4 styles, centered, animated)\\n- Downloads UNIQUE Pexels stock footage per scene (multi-broll)\\n- Downloads GIPHY sticker overlays per speaker\\n- Mixes background music with sidechain ducking\\n- Returns timeline_preview for inspection\\n\\nMANUAL CONTROL (optional, for fine-tuning):\\n- script.generate_voices → script.build_captions → background.fetch → script.to_timeline → composition.render\\n\\nNLE EDITING (existing footage):\\n- transcribe → srt.prepare → edl.build → timeline.build → broll.director → timeline.render\\n\\nRENDER ENGINE SELECTION:\\n- script.to_video: FFmpeg multilayer (default, fast, no custom animation)\\n- timeline.render: FFmpeg filter graph (for NLE editing of existing footage)\\n- composition.render: HyperFrames (HTML+GSAP motion graphics) or Remotion (React escape hatch)\\n- hf.render: Direct HyperFrames render (for pre-authored HF compositions)\\n\\nMEDIA SEARCH + DOWNLOAD + ASSIGN:\\n- Images: media.search → media.download → overlay.assign\\n- GIFs: gif.search → gif.download → overlay.assign\\n- B-roll: broll.fetch or background.fetch → broll.assign or timeline.add_track_event\\n- Music: music.search (local) or library.search (YouTube-scraped) or stock.search (Pi...",
+        "metadata": {
+          "matches": 31,
+          "truncated": false
+        },
+        "title": "director\\.run|system\\.capabilities|verify\\.production|system_preflight",
+        "time": {
+          "start": 1784412493715,
+          "end": 1784412493757
+        }
+      },
+      "id": "prt_f7745d78f001XxxBr6TxQLWqAq",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f77452bb1001Zod0RktBy1LUFt"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-e8efafbb-fb4f-4eb3-821a-c8030928eaae",
+      "state": {
+        "status": "completed",
+        "input": {
+          "include": "*.rs",
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript",
+          "pattern": "lofi|chill|ambient|peaceful|meditation"
+        },
+        "output": "§15§ Found 36 matches\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/sfx.rs:\n  Line 211:                             } else if path_str.contains(\"ambience\") || path_str.contains(\"ambient\")\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-assets/src/music.rs:\n  Line 259:                                 || path_str.contains(\"peaceful\")\n\n  Line 260:                                 || path_str.contains(\"ambient\")\n\n  Line 262:                                 \"ambient\"\n\n  Line 438:         let mut asset = make_music(\"1\", \"Loopable\", \"ambient\", \"low\");\n\n  Line 441:             assets: vec![asset, make_music(\"2\", \"One Shot\", \"ambient\", \"low\")],\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/stock_signal.rs:\n  Line 431: /// Cold installs without Pexels used to rank \"10 hours lofi focus music\" as B-roll.\n\n  Line 433:     \"lofi\", \"lo-fi\", \"lo fi\", \"focus music\", \"study music\", \"sleep music\",\n\n  Line 434:     \"relaxing music\", \"chill music\", \"ambient music\", \"background music\",\n\n  Line 438:     \"rain sounds\", \"meditation music\", \"yoga music\", \"spa music\",\n\n  Line 510:             (\"aaaaaa\".into(), \"10 hour lofi study music\".into()),\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-core/src/production_quality.rs:\n  Line 119:     /// Selection tags (focus, chill, parade, …) for topic-fit scoring.\n\n  Line 264:     [\"calm\", \"focus\", \"desk\", \"study\", \"lofi\", \"ambient\", \"meditation\", \"sleep\", \"chill\"]\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-core/src/timeline_preview.rs:\n  Line 61:     /// │   └── [0.0s - 25.1s] lofi.mp3 (ducked -15dB)\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs:\n  Line 362:                     \"category\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}], \"description\": \"Sound category (e.g., 'whoosh', 'impact', 'ambient')\"},\n\n  Line 960:                     \"query\": {\"type\": \"string\", \"description\": \"Search query (e.g. 'lofi chill' for music, 'minecraft gameplay' for video)\"},\n\n  Line 1130:                     \"query\": {\"type\": \"string\", \"description\": \"Search query (e.g. 'epic cinematic', 'lofi chill', 'explosion', 'whoosh')\"},\n\n  Line 7958:         \"calm\" => \"lofi study focus chill no copyright music\",\n\n  Line 7960:         _ => \"ambient chill background no copyright music\",\n\n  Line 8215:             \"lofi\", \"chill\", \"ambient\", \"calm\", \"focus\", \"study\", \"peaceful\", \"meditation\",\n\n  Line 8221:         vec![\"background\", \"chill\", \"lofi\", \"ambient\"]\n\n  Line 8331:         \"lofi study focus chill no copyright music\"\n\n  Line 8335:         \"ambient chill background no copyright music\"\n\n  Line 8369:         \"calm\" => \"meditation+calm\",\n\n  Line 8439: /// 1. Theme-based keyword (calm → \"meditation\", energetic → \"fire\", etc.)\n\n  Line 8456:     let calm_keywords = [\"meditation\", \"lotus\", \"candle\", \"breathing\", \"zen\", \"calm\"];\n\n  Line 8704: /// on-topic calming/meditation content.\n\n  Line 8708:     (\"inhale\", \"breathing meditation\"),\n\n  Line 8711:     (\"breathing\", \"breathing meditation\"),\n\n  Line 8718:     (\"stress\", \"stress relief meditation\"),\n\n  Line 8721:     (\"death\", \"calm nature peaceful\"),\n\n  Line 8727: /// the query so Pexels returns peaceful footage instead of literal matches\n\n  Line 8732:     let already_calm = lower.contains(\"calm\") || lower.contains(\"peaceful\") || lower.contains(\"meditation\");\n\n  Line 8743: /// 1. Replace unsafe keywords (inhale → breathing meditation)\n\n  Line 14100:         let resp = handle_music_search(json!({\"query\": \"chill\", \"limit\": 5}))\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-core/src/script.rs:\n  Line 637:     ///   For healing/meditation/therapy content.\n",
+        "metadata": {
+          "matches": 36,
+          "truncated": false
+        },
+        "title": "lofi|chill|ambient|peaceful|meditation",
+        "time": {
+          "start": 1784412493722,
+          "end": 1784412493760
+        }
+      },
+      "id": "prt_f7745d796001twPyg07v2hZzZ4",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f77452bb1001Zod0RktBy1LUFt"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-bad9c4a3-34df-49fa-9091-ecc3e4456f0d",
+      "state": {
+        "status": "completed",
+        "input": {
+          "include": "*.rs",
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript",
+          "pattern": "system\\.doctor|handle_system_doctor|system_doctor"
+        },
+        "output": "§17§ Found 7 matches\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/tests/integration_test.rs:\n  Line 179:     // 84 tools: prior 83 + system.doctor\n\n  Line 198:     assert!(tool_names.contains(&\"system.doctor\"));\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs:\n  Line 1178:             \"name\": \"system.doctor\",\n\n  Line 1327:         \"system.doctor\" => Box::pin(handle_system_doctor(args)),\n\n  Line 13598: // Handler: system.doctor — cold-start production readiness\n\n  Line 13601: async fn handle_system_doctor(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {\n\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/server.rs:\n  Line 175:         \"instructions\": \"OpenScript MCP server — 84 tools for AI-directed video creation.\\n\\nConfig: ~/.openscript/config.json. Prefer director.run for one-shot creation. Call system.doctor for cold-start readiness. Production KPI v3 hard-fails majority procedural + wrong music; stock fail-closed writes .draft.mp4 unless OPENSCRIPT_ALLOW_PROCEDURAL=1.\\n\\nGOLDEN TRAJECTORY (from-scratch video creation):\\n1. system.doctor or system.capabilities — probe which subsystems are available\\n2. script.parse — validate your script JSON\\n3. script.to_video — ONE-CALL: script → MP4 (handles TTS, captions, multi-broll backgrounds, GIPHY stickers, music, rendering)\\n\\nThe script.to_video orchestrator automatically:\\n- Generates Kokoro TTS per scene with Parakeet force-alignment\\n- Builds word-highlight captions (4 styles, centered, animated)\\n- Downloads UNIQUE Pexels stock footage per scene (multi-broll)\\n- Downloads GIPHY sticker overlays per speaker\\n- Mixes background music with sidechain ducking\\n- Returns timeline_preview for inspection\\n\\nMANUAL CONTROL (optional, for fine-tuning):\\n- script.generate_voices → script.build_captions → background.fetch → script.to_timeline → composition.render\\n\\nNLE EDITING (existing footage):\\n- transcribe → srt.prepare → edl.build → timeline.build → broll.director → timeline.render\\n\\nRENDER ENGINE SELECTION:\\n- script.to_video: FFmpeg multilayer (default, fast, no custom animation)\\n- timeline.render: FFmpeg filter graph (for NLE editing of existing footage)\\n- composition.render: HyperFrames (HTML+GSAP motion graphics) or Remotion (React escape hatch)\\n- hf.render: Direct HyperFrames render (for pre-authored HF compositions)\\n\\nMEDIA SEARCH + DOWNLOAD + ASSIGN:\\n- Images: media.search → media.download → overlay.assign\\n- GIFs: gif.search → gif.download → overlay.assign\\n- B-roll: broll.fetch or background.fetch → broll.assign or timeline.add_track_event\\n- Music: music.search (local) or library.search (YouTube-scraped) or stock.search (Pi...",
+        "metadata": {
+          "matches": 7,
+          "truncated": false
+        },
+        "title": "system\\.doctor|handle_system_doctor|system_doctor",
+        "time": {
+          "start": 1784412533067,
+          "end": 1784412533121
+        }
+      },
+      "id": "prt_f77467145001FdRZmfGBmNJLPo",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7745d7fe001xA5UYZUnDXSFJm"
+    },
+    {
+      "type": "tool",
+      "tool": "glob",
+      "callID": "call-fc1c8ef6-a2f6-4866-8b01-8a36f06e0821",
+      "state": {
+        "status": "completed",
+        "input": {
+          "pattern": "mcp/assets/parakeet/**"
+        },
+        "output": "§18§ No files found",
+        "metadata": {
+          "count": 0,
+          "truncated": false
+        },
+        "title": "",
+        "time": {
+          "start": 1784412533077,
+          "end": 1784412533117
+        }
+      },
+      "id": "prt_f7746714f001UVqY6Zgfdg8ncX",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7745d7fe001xA5UYZUnDXSFJm"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-1d3f23e4-5c9b-494a-b947-9c2f16968b0f",
+      "state": {
+        "status": "error",
+        "input": {
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/setup.sh"
+        },
+        "error": "The grep tool was called with invalid arguments: SchemaError(Missing key\n  at [\"pattern\"]).\nPlease rewrite the input so it satisfies the expected schema.",
+        "time": {
+          "start": 1784412533082,
+          "end": 1784412533093
+        }
+      },
+      "id": "prt_f77467157001FKGfz3bjHKS9Yn",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7745d7fe001xA5UYZUnDXSFJm"
+    },
+    {
+      "type": "tool",
+      "tool": "read",
+      "callID": "call-ae3e88a3-e3bb-4dbf-9d9c-590d291b236f",
+      "state": {
+        "status": "completed",
+        "input": {
+          "filePath": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/index.json"
+        },
+        "output": "§19§ <path>/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/index.json</path>\n<type>file</type>\n<content>\n1: {\n2:   \"version\": 1,\n3:   \"description\": \"Portable production beds for cold-start (offline). Prefer library.build when available.\",\n4:   \"entries\": [\n5:     {\n6:       \"id\": \"prod_calm_lofi\",\n7:       \"path\": \"mcp/assets/music_production/calm_lofi_focus.mp3\",\n8:       \"title\": \"Calm Lofi Focus\",\n9:       \"mood\": \"calm\",\n10:       \"tags\": [\"lofi\", \"chill\", \"calm\", \"focus\", \"study\", \"ambient\", \"desk\"],\n11:       \"duration_s\": 22\n12:     },\n13:     {\n14:       \"id\": \"prod_ambient_desk\",\n15:       \"path\": \"mcp/assets/music_production/ambient_desk_soft.mp3\",\n16:       \"title\": \"Ambient Desk Soft\",\n17:       \"mood\": \"calm\",\n18:       \"tags\": [\"ambient\", \"calm\", \"focus\", \"desk\", \"peaceful\", \"relax\"],\n19:       \"duration_s\": 22\n20:     },\n21:     {\n22:       \"id\": \"prod_chill_study\",\n23:       \"path\": \"mcp/assets/music_production/chill_study_pad.mp3\",\n24:       \"title\": \"Chill Study Pad\",\n25:       \"mood\": \"calm\",\n26:       \"tags\": [\"chill\", \"study\", \"focus\", \"lofi\", \"pad\"],\n27:       \"duration_s\": 22\n28:     },\n29:     {\n30:       \"id\": \"prod_focus_drone\",\n31:       \"path\": \"mcp/assets/music_production/focus_soft_drone.mp3\",\n32:       \"title\": \"Focus Soft Drone\",\n33:       \"mood\": \"neutral\",\n34:       \"tags\": [\"focus\", \"ambient\", \"background\", \"neutral\", \"soft\"],\n35:       \"duration_s\": 22\n36:     }\n37:   ]\n38: }\n\n(End of file - total 38 lines)\n</content>",
+        "metadata": {
+          "preview": "{\n  \"version\": 1,\n  \"description\": \"Portable production beds for cold-start (offline). Prefer library.build when available.\",\n  \"entries\": [\n    {\n      \"id\": \"prod_calm_lofi\",\n      \"path\": \"mcp/assets/music_production/calm_lofi_focus.mp3\",\n      \"title\": \"Calm Lofi Focus\",\n      \"mood\": \"calm\",\n      \"tags\": [\"lofi\", \"chill\", \"calm\", \"focus\", \"study\", \"ambient\", \"desk\"],\n      \"duration_s\": 22\n    },\n    {\n      \"id\": \"prod_ambient_desk\",\n      \"path\": \"mcp/assets/music_production/ambient_desk_soft.mp3\",\n      \"title\": \"Ambient Desk Soft\",\n      \"mood\": \"calm\",\n      \"tags\": [\"ambient\", \"calm\", \"focus\", \"desk\", \"peaceful\", \"relax\"],\n      \"duration_s\": 22\n    },",
+          "truncated": false,
+          "loaded": [],
+          "display": {
+            "type": "file",
+            "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/mcp/assets/music_production/index.json",
+            "text": "{\n  \"version\": 1,\n  \"description\": \"Portable production beds for cold-start (offline). Prefer library.build when available.\",\n  \"entries\": [\n    {\n      \"id\": \"prod_calm_lofi\",\n      \"path\": \"mcp/assets/music_production/calm_lofi_focus.mp3\",\n      \"title\": \"Calm Lofi Focus\",\n      \"mood\": \"calm\",\n      \"tags\": [\"lofi\", \"chill\", \"calm\", \"focus\", \"study\", \"ambient\", \"desk\"],\n      \"duration_s\": 22\n    },\n    {\n      \"id\": \"prod_ambient_desk\",\n      \"path\": \"mcp/assets/music_production/ambient_desk_soft.mp3\",\n      \"title\": \"Ambient Desk Soft\",\n      \"mood\": \"calm\",\n      \"tags\": [\"ambient\", \"calm\", \"focus\", \"desk\", \"peaceful\", \"relax\"],\n      \"duration_s\": 22\n    },\n    {\n      \"id\": \"prod_chill_study\",\n      \"path\": \"mcp/assets/music_production/chill_study_pad.mp3\",\n      \"title\": \"Chill Study Pad\",\n      \"mood\": \"calm\",\n      \"tags\": [\"chill\", \"study\", \"focus\", \"lofi\", \"pad\"],\n      \"duration_s\": 22\n    },\n    {\n      \"id\": \"prod_focus_drone\",\n      \"path\": \"mcp/assets/music_production/focus_soft_drone.mp3\",\n      \"title\": \"Focus Soft Drone\",\n      \"mood\": \"neutral\",\n      \"tags\": [\"focus\", \"ambient\", \"background\", \"neutral\", \"soft\"],\n      \"duration_s\": 22\n    }\n  ]\n}",
+            "lineStart": 1,
+            "lineEnd": 38,
+            "totalLines": 38,
+            "truncated": false
+          }
+        },
+        "title": "mcp/assets/music_production/index.json",
+        "time": {
+          "start": 1784412533088,
+          "end": 1784412533131
+        }
+      },
+      "id": "prt_f7746715c001nw7Qt6FdUQAFcl",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7745d7fe001xA5UYZUnDXSFJm"
+    },
+    {
+      "type": "tool",
+      "tool": "bash",
+      "callID": "call-47a71bd1-f539-44f9-b2f1-2ec686593e1b",
+      "state": {
+        "status": "error",
+        "input": {
+          "command": "git remote -v"
+        },
+        "error": "Model tried to call unavailable tool 'invalid'. Available tools: glob, grep, list_mcp_resource_templates, list_mcp_resources, read, read_mcp_resource.",
+        "time": {
+          "start": 1784412533095,
+          "end": 1784412533097
+        }
+      },
+      "id": "prt_f77467161001HhXrQopjgO8OpS",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7745d7fe001xA5UYZUnDXSFJm"
+    },
+    {
+      "type": "tool",
+      "tool": "grep",
+      "callID": "call-c0ff70ee-b0e4-4dad-a083-a4d247aacb59",
+      "state": {
+        "status": "completed",
+        "input": {
+          "include": "*.rs",
+          "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript",
+          "pattern": "OPENSCRIPT_ALLOW_PROCEDURAL|allow_procedural|is_draft|\\.draft\\.mp4"
+        },
+        "output": "§20§ Found 12 matches\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/server.rs:\n  Line 175:         \"instructions\": \"OpenScript MCP server — 84 tools for AI-directed video creation.\\n\\nConfig: ~/.openscript/config.json. Prefer director.run for one-shot creation. Call system.doctor for cold-start readiness. Production KPI v3 hard-fails majority procedural + wrong music; stock fail-closed writes .draft.mp4 unless OPENSCRIPT_ALLOW_PROCEDURAL=1.\\n\\nGOLDEN TRAJECTORY (from-scratch video creation):\\n1. system.doctor or system.capabilities — probe which subsystems are available\\n2. script.parse — validate your script JSON\\n3. script.to_video — ONE-CALL: script → MP4 (handles TTS, captions, multi-broll backgrounds, GIPHY stickers, music, rendering)\\n\\nThe script.to_video orchestrator automatically:\\n- Generates Kokoro TTS per scene with Parakeet force-alignment\\n- Builds word-highlight captions (4 styles, centered, animated)\\n- Downloads UNIQUE Pexels stock footage per scene (multi-broll)\\n- Downloads GIPHY sticker overlays per speaker\\n- Mixes background music with sidechain ducking\\n- Returns timeline_preview for inspection\\n\\nMANUAL CONTROL (optional, for fine-tuning):\\n- script.generate_voices → script.build_captions → background.fetch → script.to_timeline → composition.render\\n\\nNLE EDITING (existing footage):\\n- transcribe → srt.prepare → edl.build → timeline.build → broll.director → timeline.render\\n\\nRENDER ENGINE SELECTION:\\n- script.to_video: FFmpeg multilayer (default, fast, no custom animation)\\n- timeline.render: FFmpeg filter graph (for NLE editing of existing footage)\\n- composition.render: HyperFrames (HTML+GSAP motion graphics) or Remotion (React escape hatch)\\n- hf.render: Direct HyperFrames render (for pre-authored HF compositions)\\n\\nMEDIA SEARCH + DOWNLOAD + ASSIGN:\\n- Images: media.search → media.download → overlay.assign\\n- GIFs: gif.search → gif.download → overlay.assign\\n- B-roll: broll.fetch or background.fetch → broll.assign or timeline.add_track_event\\n- Music: music.search (local) or library.search (YouTube-scraped) or stock.search (Pi...\n\n/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/crates/openscript-mcp/src/tools.rs:\n  Line 9887:                 let allow_proc = std::env::var(\"OPENSCRIPT_ALLOW_PROCEDURAL\")\n\n  Line 9892:                         \"HARD stock_visuals scene {}: no relevant unique stock (Pexels/YT). Using procedural {}. Set PEXELS_API_KEY or OPENSCRIPT_ALLOW_PROCEDURAL=1. Production will hard-fail if ≥50% procedural.\",\n\n  Line 9917:             let allow_proc = std::env::var(\"OPENSCRIPT_ALLOW_PROCEDURAL\")\n\n  Line 9922:                 let draft = if output_path.ends_with(\".draft.mp4\") {\n\n  Line 9925:                     format!(\"{}.draft.mp4\", stripped)\n\n  Line 9927:                     format!(\"{}.draft.mp4\", output_path)\n\n  Line 9930:                     \"[script.to_video] fail-closed stock: rewriting output {} → {} (set OPENSCRIPT_ALLOW_PROCEDURAL=1 to override)\",\n\n  Line 9935:                     \"FAIL_CLOSED: stock_ratio < 0.5 ({}/{} procedural). Writing draft output {} — not a production final. Set PEXELS_API_KEY or OPENSCRIPT_ALLOW_PROCEDURAL=1.\",\n\n  Line 10851:             let is_draft = out_path.contains(\".draft.mp4\")\n\n  Line 10862:             let delivery_status = if is_draft {\n\n  Line 13787:             \"allow_procedural\": \"OPENSCRIPT_ALLOW_PROCEDURAL=1 forces gradient B-roll (draft-grade only)\",\n",
+        "metadata": {
+          "matches": 12,
+          "truncated": false
+        },
+        "title": "OPENSCRIPT_ALLOW_PROCEDURAL|allow_procedural|is_draft|\\.draft\\.mp4",
+        "time": {
+          "start": 1784412533102,
+          "end": 1784412533124
+        }
+      },
+      "id": "prt_f7746716b0017oJAeau7Y2Rq27",
+      "sessionID": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "messageID": "msg_f7745d7fe001xA5UYZUnDXSFJm"
+    }
+  ]
+}

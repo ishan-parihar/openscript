@@ -1,0 +1,683 @@
+{
+  "sessions": [
+    {
+      "sessionId": "ses_088bb61e3ffeLCyzbVWNi1yfWU",
+      "startedAt": "2026-07-18T22:06:54.590Z",
+      "lastActiveAt": "2026-07-18T22:06:54.590Z",
+      "agent": "dreamer-memory-mapper",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_088b6fb0cffetMB8bho5DpkcUN",
+      "startedAt": "2026-07-18T22:11:41.967Z",
+      "lastActiveAt": "2026-07-18T22:11:41.967Z",
+      "agent": "dreamer-classifier",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087c6a109ffe7GhhJMdD6sn7Bo",
+      "startedAt": "2026-07-19T02:34:15.525Z",
+      "lastActiveAt": "2026-07-19T12:32:25.654Z",
+      "agent": "hive-master",
+      "sessionKind": "primary",
+      "baseAgent": "hive-master",
+      "directivePrompt": "§204§ ALWAYS PUSH COMMITS AFTER EACH ITERATION\n\nProceed with the [full-scale all-phase implementation] of the upgrade effectively, and then [test everything to ensure that there are no functional/operational regressions] in the functioning of the [openscript]. \n\nAlways keep a track of [active-progress/pending-progress/completed-progress] so that we can [build upon the trajectory, remember the architectural-preferences, and do not make the mistakes that can cause regressions], while following the optimal development practices so that we can \"remove the deadweight, and redundancies (YAGNI)\", and \"add the relevant, appropriate upgrades/systems/components\". \n\n<ctx-search-hint>\nYour memory may contain 3 related fragments:\n- Initiated fresh-agent UX audit of OpenScript agentic experience\n- ALWAYS PUSH COMMITS AFTER EACH ITERATION Proceed with [full-scale all-phase imp…\n- UX audit orientation probes (tool-only continuation)\nIf the fragments above seem relevant to the current request, you may run ctx_search to retrieve full context. Otherwise ignore.\n</ctx-search-hint>",
+      "replayDirectivePending": false,
+      "featureName": "fresh-agent-ux-audit"
+    },
+    {
+      "sessionId": "ses_087c61ca9ffeWTTrSQb0DCbDC3",
+      "startedAt": "2026-07-19T02:34:47.625Z",
+      "lastActiveAt": "2026-07-19T02:34:47.625Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087c18832ffeQa06S3O5p17dez",
+      "startedAt": "2026-07-19T02:39:47.691Z",
+      "lastActiveAt": "2026-07-19T02:39:47.691Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087c09385ffe1bk7Mwu6cTQcd6",
+      "startedAt": "2026-07-19T02:40:52.291Z",
+      "lastActiveAt": "2026-07-19T02:41:12.309Z",
+      "agent": "general",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087bac3cdffeUaUZNpLfpi3jb5",
+      "startedAt": "2026-07-19T02:47:11.170Z",
+      "lastActiveAt": "2026-07-19T02:47:11.170Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087ba3835ffelILZMAFF0mufNW",
+      "startedAt": "2026-07-19T02:47:46.910Z",
+      "lastActiveAt": "2026-07-19T02:47:46.910Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087b9e97dffeCDGFquAYWKxy1v",
+      "startedAt": "2026-07-19T02:48:07.054Z",
+      "lastActiveAt": "2026-07-19T02:48:07.054Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087b8f5c3ffeobCpnxV00OZYGH",
+      "startedAt": "2026-07-19T02:49:09.444Z",
+      "lastActiveAt": "2026-07-19T02:49:09.444Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087b86fc3ffeXESNXV845fl4aC",
+      "startedAt": "2026-07-19T02:49:43.758Z",
+      "lastActiveAt": "2026-07-19T02:49:43.758Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087b7ea98ffeLk2Ug3f2w9YVuE",
+      "startedAt": "2026-07-19T02:50:17.840Z",
+      "lastActiveAt": "2026-07-19T02:50:17.840Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_087b74f07ffeqnyxaOv43zvNoC",
+      "startedAt": "2026-07-19T02:50:57.666Z",
+      "lastActiveAt": "2026-07-19T02:50:57.666Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_086261931ffeO00YXDfYrsirfV",
+      "startedAt": "2026-07-19T10:09:11.383Z",
+      "lastActiveAt": "2026-07-19T10:09:11.383Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08623cc2bffeMi2bCllyeLHqLP",
+      "startedAt": "2026-07-19T10:11:42.174Z",
+      "lastActiveAt": "2026-07-19T10:11:42.174Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08622226effeLjtiieSf0UyGal",
+      "startedAt": "2026-07-19T10:13:31.214Z",
+      "lastActiveAt": "2026-07-19T10:13:31.214Z",
+      "agent": "scout-researcher",
+      "sessionKind": "subagent",
+      "baseAgent": "scout-researcher"
+    },
+    {
+      "sessionId": "ses_0862219adffe0S4f9r8IRqC0Rz",
+      "startedAt": "2026-07-19T10:13:33.408Z",
+      "lastActiveAt": "2026-07-19T10:13:33.408Z",
+      "agent": "scout-researcher",
+      "sessionKind": "subagent",
+      "baseAgent": "scout-researcher"
+    },
+    {
+      "sessionId": "ses_0862171afffeZKO6DOuF7Eooxm",
+      "startedAt": "2026-07-19T10:14:16.789Z",
+      "lastActiveAt": "2026-07-19T10:14:16.789Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0861f22ecffeL6oL6C1Tc78SFb",
+      "startedAt": "2026-07-19T10:16:47.646Z",
+      "lastActiveAt": "2026-07-19T10:16:47.646Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0861b9a5effexANL4JsepASgx6",
+      "startedAt": "2026-07-19T10:20:39.213Z",
+      "lastActiveAt": "2026-07-19T10:20:39.213Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_086197a38ffeAnHlEM1AfkXsE4",
+      "startedAt": "2026-07-19T10:22:58.551Z",
+      "lastActiveAt": "2026-07-19T10:22:58.551Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08618b225ffebv4PyRx28NlHks",
+      "startedAt": "2026-07-19T10:23:49.730Z",
+      "lastActiveAt": "2026-07-19T10:23:49.730Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08617e118ffevXseYa3fbScX78",
+      "startedAt": "2026-07-19T10:24:43.274Z",
+      "lastActiveAt": "2026-07-19T10:24:43.274Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08614c8bcffeBMh6NREbIIE6yE",
+      "startedAt": "2026-07-19T10:28:06.094Z",
+      "lastActiveAt": "2026-07-19T10:28:06.094Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_086139a1cffeSH31rNmxDiEOl5",
+      "startedAt": "2026-07-19T10:29:23.563Z",
+      "lastActiveAt": "2026-07-19T10:29:23.563Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_086132fa0ffe64y6zGYtlVwVNt",
+      "startedAt": "2026-07-19T10:29:50.825Z",
+      "lastActiveAt": "2026-07-19T10:29:50.825Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08611545cffegT1vW3mYi4ngxA",
+      "startedAt": "2026-07-19T10:31:52.492Z",
+      "lastActiveAt": "2026-07-19T10:31:52.492Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08610440effe9gtzFjbdVSSocE",
+      "startedAt": "2026-07-19T10:33:02.205Z",
+      "lastActiveAt": "2026-07-19T10:33:02.205Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0860e8b27ffeBt3jv0dQ2mg8Tm",
+      "startedAt": "2026-07-19T10:34:55.075Z",
+      "lastActiveAt": "2026-07-19T10:34:55.075Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0860b099dffeMfV0IyzQiMblWY",
+      "startedAt": "2026-07-19T10:38:44.845Z",
+      "lastActiveAt": "2026-07-19T10:38:44.845Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08608e204ffe2K9ENCfiZIvjKW",
+      "startedAt": "2026-07-19T10:41:06.054Z",
+      "lastActiveAt": "2026-07-19T10:41:06.054Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08606a4f0ffe7QJ6YymLU9Q75k",
+      "startedAt": "2026-07-19T10:43:32.760Z",
+      "lastActiveAt": "2026-07-19T10:43:32.760Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08604c422ffe1VA0851dAhoGx4",
+      "startedAt": "2026-07-19T10:45:35.847Z",
+      "lastActiveAt": "2026-07-19T10:45:35.847Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08602d384ffemAqOqryLaabN4t",
+      "startedAt": "2026-07-19T10:47:42.978Z",
+      "lastActiveAt": "2026-07-19T10:47:42.978Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085fec9edffebDb0UycHmsNN55",
+      "startedAt": "2026-07-19T10:52:07.597Z",
+      "lastActiveAt": "2026-07-19T10:52:07.597Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085fb00d6ffeWv4DwbuPu92r69",
+      "startedAt": "2026-07-19T10:56:15.667Z",
+      "lastActiveAt": "2026-07-19T10:56:15.667Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085fa0d9bffedJzqsRfjTGqvZy",
+      "startedAt": "2026-07-19T10:57:17.932Z",
+      "lastActiveAt": "2026-07-19T10:57:17.932Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085f8ca30ffexFDEkrKOru8GTT",
+      "startedAt": "2026-07-19T10:58:40.727Z",
+      "lastActiveAt": "2026-07-19T10:58:40.727Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085f71f08ffesYHRO6YHc1De87",
+      "startedAt": "2026-07-19T11:00:30.088Z",
+      "lastActiveAt": "2026-07-19T11:00:30.088Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085f5c9bdffeLt6T52X0NwQQxt",
+      "startedAt": "2026-07-19T11:01:57.455Z",
+      "lastActiveAt": "2026-07-19T11:01:57.455Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085f437e2ffe0lswqLW7txEXvl",
+      "startedAt": "2026-07-19T11:03:40.326Z",
+      "lastActiveAt": "2026-07-19T11:03:40.326Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085f223d9ffe0PeDTaSSsBc7sp",
+      "startedAt": "2026-07-19T11:05:56.524Z",
+      "lastActiveAt": "2026-07-19T11:05:56.524Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085ee53b6ffeQcPyHRpPhQUuSA",
+      "startedAt": "2026-07-19T11:10:06.458Z",
+      "lastActiveAt": "2026-07-19T11:10:06.458Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085ea614effeKhK6Z3EJXKjni8",
+      "startedAt": "2026-07-19T11:14:25.082Z",
+      "lastActiveAt": "2026-07-19T11:14:25.082Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085e79f85ffe2p3JJenAr1bMKl",
+      "startedAt": "2026-07-19T11:17:25.760Z",
+      "lastActiveAt": "2026-07-19T11:17:25.760Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085e36ac3ffehxTgyzT4546dRn",
+      "startedAt": "2026-07-19T11:22:01.412Z",
+      "lastActiveAt": "2026-07-19T11:22:01.412Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085de9e52ffe6hurWksW6pECvh",
+      "startedAt": "2026-07-19T11:27:15.894Z",
+      "lastActiveAt": "2026-07-19T11:27:15.894Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085db4e89ffeTq0yxOv1U8YZxy",
+      "startedAt": "2026-07-19T11:30:52.929Z",
+      "lastActiveAt": "2026-07-19T11:30:52.929Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085d8ae9dffe38MZ4bmoV47JPg",
+      "startedAt": "2026-07-19T11:33:44.947Z",
+      "lastActiveAt": "2026-07-19T11:33:44.947Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085d5c493ffemWUiWgXkjzrCPs",
+      "startedAt": "2026-07-19T11:36:55.923Z",
+      "lastActiveAt": "2026-07-19T11:36:55.923Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085d281a0ffeO4eX1E5Kp4Jrab",
+      "startedAt": "2026-07-19T11:40:29.675Z",
+      "lastActiveAt": "2026-07-19T11:40:29.675Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085cffca8ffeN1mM35a8WXVdUD",
+      "startedAt": "2026-07-19T11:43:14.789Z",
+      "lastActiveAt": "2026-07-19T11:43:35.058Z",
+      "agent": "general",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085cbd9b5ffePDSqtQIil9Qdgi",
+      "startedAt": "2026-07-19T11:47:45.875Z",
+      "lastActiveAt": "2026-07-19T11:47:45.875Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085c82f5ffferIuX7cuAkSEUCN",
+      "startedAt": "2026-07-19T11:51:46.089Z",
+      "lastActiveAt": "2026-07-19T11:51:46.089Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085c2aa14ffeL9WIwTM8xqeObT",
+      "startedAt": "2026-07-19T11:57:47.894Z",
+      "lastActiveAt": "2026-07-19T11:57:47.894Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085c18a35ffekssfbf07ZiD4bl",
+      "startedAt": "2026-07-19T11:59:01.589Z",
+      "lastActiveAt": "2026-07-19T11:59:01.589Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085bf979bffepNpgNn0qHBFc5x",
+      "startedAt": "2026-07-19T12:01:09.239Z",
+      "lastActiveAt": "2026-07-19T12:02:23.188Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085bca741ffeXE0qsJcQBvrjEY",
+      "startedAt": "2026-07-19T12:04:21.834Z",
+      "lastActiveAt": "2026-07-19T12:04:21.834Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085b81349ffeLvA7U49pt6u0Oi",
+      "startedAt": "2026-07-19T12:09:21.857Z",
+      "lastActiveAt": "2026-07-19T12:09:21.857Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085b6d578ffeIxLX63Jrl3R3cn",
+      "startedAt": "2026-07-19T12:10:43.221Z",
+      "lastActiveAt": "2026-07-19T12:10:43.221Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085b4a654ffesLM0Jw8zUcJRnE",
+      "startedAt": "2026-07-19T12:13:06.361Z",
+      "lastActiveAt": "2026-07-19T12:13:06.361Z",
+      "agent": "scout-researcher",
+      "sessionKind": "subagent",
+      "baseAgent": "scout-researcher"
+    },
+    {
+      "sessionId": "ses_085b2413cffed3Yw6PkHjIinWO",
+      "startedAt": "2026-07-19T12:15:43.315Z",
+      "lastActiveAt": "2026-07-19T12:15:43.315Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085b06129ffe2DMlvBsGw7chzh",
+      "startedAt": "2026-07-19T12:17:46.208Z",
+      "lastActiveAt": "2026-07-19T12:17:46.208Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085ac8475ffeiMl1oAzgmH8FgU",
+      "startedAt": "2026-07-19T12:21:59.314Z",
+      "lastActiveAt": "2026-07-19T12:21:59.314Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085a7f044ffepyqohZDzQAkiT1",
+      "startedAt": "2026-07-19T12:26:59.405Z",
+      "lastActiveAt": "2026-07-19T12:26:59.405Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085a6954bffeD5wMjSuFDO386J",
+      "startedAt": "2026-07-19T12:28:28.220Z",
+      "lastActiveAt": "2026-07-19T12:28:28.220Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085a20441ffe2EZgKSWdnUI2ro",
+      "startedAt": "2026-07-19T12:33:27.495Z",
+      "lastActiveAt": "2026-07-19T12:33:27.495Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0859e1da9ffeU2UoQ29CC1vRSm",
+      "startedAt": "2026-07-19T12:37:43.136Z",
+      "lastActiveAt": "2026-07-19T12:37:43.136Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08599893effeBA7IeGM2781eAq",
+      "startedAt": "2026-07-19T12:42:43.278Z",
+      "lastActiveAt": "2026-07-19T12:42:43.278Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085986690ffeJys2VzPrmIAk5u",
+      "startedAt": "2026-07-19T12:43:57.691Z",
+      "lastActiveAt": "2026-07-19T12:43:57.691Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0859544b6ffernwWFlQVBHh4Ps",
+      "startedAt": "2026-07-19T12:47:22.961Z",
+      "lastActiveAt": "2026-07-19T12:47:22.961Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0859317d9ffeGTNOtpbFn4k0p5",
+      "startedAt": "2026-07-19T12:49:45.522Z",
+      "lastActiveAt": "2026-07-19T12:49:45.522Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08591edf3ffeZyvGrobf1l6haz",
+      "startedAt": "2026-07-19T12:51:01.781Z",
+      "lastActiveAt": "2026-07-19T12:51:01.781Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0859053a9ffe3wM2d5kRk4BbuX",
+      "startedAt": "2026-07-19T12:52:46.815Z",
+      "lastActiveAt": "2026-07-19T12:52:46.815Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0858f4276ffeauZMTJ2ZQdI6TQ",
+      "startedAt": "2026-07-19T12:53:56.752Z",
+      "lastActiveAt": "2026-07-19T12:53:56.752Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0858aae80ffeQJHBk737K1exsG",
+      "startedAt": "2026-07-19T12:58:56.780Z",
+      "lastActiveAt": "2026-07-19T12:58:56.780Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08589fc24ffeVCsFQVQuBDgygJ",
+      "startedAt": "2026-07-19T12:59:42.438Z",
+      "lastActiveAt": "2026-07-19T12:59:42.438Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08588a0f0ffeiW1RynXke69LF2",
+      "startedAt": "2026-07-19T13:01:11.318Z",
+      "lastActiveAt": "2026-07-19T13:01:11.318Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0858793a5ffecfE22uFKQSORS8",
+      "startedAt": "2026-07-19T13:02:20.257Z",
+      "lastActiveAt": "2026-07-19T13:02:20.257Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08582ff06ffeEMTxP18jnPQGBG",
+      "startedAt": "2026-07-19T13:07:20.484Z",
+      "lastActiveAt": "2026-07-19T13:07:20.484Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08580a56effe0pSnAw93ziK2FC",
+      "startedAt": "2026-07-19T13:09:54.460Z",
+      "lastActiveAt": "2026-07-19T13:09:54.460Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0857e0d9dffet7MzoVGI3Wzuj8",
+      "startedAt": "2026-07-19T13:12:44.394Z",
+      "lastActiveAt": "2026-07-19T13:12:44.394Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085795610ffeYHp9x7adgLdWBI",
+      "startedAt": "2026-07-19T13:17:53.526Z",
+      "lastActiveAt": "2026-07-19T13:17:53.526Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_085746d5affeGwZZaT7xRaHbi6",
+      "startedAt": "2026-07-19T13:23:15.245Z",
+      "lastActiveAt": "2026-07-19T13:23:15.245Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0857113aeffeZJpqrTOYSC1aHM",
+      "startedAt": "2026-07-19T13:26:54.812Z",
+      "lastActiveAt": "2026-07-19T13:26:54.812Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0856e9018ffe5es14UneWCNdrW",
+      "startedAt": "2026-07-19T13:29:39.567Z",
+      "lastActiveAt": "2026-07-19T13:29:39.567Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0856b8006ffeojBKdqwsnTTPAd",
+      "startedAt": "2026-07-19T13:33:00.296Z",
+      "lastActiveAt": "2026-07-19T13:33:00.296Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0856973d2ffeYfXPcpz3KGjMpS",
+      "startedAt": "2026-07-19T13:35:14.485Z",
+      "lastActiveAt": "2026-07-19T13:35:14.485Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08566a213ffe1T2IIwVmW8vIah",
+      "startedAt": "2026-07-19T13:38:19.257Z",
+      "lastActiveAt": "2026-07-19T13:38:19.257Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0856359a6ffeKAvv8ZqIDW3HQ6",
+      "startedAt": "2026-07-19T13:41:54.505Z",
+      "lastActiveAt": "2026-07-19T13:41:54.505Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0856146a9ffemXdWmE2x02LwPH",
+      "startedAt": "2026-07-19T13:44:10.384Z",
+      "lastActiveAt": "2026-07-19T13:44:10.384Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0855f3b48ffeeW9dDZmgRnU8IK",
+      "startedAt": "2026-07-19T13:46:24.353Z",
+      "lastActiveAt": "2026-07-19T13:46:24.353Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0855cb0c7ffeypKZsFzRJCrfcb",
+      "startedAt": "2026-07-19T13:49:10.890Z",
+      "lastActiveAt": "2026-07-19T13:49:10.890Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_0855a64f2ffe10ysYQ0Lv20jPc",
+      "startedAt": "2026-07-19T13:51:41.338Z",
+      "lastActiveAt": "2026-07-19T13:51:41.338Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08559be8affe0BigdIvL7lblo6",
+      "startedAt": "2026-07-19T13:52:23.935Z",
+      "lastActiveAt": "2026-07-19T13:52:23.935Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    },
+    {
+      "sessionId": "ses_08558ebd7ffeV2m1UOT8Ms3vwg",
+      "startedAt": "2026-07-19T13:53:17.878Z",
+      "lastActiveAt": "2026-07-19T13:53:17.878Z",
+      "agent": "historian",
+      "sessionKind": "unknown"
+    }
+  ]
+}
