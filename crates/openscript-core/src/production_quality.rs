@@ -743,8 +743,9 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
     )
 }
 
-/// Weight 10 — music bed presence + ducking + mood/energy tags + non-synthetic + topic fit.
-fn score_music_variance(
+/// Weight 8 — music bed quality: presence, non-synthetic, topic fit,
+/// ducking, gain compliance, mood/energy tags, source provider.
+fn score_music_quality(
     music: Option<&MusicLayerInfo>,
     theme: Option<&str>,
     video_keywords: &[String],
@@ -757,7 +758,9 @@ fn score_music_variance(
             0
         }
         Some(m) if is_synthetic_music_file(&m.path) => {
-            findings.push("HARD: music is synthetic sine-wave placeholder (mcp/assets/music stock)".into());
+            findings.push(
+                "HARD: music is synthetic sine-wave placeholder (mcp/assets/music stock)".into(),
+            );
             0
         }
         Some(m) if !Path::new(&m.path).exists() => {
@@ -779,45 +782,55 @@ fn score_music_variance(
             0
         }
         Some(m) => {
-            let mut s = 4;
+            let mut s = 3; // base for real, present, non-synthetic music
+
             if m.ducking {
-                s += 2;
+                s += 1;
             } else {
-                findings.push("music ducking disabled — risk of fighting dialogue".into());
+                findings.push("music ducking disabled — will fight dialogue during speech".into());
             }
+
+            // Gain sweet spot: -18 to -6 dB
+            if (-18.0..=-6.0).contains(&m.gain_db) {
+                s += 1;
+            } else if m.gain_db > 0.0 {
+                findings.push(format!(
+                    "music gain_db={:.1} is boosted above unity — louder than voice; use -8 to -14 dB",
+                    m.gain_db
+                ));
+            } else if m.gain_db < -24.0 {
+                findings.push(format!(
+                    "music gain_db={:.1} may be inaudible; target -12 to -8 dB",
+                    m.gain_db
+                ));
+            }
+
             if m.mood.as_ref().map(|x| !x.is_empty()).unwrap_or(false) {
                 s += 1;
             } else {
-                findings.push("music.mood not tagged".into());
+                findings.push("music.mood not tagged — library.search uses mood for curation".into());
             }
-            if m.energy.as_ref().map(|x| !x.is_empty()).unwrap_or(false) {
-                s += 1;
-            }
-            if !m.tags.is_empty() {
-                s += 1;
-            }
-            if m.gain_db > -24.0 {
+
+            if m.energy.as_ref().map(|x| !x.is_empty()).unwrap_or(false)
+                || !m.tags.is_empty()
+            {
                 s += 1;
             } else {
-                findings.push(format!("music gain_db={:.1} may be inaudible", m.gain_db));
+                findings.push("music.energy and tags both empty — reduces topic-fit scoring".into());
             }
-            // Music gain > 0dB means boosted above unity — louder than the
-            // voiceover, which is typically at -6dB. This is a mixing error.
-            if m.gain_db > 0.0 {
-                findings.push(format!(
-                    "music gain_db={:.1} is boosted above unity — louder than voice, use -8 to -14dB",
-                    m.gain_db
-                ));
-                s = (s - 1).max(0);
+
+            if m.source.as_ref().map(|s| s != "unknown" && !s.is_empty()).unwrap_or(false) {
+                s += 1;
             }
-            s.min(10)
+
+            s.min(8)
         }
     };
     DimensionScore {
-        id: "music_variance".into(),
-        label: "BG music presence & topic fit".into(),
+        id: "music_quality".into(),
+        label: "BG music quality & topic fit".into(),
         score,
-        max: 10,
+        max: 8,
         detail: serde_json::json!({ "music": music, "calm_focus_context": calm_ctx }),
         findings,
     }
@@ -1390,7 +1403,7 @@ pub fn evaluate_production_quality(
         score_context_relevance(&backgrounds, &sections, &manifest.video_keywords);
     let (d_cuts, cps) = score_cuts_pacing(&backgrounds, duration_ms);
     let d_music =
-        score_music_variance(music.as_ref(), theme, &manifest.video_keywords);
+        score_music_quality(music.as_ref(), theme, &manifest.video_keywords);
     let d_sticker = score_sticker_design(&manifest.stickers);
     let d_section = score_section_composition(&sections, &manifest.memes);
     let d_speech = score_speech(manifest.has_dialogue, manifest.rms_ok);
@@ -1896,5 +1909,51 @@ mod tests {
         assert!(d.findings.iter().any(|f| f.contains("repetitive") || f.contains("repeat")));
         assert!(d.score <= 4, "repetitive sfx should score <=4, got {}", d.score);
     }
+
+    #[test]
+    fn music_quality_no_music_scores_zero() {
+        let d = score_music_quality(None, None, &[]);
+        assert_eq!(d.id, "music_quality");
+        assert_eq!(d.score, 0);
+        assert_eq!(d.max, 8);
+        assert!(d.findings.iter().any(|f| f.contains("HARD")));
+    }
+
+    #[test]
+    fn music_quality_gain_too_loud_penalized() {
+        std::fs::write("/tmp/test_music_loud.mp3", vec![4u8; 9000]).unwrap();
+        let m = MusicLayerInfo {
+            path: "/tmp/test_music_loud.mp3".to_string(),
+            gain_db: 2.0,
+            ducking: true,
+            mood: Some("upbeat".into()),
+            energy: Some("high".into()),
+            tags: vec!["pop".into()],
+            selection_query: Some("morning".into()),
+            source: Some("pixabay".into()),
+        };
+        let d = score_music_quality(Some(&m), None, &[]);
+        std::fs::remove_file("/tmp/test_music_loud.mp3").ok();
+        assert!(d.findings.iter().any(|f| f.contains("gain") || f.contains("loud") || f.contains("unity")));
+    }
+
+    #[test]
+    fn music_quality_sweet_spot_scores_high() {
+        std::fs::write("/tmp/test_music_sweet.mp3", vec![5u8; 9000]).unwrap();
+        let m = MusicLayerInfo {
+            path: "/tmp/test_music_sweet.mp3".to_string(),
+            gain_db: -12.0,
+            ducking: true,
+            mood: Some("calm".into()),
+            energy: Some("low".into()),
+            tags: vec!["lofi".into()],
+            selection_query: Some("lofi chill".into()),
+            source: Some("library".into()),
+        };
+        let d = score_music_quality(Some(&m), None, &[]);
+        std::fs::remove_file("/tmp/test_music_sweet.mp3").ok();
+        assert!(d.score >= 6, "sweet spot music should score >=6/8, got {}", d.score);
+    }
 }
+
 
