@@ -183,6 +183,15 @@ pub struct RenderManifest {
     /// Average characters per second (reading speed).
     #[serde(default)]
     pub caption_chars_per_second: Option<f64>,
+    /// Average TTS pace in words per minute (ideal 130–160).
+    #[serde(default)]
+    pub voiceover_wpm: Option<f64>,
+    /// Voice IDs used per speaker slot.
+    #[serde(default)]
+    pub voice_ids: Vec<String>,
+    /// True when TTS emote tags align to content sentiment.
+    #[serde(default)]
+    pub emote_alignment_ok: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1267,6 +1276,79 @@ fn score_captions(captions_path: Option<&str>) -> DimensionScore {
     score_caption_quality(captions_path, cov, None, None, None)
 }
 
+/// Weight 6 — voiceover quality: presence, WPM pacing, voice consistency, emote alignment.
+#[allow(dead_code)]
+fn score_voiceover_quality(
+    has_dialogue: bool,
+    voiceover_count: usize,
+    wpm: Option<f64>,
+    voice_ids: &[String],
+    emote_alignment_ok: bool,
+) -> DimensionScore {
+    let mut findings = Vec::new();
+
+    if !has_dialogue || voiceover_count == 0 {
+        findings.push("no voiceover detected — add TTS via script.generate_voices".into());
+        return DimensionScore {
+            id: "voiceover_quality".into(),
+            label: "Voiceover quality & pacing".into(),
+            score: 0,
+            max: 6,
+            detail: serde_json::json!({ "has_dialogue": has_dialogue }),
+            findings,
+        };
+    }
+
+    let mut s = 2; // base for having voiceovers
+
+    if let Some(w) = wpm {
+        if (130.0..=160.0).contains(&w) {
+            s += 2;
+        } else if (110.0..=180.0).contains(&w) {
+            s += 1;
+            findings.push(format!("voiceover WPM={:.0} slightly outside ideal 130-160 band", w));
+        } else if w > 180.0 {
+            findings.push(format!(
+                "voiceover WPM={:.0} too fast (>180) — listeners can't keep up; target 130-160", w
+            ));
+        } else {
+            findings.push(format!(
+                "voiceover WPM={:.0} too slow (<110) — loses audience; target 130-160", w
+            ));
+        }
+    }
+
+    let unique_voices: HashSet<_> = voice_ids.iter().collect();
+    if voice_ids.is_empty() {
+        findings.push("voice_ids not reported — cannot verify voice consistency".into());
+    } else if unique_voices.len() < voice_ids.len() {
+        findings.push("duplicate voice IDs across speakers — each speaker should have a unique voice".into());
+    } else {
+        s += 1;
+    }
+
+    if emote_alignment_ok {
+        s += 1;
+    } else {
+        findings.push("emote tags not aligned to content — use generate_voices with emote hints for natural prosody".into());
+    }
+
+    DimensionScore {
+        id: "voiceover_quality".into(),
+        label: "Voiceover quality & pacing".into(),
+        score: s.min(6),
+        max: 6,
+        detail: serde_json::json!({
+            "has_dialogue": has_dialogue,
+            "voiceover_count": voiceover_count,
+            "wpm": wpm,
+            "unique_voices": unique_voices.len(),
+            "emote_alignment_ok": emote_alignment_ok,
+        }),
+        findings,
+    }
+}
+
 /// Weight 12 — efficacious use of the multi-track timeline editor.
 pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
     let mut findings = Vec::new();
@@ -2187,7 +2269,40 @@ mod tests {
         std::fs::remove_file(path).ok();
         assert!(d.score >= 5, "full marks caption should score >=5/6, got {}", d.score);
     }
+
+    #[test]
+    fn voiceover_quality_no_dialogue_scores_zero() {
+        let d = score_voiceover_quality(false, 0, None, &[], false);
+        assert_eq!(d.id, "voiceover_quality");
+        assert_eq!(d.score, 0);
+        assert_eq!(d.max, 6);
+    }
+
+    #[test]
+    fn voiceover_quality_ideal_wpm_scores_high() {
+        let d = score_voiceover_quality(
+            true, 3, Some(145.0),
+            &["af_heart".to_string(), "bm_lewis".to_string()],
+            true,
+        );
+        assert!(d.score >= 5, "ideal voiceover should score >=5/6, got {}", d.score);
+    }
+
+    #[test]
+    fn voiceover_quality_too_fast_penalized() {
+        let d = score_voiceover_quality(
+            true, 2, Some(220.0),
+            &["af_heart".to_string()],
+            false,
+        );
+        assert!(
+            d.findings.iter().any(|f| f.contains("fast") || f.contains("WPM") || f.contains("wpm")),
+            "fast WPM should be flagged: {:?}", d.findings
+        );
+        assert!(d.score <= 4, "fast WPM should score <=4, got {}", d.score);
+    }
 }
+
 
 
 
