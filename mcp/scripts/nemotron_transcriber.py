@@ -67,6 +67,7 @@ MAX_DECODE_STEPS = 500
 BOS_TOKEN = 1  # Beginning of sequence
 EOS_TOKEN = 2  # End of sequence
 SOT_TOKEN = 1  # Start of transcript (same as BOS for this model)
+VOCAB_SIZE = 13087  # Model logits have 13088 entries; token 13087 is EOS overflow
 
 # Phrase grouping parameters
 PHRASE_MAX_WORDS = 12
@@ -264,8 +265,9 @@ class NemotronASR:
             flat = logits[0, -1, 0, :]
             top_id = int(np.argmax(flat))
 
-            # Check for EOS or padding
-            if top_id == EOS_TOKEN or top_id == 0:
+            # Check for EOS, padding, or out-of-range tokens
+            # Token 13087 is the model's EOS/overflow token (logits have 13088 entries)
+            if top_id == EOS_TOKEN or top_id == 0 or top_id >= VOCAB_SIZE:
                 break
 
             # Skip special tokens (language tags, etc.)
@@ -279,8 +281,8 @@ class NemotronASR:
                 if step > 20 and len(emitted_tokens) == 0:
                     break
 
-            # If we've emitted enough tokens, check for natural stop
-            if len(emitted_tokens) > 500:
+            # Safety: if we've been running too long without emitting, stop
+            if step > 100 and len(emitted_tokens) == 0:
                 break
 
         return emitted_tokens
