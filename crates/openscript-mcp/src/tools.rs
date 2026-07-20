@@ -6,7 +6,7 @@ use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, wri
 use openscript_core::sticker::{generate_sticker_composition, StickerPreset};
 use openscript_core::timeline::Timeline;
 use openscript_core::types::TrackType;
-use openscript_transcribe::transcriber::transcribe;
+use openscript_transcribe::transcriber::{transcribe, transcribe_with_engine};
 use serde_json::json;
 use std::future::Future;
 use std::path::Path;
@@ -26,12 +26,14 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "transcribe",
-            "description": "Convert spoken audio to word-level SRT subtitles. Uses Apex (Oriserve/Whisper-Hindi2Hinglish-Apex) — the ONLY transcription model in OpenScript. No fallbacks, no alternatives. Requires whisper-hindi conda env. ALWAYS call this first on any raw video — it produces the SRT that every other tool depends on. Returns: output_srt_path, entry_count, phrase_srt_path, word_srt_path.",
+            "description": "Convert spoken audio to word-level SRT subtitles. Uses Nemotron 3.5 ASR (nvidia/nemotron-3.5-asr-streaming-0.6b) — the DEFAULT transcription engine. Supports 40 languages with 6.81% Hindi WER. For Hindi input, automatically converts Devanagari to Hinglish via LLM post-processing. Apex (deprecated) is available as fallback. ALWAYS call this first on any raw video — it produces the SRT that every other tool depends on. Returns: output_srt_path, entry_count, phrase_srt_path, word_srt_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "media_path": {"type": "string", "description": "Path to video or audio file to transcribe"},
-                    "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."}
+                    "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."},
+                    "language_hint": {"type": "string", "default": "auto", "description": "Language hint: 'auto' (detect), 'hi-IN' (Hindi → Hinglish), 'en-US' (English), 'hinglish'"},
+                    "engine": {"type": "string", "default": "nemotron", "description": "Engine: 'nemotron' (default, 40 langs) or 'apex' (deprecated)"}
                 },
                 "required": ["media_path"],
                 "additionalProperties": false
@@ -1636,11 +1638,24 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
         )));
     }
 
+    let language_hint = default_str(&args, "language_hint", "auto");
+    let engine_str = default_str(&args, "engine", "nemotron");
+
+    // Parse engine selection
+    let engine = match engine_str.as_str() {
+        #[allow(deprecated)]
+        "apex" => {
+            tracing::warn!("Apex engine requested (deprecated). Use nemotron.");
+            openscript_transcribe::transcriber::TranscriptionEngine::Apex
+        }
+        _ => openscript_transcribe::transcriber::TranscriptionEngine::Nemotron,
+    };
+
     report_progress(0.0, 100.0, "Starting transcription...")
         .await
         .ok();
 
-    let result = transcribe(&media_path, &output_srt_path)
+    let result = transcribe_with_engine(&media_path, &output_srt_path, engine, &language_hint)
         .await
         .map_err(|e| ToolError::Srt(e.to_string()))?;
 
