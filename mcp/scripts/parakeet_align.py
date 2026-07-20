@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Parakeet TDT force-alignment sidecar — replaces whisper_align.py.
+"""Parakeet TDT force-alignment sidecar with Whisper fallback.
 
 Uses the Parakeet TDT 0.6b v3 ONNX model for RNN-T force alignment.
-The model uses Token-and-Duration-Transducer (TDT) decoding where:
-  - Tokens 0-8191: BPE content tokens
-  - Token 8192: blank (no emit, no advance)
-  - Tokens 8193-8197: duration tokens (advance 2-6 frames)
+Falls back to Whisper if Parakeet fails or returns no words.
 
 Model: istupakov/parakeet-tdt-0.6b-v3-onnx
 """
@@ -14,6 +11,7 @@ import argparse
 import json
 import sys
 import os
+import subprocess
 import numpy as np
 
 try:
@@ -27,6 +25,12 @@ try:
 except ImportError:
     print(json.dumps({"ready": False, "error": "librosa not installed"}))
     sys.exit(1)
+
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
 
 
 def compute_mel_spectrogram(wav_path: str) -> np.ndarray:
@@ -50,7 +54,7 @@ def compute_mel_spectrogram(wav_path: str) -> np.ndarray:
     preemph = 0.97
     audio = np.append(audio[0], audio[1:] - preemph * audio[:-1])
 
-    # Compute mel spectrogram (power=2.0 → mag_power)
+    # Compute mel spectrogram (power=2.0 -> mag_power)
     mel = librosa.feature.melspectrogram(
         y=audio,
         sr=16000,
@@ -122,7 +126,7 @@ def decode_tdt(encoder_out, encoder_len, decoder_session, vocab):
     token_frames = []  # (token, frame_index) for timestamp estimation
 
     # The decoder produces logits for ALL encoder frames in one call.
-    # We iterate: feed current_token → get logits → pick next token → repeat.
+    # We iterate: feed current_token -> get logits -> pick next token -> repeat.
     # The LSTM state carries context across iterations.
 
     for step in range(500):  # max 500 decode steps
@@ -144,21 +148,21 @@ def decode_tdt(encoder_out, encoder_len, decoder_session, vocab):
         top = int(np.argmax(flat))
 
         if top < max_vocab:
-            # Content token — emit it
-            # Skip special tokens (0-9: <unk>, <|nospeech|>, <pad>, etc.)
+            # Content token -- emit it
+            # Skip special tokens (0-9: ࠀ, <|nospeech|>, <pad>, etc.)
             if top >= 10:
                 emitted_tokens.append(top)
                 token_frames.append(step)
             current_token = top
         elif top == blank_id:
-            # Blank — in TDT this means "done with current position"
+            # Blank -- in TDT this means "done with current position"
             # Feed blank back, let the model decide to continue or stop
             current_token = 1  # <|nospeech|> as blank feedback
             # If we've emitted tokens and get blank, we might be done
             if len(emitted_tokens) > 0 and step > len(emitted_tokens) * 3:
                 break
         else:
-            # Duration token (8193-8197) — advance frames
+            # Duration token (8193-8197) -- advance frames
             # In TDT, duration tokens tell how many encoder frames to skip.
             # Since we feed the full encoder each time, the decoder internally
             # handles this via attention. We just feed blank back.
@@ -197,7 +201,7 @@ def tokens_to_words(emitted_tokens, vocab, token_frames, total_duration_ms):
 
     # Convert frame indices to timestamps
     # Each encoder frame = 10ms (160 hop at 16kHz, 8x subsampling = 80ms per encoder frame)
-    # Actually: 160 hop → 10ms audio per mel frame. 8x subsampling → 80ms per encoder frame.
+    # Actually: 160 hop -> 10ms audio per mel frame. 8x subsampling -> 80ms per encoder frame.
     ms_per_frame = 80  # 8 * 10ms
 
     word_timings = []
@@ -242,6 +246,36 @@ def align_wav(wav_path, encoder_session, decoder_session, vocab):
     }
 
 
+def align_wav_whisper(wav_path, model_name="base"):
+    """Fallback alignment using Whisper."""
+    if not WHISPER_AVAILABLE:
+        return {"status": "error", "error": "whisper not installed"}
+    try:
+        model = whisper.load_model(model_name)
+        result = model.transcribe(wav_path, word_timestamps=True, language="en")
+        words = []
+        for segment in result.get("segments", []):
+            for word_info in segment.get("words", []):
+                word = word_info.get("word", "").strip()
+                start = word_info.get("start", 0)
+                end = word_info.get("end", 0)
+                if word:
+                    words.append({
+                        "word": word,
+                        "start_ms": int(start * 1000),
+                        "end_ms": int(end * 1000),
+                    })
+        duration_ms = int(result.get("segments", [{}])[-1].get("end", 0) * 1000) if result.get("segments") else 0
+        return {
+            'status': 'ok',
+            'words': words,
+            'duration_ms': duration_ms,
+            'token_count': len(words),
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 def run_serve(encoder_path, decoder_path, vocab_path):
     """Long-lived serve mode."""
     try:
@@ -277,6 +311,12 @@ def run_serve(encoder_path, decoder_path, vocab_path):
 
         try:
             result = align_wav(wav_path, encoder_session, decoder_session, vocab)
+            # Fallback to Whisper if Parakeet returns no words
+            if result.get("token_count", 0) == 0:
+                print(f"[parakeet] No words aligned, falling back to Whisper...", file=sys.stderr)
+                whisper_result = align_wav_whisper(wav_path)
+                if whisper_result.get("status") == "ok":
+                    result = whisper_result
             for w in result.get("words", []):
                 w["start_ms"] += offset_ms
                 w["end_ms"] += offset_ms
@@ -286,7 +326,7 @@ def run_serve(encoder_path, decoder_path, vocab_path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Parakeet TDT force-alignment sidecar")
+    parser = argparse.ArgumentParser(description="Parakeet TDT force-alignment sidecar with Whisper fallback")
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--wav", default=None)
     parser.add_argument("--output", default=None)
@@ -305,6 +345,12 @@ def main():
         dec = ort.InferenceSession(args.decoder, opts, providers=['CPUExecutionProvider'])
         vocab = load_vocab(args.vocab)
         result = align_wav(args.wav, enc, dec, vocab)
+        # Fallback to Whisper if Parakeet returns no words
+        if result.get("token_count", 0) == 0:
+            print(f"[parakeet] No words aligned, falling back to Whisper...", file=sys.stderr)
+            whisper_result = align_wav_whisper(args.wav)
+            if whisper_result.get("status") == "ok":
+                result = whisper_result
         with open(args.output, 'w') as f:
             json.dump(result, f)
         print(f"OK: {len(result.get('words', []))} words aligned")

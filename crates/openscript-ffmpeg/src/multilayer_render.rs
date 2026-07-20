@@ -286,10 +286,13 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
 
     // 1. Concat background clips
     if bg_count == 1 {
-        // Single background — just scale
+        // Single background — frame-accurate trim + scale
+        let bg = filtered_bgs[0];
+        let end_frame = (bg.duration_s * spec.fps as f64).floor() as u64;
+        let end_frame = if end_frame > 0 { end_frame - 1 } else { 0 };
         filters.push(format!(
-            "[0:v]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},fps={},trim=duration={}[vbg]",
-            spec.width, spec.height, spec.width, spec.height, spec.fps, spec.total_duration_s
+            "[0:v]select='lte(n\\,{})',setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},setsar=1,fps={}[vbg]",
+            end_frame, spec.width, spec.height, spec.width, spec.height, spec.fps
         ));
     } else {
         // Multiple backgrounds — normalize EACH clip to identical size+SAR
@@ -297,9 +300,16 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         // with "parameters do not match" when SARs differ across inputs.
         // (Phase CG: multi-broll stock render fix.)
         for (i, bg) in filtered_bgs.iter().enumerate() {
+            // Frame-accurate trimming: use select=lte(n,N) instead of
+            // trim=duration=X. Time-based trim lands mid-frame when source
+            // fps ≠ target fps, causing floating-point drift that compounds
+            // across scene boundaries (Phase 9: background overlap fix).
+            // N = floor(duration_s * fps) - 1 gives exact frame count.
+            let end_frame = (bg.duration_s * spec.fps as f64).floor() as u64;
+            let end_frame = if end_frame > 0 { end_frame - 1 } else { 0 };
             filters.push(format!(
-                "[{}:v]trim=duration={},setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},setsar=1,fps={}[bg{}]",
-                i, bg.duration_s, spec.width, spec.height, spec.width, spec.height, spec.fps, i
+                "[{}:v]select='lte(n\\,{})',setpts=PTS-STARTPTS,scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},setsar=1,fps={}[bg{}]",
+                i, end_frame, spec.width, spec.height, spec.width, spec.height, spec.fps, i
             ));
         }
 
@@ -581,7 +591,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             music_input_idx, spec.music_volume
         ));
         filters.push(
-            "[music_vol][vo_sc]sidechaincompress=threshold=0.05:ratio=4:attack=50:release=200:makeup=2:level_sc=1[music_ducked]".into(),
+            "[music_vol][vo_sc]sidechaincompress=threshold=0.05:ratio=4:attack=50:release=200:makeup=1:level_sc=1[music_ducked]".into(),
         );
         filters.push(
             "[vo_out][music_ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a_base]".into(),
@@ -616,8 +626,16 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         ));
     }
 
-    // Loudness normalization
-    filters.push("[aout_raw]loudnorm=I=-16:TP=-1.5:LRA=11[aout]".to_string());
+    // Loudness normalization with true peak limiting (EBU R128 s1)
+    // TP=-2.5 limits true peaks to -2.5 dBFS — conservative headroom for
+    // AAC encoding which can overshoot by ~1 dB in inter-sample peaks.
+    // Previous TP=-1.5 + alimiter(0.89) still produced -0.4 dBFS peaks
+    // because alimiter only limits SAMPLE peaks, not true peaks.
+    filters.push("[aout_raw]loudnorm=I=-16:TP=-2.5:LRA=11[aout_ln]".to_string());
+
+    // Final safety limiter as backstop — limit=0.79 (-2 dBFS sample peak)
+    // reinforces the loudnorm true-peak limit with a hard sample-peak ceiling
+    filters.push("[aout_ln]alimiter=limit=0.79:attack=5:release=50:asc=1:asc_level=0.5[aout]".to_string());
 
     let filter_complex = filters.join(";");
 

@@ -7942,6 +7942,19 @@ async fn handle_background_assign(args: serde_json::Value) -> Result<serde_json:
         }
     }
 
+    // Phase 5: Add pause_ms from SceneSpec to scene durations (breath beats).
+    // This extends each scene's duration by the specified pause, creating
+    // natural breathing gaps between scenes without affecting the TTS audio.
+    for (i, dur) in scene_durations.iter_mut().enumerate() {
+        if let Some(scene) = spec.scenes.get(i) {
+            if let Some(pause) = scene.pause_ms {
+                if pause > 0 {
+                    *dur += pause as f64 / 1000.0;
+                }
+            }
+        }
+    }
+
     // Assign backgrounds
     let clips = assign_backgrounds(
         &scene_ids,
@@ -9483,50 +9496,52 @@ async fn handle_script_to_timeline(
 
     // Add music if specified
     if let Some(ref music) = spec.music {
-        if !music.path.is_empty() {
-            let music_event = openscript_core::timeline::TimelineEvent {
-                id: "music_bg".to_string(),
-                asset_id: "music_bg".to_string(),
-                start_ms: 0,
-                end_ms: total_duration_ms,
-                offset_ms: 0,
-                gain_db: music.gain_db,
-                fade_in_ms: 500,
-                fade_out_ms: 500,
-                tags: vec![],
-                provenance: Some(openscript_core::timeline::Provenance {
-                    tool: "script.to_timeline".into(),
-                    editorial_role: None,
-                    concept: None,
-                }),
-                kind: openscript_core::timeline::EventKind::Music {
-                    mood: "neutral".to_string(),
-                    energy: "medium".to_string(),
-                    bpm: None,
-                    loopability: true,
-                    intro_friendly: true,
-                    cta_friendly: false,
-                    loudness_target_lufs: -14.0,
-                    loop_mode: "loop".to_string(),
-                    ducking_policy: if music.ducking {
-                        "auto".to_string()
-                    } else {
-                        "none".to_string()
+        if let Some(ref path) = music.path {
+            if !path.is_empty() {
+                let music_event = openscript_core::timeline::TimelineEvent {
+                    id: "music_bg".to_string(),
+                    asset_id: "music_bg".to_string(),
+                    start_ms: 0,
+                    end_ms: total_duration_ms,
+                    offset_ms: 0,
+                    gain_db: music.gain_db,
+                    fade_in_ms: 500,
+                    fade_out_ms: 500,
+                    tags: vec![],
+                    provenance: Some(openscript_core::timeline::Provenance {
+                        tool: "script.to_timeline".into(),
+                        editorial_role: None,
+                        concept: None,
+                    }),
+                    kind: openscript_core::timeline::EventKind::Music {
+                        mood: "neutral".to_string(),
+                        energy: "medium".to_string(),
+                        bpm: None,
+                        loopability: true,
+                        intro_friendly: true,
+                        cta_friendly: false,
+                        loudness_target_lufs: -14.0,
+                        loop_mode: "loop".to_string(),
+                        ducking_policy: if music.ducking {
+                            "auto".to_string()
+                        } else {
+                            "none".to_string()
+                        },
                     },
-                },
-            };
-            timeline.add_track_event(TrackType::Music, music_event);
-            timeline.add_asset("music", "music_bg".to_string(), json!({"path": music.path}));
+                };
+                timeline.add_track_event(TrackType::Music, music_event);
+                timeline.add_asset("music", "music_bg".to_string(), json!({"path": path}));
 
-            // Add ducking directive
-            if music.ducking {
-                timeline.add_ducking_directive(
-                    "voiceover",
-                    "music",
-                    music.ducking_depth_db,
-                    50,
-                    200,
-                );
+                // Add ducking directive
+                if music.ducking {
+                    timeline.add_ducking_directive(
+                        "voiceover",
+                        "music",
+                        music.ducking_depth_db,
+                        50,
+                        200,
+                    );
+                }
             }
         }
     }
@@ -9640,6 +9655,17 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 .and_then(|v| v.as_i64())
                 .unwrap_or(3000);
             scene_durations.push(dur_ms as f64 / 1000.0);
+        }
+    }
+
+    // Phase 5: Add pause_ms from SceneSpec to scene durations (breath beats).
+    for (i, dur) in scene_durations.iter_mut().enumerate() {
+        if let Some(scene) = spec.scenes.get(i) {
+            if let Some(pause) = scene.pause_ms {
+                if pause > 0 {
+                    *dur += pause as f64 / 1000.0;
+                }
+            }
         }
     }
 
@@ -10108,11 +10134,18 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         // single lookup.
         let giphy_key_val = giphy_key();
 
-        // Download one sticker per speaker
+        // Download stickers: one per speaker by default, but per-scene when
+        // a single speaker has multiple scenes (Phase 4: per-scene variation).
         let mut speaker_stickers: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
-        // Track queries used across speakers so we don't fetch the same
-        // sticker twice (each speaker gets a unique sticker).
+        // Phase 4: when single speaker has 3+ scenes, store per-scene stickers.
+        // Key = scene index, Value = sticker path. Falls back to speaker_stickers.
+        let mut scene_sticker_map: std::collections::HashMap<usize, String> =
+            std::collections::HashMap::new();
+        let single_speaker_multi_scene =
+            spec.speakers.len() == 1 && spec.scenes.len() >= 3;
+        // Track queries used across speakers/scenes so we don't fetch the same
+        // sticker twice.
         let mut used_sticker_queries: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
@@ -10282,6 +10315,130 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             }
         }
 
+        // Phase 4: per-scene sticker variation for single-speaker videos.
+        // When one speaker has 3+ scenes, download a DIFFERENT sticker per
+        // scene using scene-specific queries (emote, salient noun from text)
+        // so the overlay changes visually between scenes instead of repeating.
+        if single_speaker_multi_scene && !giphy_key_val.is_empty() {
+            if let Some((speaker_name, _speaker_spec)) = spec.speakers.iter().next() {
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(15))
+                    .build()
+                    .unwrap_or_default();
+                let stickers_dir = "mcp/assets/stickers";
+
+                for (scene_idx, scene) in spec.scenes.iter().enumerate() {
+                    // Build a scene-specific query: emote > noun > text snippet
+                    let query = {
+                        let mut candidates: Vec<String> = Vec::new();
+                        if let Some(ref emote) = scene.emote {
+                            if !emote.is_empty() {
+                                candidates.push(emote.clone());
+                            }
+                        }
+                        if let Some(noun) = extract_salient_noun(&scene.text) {
+                            candidates.push(noun);
+                        }
+                        // Use first 3 words of scene text as fallback
+                        let text_snippet: String = scene
+                            .text
+                            .split_whitespace()
+                            .take(3)
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if !text_snippet.is_empty() {
+                            candidates.push(text_snippet);
+                        }
+                        candidates.push("talking head".to_string());
+
+                        candidates
+                            .into_iter()
+                            .find(|c| !used_sticker_queries.contains(c.as_str()))
+                            .unwrap_or_else(|| "talking head".to_string())
+                    };
+                    used_sticker_queries.insert(query.clone());
+
+                    tracing::info!(
+                        "[script.to_video] Per-scene sticker query for scene {}: '{}'",
+                        scene_idx,
+                        query
+                    );
+
+                    let giphy_url = format!(
+                        "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=8&rating=g&bundle=sticker_layering&lang=en",
+                        giphy_key_val,
+                        urlencoding::encode(&query)
+                    );
+
+                    if let Ok(resp) = client.get(&giphy_url).send().await {
+                        if resp.status().is_success() {
+                            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                                if let Some(data) = body.get("data").and_then(|v| v.as_array()) {
+                                    for sticker in data {
+                                        let is_sticker = sticker
+                                            .get("is_sticker")
+                                            .and_then(|v| v.as_i64())
+                                            .unwrap_or(1);
+                                        if is_sticker != 1 { continue; }
+
+                                        let sticker_id = sticker
+                                            .get("id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if used_sticker_queries.contains(&sticker_id) { continue; }
+
+                                        let images = sticker.get("images").cloned().unwrap_or(json!({}));
+                                        let original = images.get("original").cloned().unwrap_or(json!({}));
+
+                                        let sticker_url = original
+                                            .get("url")
+                                            .and_then(|v| v.as_str())
+                                            .filter(|s| !s.is_empty())
+                                            .unwrap_or("");
+                                        if sticker_url.is_empty() { continue; }
+
+                                        let frames = original
+                                            .get("frames")
+                                            .and_then(|v| v.as_str())
+                                            .and_then(|s| s.parse::<u32>().ok())
+                                            .unwrap_or(0);
+                                        if frames < 2 { continue; }
+
+                                        let size: i64 = original
+                                            .get("webp_size")
+                                            .and_then(|v| v.as_i64())
+                                            .or_else(|| original.get("size").and_then(|v| v.as_i64()))
+                                            .unwrap_or(0);
+                                        if size > 3_000_000 { continue; }
+
+                                        let sticker_path = format!(
+                                            "{}/giphy_s{}_{}.gif",
+                                            stickers_dir, scene_idx, speaker_name
+                                        );
+                                        if let Ok(dl_resp) = client.get(sticker_url).send().await {
+                                            if dl_resp.status().is_success() {
+                                                if let Ok(bytes) = dl_resp.bytes().await {
+                                                    std::fs::write(&sticker_path, &bytes).ok();
+                                                    scene_sticker_map.insert(scene_idx, sticker_path.clone());
+                                                    used_sticker_queries.insert(sticker_id);
+                                                    tracing::info!(
+                                                        "[script.to_video] Per-scene sticker for scene {}: {}",
+                                                        scene_idx, sticker_path
+                                                    );
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Local sticker fallback when GIPHY missing/failed (Phase CF).
         // Prefer animated GIFs (giphy_*.gif), then speaker PNGs, then any .gif/.png.
         let local_sticker_pool: Vec<String> = {
@@ -10355,6 +10512,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
         // Create sticker overlays per scene
         let mut current_ms = 0i64;
+        let mut scene_idx = 0usize;
         if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
             for seg in segments {
                 let speaker_name = seg.get("speaker").and_then(|v| v.as_str()).unwrap_or("");
@@ -10364,7 +10522,11 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     .unwrap_or(current_ms + 3000);
 
                 if let Some(speaker_spec) = spec.speakers.get(speaker_name) {
-                    if let Some(sticker_path) = speaker_stickers.get(speaker_name) {
+                    // Phase 4: prefer per-scene sticker when available
+                    let sticker_path = scene_sticker_map
+                        .get(&scene_idx)
+                        .or_else(|| speaker_stickers.get(speaker_name));
+                    if let Some(sticker_path) = sticker_path {
                         let sticker_w = (spec.meta.width as f64 * speaker_spec.scale) as u32;
                         stickers.push(openscript_ffmpeg::multilayer_render::StickerOverlay {
                             path: sticker_path.clone(),
@@ -10380,6 +10542,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     }
                 }
 
+                scene_idx += 1;
                 current_ms = end_ms;
             }
         }
@@ -10398,37 +10561,41 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
     let music_path = {
         let explicit = if let Some(ref m) = spec.music {
-            if std::path::Path::new(&m.path).exists() {
-                if is_synthetic_music_file(&m.path) {
-                    tracing::warn!(
-                        "[script.to_video] Rejecting synthetic stock music: {}",
-                        m.path
-                    );
-                    None
-                } else if openscript_core::production_quality::is_calm_focus_context(
-                    Some(&spec.output.theme),
-                    &spec.video_keywords,
-                ) && openscript_core::production_quality::music_hits_denylist(
-                    &m.path,
-                    None,
-                    &[],
-                    Some(&m.path),
-                ) {
-                    tracing::warn!(
-                        "[script.to_video] Rejecting denylist music for calm/focus: {}",
-                        m.path
-                    );
-                    None
+            if let Some(ref path) = m.path {
+                if std::path::Path::new(path).exists() {
+                    if is_synthetic_music_file(path) {
+                        tracing::warn!(
+                            "[script.to_video] Rejecting synthetic stock music: {}",
+                            path
+                        );
+                        None
+                    } else if openscript_core::production_quality::is_calm_focus_context(
+                        Some(&spec.output.theme),
+                        &spec.video_keywords,
+                    ) && openscript_core::production_quality::music_hits_denylist(
+                        path,
+                        None,
+                        &[],
+                        Some(path),
+                    ) {
+                        tracing::warn!(
+                            "[script.to_video] Rejecting denylist music for calm/focus: {}",
+                            path
+                        );
+                        None
+                    } else {
+                        music_sel_source = Some("script".into());
+                        music_sel_query = Some(path.clone());
+                        Some(path.clone())
+                    }
                 } else {
-                    music_sel_source = Some("script".into());
-                    music_sel_query = Some(m.path.clone());
-                    Some(m.path.clone())
+                    tracing::warn!(
+                        "[script.to_video] Music path not found: {} — auto-select",
+                        path
+                    );
+                    None
                 }
             } else {
-                tracing::warn!(
-                    "[script.to_video] Music path not found: {} — auto-select",
-                    m.path
-                );
                 None
             }
         } else {
@@ -10925,7 +11092,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         voiceover_paths,
         stickers,
         music_path,
-        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-12.0) / 20.0),
+        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-20.0) / 20.0),
         ducking: should_duck,
         ducking_depth_db: spec
             .music

@@ -132,6 +132,12 @@ enum Commands {
         #[arg(long, default_value = "10")]
         limit: u32,
     },
+    /// Output an example ScriptSpec JSON for reference (schema discovery)
+    ScriptExample {
+        /// Output format: json or json-with-comments
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
     /// Verify audio quality of a rendered video (mirrors verify.audio)
     VerifyAudio {
         #[arg(short, long)]
@@ -396,6 +402,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(s) = start_s { args["start_s"] = serde_json::json!(s); }
             let result = openscript_mcp::tools::route_tool("youtube.download", args).await;
             print_cli_result("youtube.download", result);
+        }
+        Commands::ScriptExample { format } => {
+            // Output an example ScriptSpec JSON
+            let example = serde_json::json!({
+                "schema": "openscript-video/v1",
+                "title": "Video Title",
+                "video_keywords": ["topic", "keywords"],
+                "meta": { "aspect": "9:16", "fps": 30 },
+                "tts": { "backend": "kokoro", "default_speed": 1.0 },
+                "speakers": {
+                    "narrator": { "voice": "kokoro:af_heart", "preset": "default_person" }
+                },
+                "background": { "type": "procedural", "source": "youtube", "change_cadence": "scene" },
+                "music": { "path": "optional.mp3", "gain_db": -12 },
+                "captions": { "style": "word_highlight" },
+                "stickers": { "enabled": true },
+                "meme_brolls": { "enabled": false },
+                "scenes": [
+                    { "speaker": "narrator", "text": "Scene text", "emote": "neutral" }
+                ],
+                "sfx": [{ "role": "intro", "trigger": "scene_change" }],
+                "output": { "theme": "calm" }
+            });
+            
+            if format == "json-with-comments" {
+                // Add comments as special fields
+                let mut with_comments = example.clone();
+                with_comments["_comment_schema"] = serde_json::json!("Schema version identifier");
+                with_comments["_comment_video_keywords"] = serde_json::json!("3-5 words describing the whole video topic");
+                with_comments["_comment_background_type"] = serde_json::json!("Options: gameplay (YouTube download), procedural (FFmpeg synthetic), static (image)");
+                with_comments["_comment_sfx_trigger"] = serde_json::json!("Options: scene_change, speaker_change, or use at_ms for absolute time");
+                println!("{}", serde_json::to_string_pretty(&with_comments).unwrap());
+            } else {
+                println!("{}", serde_json::to_string_pretty(&example).unwrap());
+            }
         }
     }
 

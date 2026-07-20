@@ -641,7 +641,7 @@ impl FilterGraphBuilder {
             // a hardcoded value. This lets `directives.mix.normalize_to_lufs`
             // actually control the output loudness.
             parts.push(format!(
-                "[{}]loudnorm=I={}:TP=-1.5:LRA=11[aloud]",
+                "[{}]loudnorm=I={}:TP=-2.5:LRA=11[aloud]",
                 &aout[1..aout.len() - 1],
                 self.normalize_lufs
             ));
@@ -780,8 +780,21 @@ impl FilterGraphBuilder {
             aout = out_label;
         }
 
-        (parts.join(","), vout, aout)
-    }
+        // Post-mix safety limiter — loudnorm TP targets true peaks but
+        // music/SFX mixing after it can push levels above the limit.
+        // alimiter provides a hard sample-peak ceiling at -2 dBFS as a backstop.
+        // (P0 audio clipping fix — peak was -0.4 dBFS with old TP=-1.5 + no post-mix limiter.)
+        if self.loudnorm {
+            let input_label = &aout[1..aout.len() - 1];
+            parts.push(format!(
+                "[{}]alimiter=limit=0.79:attack=5:release=50:asc=1:asc_level=0.5[afinal]",
+                input_label
+            ));
+            aout = "[afinal]".into();
+        }
+
+    (parts.join(","), vout, aout)
+}
 }
 
 #[cfg(test)]
@@ -808,9 +821,9 @@ mod tests {
         assert!(filter.contains("atrim=start=0:end=3.46"));
         assert!(filter.contains("fps=30"));
         assert!(filter.contains("scale=-2:1920"));
-        assert!(filter.contains("loudnorm=I=-16:TP=-1.5:LRA=11"));
+        assert!(filter.contains("loudnorm=I=-16:TP=-2.5:LRA=11"));
         assert_eq!(vout, "[vcrop]");
-        assert_eq!(aout, "[aloud]");
+        assert_eq!(aout, "[afinal]");
     }
 
     #[test]
@@ -935,7 +948,7 @@ mod tests {
         assert!(filter.contains("scale=-2:1920"));
         assert!(filter.contains("loudnorm=I=-16"));
         assert_eq!(vout, "[vcrop]");
-        assert_eq!(aout, "[aloud]");
+        assert_eq!(aout, "[afinal]");
     }
 
     #[test]
@@ -1008,7 +1021,7 @@ mod tests {
         assert!(filter.contains("[voiceover_0]volume="));
         assert!(filter.contains("[vo_vol_0]adelay=0|0[vo_delayed_0]"));
         assert!(filter.contains("[vo_delayed_0]amix=inputs=2:duration=first:dropout_transition=1"));
-        assert_eq!(aout, "[amix_voiceover]");
+        assert_eq!(aout, "[afinal]");
     }
 
     #[test]
@@ -1033,6 +1046,6 @@ mod tests {
         assert!(filter.contains("amovie='/path/to/music.mp3'"));
         // Audio chain: voiceover mixed → then music mixed
         assert!(filter.contains("[amix_voiceover][music_vol_0]amix"));
-        assert_eq!(aout, "[amix_0]");
+        assert_eq!(aout, "[afinal]");
     }
 }

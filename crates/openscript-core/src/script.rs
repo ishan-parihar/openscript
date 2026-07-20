@@ -271,7 +271,7 @@ pub struct BackgroundSpec {
 }
 
 fn default_bg_type() -> String {
-    "gameplay".to_string()
+    "procedural".to_string()
 }
 fn default_bg_source() -> String {
     "youtube".to_string()
@@ -311,8 +311,9 @@ impl Default for BackgroundSpec {
 /// Background music configuration.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MusicSpec {
-    /// Path to the music file (MP3/WAV).
-    pub path: String,
+    /// Path to the music file (MP3/WAV). Optional — if omitted, auto-select from library by mood.
+    #[serde(default)]
+    pub path: Option<String>,
 
     /// Music volume in dB (typically -15 to -20).
     #[serde(default = "default_music_gain")]
@@ -563,6 +564,11 @@ pub struct SceneSpec {
     /// Override scene duration in ms (null = use TTS duration).
     #[serde(default)]
     pub duration_override_ms: Option<i64>,
+
+    /// Optional pause in ms after this scene's voiceover (breath beat).
+    /// When present, adds silence after the audio to create natural pacing.
+    #[serde(default)]
+    pub pause_ms: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -868,14 +874,14 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
     }
 
     // Auto-upgrade background type: if the caller set type="static" but
-    // provided video_keywords, silently upgrade to "gameplay" so stock
+    // provided video_keywords, silently upgrade to "procedural" so stock
     // backgrounds are fetched instead of procedural gradients. The caller
     // likely wrote "static" by mistake — type="static" is an explicit opt-out
     // of stock footage, which contradicts providing video search keywords.
     // (Director v5 trial: cold-agent wrote type="static", bypassing all
     // Pexels fetches, producing 0/12 video_source_quality.)
     if spec.background.r#type == "static" && !spec.video_keywords.is_empty() {
-        spec.background.r#type = "gameplay".to_string();
+        spec.background.r#type = "procedural".to_string();
     }
 
     // Apply theme preset.
@@ -1212,7 +1218,7 @@ mod tests {
         // All optional sections get defaults
         assert_eq!(spec.meta.width, 1080);
         assert_eq!(spec.meta.height, 1920);
-        assert_eq!(spec.background.r#type, "gameplay");
+        assert_eq!(spec.background.r#type, "procedural");
         assert_eq!(spec.background.change_cadence, "scene");
         assert!(spec.music.is_none());
         assert_eq!(spec.captions.font, "Bebas Neue");
