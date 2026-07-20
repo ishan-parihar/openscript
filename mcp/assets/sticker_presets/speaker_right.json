@@ -1,0 +1,10 @@
+{
+  "name": "SpeakerRight",
+  "description": "Speaker on right side, vertically centered with caption clearance",
+  "position": "center-right",
+  "scale": 0.30,
+  "safe_margin_px": 60,
+  "speaker_role": "speaker_2",
+  "canvas_width": 1080,
+  "canvas_height": 1920
+}

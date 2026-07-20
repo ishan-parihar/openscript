@@ -1,0 +1,10 @@
+{
+  "name": "SpeakerCenter",
+  "description": "Speaker centered above caption rail with extra margin",
+  "position": "center",
+  "scale": 0.25,
+  "safe_margin_px": 80,
+  "speaker_role": "narrator",
+  "canvas_width": 1080,
+  "canvas_height": 1920
+}

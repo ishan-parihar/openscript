@@ -6,6 +6,7 @@ pub mod production_quality;
 pub mod script;
 pub mod srt;
 pub mod sticker;
+pub mod sticker_presets;
 pub mod timeline;
 pub mod timeline_preview;
 pub mod transcript;

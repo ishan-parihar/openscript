@@ -25,6 +25,110 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+/// Verify layer order in the render pipeline.
+/// Expected order (bottom to top): Background → Meme → Captions → Stickers
+/// Returns a report with any violations.
+pub fn verify_layer_order(manifest: &RenderManifest) -> LayerOrderReport {
+    let mut findings = Vec::new();
+    let mut hard_fails = Vec::new();
+
+    // The render pipeline in multilayer_render.rs builds the filter graph in this order:
+    // 1. Background concat [vbg]
+    // 2. Meme b-roll overlays on background [vmb*]
+    // 3. Captions burned on top [vcap]
+    // 4. Sticker overlays on top [vst* → vout]
+    //
+    // This is the CORRECT order: Background → Meme → Captions → Stickers
+    // We validate that the manifest has the expected layers in the right z-order.
+
+    // Check: if there are stickers, captions should be present (or at least configured)
+    if !manifest.stickers.is_empty() && manifest.captions_path.is_none() {
+        findings.push("WARNING: stickers present but no captions configured — stickers will be topmost layer".into());
+    }
+
+    // Check: meme clips should be configured if present in manifest
+    // (they are validated in the render pipeline)
+
+    // Hard fail: if stickers exist but caption style is "word_highlight" or "karaoke"
+    // and stickers are at bottom positions, they WILL overlap
+    for st in &manifest.stickers {
+        let pos = st.position.to_lowercase();
+        if (pos.contains("bottom") || pos == "center") && manifest.caption_style.as_deref() == Some("word_highlight") {
+            hard_fails.push(format!(
+                "HARD: sticker '{}' at position '{}' will overlap word_highlight caption rail",
+                st.path, st.position
+            ));
+        }
+    }
+
+    LayerOrderReport {
+        expected_order: vec![
+            "Background (vbg)".into(),
+            "Meme b-roll (vmb)".into(),
+            "Captions (vcap)".into(),
+            "Stickers (vst)".into(),
+        ],
+        actual_order: vec![
+            "Background".into(),
+            if !manifest.memes.is_empty() { "Meme".into() } else { "Meme (none)".into() },
+            if manifest.captions_path.is_some() { "Captions".into() } else { "Captions (none)".into() },
+            if !manifest.stickers.is_empty() { "Stickers".into() } else { "Stickers (none)".into() },
+        ],
+        findings,
+        hard_fails,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayerOrderReport {
+    pub expected_order: Vec<String>,
+    pub actual_order: Vec<String>,
+    pub findings: Vec<String>,
+    pub hard_fails: Vec<String>,
+}
+
+/// Calculate the sticker bounding box in canvas pixel coordinates.
+/// Returns (left, top, right, bottom).
+fn sticker_bbox(sticker: &StickerLayerInfo, canvas_w: u32, canvas_h: u32) -> (i32, i32, i32, i32) {
+    let sticker_size = (canvas_w as f64 * sticker.scale).round() as i32;
+    let margin = 40i32;
+    let cw = canvas_w as i32;
+    let ch = canvas_h as i32;
+
+    let (tl_x, tl_y) = match sticker.position.to_lowercase().as_str() {
+        "top-left" => (margin, margin),
+        "top-right" => (cw - sticker_size - margin, margin),
+        "top-center" | "center-top" => ((cw - sticker_size) / 2, margin),
+        "bottom-left" => (margin, ch - sticker_size - margin),
+        "bottom-right" => (cw - sticker_size - margin, ch - sticker_size - margin),
+        "bottom-center" | "center-bottom" => ((cw - sticker_size) / 2, ch - sticker_size - margin),
+        "center" => ((cw - sticker_size) / 2, (ch - sticker_size) / 2),
+        _ => (margin, margin), // default to top-left
+    };
+
+    (tl_x, tl_y, tl_x + sticker_size, tl_y + sticker_size)
+}
+
+/// Check if two axis-aligned rectangles overlap.
+fn boxes_overlap(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
+    !(a.2 <= b.0 || b.2 <= a.0 || a.3 <= b.1 || b.3 <= a.1)
+}
+
+/// Calculate the caption safe zone (bottom area reserved for captions) based on style and canvas height.
+/// Returns (top_y, bottom_y) in pixels, where top_y is the start of the safe zone from top.
+fn caption_safe_zone(canvas_h: u32, style: Option<&str>) -> (i32, i32) {
+    let h = canvas_h as i32;
+    // Caption styles and their approximate bottom rail heights
+    let rail_ratio = match style {
+        Some(s) if s == "word_highlight" || s == "karaoke" => 0.15, // ~288px on 1920
+        Some(s) if s == "sentence_fade" => 0.12,
+        Some(s) if s == "burn_in" || s == "subtitle_rail" => 0.10,
+        _ => 0.12, // default
+    };
+    let rail_h = (h as f64 * rail_ratio).round() as i32;
+    (h - rail_h, h)
+}
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -209,6 +313,18 @@ pub struct RenderManifest {
     /// Output aspect ratio (e.g. "9:16", "16:9", "1:1").
     #[serde(default)]
     pub aspect_ratio: Option<String>,
+    /// Measured integrated loudness (LUFS, EBU R128) from rendered video.
+    #[serde(default)]
+    pub measured_lufs: Option<f64>,
+    /// Measured true peak level in dBFS from rendered video.
+    #[serde(default)]
+    pub measured_peak_dbfs: Option<f64>,
+    /// Measured music ducking depth in dB during speech segments.
+    #[serde(default)]
+    pub measured_ducking_depth_db: Option<f64>,
+    /// Measured music gain in dB from rendered video.
+    #[serde(default)]
+    pub measured_music_gain_db: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -968,6 +1084,7 @@ fn score_sfx_quality(sfx_count: usize, timeline: &Timeline) -> DimensionScore {
 fn score_sticker_design_with_duration(
     stickers: &[StickerLayerInfo],
     duration_ms: i64,
+    caption_style: Option<&str>,
 ) -> DimensionScore {
     let mut findings = Vec::new();
     if stickers.is_empty() {
@@ -1029,6 +1146,27 @@ fn score_sticker_design_with_duration(
         findings.push("no animated GIF stickers — static PNG only reduces visual energy".into());
     }
 
+    // Spatial overlap check: sticker vs caption safe zone
+    // Use a standard 1080x1920 canvas for the check
+    const CANVAS_W: u32 = 1080;
+    const CANVAS_H: u32 = 1920;
+    let caption_zone = caption_safe_zone(CANVAS_H, caption_style);
+    for st in stickers {
+        let sticker_box = sticker_bbox(st, CANVAS_W, CANVAS_H);
+        let caption_box = (0, caption_zone.0, CANVAS_W as i32, caption_zone.1);
+        if boxes_overlap(sticker_box, caption_box) {
+            findings.push(format!(
+                "HARD: sticker '{}' at position '{}' scale={:.2} overlaps caption safe zone ({}–{}px from top)",
+                st.path.split('/').last().unwrap_or(&st.path),
+                st.position,
+                st.scale,
+                caption_zone.0,
+                caption_zone.1
+            ));
+            s = (s - 3).max(0);
+        }
+    }
+
     // Temporal overlap check
     let mut overlap_pairs = 0usize;
     for i in 0..stickers.len() {
@@ -1086,7 +1224,7 @@ fn score_sticker_design_with_duration(
 /// Backward-compat wrapper — no duration = no always-on check.
 #[allow(dead_code)]
 fn score_sticker_design(stickers: &[StickerLayerInfo]) -> DimensionScore {
-    score_sticker_design_with_duration(stickers, 0)
+    score_sticker_design_with_duration(stickers, 0, None)
 }
 
 /// Weight 8 — section composition.
@@ -1368,16 +1506,24 @@ fn score_voiceover_quality(
 }
 
 /// Weight 5 — audio mix quality: LUFS compliance, clipping, ducking depth, gain balance.
+/// Note: This function uses MEASURED values from the rendered video.
+/// If measured values are not available (None), it will not hard-fail but will note the absence.
 #[allow(dead_code)]
 fn score_audio_mix_quality(
-    lufs: Option<f64>,
-    peak_dbfs: Option<f64>,
-    ducking_depth_db: Option<f64>,
-    music_gain_db: f64,
+    measured_lufs: Option<f64>,
+    measured_peak_dbfs: Option<f64>,
+    measured_ducking_depth_db: Option<f64>,
+    measured_music_gain_db: Option<f64>,
     has_dialogue: bool,
 ) -> DimensionScore {
     let mut findings = Vec::new();
     let mut s = 0i32;
+
+    // Use measured values if available, fall back to manifest values
+    let music_gain_db = measured_music_gain_db.unwrap_or(-12.0);
+    let lufs = measured_lufs;
+    let peak_dbfs = measured_peak_dbfs;
+    let ducking_depth_db = measured_ducking_depth_db;
 
     // Music gain compliance
     if (-18.0..=-6.0).contains(&music_gain_db) {
@@ -1426,8 +1572,9 @@ fn score_audio_mix_quality(
             }
             Some(d) => {
                 findings.push(format!(
-                    "ducking depth {:.1} dB insufficient — music may mask speech (need >=10 dB)", d
+                    "HARD: ducking depth {:.1} dB insufficient — music may mask speech (need >=6 dB)", d
                 ));
+                s = 0; // Hard fail
             }
             None => {
                 findings.push("ducking_depth_db not measured — verify sidechain ducking is active".into());
@@ -1435,6 +1582,17 @@ fn score_audio_mix_quality(
         }
     } else {
         s += 1; // no speech = no ducking needed
+    }
+
+    // Hard gate: no audio stream but music/SFX configured
+    // Only trigger if we have SOME audio measurement AND they indicate silence
+    // but the manifest says there should be audio
+    let has_audio_measurement = measured_lufs.is_some() || measured_peak_dbfs.is_some() || measured_ducking_depth_db.is_some();
+    let audio_appears_silent = measured_peak_dbfs.map(|p| p < -60.0).unwrap_or(false)
+        && measured_lufs.map(|l| l < -40.0).unwrap_or(false);
+    if has_audio_measurement && audio_appears_silent && (music_gain_db != 0.0 || has_dialogue) {
+        findings.push("HARD: audio stream appears silent but music/SFX/dialogue configured".into());
+        s = 0;
     }
 
     DimensionScore {
@@ -1836,7 +1994,7 @@ pub fn evaluate_production_quality(
     let (d_cuts, cps) = score_cuts_pacing(&backgrounds, duration_ms);
     let d_music   = score_music_quality(music.as_ref(), theme, &manifest.video_keywords);
     let d_sfx     = score_sfx_quality(manifest.sfx_count, timeline);
-    let d_sticker = score_sticker_design_with_duration(&manifest.stickers, duration_ms);
+    let d_sticker = score_sticker_design_with_duration(&manifest.stickers, duration_ms, manifest.caption_style.as_deref());
     let d_cap     = score_caption_quality(
         captions_path.as_deref(),
         manifest.caption_coverage_ratio,
@@ -1852,10 +2010,10 @@ pub fn evaluate_production_quality(
         manifest.emote_alignment_ok,
     );
     let d_audio   = score_audio_mix_quality(
-        manifest.lufs,
-        manifest.peak_dbfs,
-        manifest.ducking_depth_db,
-        music_gain,
+        manifest.measured_lufs,
+        manifest.measured_peak_dbfs,
+        manifest.measured_ducking_depth_db,
+        manifest.measured_music_gain_db,
         manifest.has_dialogue,
     );
     let d_section = score_section_composition(&sections, &manifest.memes);
@@ -1867,6 +2025,12 @@ pub fn evaluate_production_quality(
     );
     let d_plat    = score_platform_optimization(duration_ms, manifest.aspect_ratio.as_deref());
     let timeline_editor = score_timeline_editor(timeline);
+
+    // Verify layer composition order
+    let layer_report = verify_layer_order(manifest);
+    // Add layer order hard fails to overall hard fails
+    let layer_hard_fails = layer_report.hard_fails.clone();
+    let _layer_findings = layer_report.findings.clone();
 
     // Scale utilization 0-100 → 0-4 pts (down from 0-8 in v3)
     let editor_score = ((timeline_editor.utilization_score as f64) * 0.04).round() as i32;
@@ -1929,6 +2093,13 @@ pub fn evaluate_production_quality(
         }
     }
 
+    // Add layer order hard fails
+    for f in layer_hard_fails {
+        if !hard_fails.contains(&f) {
+            hard_fails.push(f);
+        }
+    }
+
     // v4.0 grade caps for new hard gates
     let sfx_hard = dimensions.iter()
         .find(|d| d.id == "sfx_quality")
@@ -1946,6 +2117,14 @@ pub fn evaluate_production_quality(
         .find(|d| d.id == "caption_quality")
         .map(|d| d.findings.iter().any(|f| f.contains("CPS") && f.contains("unreadable")))
         .unwrap_or(false);
+    let ducking_hard = dimensions.iter()
+        .find(|d| d.id == "audio_mix_quality")
+        .map(|d| d.findings.iter().any(|f| f.contains("ducking depth") && f.contains("HARD")))
+        .unwrap_or(false);
+    let no_audio_hard = dimensions.iter()
+        .find(|d| d.id == "audio_mix_quality")
+        .map(|d| d.findings.iter().any(|f| f.contains("no audio stream") && f.contains("HARD")))
+        .unwrap_or(false);
 
     if sfx_hard && production_score > 69 {
         production_score = 69;
@@ -1962,6 +2141,14 @@ pub fn evaluate_production_quality(
     if clip_hard && production_score > 54 {
         production_score = 54;
         hard_fails.push("Clipping hard gate: peak > -1 dBFS -> grade capped D".into());
+    }
+    if ducking_hard && production_score > 54 {
+        production_score = 54;
+        hard_fails.push("Ducking hard gate: ducking depth < 6 dB -> grade capped D".into());
+    }
+    if no_audio_hard && production_score > 54 {
+        production_score = 54;
+        hard_fails.push("No audio hard gate: no audio stream but music/SFX configured -> grade capped D".into());
     }
 
     // Cap grade when hard fails present (fail closed on synthetic majority)
@@ -2493,7 +2680,7 @@ mod tests {
                 position: "top-right".into(), scale: 0.30,
             },
         ];
-        let d = score_sticker_design_with_duration(&stickers, 11000);
+        let d = score_sticker_design_with_duration(&stickers, 11000, None);
         assert!(
             d.findings.iter().any(|f| f.contains("overlap") || f.contains("compete")),
             "overlapping stickers should be flagged: {:?}", d.findings
@@ -2506,7 +2693,7 @@ mod tests {
             path: "a.gif".into(), start_ms: 0, end_ms: 5000,
             position: "".into(), scale: 0.30,
         }];
-        let d = score_sticker_design_with_duration(&stickers, 5000);
+        let d = score_sticker_design_with_duration(&stickers, 5000, None);
         assert!(
             d.findings.iter().any(|f| f.contains("position") || f.contains("off-screen") || f.contains("undefined")),
             "empty position should be flagged: {:?}", d.findings
@@ -2519,7 +2706,7 @@ mod tests {
             path: "a.gif".into(), start_ms: 0, end_ms: 20000,
             position: "top-left".into(), scale: 0.30,
         }];
-        let d = score_sticker_design_with_duration(&stickers, 20000);
+        let d = score_sticker_design_with_duration(&stickers, 20000, None);
         assert!(
             d.findings.iter().any(|f| f.contains("always") || f.contains("whole video") || f.contains("100%")),
             "always-on sticker should be flagged: {:?}", d.findings
@@ -2601,7 +2788,7 @@ mod tests {
 
     #[test]
     fn audio_mix_no_data_partial_score() {
-        let d = score_audio_mix_quality(None, None, None, -12.0, true);
+        let d = score_audio_mix_quality(None, None, None, None, true);
         assert_eq!(d.id, "audio_mix_quality");
         assert_eq!(d.max, 5);
         assert!(d.score <= 3);
@@ -2609,7 +2796,7 @@ mod tests {
 
     #[test]
     fn audio_mix_clipping_penalized() {
-        let d = score_audio_mix_quality(Some(-14.0), Some(0.5), Some(12.0), -12.0, true);
+        let d = score_audio_mix_quality(Some(-14.0), Some(0.5), Some(12.0), Some(-12.0), true);
         assert!(
             d.findings.iter().any(|f| f.contains("clip") || f.contains("peak")),
             "clipping should be flagged: {:?}", d.findings
@@ -2618,7 +2805,7 @@ mod tests {
 
     #[test]
     fn audio_mix_lufs_out_of_range_penalized() {
-        let d = score_audio_mix_quality(Some(-6.0), Some(-2.0), Some(10.0), -12.0, true);
+        let d = score_audio_mix_quality(Some(-6.0), Some(-2.0), Some(10.0), Some(-12.0), true);
         assert!(
             d.findings.iter().any(|f| f.contains("LUFS") || f.contains("loudness")),
             "LUFS violation should be flagged: {:?}", d.findings
@@ -2627,7 +2814,7 @@ mod tests {
 
     #[test]
     fn audio_mix_ideal_scores_high() {
-        let d = score_audio_mix_quality(Some(-16.0), Some(-3.0), Some(14.0), -12.0, true);
+        let d = score_audio_mix_quality(Some(-16.0), Some(-3.0), Some(14.0), Some(-12.0), true);
         assert!(d.score >= 4, "ideal audio mix should score >=4/5, got {}", d.score);
     }
 

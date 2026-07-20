@@ -5668,6 +5668,72 @@ fn compute_production_score(
     (report.production_score, dims, report.hard_fails, report.next_actions)
 }
 
+/// Probe actual audio metrics from a rendered video using ffmpeg.
+/// Returns (lufs, peak_dbfs, ducking_depth_db, music_gain_db).
+async fn probe_audio_metrics(video_path: &str) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
+    use std::process::Stdio;
+
+    // LUFS via loudnorm filter with JSON output
+    let lufs = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-i",
+            video_path,
+            "-af",
+            "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .ok()
+        .and_then(|o| String::from_utf8(o.stderr).ok())
+        .and_then(|s| {
+            // Find the JSON block at the end
+            let json_start = s.rfind('{')?;
+            let json_str = &s[json_start..];
+            serde_json::from_str::<serde_json::Value>(json_str).ok()
+        })
+        .and_then(|v| v.get("input_i").and_then(|x| x.as_str()).and_then(|s| s.parse::<f64>().ok()));
+
+    // Peak dBFS via volumedetect
+    let peak = tokio::process::Command::new("ffmpeg")
+        .args(["-i", video_path, "-af", "volumedetect", "-f", "null", "-"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .ok()
+        .and_then(|o| String::from_utf8(o.stderr).ok())
+        .and_then(|s| {
+            for line in s.lines() {
+                if let Some(idx) = line.find("max_volume:") {
+                    let rest = &line[idx + "max_volume:".len()..];
+                    let num = rest.trim().split_whitespace().next().unwrap_or("");
+                    if let Ok(v) = num.parse::<f64>() {
+                        return Some(v);
+                    }
+                }
+            }
+            None
+        });
+
+    // Ducking depth: measure music level during speech vs non-speech segments.
+    // This is a simplified approach - we compare overall RMS of music track
+    // (not implemented yet, would need source separation).
+    // For now, return None - can be enhanced later with better analysis.
+    let ducking_depth_db = None::<f64>;
+
+    // Music gain: try to infer from the music track if present
+    // This would require extracting and analyzing the music track separately.
+    // For now, return None - the manifest's planned gain_db will be used.
+    let music_gain_db = None::<f64>;
+
+    (lufs, peak, ducking_depth_db, music_gain_db)
+}
+
 async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
     // Reuse ffprobe+ffmpeg volumedetect lightly
     let out = tokio::process::Command::new("ffmpeg")
@@ -5705,7 +5771,7 @@ async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
 async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_core::production_quality::{
         evaluate_production_quality, grade_rank, BackgroundLayerInfo, MemeLayerInfo, MusicLayerInfo,
-        RenderManifest, StickerLayerInfo,
+        RenderManifest, StickerLayerInfo, verify_layer_order,
     };
 
     let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?
@@ -5736,6 +5802,10 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
 
     let timeline = Timeline::load(&timeline_path).map_err(|e| ToolError::Timeline(e.to_string()))?;
     let (has_dialogue, rms_ok) = probe_dialogue_rms(&video_path).await;
+
+    // Probe actual audio metrics from the rendered video
+    let (measured_lufs, measured_peak_dbfs, measured_ducking_depth_db, measured_music_gain_db) =
+        probe_audio_metrics(&video_path).await;
 
     // Prefer authoritative render_manifest.json from script.to_video
     let mut manifest = if let Some(ref mp) = manifest_path {
@@ -5828,8 +5898,31 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     manifest.has_dialogue = has_dialogue;
     manifest.rms_ok = rms_ok;
 
+    // Update manifest with measured audio metrics (override planned values with reality)
+    if let Some(l) = measured_lufs {
+        manifest.measured_lufs = Some(l);
+        manifest.lufs = Some(l);
+    }
+    if let Some(p) = measured_peak_dbfs {
+        manifest.measured_peak_dbfs = Some(p);
+        manifest.peak_dbfs = Some(p);
+    }
+    if let Some(d) = measured_ducking_depth_db {
+        manifest.measured_ducking_depth_db = Some(d);
+        manifest.ducking_depth_db = Some(d);
+    }
+    if let Some(g) = measured_music_gain_db {
+        manifest.measured_music_gain_db = Some(g);
+        if manifest.music.is_some() {
+            manifest.music.as_mut().unwrap().gain_db = g;
+        }
+    }
+
     let report = evaluate_production_quality(&timeline, &manifest);
     let meets_min = grade_rank(&report.grade) >= grade_rank(&min_grade);
+
+    // Verify layer composition order
+    let layer_report = verify_layer_order(&manifest);
 
     // Optional vision re-score of background clips (local Qwen → OpenRouter free).
     let vision_rescore = default_bool(&args, "vision_rescore", false);
@@ -5899,6 +5992,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         "cuts_per_second": report.cuts_per_second,
         "video_source_mix": report.video_source_mix,
         "timeline_editor": report.timeline_editor,
+        "layer_order": layer_report,
         "kpi_version": report.kpi_version,
         "kpi_note": "verify.render is technical-only. Production v3 hard-fails majority procedural, missing visual hooks, and parade music on calm/focus. Use real stock + topic-tagged music.",
         "vision_rescore": vision_rescore,

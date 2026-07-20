@@ -1,0 +1,10 @@
+{
+  "name": "ReactionTop",
+  "description": "Reaction sticker at top center for hooks and emphasis",
+  "position": "top-center",
+  "scale": 0.40,
+  "safe_margin_px": 40,
+  "speaker_role": "reaction",
+  "canvas_width": 1080,
+  "canvas_height": 1920
+}

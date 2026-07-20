@@ -9,6 +9,61 @@
 
 use crate::amplitude::AmplitudeTrack;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Configuration for a sticker preset loaded from JSON.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StickerPresetConfig {
+    pub name: String,
+    pub description: String,
+    pub position: String,
+    pub scale: f64,
+    pub safe_margin_px: i32,
+    pub speaker_role: String,
+    pub canvas_width: u32,
+    pub canvas_height: u32,
+}
+
+impl StickerPresetConfig {
+    /// Load a preset config from the assets directory.
+    pub fn load_from_assets(preset_name: &str) -> Result<Self, String> {
+        let base = std::env::var("OPENSCRIPT_ROOT")
+            .or_else(|_| std::env::var("CARGO_MANIFEST_DIR"))
+            .map(|p| Path::new(&p).join("mcp/assets/sticker_presets"))
+            .unwrap_or_else(|_| Path::new("mcp/assets/sticker_presets").to_path_buf());
+
+        let path = base.join(format!("{}.json", preset_name.to_lowercase()));
+        if !path.exists() {
+            return Err(format!("Preset not found: {}", path.display()));
+        }
+        let content = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&content).map_err(|e| e.to_string())
+    }
+
+    /// Get all available preset names.
+    pub fn list_available() -> Vec<String> {
+        let base = std::env::var("OPENSCRIPT_ROOT")
+            .or_else(|_| std::env::var("CARGO_MANIFEST_DIR"))
+            .map(|p| Path::new(&p).join("mcp/assets/sticker_presets"))
+            .unwrap_or_else(|_| Path::new("mcp/assets/sticker_presets").to_path_buf());
+
+        if let Ok(entries) = std::fs::read_dir(&base) {
+            entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.ends_with(".json") {
+                        Some(name.trim_end_matches(".json").to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+}
 
 /// Configuration for a sticker preset.
 #[derive(Debug, Clone, Serialize, Deserialize)]

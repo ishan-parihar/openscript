@@ -1,0 +1,10 @@
+{
+  "name": "ReactionCorner",
+  "description": "Reaction sticker in top right corner",
+  "position": "top-right",
+  "scale": 0.35,
+  "safe_margin_px": 40,
+  "speaker_role": "reaction",
+  "canvas_width": 1080,
+  "canvas_height": 1920
+}
