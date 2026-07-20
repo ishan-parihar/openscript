@@ -55,6 +55,10 @@ mcp/assets/kokoro/
 mcp/assets/parakeet/
 mcp/assets/omnivoice/
 
+# Large binary assets (regenerated at runtime)
+models/nemotron-onnx/
+output/
+
 # Runtime caches / agent state dirs (never commit)
 .contexty/
 .cortexkit/

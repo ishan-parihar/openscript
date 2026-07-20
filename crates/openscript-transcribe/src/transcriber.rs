@@ -144,46 +144,41 @@ pub fn validate_hinglish_output(content: &str) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Script resolution — Nemotron
+// Script resolution — shared helper
 // ---------------------------------------------------------------------------
 
-/// Find the Nemotron transcription wrapper script.
-///
-/// Resolution order:
-///   1. `OPENSCRIPT_NEMOTRON_WRAPPER` env var
-///   2. `CARGO_MANIFEST_DIR/../../mcp/scripts/nemotron_transcriber.py`
-///   3. `OPENSCRIPT_ROOT/mcp/scripts/nemotron_transcriber.py`
-///   4. Relative paths (works if CWD is repo root or a crate dir)
-fn find_nemotron_script() -> Option<PathBuf> {
+/// Resolve a Python sidecar script via env var, CARGO_MANIFEST_DIR,
+/// OPENSCRIPT_ROOT, and relative fallbacks.
+fn resolve_script(env_var: &str, relative_name: &str) -> Option<PathBuf> {
     // 1. Explicit env var override
-    if let Ok(path) = std::env::var("OPENSCRIPT_NEMOTRON_WRAPPER") {
+    if let Ok(path) = std::env::var(env_var) {
         let p = Path::new(&path);
         if p.exists() {
             return Some(p.to_path_buf());
         }
     }
 
-    // 2. CARGO_MANIFEST_DIR
+    // 2. CARGO_MANIFEST_DIR (compile-time workspace path; works in dev)
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let p = Path::new(&manifest_dir).join("../../mcp/scripts/nemotron_transcriber.py");
+        let p = Path::new(&manifest_dir).join("../../mcp/scripts/").join(relative_name);
         if p.exists() {
             return Some(p);
         }
     }
 
-    // 3. OPENSCRIPT_ROOT
+    // 3. OPENSCRIPT_ROOT (deployment override)
     if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
-        let p = Path::new(&root).join("mcp/scripts/nemotron_transcriber.py");
+        let p = Path::new(&root).join("mcp/scripts/").join(relative_name);
         if p.exists() {
             return Some(p);
         }
     }
 
-    // 4. Relative fallbacks
+    // 4. Relative fallbacks (works if CWD is repo root or a crate dir)
     let relative_candidates = [
-        PathBuf::from("mcp/scripts/nemotron_transcriber.py"),
-        PathBuf::from("../mcp/scripts/nemotron_transcriber.py"),
-        PathBuf::from("../../mcp/scripts/nemotron_transcriber.py"),
+        PathBuf::from("mcp/scripts/").join(relative_name),
+        PathBuf::from("../mcp/scripts/").join(relative_name),
+        PathBuf::from("../../mcp/scripts/").join(relative_name),
     ];
     for c in &relative_candidates {
         if c.exists() {
@@ -192,127 +187,26 @@ fn find_nemotron_script() -> Option<PathBuf> {
     }
 
     None
+}
+
+/// Find the Nemotron transcription wrapper script.
+fn find_nemotron_script() -> Option<PathBuf> {
+    resolve_script("OPENSCRIPT_NEMOTRON_WRAPPER", "nemotron_transcriber.py")
 }
 
 /// Find the whisper alignment script (word-level timestamps).
 fn find_whisper_align_script() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("OPENSCRIPT_WHISPER_ALIGN") {
-        let p = Path::new(&path);
-        if p.exists() {
-            return Some(p.to_path_buf());
-        }
-    }
-
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let p = Path::new(&manifest_dir).join("../../mcp/scripts/whisper_align.py");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
-        let p = Path::new(&root).join("mcp/scripts/whisper_align.py");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    let relative_candidates = [
-        PathBuf::from("mcp/scripts/whisper_align.py"),
-        PathBuf::from("../mcp/scripts/whisper_align.py"),
-        PathBuf::from("../../mcp/scripts/whisper_align.py"),
-    ];
-    for c in &relative_candidates {
-        if c.exists() {
-            return Some(c.clone());
-        }
-    }
-
-    None
+    resolve_script("OPENSCRIPT_WHISPER_ALIGN", "whisper_align.py")
 }
 
 /// Find the LLM post-processor script (Devanagari → Hinglish).
 fn find_llm_postprocessor_script() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("OPENSCRIPT_LLM_POSTPROCESSOR") {
-        let p = Path::new(&path);
-        if p.exists() {
-            return Some(p.to_path_buf());
-        }
-    }
-
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let p = Path::new(&manifest_dir).join("../../mcp/scripts/llm_postprocessor.py");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
-        let p = Path::new(&root).join("mcp/scripts/llm_postprocessor.py");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    let relative_candidates = [
-        PathBuf::from("mcp/scripts/llm_postprocessor.py"),
-        PathBuf::from("../mcp/scripts/llm_postprocessor.py"),
-        PathBuf::from("../../mcp/scripts/llm_postprocessor.py"),
-    ];
-    for c in &relative_candidates {
-        if c.exists() {
-            return Some(c.clone());
-        }
-    }
-
-    None
+    resolve_script("OPENSCRIPT_LLM_POSTPROCESSOR", "llm_postprocessor.py")
 }
-
-
-
-// ---------------------------------------------------------------------------
-// Script resolution — Apex (DEPRECATED)
-// ---------------------------------------------------------------------------
 
 /// Find the Apex transcription wrapper script (DEPRECATED).
 fn find_apex_script() -> Option<PathBuf> {
-    // 1. Explicit env var override
-    if let Ok(path) = std::env::var("OPENSCRIPT_APEX_WRAPPER") {
-        let p = Path::new(&path);
-        if p.exists() {
-            return Some(p.to_path_buf());
-        }
-    }
-
-    // 2. CARGO_MANIFEST_DIR
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let p = Path::new(&manifest_dir).join("../../mcp/scripts/apex_transcriber.py");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // 3. OPENSCRIPT_ROOT
-    if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
-        let p = Path::new(&root).join("mcp/scripts/apex_transcriber.py");
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // 4-5. Relative fallbacks
-    let relative_candidates = [
-        PathBuf::from("mcp/scripts/apex_transcriber.py"),
-        PathBuf::from("../mcp/scripts/apex_transcriber.py"),
-        PathBuf::from("../../mcp/scripts/apex_transcriber.py"),
-    ];
-    for c in &relative_candidates {
-        if c.exists() {
-            return Some(c.clone());
-        }
-    }
-
-    None
+    resolve_script("OPENSCRIPT_APEX_WRAPPER", "apex_transcriber.py")
 }
 
 /// Cross-platform home directory resolution.
@@ -672,13 +566,14 @@ async fn transcribe_nemotron(
         }
     }
 
-    // Copy phrase SRT to output path if it exists
-    if Path::new(&phrase_srt).exists() {
+    // If whisper_align.py didn't produce aligned output, copy the estimated phrase SRT
+    // (whisper_align.py already copies aligned output to output_srt_path when it succeeds)
+    if !Path::new(output_srt_path).exists() && Path::new(&phrase_srt).exists() {
         let content = std::fs::read_to_string(&phrase_srt).map_err(|e| TranscribeError::Io(e))?;
         std::fs::write(output_srt_path, content).map_err(|e| TranscribeError::Io(e))?;
     }
 
-    // Step 2: If Hindi, run LLM post-processor (Devanagari → Hinglish)
+    // Step 3: If Hindi, run LLM post-processor (Devanagari → Hinglish)
     let is_hindi = language_hint.starts_with("hi")
         || result
             .get("language")
