@@ -14325,6 +14325,24 @@ async fn handle_system_doctor(_args: serde_json::Value) -> Result<serde_json::Va
         Some("bash scripts/setup_openscript_config.sh"),
     );
 
+    // Nemotron ASR check
+    let nemotron_available = openscript_transcribe::transcriber::check_nemotron_health()
+        .await;
+    let nemotron_ok = nemotron_available.is_ok();
+    let nemotron_msg = if nemotron_ok {
+        nemotron_available.unwrap()
+    } else {
+        nemotron_available.unwrap_err()
+    };
+    push(
+        &mut checklist,
+        &mut next_actions,
+        "nemotron",
+        nemotron_ok,
+        &nemotron_msg,
+        Some("pip install onnxruntime sentencepiece  # or run bash setup.sh"),
+    );
+
     // Production-ready: binaries + pexels + music + kokoro. GIPHY optional.
     let ready_for_production = ffmpeg_ok && ffprobe_ok && pexels_ok && music_ok && kokoro_ok;
     if ready_for_production && next_actions.is_empty() {

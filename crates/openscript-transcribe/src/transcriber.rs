@@ -54,42 +54,6 @@ impl std::fmt::Display for TranscriptionEngine {
     }
 }
 
-/// Language hint for transcription.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LanguageHint {
-    /// Auto-detect language
-    Auto,
-    /// Hindi (will be converted to Hinglish via LLM)
-    Hindi,
-    /// English
-    English,
-    /// Hinglish (Hindi + English code-switch)
-    Hinglish,
-}
-
-impl std::fmt::Display for LanguageHint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Auto => write!(f, "auto"),
-            Self::Hindi => write!(f, "hi-IN"),
-            Self::English => write!(f, "en-US"),
-            Self::Hinglish => write!(f, "hi-IN"),
-        }
-    }
-}
-
-impl LanguageHint {
-    /// Parse from string
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "hi" | "hi-in" | "hindi" => Self::Hindi,
-            "en" | "en-us" | "english" => Self::English,
-            "hinglish" | "hi-en" => Self::Hinglish,
-            _ => Self::Auto,
-        }
-    }
-}
-
 /// Result of the Apex health check (deprecated).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApexHealth {
@@ -220,6 +184,43 @@ fn find_nemotron_script() -> Option<PathBuf> {
         PathBuf::from("mcp/scripts/nemotron_transcriber.py"),
         PathBuf::from("../mcp/scripts/nemotron_transcriber.py"),
         PathBuf::from("../../mcp/scripts/nemotron_transcriber.py"),
+    ];
+    for c in &relative_candidates {
+        if c.exists() {
+            return Some(c.clone());
+        }
+    }
+
+    None
+}
+
+/// Find the whisper alignment script (word-level timestamps).
+fn find_whisper_align_script() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("OPENSCRIPT_WHISPER_ALIGN") {
+        let p = Path::new(&path);
+        if p.exists() {
+            return Some(p.to_path_buf());
+        }
+    }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        let p = Path::new(&manifest_dir).join("../../mcp/scripts/whisper_align.py");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
+        let p = Path::new(&root).join("mcp/scripts/whisper_align.py");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+
+    let relative_candidates = [
+        PathBuf::from("mcp/scripts/whisper_align.py"),
+        PathBuf::from("../mcp/scripts/whisper_align.py"),
+        PathBuf::from("../../mcp/scripts/whisper_align.py"),
     ];
     for c in &relative_candidates {
         if c.exists() {
@@ -589,8 +590,87 @@ async fn transcribe_nemotron(
                 .to_string()
         });
 
-    // word_srt_path is tracked by the sidecar but not directly used here —
-    // phrase_srt is the primary output that gets copied to output_srt_path.
+    // Step 2: Run whisper_align.py for real word-level timestamps
+    // The nemotron sidecar produces estimated word timings (evenly distributed).
+    // whisper_align.py uses openai-whisper to get actual frame-accurate timestamps.
+    let word_srt = result["word_srt_path"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            out_dir
+                .join(format!("{}.nemotron.word.srt", stem))
+                .to_string_lossy()
+                .to_string()
+        });
+
+    // Read the transcript text for alignment — strip SRT metadata, keep only text lines
+    let transcript_text = if Path::new(output_srt_path).exists() {
+        let srt_content = std::fs::read_to_string(output_srt_path).unwrap_or_default();
+        // SRT format: index, timestamp, text, blank line. Extract only text lines.
+        let text_lines: Vec<&str> = srt_content
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty()
+                    && !trimmed.parse::<usize>().is_ok()  // skip index numbers
+                    && !trimmed.contains("-->")           // skip timestamps
+            })
+            .collect();
+        text_lines.join(" ")
+    } else {
+        String::new()
+    };
+
+    if !transcript_text.is_empty() && Path::new(media_path).exists() {
+        if let Some(align_script) = find_whisper_align_script() {
+            tracing::info!("Running whisper_align.py for word-level alignment");
+            let align_output_dir = out_dir.to_string_lossy().to_string();
+            let mut align_cmd = Command::new(&python);
+            align_cmd
+                .arg(&align_script)
+                .arg("--wav")
+                .arg(media_path)
+                .arg("--text")
+                .arg(&transcript_text)
+                .arg("--language")
+                .arg(language_hint)
+                .arg("--model")
+                .arg("base")
+                .arg("--out-dir")
+                .arg(&align_output_dir)
+                .kill_on_drop(true);
+
+            match align_cmd.output().await {
+                Ok(o) if o.status.success() => {
+                    tracing::info!("Whisper alignment complete");
+                    // Use the aligned phrase SRT from whisper_align.py
+                    let aligned_phrase = out_dir
+                        .join(format!("{}.phrase.srt", stem));
+                    if aligned_phrase.exists() {
+                        tracing::info!("Using whisper-aligned phrase SRT");
+                        // Copy aligned phrase to output path
+                        if let Ok(content) = std::fs::read_to_string(&aligned_phrase) {
+                            let _ = std::fs::write(output_srt_path, content);
+                        }
+                    }
+                }
+                Ok(o) => {
+                    tracing::warn!(
+                        "Whisper alignment failed (falling back to estimated timings): {}",
+                        String::from_utf8_lossy(&o.stderr)
+                            .lines()
+                            .last()
+                            .unwrap_or("")
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Whisper alignment subprocess failed: {}", e);
+                }
+            }
+        } else {
+            tracing::warn!("whisper_align.py not found, using estimated word timings");
+        }
+    }
 
     // Copy phrase SRT to output path if it exists
     if Path::new(&phrase_srt).exists() {
@@ -791,16 +871,6 @@ mod tests {
         if let Some(p) = &result {
             assert!(p.exists(), "Found python at {:?} but it doesn't exist", p);
         }
-    }
-
-    #[test]
-    fn test_language_hint_from_str() {
-        assert_eq!(LanguageHint::from_str("hi"), LanguageHint::Hindi);
-        assert_eq!(LanguageHint::from_str("hi-IN"), LanguageHint::Hindi);
-        assert_eq!(LanguageHint::from_str("en"), LanguageHint::English);
-        assert_eq!(LanguageHint::from_str("auto"), LanguageHint::Auto);
-        assert_eq!(LanguageHint::from_str("hinglish"), LanguageHint::Hinglish);
-        assert_eq!(LanguageHint::from_str("unknown"), LanguageHint::Auto);
     }
 
     #[test]

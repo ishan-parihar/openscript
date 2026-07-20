@@ -1,0 +1,130 @@
+{
+  "schema": "openscript-video/v1",
+  "title": "3 Daily Practices to Rewire Your Nervous System",
+  "video_keywords": ["nervous system", "healing", "regulation", "breath", "somatic"],
+  "meta": {
+    "aspect": "9:16",
+    "fps": 30,
+    "width": 1080,
+    "height": 1920,
+    "resolution": "1080p"
+  },
+  "tts": {
+    "backend": "kokoro",
+    "default_speed": 0.85,
+    "default_pitch": 1.0
+  },
+  "speakers": {
+    "narrator": {
+      "voice": "kokoro:af_heart",
+      "preset": "default_person",
+      "position": "center-left",
+      "scale": 0.30
+    }
+  },
+  "background": {
+    "type": "procedural",
+    "source": "youtube",
+    "query": "",
+    "fallback_pool": [],
+    "crop_mode": "center",
+    "loop": true,
+    "volume_db": -20.0,
+    "change_cadence": "scene"
+  },
+  "music": {
+    "path": "mcp/assets/music_production/calm_1.mp3",
+    "gain_db": -12.0,
+    "ducking": true,
+    "ducking_depth_db": 12.0
+  },
+  "captions": {
+    "style": "word_highlight",
+    "font": "Bebas Neue",
+    "font_size": 72,
+    "color": "#F5F0E8",
+    "highlight_color": "#E8B86D",
+    "position": "bottom",
+    "safe_zone": 0.85,
+    "max_words_per_line": 4
+  },
+  "stickers": {
+    "enabled": true,
+    "lip_sync": "amplitude",
+    "blink": true,
+    "idle_bob": true
+  },
+  "meme_brolls": {
+    "enabled": false
+  },
+  "scenes": [
+    {
+      "id": "scene_1",
+      "speaker": "narrator",
+      "text": "Your nervous system isn't broken — it's just stuck in survival mode.",
+      "emote": "neutral",
+      "background": null,
+      "duration_override_ms": null
+    },
+    {
+      "id": "scene_2",
+      "speaker": "narrator",
+      "text": "Three daily practices can gently shift you into safety.",
+      "emote": "hopeful",
+      "background": null,
+      "duration_override_ms": null
+    },
+    {
+      "id": "scene_3",
+      "speaker": "narrator",
+      "text": "First: elongated exhale. Breathe in for four, out for eight. This signals your vagus nerve that you're safe.",
+      "emote": "calm",
+      "background": null,
+      "duration_override_ms": null
+    },
+    {
+      "id": "scene_4",
+      "speaker": "narrator",
+      "text": "Second: orienting. Slowly turn your head. Name five things you see. This pulls you into the present.",
+      "emote": "grounded",
+      "background": null,
+      "duration_override_ms": null
+    },
+    {
+      "id": "scene_5",
+      "speaker": "narrator",
+      "text": "Third: micro-movement. Wiggle your toes. Stretch your fingers. Small movements discharge survival energy.",
+      "emote": "encouraging",
+      "background": null,
+      "duration_override_ms": null
+    },
+    {
+      "id": "scene_6",
+      "speaker": "narrator",
+      "text": "Do these daily. Not to fix yourself — but to remember you were never broken.",
+      "emote": "warm",
+      "background": null,
+      "duration_override_ms": null
+    }
+  ],
+  "sfx": [
+    {
+      "at_ms": null,
+      "role": "intro",
+      "trigger": "scene_change"
+    },
+    {
+      "at_ms": null,
+      "role": "highlight",
+      "trigger": "scene_change"
+    }
+  ],
+  "output": {
+    "format": "mp4",
+    "codec": "h264",
+    "crf": 18,
+    "preset": "slow",
+    "render_engine": "ffmpeg",
+    "theme": "calm"
+  }
+}
