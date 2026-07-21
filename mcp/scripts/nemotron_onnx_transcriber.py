@@ -287,6 +287,7 @@ def generate_phrase_srt(phrases: list, output_path: str) -> str:
 
 def transcribe_nemotron_onnx(
     wav_path: str,
+    out_dir: str,
     language_hint: str = "auto",
     model_dir: str = None,
 ) -> dict:
@@ -531,7 +532,7 @@ def run_transcription(
     _log(f"Audio ready: {wav_path}")
 
     # Step 2: Transcribe with Nemotron ONNX
-    result = transcribe_nemotron_onnx(wav_path, language_hint, model_dir)
+    result = transcribe_nemotron_onnx(wav_path, out_dir, language_hint, model_dir)
 
     if result.get("error"):
         try:
