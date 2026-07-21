@@ -46,7 +46,7 @@ pub struct TranscribeResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptionEngine {
     Whisper,
-    #[deprecated(note = "ONNX streaming model is non-functional for offline batch inference")]
+    
     Nemotron,
     Apex,
 }
@@ -215,6 +215,11 @@ fn find_llm_postprocessor_script() -> Option<PathBuf> {
 /// Find the Apex transcription wrapper script (DEPRECATED).
 fn find_apex_script() -> Option<PathBuf> {
     resolve_script("OPENSCRIPT_APEX_WRAPPER", "apex_transcriber.py")
+}
+
+/// Find the Nemotron ONNX transcription script (onnxruntime-genai).
+fn find_nemotron_onnx_script() -> Option<PathBuf> {
+    resolve_script("OPENSCRIPT_NEMOTRON_ONNX_WRAPPER", "nemotron_onnx_transcriber.py")
 }
 
 /// Cross-platform home directory resolution.
@@ -410,13 +415,13 @@ pub async fn transcribe_with_engine(
 
     match engine {
         TranscriptionEngine::Whisper => {
-            transcribe_whisper(media_path, output_srt_path, &stem, out_dir, language_hint).await
+            transcribe_nemotron_onnx(media_path, output_srt_path, &stem, out_dir, language_hint).await
         }
         #[allow(deprecated)]
         TranscriptionEngine::Nemotron => {
-            tracing::warn!("Nemotron ONNX engine is deprecated and non-functional. Use Whisper instead.");
+            tracing::info!("Using Nemotron ONNX engine (onnxruntime-genai, cache-aware streaming)");
             // Route through Whisper since Nemotron ONNX cannot do offline batch inference
-            transcribe_whisper(media_path, output_srt_path, &stem, out_dir, language_hint).await
+            transcribe_nemotron_onnx(media_path, output_srt_path, &stem, out_dir, language_hint).await
         }
         #[allow(deprecated)]
         TranscriptionEngine::Apex => {
@@ -634,6 +639,110 @@ async fn transcribe_whisper(
     }
 
     build_result(output_srt_path, stem, out_dir, TranscriptionEngine::Whisper)
+}
+
+// =============================================================================
+// TRANSCRIPTION — NEMOTRON ONNX ENGINE (via onnxruntime-genai)
+// =============================================================================
+
+/// Transcribe using Nemotron ONNX via onnxruntime-genai with cache-aware streaming.
+/// Uses 560ms chunks (8960 samples at 16kHz) with automatic cache management.
+async fn transcribe_nemotron_onnx(
+    media_path: &str,
+    output_srt_path: &str,
+    stem: &str,
+    out_dir: &Path,
+    language_hint: &str,
+) -> Result<TranscribeResult, TranscribeError> {
+    let wrapper = find_nemotron_onnx_script().ok_or_else(|| {
+        TranscribeError::WrapperNotFound(
+            "nemotron_onnx_transcriber.py not found. Set OPENSCRIPT_NEMOTRON_ONNX_WRAPPER or \
+             ensure mcp/scripts/nemotron_onnx_transcriber.py exists."
+                .into(),
+        )
+    })?;
+
+    let python = find_system_python().ok_or_else(|| {
+        TranscribeError::PythonNotFound(
+            "System Python 3 not found. Set OPENSCRIPT_PYTHON env var.".into(),
+        )
+    })?;
+
+    // Run the onnxruntime-genai sidecar
+    let mut cmd = Command::new(&python);
+    cmd.arg(&wrapper)
+        .arg("run")
+        .arg("--video")
+        .arg(media_path)
+        .arg("--out-dir")
+        .arg(out_dir)
+        .arg("--language")
+        .arg(language_hint)
+        .kill_on_drop(true);
+
+    let output = cmd.output().await.map_err(TranscribeError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(TranscribeError::TranscriptionFailed {
+            engine: "nemotron-onnx".into(),
+            detail: stderr.lines().rev().take(5).collect::<Vec<_>>().join("\n"),
+        });
+    }
+
+    // Parse JSON output from the sidecar
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let result: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+        TranscribeError::TranscriptionFailed {
+            engine: "nemotron-onnx".into(),
+            detail: format!("Failed to parse sidecar output: {}", e),
+        }
+    })?;
+
+    if result.get("error").is_some() {
+        return Err(TranscribeError::TranscriptionFailed {
+            engine: "nemotron-onnx".into(),
+            detail: result["error"].as_str().unwrap_or("unknown error").to_string(),
+        });
+    }
+
+    // Get output paths from sidecar result
+    let phrase_srt = result["phrase_srt_path"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            out_dir
+                .join(format!("{}.nemotron.phrase.srt", stem))
+                .to_string_lossy()
+                .to_string()
+        });
+
+    // Get the output SRT path from sidecar result
+    let output_srt = result["output_srt_path"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            out_dir
+                .join(format!("{}.nemotron.srt", stem))
+                .to_string_lossy()
+                .to_string()
+        });
+
+    // If the sidecar didn't produce the output SRT, copy from phrase_srt
+    if !Path::new(&output_srt).exists() && Path::new(&phrase_srt).exists() {
+        if let Ok(content) = std::fs::read_to_string(&phrase_srt) {
+            let _ = std::fs::write(&output_srt, content);
+        }
+    }
+
+    // Copy to the requested output path if different
+    if output_srt != output_srt_path && Path::new(&output_srt).exists() {
+        if let Ok(content) = std::fs::read_to_string(&output_srt) {
+            std::fs::write(output_srt_path, content).map_err(TranscribeError::Io)?;
+        }
+    }
+
+    build_result(output_srt_path, stem, out_dir, TranscriptionEngine::Nemotron)
 }
 
 // =============================================================================
