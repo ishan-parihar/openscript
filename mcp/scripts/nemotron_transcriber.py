@@ -147,55 +147,8 @@ def transcribe_whisper(
 
 
 # ---------------------------------------------------------------------------
-# SRT generation
+# Main pipeline
 # ---------------------------------------------------------------------------
-
-) -> list:
-    """Group word-level entries into phrase-level SRT entries."""
-    groups = []
-    cur_words = []
-    cur_start = None
-    cur_end = None
-
-    for w in words:
-        text = w.get("word", "").strip()
-        if not text:
-            continue
-        start = w.get("start_s", 0)
-        end = w.get("end_s", 0)
-
-        if cur_start is None:
-            cur_start = start
-            cur_end = end
-            cur_words = [text]
-            continue
-
-        gap = start - (cur_end or start)
-        combined = " ".join(cur_words)
-        next_len = len(combined) + 1 + len(text)
-
-        if gap > max_gap or len(cur_words) >= max_words or next_len > max_chars:
-            groups.append({
-                "text": " ".join(cur_words),
-                "start_s": cur_start,
-                "end_s": cur_end,
-            })
-            cur_start = start
-            cur_end = end
-            cur_words = [text]
-        else:
-            cur_words.append(text)
-            cur_end = end
-
-    if cur_words:
-        groups.append({
-            "text": " ".join(cur_words),
-            "start_s": cur_start,
-            "end_s": cur_end,
-        })
-
-    return groups
-
 
 def run_transcription(
     media_path: str,
