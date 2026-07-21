@@ -189,7 +189,6 @@ def build_srt_files(
     words: list,
     out_dir: str,
     stem: str,
-    engine: str,
 ) -> dict:
     """Generate word-level, phrase-level, and output SRT files.
 
@@ -197,10 +196,9 @@ def build_srt_files(
         words: List of word dicts with 'word', 'start_s', 'end_s'
         out_dir: Output directory
         stem: Filename stem (without extension)
-        engine: Engine name (e.g., "whisper", "nemotron-onnx")
 
     Returns:
-        dict with word_srt_path, phrase_srt_path, output_srt_path, segments
+        dict with word_srt_path, phrase_srt_path, output_srt_path, phrases
     """
     # Generate SRT files
     word_srt_path = str(Path(out_dir) / f"{stem}.nemotron.word.srt")

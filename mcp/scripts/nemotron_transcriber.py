@@ -24,7 +24,6 @@ from transcribe_common import (
     SAMPLE_RATE, PHRASE_MAX_WORDS, PHRASE_MAX_CHARS, PHRASE_MAX_GAP_S,
     SCRIPT_DIR, REPO_ROOT,
     _log, extract_audio, ensure_wav_16k,
-    fmt_ts, group_words_into_phrases, generate_word_srt, generate_phrase_srt,
     build_srt_files,
 )
 
@@ -206,7 +205,7 @@ def run_transcription(
         }
 
     # Step 3: Generate SRT files via shared utility
-    srt = build_srt_files(words, out_dir, stem, engine)
+    srt = build_srt_files(words, out_dir, stem)
     word_srt_path = srt["word_srt_path"]
     phrase_srt_path = srt["phrase_srt_path"]
     output_srt_path = srt["output_srt_path"]
