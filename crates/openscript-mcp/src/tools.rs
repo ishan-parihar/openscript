@@ -14325,22 +14325,22 @@ async fn handle_system_doctor(_args: serde_json::Value) -> Result<serde_json::Va
         Some("bash scripts/setup_openscript_config.sh"),
     );
 
-    // Nemotron ASR check
-    let nemotron_available = openscript_transcribe::transcriber::check_nemotron_health()
+    // Whisper ASR check (primary engine)
+    let whisper_available = openscript_transcribe::transcriber::check_whisper_health()
         .await;
-    let nemotron_ok = nemotron_available.is_ok();
-    let nemotron_msg = if nemotron_ok {
-        nemotron_available.unwrap()
+    let whisper_ok = whisper_available.is_ok();
+    let whisper_msg = if whisper_ok {
+        whisper_available.unwrap()
     } else {
-        nemotron_available.unwrap_err()
+        whisper_available.unwrap_err()
     };
     push(
         &mut checklist,
         &mut next_actions,
-        "nemotron",
-        nemotron_ok,
-        &nemotron_msg,
-        Some("pip install onnxruntime sentencepiece  # or run bash setup.sh"),
+        "whisper",
+        whisper_ok,
+        &whisper_msg,
+        Some("pip install openai-whisper  # or run bash setup.sh"),
     );
 
     // Production-ready: binaries + pexels + music + kokoro. GIPHY optional.
