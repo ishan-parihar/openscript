@@ -33,7 +33,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "media_path": {"type": "string", "description": "Path to video or audio file to transcribe"},
                     "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."},
                     "language_hint": {"type": "string", "default": "auto", "description": "Language hint: 'auto' (detect), 'hi-IN' (Hindi → Hinglish), 'en-US' (English), 'hinglish'"},
-                    "engine": {"type": "string", "default": "whisper", "description": "Engine: 'whisper' (default, 99 langs, word timestamps) or 'nemotron-onnx' (experimental) or 'apex' (deprecated)"}
+                    "engine": {"type": "string", "default": "whisper", "description": "Engine: 'whisper' (default, 99 langs, word timestamps) or 'apex' (deprecated). Nemotron ONNX is non-functional and falls back to Whisper."}
                 },
                 "required": ["media_path"],
                 "additionalProperties": false
@@ -1643,12 +1643,18 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
 
     // Parse engine selection
     let engine = match engine_str.as_str() {
+        "whisper" => openscript_transcribe::transcriber::TranscriptionEngine::Whisper,
+        "nemotron-onnx" | "nemotron" => {
+            tracing::warn!("Nemotron ONNX engine requested (deprecated and non-functional). Falling back to Whisper.");
+            #[allow(deprecated)]
+            openscript_transcribe::transcriber::TranscriptionEngine::Nemotron
+        }
         #[allow(deprecated)]
         "apex" => {
-            tracing::warn!("Apex engine requested (deprecated). Use nemotron.");
+            tracing::warn!("Apex engine requested (deprecated). Use Whisper instead.");
             openscript_transcribe::transcriber::TranscriptionEngine::Apex
         }
-        _ => openscript_transcribe::transcriber::TranscriptionEngine::Nemotron,
+        _ => openscript_transcribe::transcriber::TranscriptionEngine::Whisper,
     };
 
     report_progress(0.0, 100.0, "Starting transcription...")

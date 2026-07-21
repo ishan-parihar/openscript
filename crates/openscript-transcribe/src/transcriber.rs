@@ -2,21 +2,25 @@
 // TRANSCRIPTION ENGINES
 // =============================================================================
 //
-// Two engines are supported:
+// Three engines are supported:
 //
 // 1. Whisper (DEFAULT) — openai-whisper (base model)
 //    - 99 languages, native word-level timestamps
-//    - Python sidecar: mcp/scripts/nemotron_transcriber.py (uses Whisper internally)
+//    - Python sidecar: mcp/scripts/nemotron_transcriber.py (uses Whisper)
 //    - LLM post-processing: mcp/scripts/llm_postprocessor.py (Devanagari→Hinglish)
 //    - Word alignment: built-in via whisper word_timestamps=True
 //
-// 2. Apex (DEPRECATED) — Oriserve/Whisper-Hindi2Hinglish-Apex via whisper_timestamped
+// 2. Nemotron (DEPRECATED) — ONNX streaming model (non-functional)
+//    - The streaming ONNX model cannot do offline batch inference.
+//    - Kept as enum variant for backward compat with external callers.
+//
+// 3. Apex (DEPRECATED) — Oriserve/Whisper-Hindi2Hinglish-Apex via whisper_timestamped
 //    - Hindi/Hinglish only, 29.79% Hindi WER
 //    - Requires conda env: whisper-hindi
 //    - Python sidecar: mcp/scripts/apex_transcriber.py
 //    - Kept for backward compatibility, will be removed in a future release.
 //
-// Whisper is the recommended engine. Apex is kept as a deprecated fallback.
+// Whisper is the only functional engine. Nemotron and Apex are deprecated.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -38,9 +42,11 @@ pub struct TranscribeResult {
 }
 
 /// The transcription engine used.
-/// Nemotron is the default; Apex is deprecated but kept for backward compat.
+/// Whisper is the default. Nemotron and Apex are deprecated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptionEngine {
+    Whisper,
+    #[deprecated(note = "ONNX streaming model is non-functional for offline batch inference")]
     Nemotron,
     Apex,
 }
@@ -48,6 +54,8 @@ pub enum TranscriptionEngine {
 impl std::fmt::Display for TranscriptionEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Whisper => write!(f, "whisper"),
+            #[allow(deprecated)]
             Self::Nemotron => write!(f, "nemotron"),
             Self::Apex => write!(f, "apex"),
         }
@@ -397,19 +405,20 @@ pub async fn check_apex_health() -> ApexHealth {
 ///
 /// This is the main transcription entry point. It routes to the appropriate
 /// engine based on the `engine` parameter:
-/// - `Nemotron` (default): Uses ONNX Runtime direct inference
+/// - `Whisper` (default): Uses openai-whisper (base model)
+/// - `Nemotron` (deprecated): ONNX streaming model (non-functional)
 /// - `Apex` (deprecated): Uses whisper_timestamped via conda env
 ///
-/// Pipeline (Nemotron):
+/// Pipeline (Whisper):
 /// 1. Extract 16kHz mono WAV via ffmpeg
-/// 2. Run Nemotron ASR via Python sidecar
+/// 2. Run Whisper transcription via Python sidecar
 /// 3. If Hindi: Run LLM post-processor (Devanagari → Hinglish)
 /// 4. Generate word-level and phrase-level SRT
 pub async fn transcribe(
     media_path: &str,
     output_srt_path: &str,
 ) -> Result<TranscribeResult, TranscribeError> {
-    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::Nemotron, "auto").await
+    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::Whisper, "auto").await
 }
 
 /// Transcribe with a specific engine and language hint.
@@ -429,12 +438,18 @@ pub async fn transcribe_with_engine(
         .unwrap_or_else(|| "output".to_string());
 
     match engine {
+        TranscriptionEngine::Whisper => {
+            transcribe_whisper(media_path, output_srt_path, &stem, out_dir, language_hint).await
+        }
+        #[allow(deprecated)]
         TranscriptionEngine::Nemotron => {
-            transcribe_nemotron(media_path, output_srt_path, &stem, out_dir, language_hint).await
+            tracing::warn!("Nemotron ONNX engine is deprecated and non-functional. Use Whisper instead.");
+            // Route through Whisper since Nemotron ONNX cannot do offline batch inference
+            transcribe_whisper(media_path, output_srt_path, &stem, out_dir, language_hint).await
         }
         #[allow(deprecated)]
         TranscriptionEngine::Apex => {
-            tracing::warn!("Apex engine is deprecated. Use Nemotron instead.");
+            tracing::warn!("Apex engine is deprecated. Use Whisper instead.");
             transcribe_apex(media_path, output_srt_path, &stem, out_dir).await
         }
     }
@@ -444,10 +459,9 @@ pub async fn transcribe_with_engine(
 // TRANSCRIPTION — NEMOTRON ENGINE
 // =============================================================================
 
-/// Legacy name — this function actually invokes Whisper via the Python sidecar
-/// (nemotron_transcriber.py defaults to --engine whisper).
-/// Transcribe using Nemotron 3.5 ASR via ONNX Runtime.
-async fn transcribe_nemotron(
+/// Transcribe using Whisper via the Python sidecar.
+/// Pipeline: extract WAV → whisper word timestamps → whisper_align → LLM post-process
+async fn transcribe_whisper(
     media_path: &str,
     output_srt_path: &str,
     stem: &str,
@@ -648,7 +662,7 @@ async fn transcribe_nemotron(
         }
     }
 
-    build_result(output_srt_path, stem, out_dir, TranscriptionEngine::Nemotron)
+    build_result(output_srt_path, stem, out_dir, TranscriptionEngine::Whisper)
 }
 
 // =============================================================================
@@ -743,6 +757,11 @@ fn build_result(
 
     // Find word/phrase SRT files for the appropriate engine
     let (word_srt_pattern, phrase_srt_pattern) = match engine {
+        TranscriptionEngine::Whisper => (
+            format!("{}/{}.nemotron.word.srt", out_dir_str, stem),
+            format!("{}/{}.nemotron.phrase.srt", out_dir_str, stem),
+        ),
+        #[allow(deprecated)]
         TranscriptionEngine::Nemotron => (
             format!("{}/{}.nemotron.word.srt", out_dir_str, stem),
             format!("{}/{}.nemotron.phrase.srt", out_dir_str, stem),
@@ -835,6 +854,7 @@ mod tests {
 
     #[test]
     fn test_transcription_engine_display() {
+        assert_eq!(TranscriptionEngine::Whisper.to_string(), "whisper");
         assert_eq!(TranscriptionEngine::Nemotron.to_string(), "nemotron");
         assert_eq!(TranscriptionEngine::Apex.to_string(), "apex");
     }

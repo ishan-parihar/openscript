@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """
-Transcription Sidecar — Whisper (primary) + Nemotron ONNX (experimental).
+Transcription Sidecar — Whisper (primary).
 
 Primary engine: openai-whisper (reliable, word-level timestamps, 99 languages)
-Secondary engine: nvidia/nemotron-3.5-asr-streaming-0.6b via ONNX Runtime
-  ⚠️  EXPERIMENTAL: The streaming ONNX model does NOT support offline batch
-  inference. The encoder produces 0 tokens on real speech. This path is
-  retained for future investigation when a non-streaming ONNX export is
-  available.
 
 Input:  stdin JSON  {"wav_path": "...", "language_hint": "hi-IN"|"auto"}
 Output: stdout JSON {"text": "...", "word_srt_path": "...", "phrase_srt_path": "...",
@@ -203,241 +198,7 @@ def transcribe_whisper(
     }
 
 
-# ---------------------------------------------------------------------------
-# Nemotron ONNX transcription (EXPERIMENTAL secondary engine)
-# ---------------------------------------------------------------------------
 
-def _try_nemotron_onnx(wav_path: str, language_hint: str = "auto") -> dict:
-    """Attempt transcription via Nemotron ONNX Runtime.
-
-    ⚠️  EXPERIMENTAL: This engine is NOT functional for offline batch inference.
-    The streaming ONNX model requires internal cache management that manual
-    chunking cannot replicate. The encoder produces 0 tokens on real speech.
-
-    Returns dict with error if ONNX path is not viable, or transcription result.
-    """
-    _log("⚠️  Nemotron ONNX is EXPERIMENTAL and may produce 0 tokens")
-    _log("   The streaming model is not designed for offline batch inference")
-
-    try:
-        import onnxruntime as ort
-        import sentencepiece as spm
-    except ImportError as e:
-        return {"error": f"Nemotron ONNX deps missing: {e}", "status": "error"}
-
-    # Model paths
-    model_dir = REPO_ROOT / "models" / "nemotron-onnx"
-    encoder_path = model_dir / "encoder.onnx"
-    decoder_path = model_dir / "decoder_joint.onnx"
-    tokenizer_path = model_dir / "tokenizer.model"
-    tokens_path = model_dir / "tokens.txt"
-
-    for p in [encoder_path, decoder_path, tokenizer_path, tokens_path]:
-        if not p.exists():
-            return {"error": f"Missing model file: {p}", "status": "error"}
-
-    import numpy as np
-
-    _log("Loading Nemotron ONNX models...")
-    opts = ort.SessionOptions()
-    opts.inter_op_num_threads = 4
-    opts.intra_op_num_threads = 4
-
-    try:
-        encoder = ort.InferenceSession(
-            str(encoder_path), opts, providers=["CPUExecutionProvider"]
-        )
-        decoder = ort.InferenceSession(
-            str(decoder_path), opts, providers=["CPUExecutionProvider"]
-        )
-    except Exception as e:
-        return {"error": f"Failed to load ONNX models: {e}", "status": "error"}
-
-    # Load vocabulary
-    vocab = {}
-    with open(tokens_path, "r", encoding="utf-8") as f:
-        for idx, line in enumerate(f):
-            vocab[idx] = line.strip()
-
-    sp = spm.SentencePieceProcessor()
-    sp.Load(str(tokenizer_path))
-
-    _log("Running Nemotron ONNX inference (may produce 0 tokens)...")
-
-    # Load and preprocess audio
-    try:
-        import torch
-        import torchaudio
-
-        try:
-            waveform, sr = torchaudio.load(wav_path)
-        except Exception:
-            raw_pcm = _load_audio_ffmpeg(wav_path)
-            waveform = torch.from_numpy(raw_pcm).unsqueeze(0)
-            sr = SAMPLE_RATE
-
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        if sr != SAMPLE_RATE:
-            resampler = torchaudio.transforms.Resample(sr, SAMPLE_RATE)
-            waveform = resampler(waveform)
-
-        mel = torchaudio.compliance.kaldi.fbank(
-            waveform,
-            num_mel_bins=128,
-            sample_frequency=SAMPLE_RATE,
-            preemphasis_coefficient=0.97,
-            window_type="povey",
-            dither=1e-5,
-        )
-        mel = mel.numpy().T.astype(np.float32)
-    except ImportError:
-        mel = _compute_mel_librosa(wav_path)
-
-    duration_s = mel.shape[1] * 160 / SAMPLE_RATE  # HOP_LENGTH=160
-
-    # Chunked encoding
-    CHUNK_SIZE = 16
-    time_steps = mel.shape[1]
-    mel_batch = mel[np.newaxis, :, :]
-
-    cache_last_channel = np.zeros((24, 1, 56, 1024), dtype=np.float32)
-    cache_last_time = np.zeros((24, 1, 1024, 8), dtype=np.float32)
-    cache_last_channel_len = np.array([0], dtype=np.int64)
-    prompt_index = np.array([0], dtype=np.int64)
-
-    all_outputs = []
-    total_encoded_len = 0
-
-    for start in range(0, time_steps, CHUNK_SIZE):
-        end = min(start + CHUNK_SIZE, time_steps)
-        chunk_len = end - start
-
-        if chunk_len < CHUNK_SIZE:
-            padding = np.zeros((1, mel.shape[0], CHUNK_SIZE - chunk_len), dtype=np.float32)
-            chunk = np.concatenate([mel_batch[:, :, start:end], padding], axis=2)
-        else:
-            chunk = mel_batch[:, :, start:end]
-
-        outputs = encoder.run(None, {
-            "processed_signal": chunk,
-            "processed_signal_length": np.array([chunk_len], dtype=np.int64),
-            "cache_last_channel": cache_last_channel,
-            "cache_last_time": cache_last_time,
-            "cache_last_channel_len": cache_last_channel_len,
-            "prompt_index": prompt_index,
-        })
-
-        all_outputs.append(outputs[0])
-        total_encoded_len += int(outputs[1][0])
-        cache_last_channel = outputs[2]
-        cache_last_time = outputs[3]
-        cache_last_channel_len = outputs[4]
-
-    encoder_out = np.concatenate(all_outputs, axis=2)
-    encoder_len = np.array([total_encoded_len], dtype=np.int64)
-
-    # Decode
-    time_steps_enc = int(encoder_len[0])
-    enc = encoder_out[:, :, :time_steps_enc]
-
-    state_1 = np.zeros((2, 1, 640), dtype=np.float32)
-    state_2 = np.zeros((2, 1, 640), dtype=np.float32)
-    current_token = 1  # BOS
-    emitted_tokens = []
-    VOCAB_SIZE = 13087
-
-    for step in range(500):
-        dec_out = decoder.run(None, {
-            "encoder_outputs": enc,
-            "targets": np.array([[current_token]], dtype=np.int32),
-            "target_length": np.array([1], dtype=np.int32),
-            "input_states_1": state_1,
-            "input_states_2": state_2,
-        })
-        logits = dec_out[0]
-        state_1 = dec_out[2]
-        state_2 = dec_out[3]
-        flat = logits[0, -1, 0, :]
-        top_id = int(np.argmax(flat))
-
-        if top_id == 2 or top_id == 0 or top_id >= VOCAB_SIZE:
-            break
-        if top_id >= 10:
-            emitted_tokens.append(top_id)
-            current_token = top_id
-        else:
-            current_token = top_id
-        if step > 100 and len(emitted_tokens) == 0:
-            break
-
-    text = sp.Decode(emitted_tokens)
-    _log(f"Nemotron ONNX result: {text[:100]}...")
-    _log(f"Tokens: {len(emitted_tokens)}")
-
-    if len(emitted_tokens) == 0:
-        _log("⚠️  Nemotron ONNX produced 0 tokens (expected for streaming model)")
-
-    # Build estimated word timings (ONNX doesn't produce word-level timestamps)
-    words = []
-    if text:
-        word_list = text.split()
-        if word_list:
-            word_duration = duration_s / len(word_list)
-            words = [
-                {"word": w, "start_s": i * word_duration, "end_s": (i + 1) * word_duration, "score": 0.0}
-                for i, w in enumerate(word_list)
-            ]
-
-    return {
-        "text": text,
-        "words": words,
-        "segments": [{"text": text, "start_s": 0, "end_s": duration_s}] if text else [],
-        "word_count": len(words),
-        "segment_count": 1 if text else 0,
-        "duration_s": duration_s,
-        "language": language_hint,
-        "model": "nemotron-3.5-asr-streaming-0.6b-onnx",
-        "engine": "nemotron-onnx",
-    }
-
-
-def _load_audio_ffmpeg(wav_path: str):
-    """Load audio via ffmpeg as raw float32 PCM."""
-    import numpy as np
-    cmd = [
-        "ffmpeg", "-i", wav_path, "-f", "s16le", "-acodec", "pcm_s16le",
-        "-ar", str(SAMPLE_RATE), "-ac", "1", "-v", "quiet", "-"
-    ]
-    result = subprocess.run(cmd, capture_output=True, timeout=60)
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed: {result.stderr.decode()[:200]}")
-    raw = np.frombuffer(result.stdout, dtype=np.int16)
-    return raw.astype(np.float32) / 32768.0
-
-
-def _compute_mel_librosa(wav_path: str):
-    """Compute mel spectrogram using librosa (fallback)."""
-    import numpy as np
-    try:
-        import librosa
-        audio, _ = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
-    except ImportError:
-        audio = _load_audio_ffmpeg(wav_path)
-
-    PREEMPH = 0.97
-    audio = np.append(audio[0], audio[1:] - PREEMPH * audio[:-1]).astype(np.float32)
-    if len(audio) < 400:
-        audio = np.pad(audio, (0, 400 - len(audio)))
-
-    mel = librosa.feature.melspectrogram(
-        y=audio, sr=SAMPLE_RATE, n_fft=512, hop_length=160,
-        win_length=400, n_mels=128, window="hann", center=True, power=2.0,
-    )
-    log_mel = np.log(mel + 1e-5)
-    mean = log_mel.mean(axis=1, keepdims=True)
-    std = log_mel.std(axis=1, keepdims=True)
-    return ((log_mel - mean) / (std + 1e-10)).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -556,18 +317,9 @@ def run_transcription(
     wav_path = ensure_wav_16k(media_path, out_dir)
     _log(f"Audio ready: {wav_path}")
 
-    # Step 2: Transcribe with selected engine
-    if engine == "nemotron-onnx":
-        _log("Using Nemotron ONNX engine (EXPERIMENTAL)")
-        result = _try_nemotron_onnx(wav_path, language_hint)
-        if result.get("error"):
-            _log(f"Nemotron ONNX failed: {result['error']}")
-            _log("Falling back to Whisper...")
-            engine = "whisper"
-            result = transcribe_whisper(wav_path, language_hint, model_name)
-    else:
-        _log(f"Using Whisper engine (model={model_name})")
-        result = transcribe_whisper(wav_path, language_hint, model_name)
+    # Step 2: Transcribe with Whisper
+    _log(f"Using Whisper engine (model={model_name})")
+    result = transcribe_whisper(wav_path, language_hint, model_name)
 
     if result.get("error"):
         # Cleanup
@@ -643,8 +395,8 @@ def main():
     p_run.add_argument("--video", required=True, help="Path to video/audio file")
     p_run.add_argument("--out-dir", default=None, help="Output directory")
     p_run.add_argument("--language", default="auto", help="Language hint (auto, hi-IN, en-US)")
-    p_run.add_argument("--engine", default="whisper", choices=["whisper", "nemotron-onnx"],
-                        help="Transcription engine (default: whisper)")
+    p_run.add_argument("--engine", default="whisper", choices=["whisper"],
+                        help="Transcription engine (whisper only)")
     p_run.add_argument("--model", default=WHISPER_DEFAULT_MODEL,
                         help=f"Whisper model size (default: {WHISPER_DEFAULT_MODEL})")
     p_run.add_argument("--threads", type=int, default=4, help="Number of threads")
