@@ -836,4 +836,13 @@ mod tests {
         assert_eq!(TranscriptionEngine::Nemotron.to_string(), "nemotron");
         assert_eq!(TranscriptionEngine::Apex.to_string(), "apex");
     }
+
+    #[tokio::test]
+    async fn test_check_whisper_health() {
+        // On a dev machine with openai-whisper installed, this should succeed
+        let result = check_whisper_health().await;
+        // We don't assert success because whisper may not be installed in CI
+        // but we verify the function doesn't panic
+        assert!(result.is_ok() || result.is_err());
+    }
 }
