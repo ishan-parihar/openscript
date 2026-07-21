@@ -9861,6 +9861,15 @@ async fn handle_script_to_timeline(
 async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let script_input = extract_str(&args, "script")?;
     let mut output_path = default_str(&args, "output_path", "output.mp4");
+    // P0 FIX: Resolve output_path to absolute so ffmpeg writes to a predictable location.
+    // Without this, relative paths like "output.mp4" resolve against the MCP server's CWD,
+    // which may differ from the agent's expected working directory.
+    if !std::path::Path::new(&output_path).is_absolute() {
+        match std::env::current_dir() {
+            Ok(cwd) => { output_path = cwd.join(&output_path).to_string_lossy().to_string(); }
+            Err(e) => { tracing::warn!("current_dir() failed, output_path stays relative: {} — {}", output_path, e); }
+        }
+    }
     let output_dir = default_str(&args, "output_dir", "artifacts");
     let skip_background = default_bool(&args, "skip_background", false);
     let skip_stickers = default_bool(&args, "skip_stickers", false);
@@ -11391,7 +11400,15 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         voiceover_paths,
         stickers,
         music_path,
-        music_volume: 10f64.powf(spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-20.0) / 20.0),
+        // P1 FIX: Clamp music gain_db to -8..-14 dB range (production quality sweet spot).
+        // Agents writing gain_db=6.0 or gain_db=-30.0 produce inaudible or overpowering music.
+        music_volume: 10f64.powf(
+            spec.music
+                .as_ref()
+                .map(|m| m.gain_db.clamp(-14.0, -8.0))
+                .unwrap_or(-20.0)
+            / 20.0
+        ),
         ducking: should_duck,
         ducking_depth_db: spec
             .music
@@ -11633,17 +11650,26 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                         })
                     })
                     .unwrap_or(false);
-            let delivery_status = if is_draft {
-                "draft"
-            } else if !pq.hard_fails.is_empty() {
-                "rendered_production_fail"
-            } else if pq.production_score >= 70 {
-                "rendered"
-            } else if pq.production_score >= 40 {
-                "rendered_below_production_grade"
-            } else {
-                "rendered_production_fail"
-            };
+    // P0 FIX: If render succeeded but MP4 is missing or empty, treat as failure.
+    // This catches silent ffmpeg failures where render_multilayer returns Ok but
+    // the output file was never written (e.g. CWD mismatch, permission errors).
+    let delivery_status = if !out_path.is_empty() && !std::path::Path::new(&out_path).exists() {
+        tracing::warn!("render returned Ok but MP4 not found at: {}", out_path);
+        "rendered_production_fail"
+    } else if file_size == 0 {
+        tracing::warn!("render returned Ok but MP4 is 0 bytes at: {}", out_path);
+        "rendered_production_fail"
+    } else if is_draft {
+        "draft"
+    } else if !pq.hard_fails.is_empty() {
+        "rendered_production_fail"
+    } else if pq.production_score >= 70 {
+        "rendered"
+    } else if pq.production_score >= 40 {
+        "rendered_below_production_grade"
+    } else {
+        "rendered_production_fail"
+    };
             let bg_paths: Vec<String> = bg_layers.iter().map(|b| b.path.clone()).collect();
 
             Ok(json!({
