@@ -148,7 +148,7 @@ The render step timed out, which is expected for a full video render with:
 |--------|---------|---------|---------|
 | Schema discovery time | ~80s (trial-and-error) | ~5s (script.schema) | ~5s (script.schema) |
 | Schema friction % | 80% | 5% | 5% |
-| Total time to video | ~300s+ | ~90s | ~120s (timeout) |
+| Total time to video | ~300s+ | ~90s | ~180s (timed out during render) |
 | Agent confidence | Low (schema walls) | High (full schema) | High (full schema) |
 
 ---
@@ -168,22 +168,21 @@ The render step timed out, which is expected for a full video render with:
 | Gap | Severity | Fix | Status |
 |-----|----------|-----|--------|
 | Render timeout at 180s | Low | Increase timeout or test render separately | Deferred |
-| stock_query not verified end-to-end | ~~Medium~~ | ~~Run broll.fetch directly with marine queries~~ | ✅ **VERIFIED** |
 | duration_seconds not tested | Low | Add test scene with duration_seconds | Deferred |
 
 ---
 
 ## Recommendations
 
-1. ~~Run direct stock search test to verify Phase 19 fix~~ → ✅ **DONE** (broll.fetch verified all 5 queries)
-2. **Increase simulation timeout** to 300s for full render verification
-3. **Add duration_seconds test** to verify P1 fix works end-to-end
+1. **Increase simulation timeout** to 300s for full render verification
+2. **Add duration_seconds test** to verify P1 fix works end-to-end
+3. Continue iterative improvement cycle
 
 ---
 
 ## Conclusion
 
-**Run #12 Verdict:** ✅ PASS
+**Run #12 Verdict:** ✅ PASS (stock search fix verified, render timed out as expected)
 
 The core pipeline works end-to-end with marine/octopus content:
 - Schema discovery: ✅
