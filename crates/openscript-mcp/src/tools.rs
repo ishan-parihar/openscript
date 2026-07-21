@@ -9867,7 +9867,11 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     if !std::path::Path::new(&output_path).is_absolute() {
         match std::env::current_dir() {
             Ok(cwd) => { output_path = cwd.join(&output_path).to_string_lossy().to_string(); }
-            Err(e) => { tracing::warn!("current_dir() failed, output_path stays relative: {} — {}", output_path, e); }
+            Err(e) => {
+                return Err(ToolError::InvalidArg(format!(
+                    "Cannot resolve output_path '{}' to absolute: {}", output_path, e
+                )));
+            }
         }
     }
     let output_dir = default_str(&args, "output_dir", "artifacts");
@@ -11402,13 +11406,17 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         music_path,
         // P1 FIX: Clamp music gain_db to -8..-14 dB range (production quality sweet spot).
         // Agents writing gain_db=6.0 or gain_db=-30.0 produce inaudible or overpowering music.
-        music_volume: 10f64.powf(
-            spec.music
-                .as_ref()
-                .map(|m| m.gain_db.clamp(-14.0, -8.0))
-                .unwrap_or(-20.0)
-            / 20.0
-        ),
+        music_volume: {
+            let raw_gain = spec.music.as_ref().map(|m| m.gain_db).unwrap_or(-20.0);
+            let clamped = raw_gain.clamp(-14.0, -8.0);
+            if (raw_gain - clamped).abs() > f64::EPSILON {
+                tracing::info!(
+                    "music gain_db={} clamped to {} dB (production range -14..-8)",
+                    raw_gain, clamped
+                );
+            }
+            10f64.powf(clamped / 20.0)
+        },
         ducking: should_duck,
         ducking_depth_db: spec
             .music
