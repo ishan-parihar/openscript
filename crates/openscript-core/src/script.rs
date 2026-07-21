@@ -47,9 +47,21 @@ pub struct ScriptSpec {
     ///
     /// Keys are speaker IDs referenced by scenes. At least one speaker
     /// is required.
+    ///
+    /// Accepts BOTH formats:
+    /// - Map (canonical): {"narrator": {"voice": "kokoro:af_heart"}}
+    /// - Array (agent-friendly): [{"id": "narrator", "voice": "kokoro:af_heart"}]
+    /// (UX audit GAP #2 fix: agents naturally write arrays.)
+    /// Array format is normalized in parse_script() before deserialization.
     pub speakers: HashMap<String, SpeakerSpec>,
 
     /// Background video configuration (gameplay, procedural, or static).
+    ///
+    /// Accepts BOTH formats:
+    /// - Object (canonical): {"type": "procedural", "change_cadence": "scene"}
+    /// - String (agent-friendly): "procedural" (shorthand for {"type": <value>})
+    /// (UX audit GAP: agents wrote bare strings like "procedural".)
+    /// String format is normalized in parse_script() before deserialization.
     #[serde(default)]
     pub background: BackgroundSpec,
 
@@ -562,13 +574,29 @@ pub struct SceneSpec {
     pub background: Option<String>,
 
     /// Override scene duration in ms (null = use TTS duration).
+    /// (UX audit GAP #5 fix: agents wrote `duration_seconds` which was
+    /// silently ignored. We accept it via a separate field and convert.)
     #[serde(default)]
     pub duration_override_ms: Option<i64>,
+
+    /// Override scene duration in seconds (null = use TTS duration).
+    /// Agents naturally think in seconds, not milliseconds. If both
+    /// duration_seconds and duration_override_ms are set, duration_override_ms wins.
+    #[serde(default)]
+    pub duration_seconds: Option<f64>,
 
     /// Optional pause in ms after this scene's voiceover (breath beat).
     /// When present, adds silence after the audio to create natural pacing.
     #[serde(default)]
     pub pause_ms: Option<i64>,
+
+    /// Per-scene stock footage search query override.
+    /// When present, this query is used directly for Pexels/stock search
+    /// instead of the auto-generated query from scene text + video_keywords.
+    /// Gives agents explicit control over what footage each scene gets.
+    /// (UX audit GAP #1 fix: agents had zero control over per-scene footage.)
+    #[serde(default)]
+    pub stock_query: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -857,13 +885,71 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
 }
 
 /// Parse a JSON string into a ScriptSpec, applying defaults for missing fields.
+///
+/// Normalizes agent-friendly shorthand formats before deserialization:
+/// - speakers array → map (UX audit GAP #2)
+/// - background string → object (UX audit GAP)
+/// - duration_seconds → duration_override_ms (UX audit GAP #5)
 pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
-    let mut spec: ScriptSpec = serde_json::from_str(json)?;
+    // Normalize agent-friendly shorthand formats before deserialization.
+    // Agents write arrays for speakers, bare strings for background, and
+    // duration_seconds instead of duration_override_ms.
+    let mut root: serde_json::Value = serde_json::from_str(json)?;
+
+    if let Some(obj) = root.as_object_mut() {
+        // --- Normalize speakers: array → map ---
+        // Agents write: [{"id": "narrator", "voice": "kokoro:af_heart"}]
+        // Schema expects: {"narrator": {"voice": "kokoro:af_heart"}}
+        if let Some(speakers_val) = obj.get("speakers") {
+            if let Some(arr) = speakers_val.as_array() {
+                let mut map = serde_json::Map::new();
+                for (i, entry) in arr.iter().enumerate() {
+                    if let Some(entry_obj) = entry.as_object() {
+                        let id = entry_obj
+                            .get("id")
+                            .or_else(|| entry_obj.get("profile_id"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| format!("speaker_{}", i + 1));
+                        let mut spec_obj = entry_obj.clone();
+                        spec_obj.remove("id");
+                        spec_obj.remove("profile_id");
+                        map.insert(id, serde_json::Value::Object(spec_obj));
+                    }
+                }
+                obj.insert("speakers".into(), serde_json::Value::Object(map));
+            }
+        }
+
+        // --- Normalize background: string → object ---
+        // Agents write: "procedural"
+        // Schema expects: {"type": "procedural"}
+        if let Some(bg_val) = obj.get("background") {
+            if let Some(s) = bg_val.as_str() {
+                let mut bg_obj = serde_json::Map::new();
+                bg_obj.insert("type".into(), serde_json::Value::String(s.to_string()));
+                obj.insert("background".into(), serde_json::Value::Object(bg_obj));
+            }
+        }
+    }
+
+    let mut spec: ScriptSpec = serde_json::from_value(root)?;
 
     // Auto-assign scene IDs if missing
     for (i, scene) in spec.scenes.iter_mut().enumerate() {
         if scene.id.is_empty() {
             scene.id = format!("scene_{:03}", i + 1);
+        }
+    }
+
+    // Convert duration_seconds → duration_override_ms for each scene.
+    // Agents naturally think in seconds, not milliseconds. If both are
+    // set, duration_override_ms wins. (UX audit GAP #5 fix.)
+    for scene in spec.scenes.iter_mut() {
+        if scene.duration_override_ms.is_none() {
+            if let Some(secs) = scene.duration_seconds {
+                scene.duration_override_ms = Some((secs * 1000.0) as i64);
+            }
         }
     }
 
@@ -1313,4 +1399,80 @@ mod tests {
         }"#;
         let spec = parse_script(json).unwrap();
         assert_eq!(spec.output.theme, "neutral");
+    
+    // ========================================================================
+    // Regression tests: UX audit GAP fixes (Phase 21)
+    // ========================================================================
+
+    /// Speakers array format (agent-friendly).
+    #[test]
+    fn test_parse_speakers_array_format() {
+        let json = r#"{
+            "speakers": [
+                {"id": "narrator", "voice": "kokoro:af_heart"},
+                {"id": "backup", "voice": "kokoro:am_michael"}
+            ],
+            "scenes": [{"speaker": "narrator", "text": "Hello!"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.speakers.len(), 2);
+        assert!(spec.speakers.contains_key("narrator"));
+        assert!(spec.speakers.contains_key("backup"));
+        assert_eq!(spec.speakers["narrator"].voice, "kokoro:af_heart");
     }
+
+    /// Background string shorthand (agent-friendly).
+    #[test]
+    fn test_parse_background_string_shorthand() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "alice", "text": "Hi"}],
+            "background": "procedural"
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.background.r#type, "procedural");
+    }
+
+    /// Duration seconds converted to ms.
+    #[test]
+    fn test_duration_seconds_converted_to_ms() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [
+                {"speaker": "alice", "text": "First.", "duration_seconds": 5.0},
+                {"speaker": "alice", "text": "Second.", "duration_seconds": 10.5}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.scenes[0].duration_override_ms, Some(5000));
+        assert_eq!(spec.scenes[1].duration_override_ms, Some(10500));
+    }
+
+    /// Duration override ms takes precedence.
+    #[test]
+    fn test_duration_override_ms_wins() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [
+                {"speaker": "alice", "text": "Hi.", "duration_override_ms": 3000, "duration_seconds": 10.0}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.scenes[0].duration_override_ms, Some(3000));
+    }
+
+    /// Per-scene stock_query preserved.
+    #[test]
+    fn test_scene_stock_query_preserved() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [
+                {"speaker": "alice", "text": "Coffee rocks.", "stock_query": "coffee beans roasting"},
+                {"speaker": "alice", "text": "Tea is great."}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.scenes[0].stock_query.as_deref(), Some("coffee beans roasting"));
+        assert!(spec.scenes[1].stock_query.is_none());
+    }
+}

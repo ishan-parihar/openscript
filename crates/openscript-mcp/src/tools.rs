@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (85 tools: 43 original + 5 hf.* + 1 composition.render + 3 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (86 tools: 43 original + 5 hf.* + 1 composition.render + 5 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -797,6 +797,16 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "script.schema",
+            "description": "Return the full JSON schema for script.parse as a JSON object. Use this to discover what fields are available, their types, defaults, and valid values. Returns: the JSON Schema with examples and field descriptions for ScriptSpec, SceneSpec, SpeakerSpec, BackgroundSpec, and all nested types. Call this BEFORE script.parse to understand the correct format.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "script.parse",
             "description": "Parse and validate a from-scratch video creation script (JSON). The script is the single source of truth for AI-agent-driven video creation — it describes speakers, scenes, backgrounds, captions, music, and output. Returns the parsed ScriptSpec with defaults applied, plus validation errors (if any). Use BEFORE script.to_timeline / script.to_video to catch schema issues early. See openscript-core/src/script.rs for the full schema. Kokoro is the default TTS backend. IMPORTANT: background.type must be one of: 'gameplay' (Pexels stock footage, requires PEXELS_API_KEY), 'procedural' (generated motion backgrounds), or 'static' (solid color/gradient). 'stock' is NOT a valid value — using it will cause errors.",
             "inputSchema": {
@@ -1308,6 +1318,7 @@ pub fn route_tool(
                 .await
                 .map_err(|e| ToolError::Hf(e.to_string()))
         }),
+        "script.schema" => Box::pin(handle_script_schema(args)),
         "script.parse" => Box::pin(handle_script_parse(args)),
         "script.generate_voices" => Box::pin(handle_script_generate_voices(args)),
         "script.build_captions" => Box::pin(handle_script_build_captions(args)),
@@ -7103,6 +7114,201 @@ async fn handle_reelize_direct(args: serde_json::Value) -> Result<serde_json::Va
 // Handler: script.parse — from-scratch video creation script parser
 // ---------------------------------------------------------------------------
 
+/// Handle script.schema: return the full JSON schema for ScriptSpec.
+/// Agents call this to discover the correct format before writing a script.
+async fn handle_script_schema(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    Ok(json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "OpenScript Video Creation Script",
+        "description": "Complete specification for AI-agent-driven video creation. All fields have sensible defaults — only 'speakers' and 'scenes' are required.",
+        "type": "object",
+        "required": ["speakers", "scenes"],
+        "properties": {
+            "schema": {"type": "string", "default": "openscript-video/v1", "description": "Schema version. Always use 'openscript-video/v1'."},
+            "title": {"type": "string", "description": "Human-readable video title. If omitted, video_keywords are auto-extracted from this."},
+            "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Topic keywords for the WHOLE video (3-5 words). Used to bias stock footage search. Auto-extracted from title if omitted."},
+            "meta": {
+                "type": "object",
+                "description": "Output video metadata.",
+                "properties": {
+                    "aspect": {"type": "string", "default": "9:16", "enum": ["9:16", "16:9", "1:1"], "description": "Aspect ratio."},
+                    "fps": {"type": "integer", "default": 30, "enum": [24, 30, 60], "description": "Frames per second."},
+                    "width": {"type": "integer", "default": 1080},
+                    "height": {"type": "integer", "default": 1920},
+                    "resolution": {"type": "string", "default": "1080p"}
+                }
+            },
+            "tts": {
+                "type": "object",
+                "description": "TTS engine configuration.",
+                "properties": {
+                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "sidecar"]},
+                    "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
+                    "default_pitch": {"type": "number", "default": 1.0}
+                }
+            },
+            "speakers": {
+                "description": "Speaker definitions. Accepts BOTH formats: map (canonical) {\"narrator\": {\"voice\": \"kokoro:af_heart\"}} OR array (agent-friendly) [{\"id\": \"narrator\", \"voice\": \"kokoro:af_heart\"}].",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "description": "Map format (canonical): speaker_id → SpeakerSpec",
+                        "additionalProperties": {
+                            "$ref": "#/definitions/SpeakerSpec"
+                        }
+                    },
+                    {
+                        "type": "array",
+                        "description": "Array format (agent-friendly): each entry needs 'id' and 'voice'.",
+                        "items": {
+                            "type": "object",
+                            "required": ["voice"],
+                            "properties": {
+                                "id": {"type": "string", "description": "Speaker ID referenced by scenes."},
+                                "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', or bare 'af_heart'. Use tts.voices to list all."}
+                            }
+                        }
+                    }
+                ]
+            },
+            "background": {
+                "description": "Background config. Accepts BOTH: object (canonical) or string (agent-friendly). String = shorthand for {type: value}.",
+                "oneOf": [
+                    {
+                        "$ref": "#/definitions/BackgroundSpec"
+                    },
+                    {
+                        "type": "string",
+                        "enum": ["procedural", "gameplay", "static"],
+                        "description": "String shorthand: procedural, gameplay, or static."
+                    }
+                ]
+            },
+            "music": {
+                "type": ["object", "null"],
+                "properties": {
+                    "path": {"type": ["string", "null"], "description": "Music file path. Omit to auto-select from library by mood."},
+                    "gain_db": {"type": "number", "default": -10.0, "description": "Music volume in dB. Recommended: -8 to -14. Above -8 overpowers voice."},
+                    "ducking": {"type": "boolean", "default": true, "description": "Auto-lower music during speech."},
+                    "ducking_depth_db": {"type": "number", "default": 12.0}
+                }
+            },
+            "captions": {
+                "type": "object",
+                "properties": {
+                    "style": {"type": "string", "default": "word_highlight", "enum": ["word_highlight", "sentence_fade", "karaoke_fill", "subtitle_rail"], "description": "Caption style. word_highlight = TikTok-style word sync (default)."},
+                    "font": {"type": "string", "default": "Bebas Neue"},
+                    "font_size": {"type": "integer", "default": 72},
+                    "color": {"type": "string", "default": "#ffffff"},
+                    "highlight_color": {"type": "string", "default": "#00ff88"},
+                    "position": {"type": "string", "default": "bottom", "enum": ["bottom", "top", "center"]},
+                    "safe_zone": {"type": "number", "default": 0.85},
+                    "max_words_per_line": {"type": "integer", "default": 5}
+                }
+            },
+            "stickers": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": true},
+                    "lip_sync": {"type": "string", "default": "amplitude", "enum": ["amplitude", "viseme", "none"]},
+                    "blink": {"type": "boolean", "default": true},
+                    "idle_bob": {"type": "boolean", "default": true}
+                }
+            },
+            "meme_brolls": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean", "default": false},
+                    "position": {"type": "string", "default": "center-bottom"},
+                    "scale": {"type": "number", "default": 0.35},
+                    "duration_s": {"type": "number", "default": 2.5},
+                    "offset_s": {"type": "number", "default": 0.3}
+                }
+            },
+            "scenes": {
+                "type": "array",
+                "description": "Ordered list of scenes (script content). Each scene is one speaker's line.",
+                "items": {
+                    "$ref": "#/definitions/SceneSpec"
+                },
+                "minItems": 1
+            },
+            "sfx": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "at_ms": {"type": ["integer", "null"], "description": "Absolute time in ms."},
+                        "role": {"type": "string", "enum": ["intro", "transition", "highlight", "outro"]},
+                        "trigger": {"type": ["string", "null"], "enum": ["scene_change", "speaker_change", null]}
+                    }
+                }
+            },
+            "output": {
+                "type": "object",
+                "properties": {
+                    "format": {"type": "string", "default": "mp4"},
+                    "codec": {"type": "string", "default": "h264"},
+                    "crf": {"type": "integer", "default": 18, "description": "Video quality. Lower = higher quality. 18-28 typical."},
+                    "preset": {"type": "string", "default": "slow", "description": "FFmpeg preset."},
+                    "render_engine": {"type": "string", "default": "ffmpeg", "enum": ["ffmpeg", "hyperframes"]},
+                    "theme": {"type": "string", "default": "neutral", "enum": ["neutral", "calm", "energetic"], "description": "Theme preset. calm = warm-gold captions for healing content. energetic = neon-green for edu/gaming."}
+                }
+            }
+        },
+        "definitions": {
+            "SpeakerSpec": {
+                "type": "object",
+                "required": ["voice"],
+                "properties": {
+                    "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', or bare 'af_heart'. Use tts.voices to discover all 54 Kokoro voices."},
+                    "preset": {"type": "string", "default": "default_person", "description": "SVG preset: default_person, robot, cat, etc."},
+                    "position": {"type": "string", "default": "top-left", "enum": ["top-left", "top-right", "top-center", "center", "bottom-left", "bottom-right", "bottom-center"]},
+                    "scale": {"type": "number", "default": 0.35, "description": "Sticker scale as fraction of canvas width (0.0-1.0)."}
+                }
+            },
+            "BackgroundSpec": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "default": "procedural", "enum": ["gameplay", "procedural", "static"], "description": "procedural = generated motion backgrounds (default). gameplay = YouTube auto-download. static = solid color/gradient."},
+                    "source": {"type": "string", "default": "youtube"},
+                    "query": {"type": "string", "description": "YouTube search query for gameplay type."},
+                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local fallback clip paths."},
+                    "crop_mode": {"type": "string", "default": "center"},
+                    "loop": {"type": "boolean", "default": true},
+                    "volume_db": {"type": "number", "default": -20.0},
+                    "change_cadence": {"type": "string", "default": "scene", "enum": ["scene", "speaker", "fixed"]}
+                }
+            },
+            "SceneSpec": {
+                "type": "object",
+                "required": ["speaker", "text"],
+                "properties": {
+                    "id": {"type": "string", "description": "Unique scene ID. Auto-generated if omitted."},
+                    "speaker": {"type": "string", "description": "Speaker ID (must match a key in speakers)."},
+                    "text": {"type": "string", "description": "The spoken text for this scene."},
+                    "emote": {"type": ["string", "null"], "enum": ["neutral", "happy", "surprised", "thinking", null], "description": "Speaker emote for this scene."},
+                    "background": {"type": ["string", "null"], "description": "Override background for this scene (preset name or null for auto)."},
+                    "duration_override_ms": {"type": ["integer", "null"], "description": "Override scene duration in milliseconds. Null = use TTS duration."},
+                    "duration_seconds": {"type": ["number", "null"], "description": "Override scene duration in SECONDS. Null = use TTS duration. If both this and duration_override_ms are set, duration_override_ms wins."},
+                    "pause_ms": {"type": ["integer", "null"], "description": "Pause in ms after this scene's voiceover (breath beat)."},
+                    "stock_query": {"type": ["string", "null"], "description": "Per-scene stock footage search query override. When set, this query is used directly for Pexels search instead of the auto-generated query from scene text + video_keywords. Gives you explicit control over what footage each scene gets."}
+                }
+            }
+        },
+        "examples": [{
+            "title": "The History of Coffee",
+            "video_keywords": ["coffee", "beans", "roasting", "brewing", "cafe"],
+            "speakers": {"narrator": {"voice": "kokoro:af_heart"}},
+            "scenes": [
+                {"speaker": "narrator", "text": "Coffee is one of the most beloved beverages in the world.", "stock_query": "coffee beans roasting closeup", "duration_seconds": 8},
+                {"speaker": "narrator", "text": "The story begins in Ethiopia, where a goat herder discovered the energizing effects.", "stock_query": "ethiopian landscape nature", "duration_seconds": 8}
+            ],
+            "output": {"theme": "neutral"}
+        }]
+    }))
+}
+
 async fn handle_script_parse(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let script_input = extract_str(&args, "script")?;
     let validate_only = default_bool(&args, "validate_only", false);
@@ -7220,22 +7426,31 @@ async fn handle_script_generate_voices(
         let registry = openscript_tts::profiles::VoiceProfileRegistry::new(profiles_path)
             .map_err(|e| ToolError::Tts(e.to_string()))?;
 
-        // Try to find the voice profile by ID or by voice field
+        // Try to find the voice profile by ID or by voice field.
+        // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
+        // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
+        let voice_lookup = &speaker.voice;
+        let normalized_voice = if !voice_lookup.starts_with("kokoro:") && !voice_lookup.starts_with("faster-qwen") {
+            format!("kokoro:{}", voice_lookup)
+        } else {
+            voice_lookup.clone()
+        };
         let profile = registry
-            .get(&speaker.voice)
+            .get(voice_lookup)
+            .or_else(|| registry.get(&normalized_voice))
             .or_else(|| {
                 // If voice is "kokoro:af_heart", try to find a profile with that model
                 registry
                     .list()
                     .iter()
-                    .find(|p| p.model == speaker.voice)
+                    .find(|p| p.model == *voice_lookup || p.model == normalized_voice)
                     .cloned()
             })
             .map(|p| p.clone())
             .ok_or_else(|| {
                 ToolError::NotFound(format!(
-                    "Voice profile '{}' not found in registry. Add it via voice.profile.add.",
-                    speaker.voice
+                    "Voice profile '{}' not found in registry. Try '{}' or add it via voice.profile.add.",
+                    voice_lookup, normalized_voice
                 ))
             })?;
 
@@ -9780,13 +9995,26 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
             // Phase CM signal/noise query: strip listicle noise, bias to visual
             // nouns + video_keywords, attach context-matched visual anchor.
-            let stock_q = crate::stock_signal::build_scene_stock_query(
-                scene_text,
-                &spec.video_keywords,
-                &spec.output.theme,
-                &spec.meta.aspect,
-                scene_idx,
-            );
+            // Per-scene stock_query override: if the agent specified a
+            // stock_query in the scene, use it directly instead of auto-generating.
+            // (UX audit GAP #1 fix: agents now have explicit control over
+            // per-scene footage search queries.)
+            let stock_q = if let Some(ref custom_q) = spec.scenes.get(scene_idx).and_then(|s| s.stock_query.as_ref()).filter(|q| !q.trim().is_empty()) {
+                crate::stock_signal::SceneStockQuery {
+                    query: custom_q.to_string(),
+                    signal_tokens: crate::stock_signal::tokenize(custom_q),
+                    visual_anchor: custom_q.to_string(),
+                    scene_idx,
+                }
+            } else {
+                crate::stock_signal::build_scene_stock_query(
+                    scene_text,
+                    &spec.video_keywords,
+                    &spec.output.theme,
+                    &spec.meta.aspect,
+                    scene_idx,
+                )
+            };
             // Keep unsafe-keyword rewrite for edge terms (blood → calm nature)
             let query = safe_search_query(&stock_q.query, &spec.output.theme);
             let signal_tokens = stock_q.signal_tokens.clone();
