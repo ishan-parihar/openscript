@@ -19,18 +19,14 @@ import sys
 import time
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent.parent  # openscript root
-SAMPLE_RATE = 16000
-
-# Phrase grouping parameters
-PHRASE_MAX_WORDS = 12
-PHRASE_MAX_CHARS = 64
-PHRASE_MAX_GAP_S = 0.6
+# Import shared utilities from transcribe_common
+from transcribe_common import (
+    SAMPLE_RATE, PHRASE_MAX_WORDS, PHRASE_MAX_CHARS, PHRASE_MAX_GAP_S,
+    SCRIPT_DIR, REPO_ROOT,
+    _log, extract_audio, ensure_wav_16k,
+    fmt_ts, group_words_into_phrases, generate_word_srt, generate_phrase_srt,
+    build_srt_files,
+)
 
 # Whisper model sizes: tiny < base < small < medium < large-v3
 # tiny: fastest, ~39x realtime on CPU, lowest accuracy
@@ -38,63 +34,12 @@ PHRASE_MAX_GAP_S = 0.6
 WHISPER_DEFAULT_MODEL = "base"
 
 
-def _log(msg: str):
-    print(f"[transcriber] {msg}", file=sys.stderr, flush=True)
+def _log_whisper(msg: str):
+    _log(msg, prefix="transcriber")
 
 
 # ---------------------------------------------------------------------------
 # Audio extraction (from video)
-# ---------------------------------------------------------------------------
-
-def extract_audio(video_path: str, wav_path: str) -> bool:
-    """Extract 16kHz mono WAV from video using ffmpeg."""
-    cmd = [
-        "ffmpeg", "-y", "-i", video_path,
-        "-vn", "-acodec", "pcm_s16le",
-        "-ar", str(SAMPLE_RATE), "-ac", "1",
-        wav_path,
-    ]
-    _log("Extracting audio...")
-    result = subprocess.run(cmd, capture_output=True, timeout=300)
-    if result.returncode != 0:
-        _log(f"Audio extraction failed: {result.stderr.decode()[:300]}")
-        return False
-    _log(f"Audio extracted: {wav_path}")
-    return True
-
-
-def ensure_wav_16k(media_path: str, out_dir: str) -> str:
-    """Convert any media to 16kHz mono WAV. Returns path to WAV file."""
-    stem = Path(media_path).stem
-    wav_path = str(Path(out_dir) / f"{stem}.whisper.wav")
-
-    if media_path.lower().endswith((".wav",)):
-        # Already WAV — just convert to 16kHz mono
-        cmd = [
-            "ffmpeg", "-y", "-i", media_path,
-            "-vn", "-acodec", "pcm_s16le",
-            "-ar", str(SAMPLE_RATE), "-ac", "1",
-            wav_path,
-        ]
-        subprocess.run(cmd, capture_output=True, timeout=300)
-    elif media_path.lower().endswith((".mp3", ".flac", ".ogg", ".m4a", ".aac")):
-        cmd = [
-            "ffmpeg", "-y", "-i", media_path,
-            "-acodec", "pcm_s16le",
-            "-ar", str(SAMPLE_RATE), "-ac", "1",
-            wav_path,
-        ]
-        subprocess.run(cmd, capture_output=True, timeout=300)
-    else:
-        # Video file — extract audio
-        if not extract_audio(media_path, wav_path):
-            raise RuntimeError(f"Audio extraction failed for {media_path}")
-
-    return wav_path
-
-
-# ---------------------------------------------------------------------------
-# Whisper transcription (PRIMARY engine)
 # ---------------------------------------------------------------------------
 
 def transcribe_whisper(
@@ -205,20 +150,6 @@ def transcribe_whisper(
 # SRT generation
 # ---------------------------------------------------------------------------
 
-def fmt_ts(seconds: float) -> str:
-    """Format seconds to SRT timestamp."""
-    ms = round((seconds % 1) * 1000) % 1000
-    s_int = int(seconds)
-    return "%02d:%02d:%02d,%03d" % (
-        s_int // 3600, (s_int % 3600) // 60, s_int % 60, ms
-    )
-
-
-def group_words_into_phrases(
-    words: list,
-    max_words: int = PHRASE_MAX_WORDS,
-    max_chars: int = PHRASE_MAX_CHARS,
-    max_gap: float = PHRASE_MAX_GAP_S,
 ) -> list:
     """Group word-level entries into phrase-level SRT entries."""
     groups = []
@@ -265,30 +196,6 @@ def group_words_into_phrases(
 
     return groups
 
-
-def generate_word_srt(words: list, output_path: str) -> str:
-    """Generate word-level SRT file."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        for i, w in enumerate(words, 1):
-            f.write("%d\n%s --> %s\n%s\n\n" % (
-                i, fmt_ts(w["start_s"]), fmt_ts(w["end_s"]), w["word"].strip()
-            ))
-    return output_path
-
-
-def generate_phrase_srt(phrases: list, output_path: str) -> str:
-    """Generate phrase-level SRT file."""
-    with open(output_path, "w", encoding="utf-8") as f:
-        for i, p in enumerate(phrases, 1):
-            f.write("%d\n%s --> %s\n%s\n\n" % (
-                i, fmt_ts(p["start_s"]), fmt_ts(p["end_s"]), p["text"]
-            ))
-    return output_path
-
-
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
 
 def run_transcription(
     media_path: str,
