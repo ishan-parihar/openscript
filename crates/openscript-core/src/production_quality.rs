@@ -1981,7 +1981,6 @@ pub fn evaluate_production_quality(
     });
 
     let theme = manifest.theme.as_deref();
-    let music_gain = manifest.music.as_ref().map(|m| m.gain_db).unwrap_or(-12.0);
     let captions_present = captions_path
         .as_deref()
         .map(|p| !p.is_empty() && Path::new(p).exists())
