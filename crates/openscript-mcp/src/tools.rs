@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (86 tools: 43 original + 5 hf.* + 1 composition.render + 5 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (86 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -2656,10 +2656,18 @@ async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Valu
     let profiles_path = ".openscript/voice_profiles.json";
     let registry =
         VoiceProfileRegistry::new(profiles_path).map_err(|e| ToolError::Tts(e.to_string()))?;
+    // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
+    // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
+    let normalized_id = if !voice_profile_id.starts_with("kokoro:") && !voice_profile_id.starts_with("faster-qwen") {
+        format!("kokoro:{}", voice_profile_id)
+    } else {
+        voice_profile_id.to_string()
+    };
     let profile = registry
         .get(voice_profile_id)
+        .or_else(|| registry.get(&normalized_id))
         .ok_or_else(|| {
-            ToolError::NotFound(format!("Voice profile not found: {}", voice_profile_id))
+            ToolError::NotFound(format!("Voice profile '{}' not found. Try '{}' or add via voice.profile.add.", voice_profile_id, normalized_id))
         })?
         .clone();
 
@@ -3576,10 +3584,18 @@ async fn handle_voiceover_generate(
     let profiles_path = ".openscript/voice_profiles.json";
     let registry =
         VoiceProfileRegistry::new(profiles_path).map_err(|e| ToolError::Tts(e.to_string()))?;
+    // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
+    // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
+    let normalized_id = if !voice_profile_id.starts_with("kokoro:") && !voice_profile_id.starts_with("faster-qwen") {
+        format!("kokoro:{}", voice_profile_id)
+    } else {
+        voice_profile_id.to_string()
+    };
     let profile = registry
         .get(voice_profile_id)
+        .or_else(|| registry.get(&normalized_id))
         .ok_or_else(|| {
-            ToolError::NotFound(format!("Voice profile not found: {}", voice_profile_id))
+            ToolError::NotFound(format!("Voice profile '{}' not found. Try '{}' or add via voice.profile.add.", voice_profile_id, normalized_id))
         })?
         .clone();
 
@@ -3687,10 +3703,18 @@ async fn handle_tts_commentary(args: serde_json::Value) -> Result<serde_json::Va
     let profiles_path = ".openscript/voice_profiles.json";
     let registry =
         VoiceProfileRegistry::new(profiles_path).map_err(|e| ToolError::Tts(e.to_string()))?;
+    // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
+    // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
+    let normalized_id = if !voice_profile_id.starts_with("kokoro:") && !voice_profile_id.starts_with("faster-qwen") {
+        format!("kokoro:{}", voice_profile_id)
+    } else {
+        voice_profile_id.to_string()
+    };
     let profile = registry
         .get(voice_profile_id)
+        .or_else(|| registry.get(&normalized_id))
         .ok_or_else(|| {
-            ToolError::NotFound(format!("Voice profile not found: {}", voice_profile_id))
+            ToolError::NotFound(format!("Voice profile '{}' not found. Try '{}' or add via voice.profile.add.", voice_profile_id, normalized_id))
         })?
         .clone();
 
@@ -7115,6 +7139,7 @@ async fn handle_reelize_direct(args: serde_json::Value) -> Result<serde_json::Va
 // ---------------------------------------------------------------------------
 
 /// Handle script.schema: return the full JSON schema for ScriptSpec.
+/// WARNING: dual-maintenance — update this handler when ScriptSpec/SceneSpec/SpeakerSpec/BackgroundSpec fields change.
 /// Agents call this to discover the correct format before writing a script.
 async fn handle_script_schema(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     Ok(json!({
