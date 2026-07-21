@@ -116,9 +116,8 @@ LANG_TO_ID = {
 }
 
 
-def _log(msg: str):
-    from transcribe_common import _log as _log_common
-    _log_common(msg, prefix="nemotron-onnx")
+def _log_onnx(msg: str):
+    _log(msg, prefix="nemotron-onnx")
 
 
 def resolve_language_id(language_hint: str) -> int:
@@ -180,18 +179,18 @@ def transcribe_nemotron_onnx(
         return {"error": f"Model directory not found: {model_dir}"}
 
     # Load audio
-    _log(f"Loading audio: {wav_path}")
+    _log_onnx(f"Loading audio: {wav_path}")
     audio = load_audio_wav(wav_path)
     duration_s = len(audio) / SAMPLE_RATE
-    _log(f"Audio duration: {duration_s:.1f}s, samples: {len(audio)}")
+    _log_onnx(f"Audio duration: {duration_s:.1f}s, samples: {len(audio)}")
 
     # Resolve language
     lang_id = resolve_language_id(language_hint)
     lang_name = LANG_TO_ID.get(language_hint, LANG_TO_ID.get("auto", (101, "Auto-detect")))[1]
-    _log(f"Language: {language_hint} -> {lang_name} (lang_id={lang_id})")
+    _log_onnx(f"Language: {language_hint} -> {lang_name} (lang_id={lang_id})")
 
     # Load model
-    _log(f"Loading Nemotron ONNX model from {model_dir}...")
+    _log_onnx(f"Loading Nemotron ONNX model from {model_dir}...")
     start = time.time()
 
     try:
@@ -201,7 +200,7 @@ def transcribe_nemotron_onnx(
         return {"error": f"Failed to load ONNX model: {e}"}
 
     load_time = time.time() - start
-    _log(f"Model loaded in {load_time:.1f}s")
+    _log_onnx(f"Model loaded in {load_time:.1f}s")
 
     # Create processor and generator
     processor = og.StreamingProcessor(model)
@@ -230,10 +229,10 @@ def transcribe_nemotron_onnx(
     with open(os.path.join(model_dir, "genai_config.json"), "r") as f:
         genai_config = json.load(f)
     chunk_samples = genai_config["model"]["chunk_samples"]  # 8960
-    _log(f"Chunk size: {chunk_samples} samples ({chunk_samples / SAMPLE_RATE:.1f}s)")
+    _log_onnx(f"Chunk size: {chunk_samples} samples ({chunk_samples / SAMPLE_RATE:.1f}s)")
 
     # Process audio in chunks
-    _log("Running streaming inference...")
+    _log_onnx("Running streaming inference...")
     transcribe_start = time.time()
 
     full_text = ""
@@ -268,7 +267,7 @@ def transcribe_nemotron_onnx(
             chunks_processed += 1
 
     # Flush remaining context
-    _log("Flushing remaining context...")
+    _log_onnx("Flushing remaining context...")
     inputs = processor.flush()
     if inputs is not None:
         generator.set_inputs(inputs)
@@ -282,9 +281,9 @@ def transcribe_nemotron_onnx(
 
     transcribe_time = time.time() - transcribe_start
 
-    _log(f"Transcription done in {transcribe_time:.1f}s")
-    _log(f"Chunks: {chunks_processed}/{chunks_total} processed")
-    _log(f"Text: {full_text[:200]}...")
+    _log_onnx(f"Transcription done in {transcribe_time:.1f}s")
+    _log_onnx(f"Chunks: {chunks_processed}/{chunks_total} processed")
+    _log_onnx(f"Text: {full_text[:200]}...")
 
     # Clean up
     del generator
@@ -307,7 +306,7 @@ def transcribe_nemotron_onnx(
                 break
 
         if whisper_align_script is not None:
-            _log("Running whisper_align.py for word-level alignment")
+            _log_onnx("Running whisper_align.py for word-level alignment")
             import json as json_mod
             align_result = subprocess.run(
                 [
@@ -335,15 +334,15 @@ def transcribe_nemotron_onnx(
                             for w in align_data["words"]
                             if w.get("word", "").strip()
                         ]
-                        _log(f"Whisper alignment complete: {len(words)} words with real timestamps")
+                        _log_onnx(f"Whisper alignment complete: {len(words)} words with real timestamps")
                 except Exception as e:
-                    _log(f"Failed to parse whisper_align output: {e}")
+                    _log_onnx(f"Failed to parse whisper_align output: {e}")
             else:
-                _log(f"whisper_align.py failed: {align_result.stderr[:200] if align_result.stderr else 'unknown error'}")
+                _log_onnx(f"whisper_align.py failed: {align_result.stderr[:200] if align_result.stderr else 'unknown error'}")
 
         # Fallback: estimated timestamps if alignment failed
         if not words and word_list:
-            _log("Using estimated word timestamps (alignment unavailable)")
+            _log_onnx("Using estimated word timestamps (alignment unavailable)")
             word_duration = duration_s / len(word_list)
             words = [
                 {"word": w, "start_s": i * word_duration, "end_s": (i + 1) * word_duration, "score": 0.0}
@@ -391,9 +390,9 @@ def run_transcription(
     stem = Path(media_path).stem
 
     # Step 1: Convert to 16kHz mono WAV
-    _log(f"Preparing audio from {media_path}...")
+    _log_onnx(f"Preparing audio from {media_path}...")
     wav_path = ensure_wav_16k(media_path, out_dir)
-    _log(f"Audio ready: {wav_path}")
+    _log_onnx(f"Audio ready: {wav_path}")
 
     # Step 2: Transcribe with Nemotron ONNX
     result = transcribe_nemotron_onnx(wav_path, out_dir, language_hint, model_dir)
@@ -443,8 +442,8 @@ def run_transcription(
         for p in phrases
     ]
 
-    _log(f"Pipeline complete: {len(words)} words, {len(phrases)} phrases")
-    _log(f"Output: {output_srt_path}")
+    _log_onnx(f"Pipeline complete: {len(words)} words, {len(phrases)} phrases")
+    _log_onnx(f"Output: {output_srt_path}")
 
     # Cleanup temp WAV
     try:
@@ -486,13 +485,13 @@ def main():
             args.video, out_dir, args.language, args.model_dir
         )
         if result.get("error"):
-            _log(f"ERROR: {result['error']}")
+            _log_onnx(f"ERROR: {result['error']}")
             print(json.dumps(result))
             sys.exit(1)
         print(json.dumps(result))
 
     elif args.cmd == "serve":
-        _log("Starting stdin/stdout serve mode")
+        _log_onnx("Starting stdin/stdout serve mode")
         print(json.dumps({"ready": True}), flush=True)
 
         for line in sys.stdin:
