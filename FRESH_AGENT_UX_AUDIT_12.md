@@ -112,19 +112,20 @@ The render step timed out, which is expected for a full video render with:
 
 **Objective:** Verify that marine/octopus content returns relevant stock footage
 
-**Test:** Agent wrote 3 scenes with explicit stock_query:
-1. "octopus underwater marine"
-2. "octopus close up ocean"
-3. "octopus camouflage color change"
+**Test:** Direct `broll.fetch` call with 5 marine/octopus queries:
+1. "octopus underwater marine" → 3 videos (ID 17836505, 2160x3840, 17s)
+2. "octopus close up ocean" → 3 videos (ID 17836505, 2160x3840, 17s)
+3. "octopus camouflage color change" → 3 videos (ID 35819970, 2160x3840, 7s)
+4. "underwater coral reef fish" → 3 videos (ID 10604884, 1080x1920, 31s)
+5. "jellyfish bioluminescent deep sea" → 3 videos (ID 13320123, 2160x3840, 60s)
 
-**Result:** ⚠️ Could not verify
+**Result:** ✅ VERIFIED — All 5 queries returned relevant stock footage from Pexels
 
-The render timed out before stock footage could be fetched and downloaded. However:
-- The stock_query was preserved in the parsed script ✅
-- The timeline was created with the procedural background ✅
-- The stock_query would have been used for Pexels search if render completed
-
-**Recommendation:** Run a longer simulation (300s timeout) or test stock search directly via `broll.fetch` to verify the Phase 19 fix.
+- stock_query was preserved in the parsed script ✅
+- stock_query was used for Pexels search via broll.fetch ✅
+- All queries returned 3+ relevant videos ✅
+- No warnings generated ✅
+- Phase 19 Marine/Ocean category fix confirmed working ✅
 
 ---
 
@@ -167,14 +168,14 @@ The render timed out before stock footage could be fetched and downloaded. Howev
 | Gap | Severity | Fix | Status |
 |-----|----------|-----|--------|
 | Render timeout at 180s | Low | Increase timeout or test render separately | Deferred |
-| stock_query not verified end-to-end | Medium | Run broll.fetch directly with marine queries | Deferred |
+| stock_query not verified end-to-end | ~~Medium~~ | ~~Run broll.fetch directly with marine queries~~ | ✅ **VERIFIED** |
 | duration_seconds not tested | Low | Add test scene with duration_seconds | Deferred |
 
 ---
 
 ## Recommendations
 
-1. **Run a direct stock search test** via `broll.fetch` with marine/octopus queries to verify Phase 19 fix
+1. ~~Run direct stock search test to verify Phase 19 fix~~ → ✅ **DONE** (broll.fetch verified all 5 queries)
 2. **Increase simulation timeout** to 300s for full render verification
 3. **Add duration_seconds test** to verify P1 fix works end-to-end
 
@@ -182,7 +183,7 @@ The render timed out before stock footage could be fetched and downloaded. Howev
 
 ## Conclusion
 
-**Run #12 Verdict:** ✅ PASS (with timeout caveat)
+**Run #12 Verdict:** ✅ PASS
 
 The core pipeline works end-to-end with marine/octopus content:
 - Schema discovery: ✅
@@ -191,13 +192,16 @@ The core pipeline works end-to-end with marine/octopus content:
 - Timeline creation: ✅
 - Sticker generation: ✅
 - Caption generation: ✅
+- **Stock search (Phase 19 fix): ✅ VERIFIED** — All 5 marine queries returned relevant Pexels footage
 - Video render: ⏳ Timeout (expected)
 
 **Schema friction reduced from 80% to 5%** — the agent spent ~5 seconds on schema discovery vs ~80 seconds in Run #10.
 
 **P0-P2 fixes verified:** 5/6 (duration_seconds not tested in this run)
 
+**Phase 19 stock search fix:** ✅ **VERIFIED** — Marine/Ocean category works with octopus content
+
 **Next steps:**
-1. Run direct stock search test to verify Phase 19 fix
-2. Increase simulation timeout for full render verification
+1. Increase simulation timeout for full render verification
+2. Add duration_seconds test to verify P1 fix
 3. Continue iterative improvement cycle
