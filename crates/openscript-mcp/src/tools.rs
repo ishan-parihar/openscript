@@ -6,7 +6,7 @@ use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, wri
 use openscript_core::sticker::{generate_sticker_composition, StickerPreset};
 use openscript_core::timeline::Timeline;
 use openscript_core::types::TrackType;
-use openscript_transcribe::transcriber::{transcribe, transcribe_with_engine};
+use openscript_transcribe::transcriber::transcribe_with_engine;
 use serde_json::json;
 use std::future::Future;
 use std::path::Path;

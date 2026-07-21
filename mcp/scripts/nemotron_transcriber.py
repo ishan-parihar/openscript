@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 """
-Nemotron 3.5 ASR Transcriber — ONNX Runtime direct inference.
+Transcription Sidecar — Whisper (primary) + Nemotron ONNX (experimental).
 
-Uses nvidia/nemotron-3.5-asr-streaming-0.6b via ONNX Runtime.
-This sidecar handles:
-  1. Audio preprocessing (16kHz mono WAV → log-mel spectrogram)
-  2. Nemotron encoder inference
-  3. RNNT greedy decode via decoder_joint
-  4. Token decoding to text
-  5. SRT generation (word-level + phrase-level)
+Primary engine: openai-whisper (reliable, word-level timestamps, 99 languages)
+Secondary engine: nvidia/nemotron-3.5-asr-streaming-0.6b via ONNX Runtime
+  ⚠️  EXPERIMENTAL: The streaming ONNX model does NOT support offline batch
+  inference. The encoder produces 0 tokens on real speech. This path is
+  retained for future investigation when a non-streaming ONNX export is
+  available.
 
 Input:  stdin JSON  {"wav_path": "...", "language_hint": "hi-IN"|"auto"}
-Output: stdout JSON {"text": "...", "word_srt": "...", "phrase_srt": "...",
-                     "segments": [...], "duration_s": float}
+Output: stdout JSON {"text": "...", "word_srt_path": "...", "phrase_srt_path": "...",
+                     "segments": [...], "duration_s": float, "engine": "whisper"}
 
-Also supports one-shot CLI: nemotron_transcriber.py --wav <path> --out-dir <dir>
+Also supports one-shot CLI: nemotron_transcriber.py run --video <path> --out-dir <dir>
 """
 
 import argparse
@@ -25,135 +24,387 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
-
-try:
-    import onnxruntime as ort
-except ImportError:
-    print(json.dumps({"error": "onnxruntime not installed"}))
-    sys.exit(1)
-
-try:
-    import sentencepiece as spm
-except ImportError:
-    print(json.dumps({"error": "sentencepiece not installed"}))
-    sys.exit(1)
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent  # openscript root
-
-# Model paths — resolved relative to repo root
-MODEL_DIR = REPO_ROOT / "models" / "nemotron-onnx"
-ENCODER_PATH = str(MODEL_DIR / "encoder.onnx")
-DECODER_PATH = str(MODEL_DIR / "decoder_joint.onnx")
-TOKENIZER_PATH = str(MODEL_DIR / "tokenizer.model")
-TOKENS_PATH = str(MODEL_DIR / "tokens.txt")
-
-# Mel spectrogram parameters (matching NeMo AudioToMelSpectrogramPreprocessor)
 SAMPLE_RATE = 16000
-N_MELS = 128
-N_FFT = 400
-HOP_LENGTH = 160
-WIN_LENGTH = 400
-PREEMPH = 0.97
-LOG_GUARD = 1e-5
-
-# RNNT decode parameters
-MAX_DECODE_STEPS = 500
-BOS_TOKEN = 1  # Beginning of sequence
-EOS_TOKEN = 2  # End of sequence
-SOT_TOKEN = 1  # Start of transcript (same as BOS for this model)
-VOCAB_SIZE = 13087  # Model logits have 13088 entries; token 13087 is EOS overflow
 
 # Phrase grouping parameters
 PHRASE_MAX_WORDS = 12
 PHRASE_MAX_CHARS = 64
 PHRASE_MAX_GAP_S = 0.6
 
+# Whisper model sizes: tiny < base < small < medium < large-v3
+# tiny: fastest, ~39x realtime on CPU, lowest accuracy
+# base: good balance, ~10x realtime on CPU
+WHISPER_DEFAULT_MODEL = "base"
+
 
 def _log(msg: str):
-    print(f"[nemotron] {msg}", file=sys.stderr, flush=True)
+    print(f"[transcriber] {msg}", file=sys.stderr, flush=True)
 
 
 # ---------------------------------------------------------------------------
-# Vocabulary loading
+# Audio extraction (from video)
 # ---------------------------------------------------------------------------
 
-def load_vocab(tokens_path: str) -> dict:
-    """Load vocabulary from tokens.txt (line-number index format)."""
+def extract_audio(video_path: str, wav_path: str) -> bool:
+    """Extract 16kHz mono WAV from video using ffmpeg."""
+    cmd = [
+        "ffmpeg", "-y", "-i", video_path,
+        "-vn", "-acodec", "pcm_s16le",
+        "-ar", str(SAMPLE_RATE), "-ac", "1",
+        wav_path,
+    ]
+    _log("Extracting audio...")
+    result = subprocess.run(cmd, capture_output=True, timeout=300)
+    if result.returncode != 0:
+        _log(f"Audio extraction failed: {result.stderr.decode()[:300]}")
+        return False
+    _log(f"Audio extracted: {wav_path}")
+    return True
+
+
+def ensure_wav_16k(media_path: str, out_dir: str) -> str:
+    """Convert any media to 16kHz mono WAV. Returns path to WAV file."""
+    stem = Path(media_path).stem
+    wav_path = str(Path(out_dir) / f"{stem}.whisper.wav")
+
+    if media_path.lower().endswith((".wav",)):
+        # Already WAV — just convert to 16kHz mono
+        cmd = [
+            "ffmpeg", "-y", "-i", media_path,
+            "-vn", "-acodec", "pcm_s16le",
+            "-ar", str(SAMPLE_RATE), "-ac", "1",
+            wav_path,
+        ]
+        subprocess.run(cmd, capture_output=True, timeout=300)
+    elif media_path.lower().endswith((".mp3", ".flac", ".ogg", ".m4a", ".aac")):
+        cmd = [
+            "ffmpeg", "-y", "-i", media_path,
+            "-acodec", "pcm_s16le",
+            "-ar", str(SAMPLE_RATE), "-ac", "1",
+            wav_path,
+        ]
+        subprocess.run(cmd, capture_output=True, timeout=300)
+    else:
+        # Video file — extract audio
+        if not extract_audio(media_path, wav_path):
+            raise RuntimeError(f"Audio extraction failed for {media_path}")
+
+    return wav_path
+
+
+# ---------------------------------------------------------------------------
+# Whisper transcription (PRIMARY engine)
+# ---------------------------------------------------------------------------
+
+def transcribe_whisper(
+    wav_path: str,
+    language_hint: str = "auto",
+    model_name: str = WHISPER_DEFAULT_MODEL,
+) -> dict:
+    """Transcribe audio using openai-whisper with word-level timestamps.
+
+    Args:
+        wav_path: Path to 16kHz mono WAV
+        language_hint: "auto", "hi", "en", etc.
+        model_name: Whisper model size (tiny, base, small, medium, large-v3)
+
+    Returns:
+        dict with text, words, segments, timing info
+    """
+    try:
+        import whisper
+    except ImportError:
+        return {"error": "openai-whisper not installed. Run: pip install openai-whisper"}
+
+    _log(f"Loading Whisper model '{model_name}'...")
+    start = time.time()
+
+    try:
+        model = whisper.load_model(model_name)
+    except Exception as e:
+        return {"error": f"Failed to load Whisper model: {e}"}
+
+    load_time = time.time() - start
+    _log(f"Model loaded in {load_time:.1f}s")
+
+    # Determine language
+    lang = None if language_hint == "auto" else language_hint[:2]
+    _log(f"Running Whisper transcription (language={language_hint})...")
+
+    transcribe_start = time.time()
+    try:
+        result = model.transcribe(
+            wav_path,
+            language=lang,
+            word_timestamps=True,
+            condition_on_previous_text=False,
+            fp16=False,  # CPU mode
+        )
+    except Exception as e:
+        return {"error": f"Whisper transcription failed: {e}"}
+
+    transcribe_time = time.time() - transcribe_start
+    _log(f"Transcription done in {transcribe_time:.1f}s")
+
+    # Get audio duration
+    duration_s = 0.0
+    for seg in result.get("segments", []):
+        if seg.get("end", 0) > duration_s:
+            duration_s = seg["end"]
+
+    # Extract word-level timestamps
+    all_words = []
+    for segment in result.get("segments", []):
+        for word_info in segment.get("words", []):
+            word = word_info.get("word", "").strip()
+            if word:
+                all_words.append({
+                    "word": word,
+                    "start_s": word_info.get("start", 0.0),
+                    "end_s": word_info.get("end", 0.0),
+                    "score": word_info.get("probability", 0.0),
+                })
+
+    # Extract segments
+    segments = []
+    for seg in result.get("segments", []):
+        segments.append({
+            "text": seg.get("text", "").strip(),
+            "start_s": seg.get("start", 0.0),
+            "end_s": seg.get("end", 0.0),
+        })
+
+    detected_language = result.get("language", language_hint)
+
+    _log(f"Text: {result['text'][:100]}...")
+    _log(f"Words: {len(all_words)}, Segments: {len(segments)}")
+    _log(f"Detected language: {detected_language}")
+
+    # Cleanup
+    del model
+
+    return {
+        "text": result["text"].strip(),
+        "words": all_words,
+        "segments": segments,
+        "word_count": len(all_words),
+        "segment_count": len(segments),
+        "duration_s": duration_s,
+        "load_time_s": load_time,
+        "transcribe_time_s": transcribe_time,
+        "language": detected_language,
+        "model": model_name,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Nemotron ONNX transcription (EXPERIMENTAL secondary engine)
+# ---------------------------------------------------------------------------
+
+def _try_nemotron_onnx(wav_path: str, language_hint: str = "auto") -> dict:
+    """Attempt transcription via Nemotron ONNX Runtime.
+
+    ⚠️  EXPERIMENTAL: This engine is NOT functional for offline batch inference.
+    The streaming ONNX model requires internal cache management that manual
+    chunking cannot replicate. The encoder produces 0 tokens on real speech.
+
+    Returns dict with error if ONNX path is not viable, or transcription result.
+    """
+    _log("⚠️  Nemotron ONNX is EXPERIMENTAL and may produce 0 tokens")
+    _log("   The streaming model is not designed for offline batch inference")
+
+    try:
+        import onnxruntime as ort
+        import sentencepiece as spm
+    except ImportError as e:
+        return {"error": f"Nemotron ONNX deps missing: {e}", "status": "error"}
+
+    # Model paths
+    model_dir = REPO_ROOT / "models" / "nemotron-onnx"
+    encoder_path = model_dir / "encoder.onnx"
+    decoder_path = model_dir / "decoder_joint.onnx"
+    tokenizer_path = model_dir / "tokenizer.model"
+    tokens_path = model_dir / "tokens.txt"
+
+    for p in [encoder_path, decoder_path, tokenizer_path, tokens_path]:
+        if not p.exists():
+            return {"error": f"Missing model file: {p}", "status": "error"}
+
+    import numpy as np
+
+    _log("Loading Nemotron ONNX models...")
+    opts = ort.SessionOptions()
+    opts.inter_op_num_threads = 4
+    opts.intra_op_num_threads = 4
+
+    try:
+        encoder = ort.InferenceSession(
+            str(encoder_path), opts, providers=["CPUExecutionProvider"]
+        )
+        decoder = ort.InferenceSession(
+            str(decoder_path), opts, providers=["CPUExecutionProvider"]
+        )
+    except Exception as e:
+        return {"error": f"Failed to load ONNX models: {e}", "status": "error"}
+
+    # Load vocabulary
     vocab = {}
     with open(tokens_path, "r", encoding="utf-8") as f:
         for idx, line in enumerate(f):
             vocab[idx] = line.strip()
-    return vocab
 
-
-def load_tokenizer(tokenizer_path: str):
-    """Load SentencePiece tokenizer."""
     sp = spm.SentencePieceProcessor()
-    sp.Load(tokenizer_path)
-    return sp
+    sp.Load(str(tokenizer_path))
 
+    _log("Running Nemotron ONNX inference (may produce 0 tokens)...")
 
-# ---------------------------------------------------------------------------
-# Audio preprocessing
-# ---------------------------------------------------------------------------
-
-def compute_mel_spectrogram(wav_path: str) -> np.ndarray:
-    """Compute log-mel spectrogram matching NeMo's preprocessor.
-
-    Returns: [n_mels, time] float32 array
-    """
+    # Load and preprocess audio
     try:
-        import librosa
-        audio, _ = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
-    except ImportError:
-        # Fallback: use subprocess + ffmpeg to get raw PCM
-        _log("librosa not available, using ffmpeg fallback")
-        audio = _load_audio_ffmpeg(wav_path)
+        import torch
+        import torchaudio
 
-    # Preemphasis
-    audio = np.append(audio[0], audio[1:] - PREEMPH * audio[:-1]).astype(np.float32)
+        try:
+            waveform, sr = torchaudio.load(wav_path)
+        except Exception:
+            raw_pcm = _load_audio_ffmpeg(wav_path)
+            waveform = torch.from_numpy(raw_pcm).unsqueeze(0)
+            sr = SAMPLE_RATE
 
-    # Pad audio to at least one frame
-    if len(audio) < WIN_LENGTH:
-        audio = np.pad(audio, (0, WIN_LENGTH - len(audio)))
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+        if sr != SAMPLE_RATE:
+            resampler = torchaudio.transforms.Resample(sr, SAMPLE_RATE)
+            waveform = resampler(waveform)
 
-    # Compute mel spectrogram
-    try:
-        import librosa
-        mel = librosa.feature.melspectrogram(
-            y=audio,
-            sr=SAMPLE_RATE,
-            n_fft=N_FFT,
-            hop_length=HOP_LENGTH,
-            win_length=WIN_LENGTH,
-            n_mels=N_MELS,
-            window="hann",
-            center=True,
-            power=2.0,
+        mel = torchaudio.compliance.kaldi.fbank(
+            waveform,
+            num_mel_bins=128,
+            sample_frequency=SAMPLE_RATE,
+            preemphasis_coefficient=0.97,
+            window_type="povey",
+            dither=1e-5,
         )
+        mel = mel.numpy().T.astype(np.float32)
     except ImportError:
-        _log("librosa not available and no fallback installed. Install: pip install librosa")
-        raise RuntimeError("librosa is required for mel spectrogram computation. Install: pip install librosa")
+        mel = _compute_mel_librosa(wav_path)
 
-    # Log with zero guard
-    log_mel = np.log(mel + LOG_GUARD)
+    duration_s = mel.shape[1] * 160 / SAMPLE_RATE  # HOP_LENGTH=160
 
-    # Per-feature normalization
-    mean = log_mel.mean(axis=1, keepdims=True)
-    std = log_mel.std(axis=1, keepdims=True)
-    log_mel = (log_mel - mean) / (std + 1e-10)
+    # Chunked encoding
+    CHUNK_SIZE = 16
+    time_steps = mel.shape[1]
+    mel_batch = mel[np.newaxis, :, :]
 
-    return log_mel.astype(np.float32)
+    cache_last_channel = np.zeros((24, 1, 56, 1024), dtype=np.float32)
+    cache_last_time = np.zeros((24, 1, 1024, 8), dtype=np.float32)
+    cache_last_channel_len = np.array([0], dtype=np.int64)
+    prompt_index = np.array([0], dtype=np.int64)
+
+    all_outputs = []
+    total_encoded_len = 0
+
+    for start in range(0, time_steps, CHUNK_SIZE):
+        end = min(start + CHUNK_SIZE, time_steps)
+        chunk_len = end - start
+
+        if chunk_len < CHUNK_SIZE:
+            padding = np.zeros((1, mel.shape[0], CHUNK_SIZE - chunk_len), dtype=np.float32)
+            chunk = np.concatenate([mel_batch[:, :, start:end], padding], axis=2)
+        else:
+            chunk = mel_batch[:, :, start:end]
+
+        outputs = encoder.run(None, {
+            "processed_signal": chunk,
+            "processed_signal_length": np.array([chunk_len], dtype=np.int64),
+            "cache_last_channel": cache_last_channel,
+            "cache_last_time": cache_last_time,
+            "cache_last_channel_len": cache_last_channel_len,
+            "prompt_index": prompt_index,
+        })
+
+        all_outputs.append(outputs[0])
+        total_encoded_len += int(outputs[1][0])
+        cache_last_channel = outputs[2]
+        cache_last_time = outputs[3]
+        cache_last_channel_len = outputs[4]
+
+    encoder_out = np.concatenate(all_outputs, axis=2)
+    encoder_len = np.array([total_encoded_len], dtype=np.int64)
+
+    # Decode
+    time_steps_enc = int(encoder_len[0])
+    enc = encoder_out[:, :, :time_steps_enc]
+
+    state_1 = np.zeros((2, 1, 640), dtype=np.float32)
+    state_2 = np.zeros((2, 1, 640), dtype=np.float32)
+    current_token = 1  # BOS
+    emitted_tokens = []
+    VOCAB_SIZE = 13087
+
+    for step in range(500):
+        dec_out = decoder.run(None, {
+            "encoder_outputs": enc,
+            "targets": np.array([[current_token]], dtype=np.int32),
+            "target_length": np.array([1], dtype=np.int32),
+            "input_states_1": state_1,
+            "input_states_2": state_2,
+        })
+        logits = dec_out[0]
+        state_1 = dec_out[2]
+        state_2 = dec_out[3]
+        flat = logits[0, -1, 0, :]
+        top_id = int(np.argmax(flat))
+
+        if top_id == 2 or top_id == 0 or top_id >= VOCAB_SIZE:
+            break
+        if top_id >= 10:
+            emitted_tokens.append(top_id)
+            current_token = top_id
+        else:
+            current_token = top_id
+        if step > 100 and len(emitted_tokens) == 0:
+            break
+
+    text = sp.Decode(emitted_tokens)
+    _log(f"Nemotron ONNX result: {text[:100]}...")
+    _log(f"Tokens: {len(emitted_tokens)}")
+
+    if len(emitted_tokens) == 0:
+        _log("⚠️  Nemotron ONNX produced 0 tokens (expected for streaming model)")
+
+    # Build estimated word timings (ONNX doesn't produce word-level timestamps)
+    words = []
+    if text:
+        word_list = text.split()
+        if word_list:
+            word_duration = duration_s / len(word_list)
+            words = [
+                {"word": w, "start_s": i * word_duration, "end_s": (i + 1) * word_duration, "score": 0.0}
+                for i, w in enumerate(word_list)
+            ]
+
+    return {
+        "text": text,
+        "words": words,
+        "segments": [{"text": text, "start_s": 0, "end_s": duration_s}] if text else [],
+        "word_count": len(words),
+        "segment_count": 1 if text else 0,
+        "duration_s": duration_s,
+        "language": language_hint,
+        "model": "nemotron-3.5-asr-streaming-0.6b-onnx",
+        "engine": "nemotron-onnx",
+    }
 
 
-def _load_audio_ffmpeg(wav_path: str) -> np.ndarray:
+def _load_audio_ffmpeg(wav_path: str):
     """Load audio via ffmpeg as raw float32 PCM."""
+    import numpy as np
     cmd = [
         "ffmpeg", "-i", wav_path, "-f", "s16le", "-acodec", "pcm_s16le",
         "-ar", str(SAMPLE_RATE), "-ac", "1", "-v", "quiet", "-"
@@ -165,176 +416,28 @@ def _load_audio_ffmpeg(wav_path: str) -> np.ndarray:
     return raw.astype(np.float32) / 32768.0
 
 
+def _compute_mel_librosa(wav_path: str):
+    """Compute mel spectrogram using librosa (fallback)."""
+    import numpy as np
+    try:
+        import librosa
+        audio, _ = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
+    except ImportError:
+        audio = _load_audio_ffmpeg(wav_path)
 
+    PREEMPH = 0.97
+    audio = np.append(audio[0], audio[1:] - PREEMPH * audio[:-1]).astype(np.float32)
+    if len(audio) < 400:
+        audio = np.pad(audio, (0, 400 - len(audio)))
 
-
-# ---------------------------------------------------------------------------
-# ONNX Runtime inference
-# ---------------------------------------------------------------------------
-
-class NemotronASR:
-    """Nemotron 3.5 ASR model via ONNX Runtime."""
-
-    def __init__(self, num_threads: int = 4):
-        opts = ort.SessionOptions()
-        opts.inter_op_num_threads = num_threads
-        opts.intra_op_num_threads = num_threads
-
-        _log(f"Loading encoder: {ENCODER_PATH}")
-        self.encoder = ort.InferenceSession(
-            ENCODER_PATH, opts, providers=["CPUExecutionProvider"]
-        )
-        _log(f"Loading decoder_joint: {DECODER_PATH}")
-        self.decoder = ort.InferenceSession(
-            DECODER_PATH, opts, providers=["CPUExecutionProvider"]
-        )
-        self.vocab = load_vocab(TOKENS_PATH)
-        self.tokenizer = load_tokenizer(TOKENIZER_PATH)
-
-        _log(f"Models loaded. Vocab size: {len(self.vocab)}")
-
-    def encode(self, mel: np.ndarray) -> tuple:
-        """Run encoder on log-mel spectrogram.
-
-        Args:
-            mel: [n_mels, time] float32
-
-        Returns:
-            (encoder_out, encoder_len) where encoder_out is [1, 1024, time']
-        """
-        # Add batch dimension: [1, n_mels, time]
-        mel_batch = mel[np.newaxis, :, :]
-        length = np.array([mel.shape[1]], dtype=np.int64)
-
-        # Initialize caches (full sequence, not streaming)
-        max_time = mel.shape[1]
-        cache_last_channel = np.zeros((24, 1, 56, 1024), dtype=np.float32)
-        cache_last_time = np.zeros((24, 1, 1024, 8), dtype=np.float32)
-        cache_last_channel_len = np.array([0], dtype=np.int64)
-        prompt_index = np.array([0], dtype=np.int64)
-
-        outputs = self.encoder.run(None, {
-            "processed_signal": mel_batch,
-            "processed_signal_length": length,
-            "cache_last_channel": cache_last_channel,
-            "cache_last_time": cache_last_time,
-            "cache_last_channel_len": cache_last_channel_len,
-            "prompt_index": prompt_index,
-        })
-
-        return outputs[0], outputs[1]  # encoded, encoded_len
-
-    def decode(self, encoder_out: np.ndarray, encoder_len: np.ndarray,
-               language_hint: str = "auto") -> list:
-        """RNNT greedy decode.
-
-        Args:
-            encoder_out: [1, 1024, time] from encoder
-            encoder_len: [1] encoder output length
-            language_hint: "auto", "hi-IN", "en-US", etc.
-
-        Returns:
-            List of token IDs
-        """
-        # Truncate encoder output to actual length
-        time_steps = int(encoder_len[0])
-        enc = encoder_out[:, :, :time_steps]
-
-        # Initialize decoder states
-        state_1 = np.zeros((2, 1, 640), dtype=np.float32)
-        state_2 = np.zeros((2, 1, 640), dtype=np.int32) if False else np.zeros((2, 1, 640), dtype=np.float32)
-
-        # Start token
-        current_token = BOS_TOKEN
-        emitted_tokens = []
-
-        for step in range(MAX_DECODE_STEPS):
-            dec_out = self.decoder.run(None, {
-                "encoder_outputs": enc,
-                "targets": np.array([[current_token]], dtype=np.int32),
-                "target_length": np.array([1], dtype=np.int32),
-                "input_states_1": state_1,
-                "input_states_2": state_2,
-            })
-
-            logits = dec_out[0]  # [1, time, 1, vocab_size]
-            state_1 = dec_out[2]  # output_states_1
-            state_2 = dec_out[3]  # output_states_2
-
-            # Get logits for the last encoder frame
-            flat = logits[0, -1, 0, :]
-            top_id = int(np.argmax(flat))
-
-            # Check for EOS, padding, or out-of-range tokens
-            # Token 13087 is the model's EOS/overflow token (logits have 13088 entries)
-            if top_id == EOS_TOKEN or top_id == 0 or top_id >= VOCAB_SIZE:
-                break
-
-            # Skip special tokens (language tags, etc.)
-            if top_id >= 10:  # Content tokens start after specials
-                emitted_tokens.append(top_id)
-                current_token = top_id
-            else:
-                # Special token — feed it back but don't emit
-                current_token = top_id
-                # If we've been running too long without emitting, stop
-                if step > 20 and len(emitted_tokens) == 0:
-                    break
-
-            # Safety: if we've been running too long without emitting, stop
-            if step > 100 and len(emitted_tokens) == 0:
-                break
-
-        return emitted_tokens
-
-    def tokens_to_text(self, token_ids: list) -> str:
-        """Convert token IDs to text using SentencePiece."""
-        return self.tokenizer.Decode(token_ids)
-
-    def transcribe(self, wav_path: str, language_hint: str = "auto") -> dict:
-        """Full transcription pipeline.
-
-        Returns:
-            dict with text, tokens, duration_s, segments
-        """
-        start = time.time()
-
-        # Compute mel spectrogram
-        _log(f"Computing mel spectrogram for {wav_path}")
-        mel = compute_mel_spectrogram(wav_path)
-        duration_s = mel.shape[1] * HOP_LENGTH / SAMPLE_RATE
-        _log(f"Mel shape: {mel.shape}, duration: {duration_s:.1f}s")
-
-        # Encode
-        _log("Running encoder...")
-        enc_start = time.time()
-        encoder_out, encoder_len = self.encode(mel)
-        enc_time = time.time() - enc_start
-        _log(f"Encoder done in {enc_time:.1f}s")
-
-        # Decode
-        _log("Running RNNT greedy decode...")
-        dec_start = time.time()
-        token_ids = self.decode(encoder_out, encoder_len, language_hint)
-        dec_time = time.time() - dec_start
-        _log(f"Decode done in {dec_time:.1f}s, {len(token_ids)} tokens")
-
-        # Convert to text
-        text = self.tokens_to_text(token_ids)
-        _log(f"Text: {text[:100]}...")
-
-        total_time = time.time() - start
-        _log(f"Total transcription: {total_time:.1f}s ({total_time/duration_s:.1f}x realtime)")
-
-        return {
-            "text": text,
-            "token_ids": token_ids,
-            "duration_s": duration_s,
-            "tokens_per_second": len(token_ids) / max(duration_s, 0.001),
-            "encoding_time_s": enc_time,
-            "decoding_time_s": dec_time,
-            "total_time_s": total_time,
-        }
+    mel = librosa.feature.melspectrogram(
+        y=audio, sr=SAMPLE_RATE, n_fft=512, hop_length=160,
+        win_length=400, n_mels=128, window="hann", center=True, power=2.0,
+    )
+    log_mel = np.log(mel + 1e-5)
+    mean = log_mel.mean(axis=1, keepdims=True)
+    std = log_mel.std(axis=1, keepdims=True)
+    return ((log_mel - mean) / (std + 1e-10)).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -423,27 +526,6 @@ def generate_phrase_srt(phrases: list, output_path: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Audio extraction (from video)
-# ---------------------------------------------------------------------------
-
-def extract_audio(video_path: str, wav_path: str) -> bool:
-    """Extract 16kHz mono WAV from video using ffmpeg."""
-    cmd = [
-        "ffmpeg", "-y", "-i", video_path,
-        "-vn", "-acodec", "pcm_s16le",
-        "-ar", str(SAMPLE_RATE), "-ac", "1",
-        wav_path,
-    ]
-    _log("Extracting audio...")
-    result = subprocess.run(cmd, capture_output=True, timeout=300)
-    if result.returncode != 0:
-        _log(f"Audio extraction failed: {result.stderr.decode()[:300]}")
-        return False
-    _log(f"Audio extracted: {wav_path}")
-    return True
-
-
-# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
@@ -451,75 +533,91 @@ def run_transcription(
     media_path: str,
     out_dir: str,
     language_hint: str = "auto",
-    num_threads: int = 4,
+    engine: str = "whisper",
+    model_name: str = WHISPER_DEFAULT_MODEL,
 ) -> dict:
-    """Full transcription pipeline: audio → Nemotron → SRT."""
+    """Full transcription pipeline: media → text → SRT.
+
+    Args:
+        media_path: Path to video or audio file
+        out_dir: Output directory for SRT files
+        language_hint: "auto", "hi-IN", "en-US", etc.
+        engine: "whisper" (primary) or "nemotron-onnx" (experimental)
+        model_name: Whisper model size (tiny, base, small, medium, large-v3)
+
+    Returns:
+        dict with status, text, SRT paths, segments, etc.
+    """
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     stem = Path(media_path).stem
 
-    # Step 1: Extract audio if needed
-    wav_path = str(Path(out_dir) / f"{stem}.nemotron.wav")
-    if media_path.lower().endswith((".wav", ".mp3", ".flac", ".ogg")):
-        # Already audio — just convert to 16kHz mono WAV
-        cmd = [
-            "ffmpeg", "-y", "-i", media_path,
-            "-vn", "-acodec", "pcm_s16le",
-            "-ar", str(SAMPLE_RATE), "-ac", "1",
-            wav_path,
-        ]
-        subprocess.run(cmd, capture_output=True, timeout=300)
+    # Step 1: Convert to 16kHz mono WAV
+    _log(f"Preparing audio from {media_path}...")
+    wav_path = ensure_wav_16k(media_path, out_dir)
+    _log(f"Audio ready: {wav_path}")
+
+    # Step 2: Transcribe with selected engine
+    if engine == "nemotron-onnx":
+        _log("Using Nemotron ONNX engine (EXPERIMENTAL)")
+        result = _try_nemotron_onnx(wav_path, language_hint)
+        if result.get("error"):
+            _log(f"Nemotron ONNX failed: {result['error']}")
+            _log("Falling back to Whisper...")
+            engine = "whisper"
+            result = transcribe_whisper(wav_path, language_hint, model_name)
     else:
-        if not extract_audio(media_path, wav_path):
-            return {"error": "Audio extraction failed", "status": "error"}
+        _log(f"Using Whisper engine (model={model_name})")
+        result = transcribe_whisper(wav_path, language_hint, model_name)
 
-    # Step 2: Transcribe with Nemotron
-    model = NemotronASR(num_threads=num_threads)
-    result = model.transcribe(wav_path, language_hint)
-
-    if "error" in result:
+    if result.get("error"):
+        # Cleanup
+        try:
+            os.remove(wav_path)
+        except OSError:
+            pass
         return result
 
-    # Step 3: For now, we don't have word-level timestamps from Nemotron
-    # (RNNT greedy decode doesn't give word timings). We create estimated
-    # word-level SRT by splitting text into words and distributing evenly.
     text = result["text"]
-    duration_s = result["duration_s"]
-    words = text.split()
+    words = result.get("words", [])
+    duration_s = result.get("duration_s", 0.0)
 
-    if words:
-        word_duration = duration_s / len(words)
-        word_entries = []
-        for i, word in enumerate(words):
-            word_entries.append({
-                "word": word,
-                "start_s": i * word_duration,
-                "end_s": (i + 1) * word_duration,
-            })
+    if not text or not words:
+        # Cleanup
+        try:
+            os.remove(wav_path)
+        except OSError:
+            pass
+        return {
+            "error": "No text produced from transcription",
+            "status": "error",
+            "engine": engine,
+        }
 
-        # Step 4: Generate SRT files
-        word_srt_path = str(Path(out_dir) / f"{stem}.nemotron.word.srt")
-        phrase_srt_path = str(Path(out_dir) / f"{stem}.nemotron.phrase.srt")
+    # Step 3: Generate SRT files
+    word_srt_path = str(Path(out_dir) / f"{stem}.nemotron.word.srt")
+    phrase_srt_path = str(Path(out_dir) / f"{stem}.nemotron.phrase.srt")
+    output_srt_path = str(Path(out_dir) / f"{stem}.nemotron.srt")
 
-        generate_word_srt(word_entries, word_srt_path)
+    generate_word_srt(words, word_srt_path)
 
-        phrases = group_words_into_phrases(word_entries)
-        generate_phrase_srt(phrases, phrase_srt_path)
+    phrases = group_words_into_phrases(words)
+    generate_phrase_srt(phrases, phrase_srt_path)
+    generate_phrase_srt(phrases, output_srt_path)
 
-        # Copy phrase SRT to output path
-        output_srt_path = str(Path(out_dir) / f"{stem}.nemotron.srt")
-        generate_phrase_srt(phrases, output_srt_path)
-
-        result["word_srt_path"] = word_srt_path
-        result["phrase_srt_path"] = phrase_srt_path
-        result["output_srt_path"] = output_srt_path
-        result["segments"] = [{"text": p["text"], "start_s": p["start_s"], "end_s": p["end_s"]} for p in phrases]
-    else:
-        result["error"] = "No text produced from transcription"
-        result["status"] = "error"
-
+    # Step 4: Build result
     result["status"] = "transcribed"
-    result["language"] = language_hint
-    result["engine"] = "nemotron"
+    result["engine"] = engine
+    result["language"] = result.get("language", language_hint)
+    result["word_srt_path"] = word_srt_path
+    result["phrase_srt_path"] = phrase_srt_path
+    result["output_srt_path"] = output_srt_path
+    result["segments"] = [
+        {"text": p["text"], "start_s": p["start_s"], "end_s": p["end_s"]}
+        for p in phrases
+    ]
+
+    _log(f"Pipeline complete: {len(words)} words, {len(phrases)} phrases")
+    _log(f"Output: {output_srt_path}")
 
     # Cleanup temp WAV
     try:
@@ -536,7 +634,7 @@ def run_transcription(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Nemotron 3.5 ASR Transcriber (ONNX Runtime)"
+        description="Transcription Sidecar — Whisper (primary) + Nemotron ONNX (experimental)"
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -545,6 +643,10 @@ def main():
     p_run.add_argument("--video", required=True, help="Path to video/audio file")
     p_run.add_argument("--out-dir", default=None, help="Output directory")
     p_run.add_argument("--language", default="auto", help="Language hint (auto, hi-IN, en-US)")
+    p_run.add_argument("--engine", default="whisper", choices=["whisper", "nemotron-onnx"],
+                        help="Transcription engine (default: whisper)")
+    p_run.add_argument("--model", default=WHISPER_DEFAULT_MODEL,
+                        help=f"Whisper model size (default: {WHISPER_DEFAULT_MODEL})")
     p_run.add_argument("--threads", type=int, default=4, help="Number of threads")
 
     # Stdin/stdout serve mode (for Rust sidecar)
@@ -557,7 +659,7 @@ def main():
         if Path(out_dir).resolve() == Path("/"):
             out_dir = "."
         result = run_transcription(
-            args.video, out_dir, args.language, args.threads
+            args.video, out_dir, args.language, args.engine, args.model
         )
         if result.get("error"):
             _log(f"ERROR: {result['error']}")
@@ -582,14 +684,15 @@ def main():
             wav_path = req.get("wav_path", "")
             out_dir = req.get("out_dir", str(Path(wav_path).parent) if wav_path else ".")
             language_hint = req.get("language_hint", "auto")
-            num_threads = req.get("num_threads", 4)
+            engine = req.get("engine", "whisper")
+            model_name = req.get("model", WHISPER_DEFAULT_MODEL)
 
             if not wav_path:
                 print(json.dumps({"error": "missing wav_path"}), flush=True)
                 continue
 
             try:
-                result = run_transcription(wav_path, out_dir, language_hint, num_threads)
+                result = run_transcription(wav_path, out_dir, language_hint, engine, model_name)
                 print(json.dumps(result), flush=True)
             except Exception as e:
                 print(json.dumps({"error": str(e)}), flush=True)
