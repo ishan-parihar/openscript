@@ -199,7 +199,7 @@ Also returns: `cuts_per_second`, `video_source_mix`, `timeline_editor` findings,
 
 ### Trajectory C: NLE Editing (existing footage)
 ```
-1. transcribe               → Speech-to-text from raw video
+1. transcribe               → Speech-to-text from raw video (Whisper base model, 99 langs, word timestamps)
 2. srt.prepare              → Group words into phrases
 3. edl.build                → Build edit decision list
 4. timeline.build           → Create EDL v2 timeline
