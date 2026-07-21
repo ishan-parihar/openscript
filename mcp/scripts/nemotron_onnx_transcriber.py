@@ -427,16 +427,63 @@ def transcribe_nemotron_onnx(
     if not full_text.strip():
         return {"error": "No text produced from transcription", "status": "error"}
 
-    # Build word-level timestamps (estimated since streaming mode doesn't provide them)
-    # We estimate based on chunk processing timing
+    # Step 3: Get real word-level timestamps via whisper_align.py
     words = []
     word_list = full_text.strip().split()
     if word_list:
-        word_duration = duration_s / len(word_list)
-        words = [
-            {"word": w, "start_s": i * word_duration, "end_s": (i + 1) * word_duration, "score": 0.0}
-            for i, w in enumerate(word_list)
-        ]
+        # Try whisper_align.py for real timestamps
+        whisper_align_script = None
+        for candidate in [
+            SCRIPT_DIR / "whisper_align.py",
+            REPO_ROOT / "mcp" / "scripts" / "whisper_align.py",
+        ]:
+            if candidate.exists():
+                whisper_align_script = candidate
+                break
+
+        if whisper_align_script is not None:
+            _log("Running whisper_align.py for word-level alignment")
+            import json as json_mod
+            align_result = subprocess.run(
+                [
+                    sys.executable, str(whisper_align_script),
+                    "--wav", wav_path,
+                    "--text", full_text.strip(),
+                    "--language", language_hint[:2] if language_hint != "auto" else "en",
+                    "--model", "base",
+                    "--out-dir", out_dir,
+                ],
+                capture_output=True, text=True, timeout=300,
+            )
+            if align_result.returncode == 0:
+                try:
+                    # whisper_align.py outputs JSON to stdout
+                    align_data = json_mod.loads(align_result.stdout.strip())
+                    if "words" in align_data and align_data["words"]:
+                        words = [
+                            {
+                                "word": w.get("word", "").strip(),
+                                "start_s": w.get("start_s", 0),
+                                "end_s": w.get("end_s", 0),
+                                "score": w.get("score", 0.0),
+                            }
+                            for w in align_data["words"]
+                            if w.get("word", "").strip()
+                        ]
+                        _log(f"Whisper alignment complete: {len(words)} words with real timestamps")
+                except Exception as e:
+                    _log(f"Failed to parse whisper_align output: {e}")
+            else:
+                _log(f"whisper_align.py failed: {align_result.stderr[:200] if align_result.stderr else 'unknown error'}")
+
+        # Fallback: estimated timestamps if alignment failed
+        if not words and word_list:
+            _log("Using estimated word timestamps (alignment unavailable)")
+            word_duration = duration_s / len(word_list)
+            words = [
+                {"word": w, "start_s": i * word_duration, "end_s": (i + 1) * word_duration, "score": 0.0}
+                for i, w in enumerate(word_list)
+            ]
 
     return {
         "text": full_text.strip(),
