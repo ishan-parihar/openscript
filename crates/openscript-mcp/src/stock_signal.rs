@@ -178,9 +178,9 @@ TopicCategory::Science => vec![
             "starfish", "urchin", "manta", "aqua", "aquatic", "tidal",
         ],
         TopicCategory::Nature => vec![
-            "forest", "ocean", "mountain", "river", "waterfall", "wildlife",
+            "forest", "mountain", "river", "waterfall", "wildlife",
             "bird", "flower", "tree", "landscape", "sunset", "sunrise",
-            "coral", "reef", "canyon", "glacier", "cloud", "rain",
+            "canyon", "glacier", "cloud", "rain",
             "meadow", "cliff", "cave", "spring", "autumn", "leaf",
         ],
         TopicCategory::Tech => vec![
