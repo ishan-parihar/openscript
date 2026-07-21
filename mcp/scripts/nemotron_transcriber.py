@@ -205,16 +205,12 @@ def run_transcription(
             "engine": engine,
         }
 
-    # Step 3: Generate SRT files
-    word_srt_path = str(Path(out_dir) / f"{stem}.nemotron.word.srt")
-    phrase_srt_path = str(Path(out_dir) / f"{stem}.nemotron.phrase.srt")
-    output_srt_path = str(Path(out_dir) / f"{stem}.nemotron.srt")
-
-    generate_word_srt(words, word_srt_path)
-
-    phrases = group_words_into_phrases(words)
-    generate_phrase_srt(phrases, phrase_srt_path)
-    generate_phrase_srt(phrases, output_srt_path)
+    # Step 3: Generate SRT files via shared utility
+    srt = build_srt_files(words, out_dir, stem, engine)
+    word_srt_path = srt["word_srt_path"]
+    phrase_srt_path = srt["phrase_srt_path"]
+    output_srt_path = srt["output_srt_path"]
+    phrases = srt["phrases"]
 
     # Step 4: Build result
     result["status"] = "transcribed"
