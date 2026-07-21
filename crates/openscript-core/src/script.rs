@@ -931,6 +931,50 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
                 obj.insert("background".into(), serde_json::Value::Object(bg_obj));
             }
         }
+
+        // --- Normalize per-scene background: object → string ---
+        // Agents write per-scene: {"type": "gameplay", "stock_query": "octopus", "orientation": "9:16"}
+        // SceneSpec.background expects: Option<String> (just the type or preset name).
+        // Extract the type as the background string and promote stock_query to scene level.
+        if let Some(scenes) = obj.get_mut("scenes") {
+            if let Some(scenes_arr) = scenes.as_array_mut() {
+                for scene in scenes_arr.iter_mut() {
+                    if let Some(scene_obj) = scene.as_object_mut() {
+                        // Check if background is a JSON object (not a string)
+                        let is_object_bg = scene_obj
+                            .get("background")
+                            .and_then(|bg| bg.as_object())
+                            .is_some();
+
+                        if is_object_bg {
+                            // Extract the background object immutably first
+                            let (bg_type, stock_query) = {
+                                let bg_val = scene_obj.get("background").unwrap();
+                                let bg_obj = bg_val.as_object().unwrap();
+                                let bg_type = bg_obj
+                                    .get("type")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+                                let stock_query = bg_obj.get("stock_query").cloned();
+                                (bg_type, stock_query)
+                            };
+
+                            // Now mutate: set background string
+                            if let Some(t) = bg_type {
+                                scene_obj
+                                    .insert("background".into(), serde_json::Value::String(t));
+                            }
+                            // Promote stock_query to scene level if not already present
+                            if let Some(sq) = stock_query {
+                                if !scene_obj.contains_key("stock_query") {
+                                    scene_obj.insert("stock_query".into(), sq);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     let mut spec: ScriptSpec = serde_json::from_value(root)?;
@@ -1474,5 +1518,57 @@ mod tests {
         let spec = parse_script(json).unwrap();
         assert_eq!(spec.scenes[0].stock_query.as_deref(), Some("coffee beans roasting"));
         assert!(spec.scenes[1].stock_query.is_none());
+    }
+
+    /// Per-scene background object normalization (agent-friendly format).
+    /// Agents write: {"type": "gameplay", "stock_query": "octopus", "orientation": "9:16"}
+    /// SceneSpec.background expects: Option<String> (just the type).
+    /// The stock_query should be promoted to scene level.
+    #[test]
+    fn test_parse_scene_background_object_normalization() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [
+                {
+                    "speaker": "alice", "text": "Deep ocean.",
+                    "background": {"type": "gameplay", "stock_query": "octopus underwater", "orientation": "9:16"}
+                },
+                {
+                    "speaker": "alice", "text": "Normal scene.",
+                    "background": "procedural"
+                },
+                {
+                    "speaker": "alice", "text": "No background."
+                }
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        // Scene 1: background object → string, stock_query promoted
+        assert_eq!(spec.scenes[0].background.as_deref(), Some("gameplay"));
+        assert_eq!(spec.scenes[0].stock_query.as_deref(), Some("octopus underwater"));
+        // Scene 2: background string stays as-is
+        assert_eq!(spec.scenes[1].background.as_deref(), Some("procedural"));
+        assert!(spec.scenes[1].stock_query.is_none());
+        // Scene 3: no background at all
+        assert!(spec.scenes[2].background.is_none());
+    }
+
+    /// Per-scene background object does NOT overwrite existing stock_query.
+    #[test]
+    fn test_scene_background_object_preserves_existing_stock_query() {
+        let json = r#"{
+            "speakers": {"alice": {"voice": "kokoro:af_heart"}},
+            "scenes": [
+                {
+                    "speaker": "alice", "text": "Coffee.",
+                    "stock_query": "coffee beans",
+                    "background": {"type": "gameplay", "stock_query": "different query"}
+                }
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        // Existing stock_query should NOT be overwritten by background object's stock_query
+        assert_eq!(spec.scenes[0].stock_query.as_deref(), Some("coffee beans"));
+        assert_eq!(spec.scenes[0].background.as_deref(), Some("gameplay"));
     }
 }
