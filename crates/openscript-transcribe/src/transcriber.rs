@@ -198,7 +198,7 @@ fn resolve_script(env_var: &str, relative_name: &str) -> Option<PathBuf> {
 }
 
 /// Find the Nemotron transcription wrapper script.
-fn find_nemotron_script() -> Option<PathBuf> {
+fn find_whisper_script() -> Option<PathBuf> {
     resolve_script("OPENSCRIPT_NEMOTRON_WRAPPER", "nemotron_transcriber.py")
 }
 
@@ -302,7 +302,7 @@ fn find_system_python() -> Option<PathBuf> {
 /// Check if Whisper transcription is available (primary engine).
 pub async fn check_whisper_health() -> Result<String, String> {
     let _python = find_system_python().ok_or("System Python 3 not found".to_string())?;
-    let script = find_nemotron_script()
+    let script = find_whisper_script()
         .ok_or("nemotron_transcriber.py not found".to_string())?;
 
     // Check that openai-whisper is importable
@@ -329,36 +329,7 @@ pub async fn check_whisper_health() -> Result<String, String> {
     }
 }
 
-// Retained for backward compat with external callers (not used by system.capabilities anymore).
-/// Check if Nemotron ONNX transcription is available (experimental).
-pub async fn check_nemotron_health() -> Result<String, String> {
-    let _python = find_system_python().ok_or("System Python 3 not found".to_string())?;
-    let script = find_nemotron_script()
-        .ok_or("nemotron_transcriber.py not found".to_string())?;
 
-    // Check that onnxruntime and sentencepiece are importable
-    let mut cmd = Command::new("python3");
-    cmd.arg("-c")
-        .arg("import onnxruntime; import sentencepiece; print('ok')");
-    cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-
-    match cmd.output().await {
-        Ok(o) if o.status.success() => Ok(format!(
-            "Nemotron ONNX available (experimental, script: {})",
-            script.display()
-        )),
-        Ok(o) => Err(format!(
-            "Nemotron ONNX Python deps missing: {}",
-            String::from_utf8_lossy(&o.stderr)
-                .lines()
-                .next()
-                .unwrap_or("")
-        )),
-        Err(e) => Err(format!("Failed to check Nemotron ONNX health: {}", e)),
-    }
-}
 
 /// Quick health check for Apex (DEPRECATED).
 pub async fn check_apex_health() -> ApexHealth {
@@ -468,7 +439,7 @@ async fn transcribe_whisper(
     out_dir: &Path,
     language_hint: &str,
 ) -> Result<TranscribeResult, TranscribeError> {
-    let wrapper = find_nemotron_script().ok_or_else(|| {
+    let wrapper = find_whisper_script().ok_or_else(|| {
         TranscribeError::WrapperNotFound(
             "nemotron_transcriber.py not found. Set OPENSCRIPT_NEMOTRON_WRAPPER or \
              ensure mcp/scripts/nemotron_transcriber.py exists."
@@ -799,8 +770,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_find_nemotron_script() {
-        let result = find_nemotron_script();
+    fn test_find_whisper_script() {
+        let result = find_whisper_script();
         // On a dev machine with the repo checked out, this should find the file
         assert!(result.is_some() || std::env::var("OPENSCRIPT_NEMOTRON_WRAPPER").is_err());
     }
