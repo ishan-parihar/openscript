@@ -321,6 +321,7 @@ pub async fn check_whisper_health() -> Result<String, String> {
     }
 }
 
+// Retained for backward compat with external callers (not used by system.capabilities anymore).
 /// Check if Nemotron ONNX transcription is available (experimental).
 pub async fn check_nemotron_health() -> Result<String, String> {
     let _python = find_system_python().ok_or("System Python 3 not found".to_string())?;

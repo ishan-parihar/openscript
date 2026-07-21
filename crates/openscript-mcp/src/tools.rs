@@ -616,7 +616,7 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "reelize.timeline",
-            "description": "ONE-CALL pipeline: raw video → complete 9:16 reel. Orchestrates: (1) Transcribe with Apex, (2) Group captions, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions with Bebas Neue, (8) Render final video. Use when you want a fully-produced reel from a single raw video with minimal manual intervention. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered, preset.",
+            "description": "ONE-CALL pipeline: raw video → complete 9:16 reel. Orchestrates: (1) Transcribe with Whisper, (2) Group captions, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions with Bebas Neue, (8) Render final video. Use when you want a fully-produced reel from a single raw video with minimal manual intervention. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered, preset.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
