@@ -4,11 +4,11 @@
 //
 // Two engines are supported:
 //
-// 1. Nemotron (DEFAULT) — nvidia/nemotron-3.5-asr-streaming-0.6b via ONNX Runtime
-//    - 40 languages, 6.81% Hindi WER, single unified model
-//    - Python sidecar: mcp/scripts/nemotron_transcriber.py
+// 1. Whisper (DEFAULT) — openai-whisper (base model)
+//    - 99 languages, native word-level timestamps
+//    - Python sidecar: mcp/scripts/nemotron_transcriber.py (uses Whisper internally)
 //    - LLM post-processing: mcp/scripts/llm_postprocessor.py (Devanagari→Hinglish)
-//    - Word alignment: mcp/scripts/whisper_align.py (openai-whisper)
+//    - Word alignment: built-in via whisper word_timestamps=True
 //
 // 2. Apex (DEPRECATED) — Oriserve/Whisper-Hindi2Hinglish-Apex via whisper_timestamped
 //    - Hindi/Hinglish only, 29.79% Hindi WER
@@ -16,7 +16,7 @@
 //    - Python sidecar: mcp/scripts/apex_transcriber.py
 //    - Kept for backward compatibility, will be removed in a future release.
 //
-// Nemotron is the recommended engine. Apex is kept as a deprecated fallback.
+// Whisper is the recommended engine. Apex is kept as a deprecated fallback.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -291,7 +291,37 @@ fn find_system_python() -> Option<PathBuf> {
 // Health check — Nemotron
 // ---------------------------------------------------------------------------
 
-/// Check if Nemotron transcription is available.
+/// Check if Whisper transcription is available (primary engine).
+pub async fn check_whisper_health() -> Result<String, String> {
+    let _python = find_system_python().ok_or("System Python 3 not found".to_string())?;
+    let script = find_nemotron_script()
+        .ok_or("nemotron_transcriber.py not found".to_string())?;
+
+    // Check that openai-whisper is importable
+    let mut cmd = Command::new("python3");
+    cmd.arg("-c")
+        .arg("import whisper; print('ok')");
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    match cmd.output().await {
+        Ok(o) if o.status.success() => Ok(format!(
+            "Whisper available (script: {})",
+            script.display()
+        )),
+        Ok(o) => Err(format!(
+            "Whisper Python deps missing: {}",
+            String::from_utf8_lossy(&o.stderr)
+                .lines()
+                .next()
+                .unwrap_or("")
+        )),
+        Err(e) => Err(format!("Failed to check Whisper health: {}", e)),
+    }
+}
+
+/// Check if Nemotron ONNX transcription is available (experimental).
 pub async fn check_nemotron_health() -> Result<String, String> {
     let _python = find_system_python().ok_or("System Python 3 not found".to_string())?;
     let script = find_nemotron_script()
@@ -307,17 +337,17 @@ pub async fn check_nemotron_health() -> Result<String, String> {
 
     match cmd.output().await {
         Ok(o) if o.status.success() => Ok(format!(
-            "Nemotron available (script: {})",
+            "Nemotron ONNX available (experimental, script: {})",
             script.display()
         )),
         Ok(o) => Err(format!(
-            "Nemotron Python deps missing: {}",
+            "Nemotron ONNX Python deps missing: {}",
             String::from_utf8_lossy(&o.stderr)
                 .lines()
                 .next()
                 .unwrap_or("")
         )),
-        Err(e) => Err(format!("Failed to check Nemotron health: {}", e)),
+        Err(e) => Err(format!("Failed to check Nemotron ONNX health: {}", e)),
     }
 }
 
@@ -487,7 +517,7 @@ async fn transcribe_nemotron(
     // Step 2: Run whisper_align.py for real word-level timestamps
     // The nemotron sidecar produces estimated word timings (evenly distributed).
     // whisper_align.py uses openai-whisper to get actual frame-accurate timestamps.
-    let word_srt = result["word_srt_path"]
+    let _word_srt = result["word_srt_path"]
         .as_str()
         .map(|s| s.to_string())
         .unwrap_or_else(|| {

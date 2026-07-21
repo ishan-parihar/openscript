@@ -26,14 +26,14 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "transcribe",
-            "description": "Convert spoken audio to word-level SRT subtitles. Uses Nemotron 3.5 ASR (nvidia/nemotron-3.5-asr-streaming-0.6b) — the DEFAULT transcription engine. Supports 40 languages with 6.81% Hindi WER. For Hindi input, automatically converts Devanagari to Hinglish via LLM post-processing. Apex (deprecated) is available as fallback. ALWAYS call this first on any raw video — it produces the SRT that every other tool depends on. Returns: output_srt_path, entry_count, phrase_srt_path, word_srt_path.",
+            "description": "Convert spoken audio to word-level SRT subtitles. Uses openai-whisper (base model) — the DEFAULT transcription engine. Supports 99 languages with native word-level timestamps. For Hindi input, automatically converts Devanagari to Hinglish via LLM post-processing. Nemotron ONNX and Apex (deprecated) are available as fallback engines. ALWAYS call this first on any raw video — it produces the SRT that every other tool depends on. Returns: output_srt_path, entry_count, phrase_srt_path, word_srt_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "media_path": {"type": "string", "description": "Path to video or audio file to transcribe"},
                     "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."},
                     "language_hint": {"type": "string", "default": "auto", "description": "Language hint: 'auto' (detect), 'hi-IN' (Hindi → Hinglish), 'en-US' (English), 'hinglish'"},
-                    "engine": {"type": "string", "default": "nemotron", "description": "Engine: 'nemotron' (default, 40 langs) or 'apex' (deprecated)"}
+                    "engine": {"type": "string", "default": "whisper", "description": "Engine: 'whisper' (default, 99 langs, word timestamps) or 'nemotron-onnx' (experimental) or 'apex' (deprecated)"}
                 },
                 "required": ["media_path"],
                 "additionalProperties": false
@@ -1639,7 +1639,7 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
     }
 
     let language_hint = default_str(&args, "language_hint", "auto");
-    let engine_str = default_str(&args, "engine", "nemotron");
+    let engine_str = default_str(&args, "engine", "whisper");
 
     // Parse engine selection
     let engine = match engine_str.as_str() {
