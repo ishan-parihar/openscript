@@ -179,8 +179,8 @@ fn test_mcp_tools_list() {
     // 84 tools: prior 83 + system.doctor
     assert_eq!(
         tools.len(),
-        84,
-        "Expected 84 MCP tools, got {}",
+        85,
+        "Expected 85 MCP tools, got {}",
         tools.len()
     );
 

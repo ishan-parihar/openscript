@@ -63,6 +63,7 @@ enum TopicCategory {
     Space,
     Science,
     Nature,
+    Marine, // ocean, underwater, sea creatures
     Tech,
     Lifestyle, // default fallback
 }
@@ -97,11 +98,22 @@ fn detect_topic(video_keywords: &[String]) -> TopicCategory {
         (
             TopicCategory::Nature,
             &[
-                "nature", "forest", "ocean", "mountain", "river", "wildlife",
+                "nature", "forest", "mountain", "river", "wildlife",
                 "animal", "bird", "tree", "flower", "landscape", "waterfall",
-                "beach", "desert", "jungle", "coral", "reef", "canyon",
+                "beach", "desert", "jungle", "canyon",
                 "glacier", "volcano", "ecosystem", "biodiversity", "flora",
                 "fauna", "wilderness", "sunrise", "sunset", "cloud",
+            ],
+        ),
+        (
+            TopicCategory::Marine,
+            &[
+                "ocean", "underwater", "sea", "marine", "octopus", "squid",
+                "jellyfish", "shark", "whale", "dolphin", "turtle", "fish",
+                "coral", "reef", "deep sea", "abyss", "tidal", "kelp",
+                "seaweed", "submarine", "diving", "scuba", "aqua", "aquatic",
+                "tentacle", "cephalopod", "bivalve", "crustacean", "lobster",
+                "crab", "seahorse", "starfish", "urchin", "manta", "barracuda",
             ],
         ),
         (
@@ -157,6 +169,13 @@ TopicCategory::Science => vec![
             "photosynthesis", "stomata", "glucose", "calvin", "cycle",
             "carbon", "sugar", "energy", "thylakoid", "granum", "photosystem",
             "rubisco", "carbon fixation", "triose phosphate", "seedling", "sprout", "growth",
+        ],
+        TopicCategory::Marine => vec![
+            "octopus", "squid", "jellyfish", "shark", "whale", "dolphin",
+            "turtle", "fish", "coral", "reef", "underwater", "ocean",
+            "sea", "marine", "deep sea", "abyss", "kelp", "seaweed",
+            "diving", "submarine", "tentacle", "cephalopod", "seahorse",
+            "starfish", "urchin", "manta", "aqua", "aquatic", "tidal",
         ],
         TopicCategory::Nature => vec![
             "forest", "ocean", "mountain", "river", "waterfall", "wildlife",
@@ -221,17 +240,29 @@ fn topic_anchors(cat: TopicCategory) -> Vec<(&'static str, Vec<&'static str>)> {
         ],
         TopicCategory::Nature => vec![
             ("forest aerial", vec!["forest", "trees", "aerial", "canopy"]),
-            ("ocean waves", vec!["ocean", "waves", "sea", "water"]),
             ("mountain panorama", vec!["mountain", "peak", "summit", "alpine"]),
             ("waterfall", vec!["waterfall", "cascade", "river", "rapids"]),
             ("wildlife safari", vec!["wildlife", "animal", "safari", "savanna"]),
-            ("underwater reef", vec!["coral", "reef", "underwater", "marine"]),
             ("desert dunes", vec!["desert", "dunes", "sand", "arid"]),
             ("flower bloom timelapse", vec!["flower", "bloom", "garden", "petal"]),
             ("rainforest canopy", vec!["rainforest", "jungle", "tropical", "canopy"]),
             ("northern lights", vec!["aurora", "northern lights", "night sky"]),
             ("canyon landscape", vec!["canyon", "cliff", "gorge", "erosion"]),
             ("glacier calving", vec!["glacier", "iceberg", "arctic", "frozen"]),
+        ],
+        TopicCategory::Marine => vec![
+            ("octopus swimming underwater", vec!["octopus", "cephalopod", "tentacle", "marine"]),
+            ("underwater coral reef", vec!["coral", "reef", "underwater", "ocean"]),
+            ("jellyfish floating deep sea", vec!["jellyfish", "deep sea", "abyss", "bioluminescent"]),
+            ("shark ocean patrol", vec!["shark", "predator", "ocean", "deep"]),
+            ("whale underwater majesty", vec!["whale", "cetacean", "ocean", "marine"]),
+            ("sea turtle gliding reef", vec!["turtle", "sea turtle", "reef", "glide"]),
+            ("dolphin pod surface", vec!["dolphin", "pod", "surface", "playful"]),
+            ("tropical fish school reef", vec!["fish", "tropical", "school", "reef", "colorful"]),
+            ("seahorse kelp forest", vec!["seahorse", "kelp", "forest", "camouflage"]),
+            ("starfish tide pool", vec!["starfish", "urchin", "tide", "pool", "shore"]),
+            ("manta ray glide ocean", vec!["manta", "ray", "glide", "ocean", "graceful"]),
+            ("underwater diving exploration", vec!["diving", "scuba", "explore", "ocean", "deep"]),
         ],
         TopicCategory::Tech => vec![
             ("code on screen", vec!["code", "programming", "software", "developer"]),

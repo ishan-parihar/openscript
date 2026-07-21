@@ -329,12 +329,12 @@ pub struct MusicSpec {
 }
 
 fn default_music_gain() -> f64 {
-    // The stock music files in mcp/assets/music/ are normalized to -32 dB mean.
-    // To make music audible in the mix, we need to BOOST it, not cut it.
-    // +6 dB (linear 2.0) brings the music to ~-26 dB mean, which is audible
-    // behind voice without overpowering it.
-    // (Round-5 audit: default was -18 dB which made music inaudible.)
-    6.0
+    // Library tracks (YouTube-scraped) are normalized to ~-16 dB LUFS.
+    // Using -10 dB puts music at ~-26 dB mean — audible behind voice
+    // without overpowering it. The old +6 dB default boosted library
+    // tracks above unity, triggering production quality HARD failures.
+    // (Run-9 fresh-agent audit: gain_db=6.0 flagged as "boosted above unity").
+    -10.0
 }
 fn default_ducking() -> bool {
     true

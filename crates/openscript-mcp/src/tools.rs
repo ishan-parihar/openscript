@@ -883,6 +883,16 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "sticker.presets",
+            "description": "List all available sticker positioning presets with their safe-zone configurations. Each preset defines position, scale, and caption clearance for different use cases (speaker left/right/center, reactions, corners). Returns: presets map with name, description, position, scale, safe_margin_px, and speaker_role.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "sticker.load_preset",
             "description": "Load an SVG sticker preset by name. Presets are directories in mcp/assets/svg_presets/ containing puppet.svg, preset.json, mouth shapes, and emotes. Built-in presets: default_person, robot, cat. Returns the preset config + puppet SVG content.",
             "inputSchema": {
@@ -1303,8 +1313,8 @@ pub fn route_tool(
         "script.build_captions" => Box::pin(handle_script_build_captions(args)),
         "background.fetch" => Box::pin(handle_background_fetch(args)),
         "background.assign" => Box::pin(handle_background_assign(args)),
-        "background.search" => Box::pin(handle_background_search(args)),
-        "sticker.load_preset" => Box::pin(handle_sticker_load_preset(args)),
+        "background.search" => Box::pin(handle_background_search(args)),            "sticker.presets" => Box::pin(handle_sticker_presets(args)),
+            "sticker.load_preset" => Box::pin(handle_sticker_load_preset(args)),
         "sticker.render" => Box::pin(handle_sticker_render(args)),
         "script.to_timeline" => Box::pin(handle_script_to_timeline(args)),
         "script.to_video" => Box::pin(handle_script_to_video(args)),
@@ -4435,7 +4445,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
     let music_enabled = default_bool(&music_obj, "enabled", true);
     let music_mood = default_str(&music_obj, "mood", "neutral");
     let music_energy = default_str(&music_obj, "energy", "medium");
-    let music_gain_db = default_f64(&music_obj, "gain_db", -12.0);
+    let music_gain_db = default_f64(&music_obj, "gain_db", -10.0);
 
     // SFX options
     let sfx_obj = args.get("sfx").cloned().unwrap_or(json!({}));
@@ -9024,6 +9034,21 @@ async fn handle_background_search(args: serde_json::Value) -> Result<serde_json:
 // Handler: sticker.load_preset — load SVG preset config
 // ---------------------------------------------------------------------------
 
+/// Handler: sticker.presets — list all available sticker positioning presets
+async fn handle_sticker_presets(
+    _args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    let presets = openscript_core::sticker_presets::StickerPreset::all();
+    let presets_json: serde_json::Value = serde_json::to_value(&presets)
+        .map_err(|e| ToolError::InvalidArg(format!("Failed to serialize presets: {}", e)))?;
+    Ok(json!({
+        "status": "success",
+        "count": presets.len(),
+        "presets": presets_json,
+        "message": "Use preset name in speaker.preset field of script JSON. Each preset defines position, scale, and caption-safe margin."
+    }))
+}
+
 async fn handle_sticker_load_preset(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
@@ -11332,6 +11357,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 rms_ok,
                 video_keywords: spec.video_keywords.clone(),
                 theme: Some(spec.output.theme.clone()),
+                caption_style: Some(spec.captions.style.clone()),
                 sfx_count: music_sel_sfx_count,
                 ..Default::default()
             };
