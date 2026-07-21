@@ -444,6 +444,8 @@ pub async fn transcribe_with_engine(
 // TRANSCRIPTION — NEMOTRON ENGINE
 // =============================================================================
 
+/// Legacy name — this function actually invokes Whisper via the Python sidecar
+/// (nemotron_transcriber.py defaults to --engine whisper).
 /// Transcribe using Nemotron 3.5 ASR via ONNX Runtime.
 async fn transcribe_nemotron(
     media_path: &str,
@@ -843,6 +845,6 @@ mod tests {
         let result = check_whisper_health().await;
         // We don't assert success because whisper may not be installed in CI
         // but we verify the function doesn't panic
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok() || result.is_err(), "check_whisper_health must not panic");
     }
 }
