@@ -1,7 +1,7 @@
 {
   "version": "2.0",
-  "created_at": "2026-07-22T10:53:07.410916313Z",
-  "updated_at": "2026-07-22T10:53:12.241894611Z",
+  "created_at": "2026-07-22T10:58:23.949312574Z",
+  "updated_at": "2026-07-22T10:58:29.435420699Z",
   "source": "artifacts/drafts/audit_v3_render.mp4",
   "target": {
     "aspect": "9:16",
@@ -134,24 +134,40 @@
     {
       "id": "seg_016",
       "start": 107.78,
-      "end": 110.64,
-      "caption": "Brother, they have killed him. in ways that they painted",
+      "end": 111.68,
+      "caption": "Brother, they have killed him. they have made post americans",
       "crossfade_ms": 500,
       "semantic_role": null
     },
     {
       "id": "seg_017",
-      "start": 110.64,
-      "end": 112.38,
-      "caption": "poststays readbook",
+      "start": 111.68,
+      "end": 116.92,
+      "caption": "their els so the poly diversity olm they have your own",
       "crossfade_ms": 500,
       "semantic_role": null
     },
     {
       "id": "seg_018",
-      "start": 113.61,
-      "end": 122.0,
-      "caption": "Leais logarithаж",
+      "start": 119.46,
+      "end": 124.14,
+      "caption": "The Library of LIFE their needs where all of the diamonds are",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_019",
+      "start": 124.14,
+      "end": 128.96,
+      "caption": "where all the things are from the Kelvin Tips This is yang",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_020",
+      "start": 128.96,
+      "end": 134.22,
+      "caption": "al πά and these things flavor",
       "crossfade_ms": 500,
       "semantic_role": null
     }
@@ -462,7 +478,7 @@
         "id": "caption_016",
         "asset_id": "",
         "start_ms": 107780,
-        "end_ms": 110640,
+        "end_ms": 111680,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -474,15 +490,15 @@
           "concept": null
         },
         "event_type": "caption",
-        "text": "Brother, they have killed him. in ways that they painted",
+        "text": "Brother, they have killed him. they have made post americans",
         "style": "default",
         "word_timings": []
       },
       {
         "id": "caption_017",
         "asset_id": "",
-        "start_ms": 110640,
-        "end_ms": 112380,
+        "start_ms": 111680,
+        "end_ms": 116920,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -494,15 +510,15 @@
           "concept": null
         },
         "event_type": "caption",
-        "text": "poststays readbook",
+        "text": "their els so the poly diversity olm they have your own",
         "style": "default",
         "word_timings": []
       },
       {
         "id": "caption_018",
         "asset_id": "",
-        "start_ms": 113610,
-        "end_ms": 122000,
+        "start_ms": 119460,
+        "end_ms": 124140,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -514,362 +530,51 @@
           "concept": null
         },
         "event_type": "caption",
-        "text": "Leais logarithаж",
+        "text": "The Library of LIFE their needs where all of the diamonds are",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_019",
+        "asset_id": "",
+        "start_ms": 124140,
+        "end_ms": 128960,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "where all the things are from the Kelvin Tips This is yang",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_020",
+        "asset_id": "",
+        "start_ms": 128960,
+        "end_ms": 134220,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "al πά and these things flavor",
         "style": "default",
         "word_timings": []
       }
     ],
-    "sfx": [
-      {
-        "id": "sfx_001",
-        "asset_id": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav",
-        "start_ms": 0,
-        "end_ms": 500,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "hook"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "hook",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "hook",
-        "category": "hook",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_002",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 5960,
-        "end_ms": 6460,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_003",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 9360,
-        "end_ms": 9860,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_004",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 11940,
-        "end_ms": 12440,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_005",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 16580,
-        "end_ms": 17080,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_006",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 18320,
-        "end_ms": 18820,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_007",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 80960,
-        "end_ms": 81460,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_008",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 85460,
-        "end_ms": 85960,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_009",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 90120,
-        "end_ms": 90620,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_010",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 93220,
-        "end_ms": 93720,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_011",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 94900,
-        "end_ms": 95400,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_012",
-        "asset_id": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav",
-        "start_ms": 61000,
-        "end_ms": 61500,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "highlight"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "highlight",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "highlight",
-        "category": "highlight",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      }
-    ],
-    "dialogue": [],
     "broll": [
       {
         "id": "broll_001",
@@ -1373,7 +1078,358 @@
       }
     ],
     "voiceover": [],
-    "music": []
+    "sfx": [
+      {
+        "id": "sfx_001",
+        "asset_id": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav",
+        "start_ms": 0,
+        "end_ms": 500,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "hook"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "hook",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "hook",
+        "category": "hook",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_002",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 5960,
+        "end_ms": 6460,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_003",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 9360,
+        "end_ms": 9860,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_004",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 11940,
+        "end_ms": 12440,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_005",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 16580,
+        "end_ms": 17080,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_006",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 18320,
+        "end_ms": 18820,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_007",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 80960,
+        "end_ms": 81460,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_008",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 85460,
+        "end_ms": 85960,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_009",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 90120,
+        "end_ms": 90620,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_010",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 93220,
+        "end_ms": 93720,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_011",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 94900,
+        "end_ms": 95400,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_012",
+        "asset_id": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav",
+        "start_ms": 67110,
+        "end_ms": 67610,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "highlight"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "highlight",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "highlight",
+        "category": "highlight",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      }
+    ],
+    "music": [],
+    "dialogue": []
   },
   "directives": {
     "ducking": [],
@@ -1388,11 +1444,35 @@
   "assets": {
     "voices": {},
     "broll": {
+      "broll_020": {
+        "path": "mcp/assets/broll_cache/brother,_5813060.mp4"
+      },
+      "broll_005": {
+        "path": "mcp/assets/broll_cache/But_36546412.mp4"
+      },
+      "broll_014": {
+        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
+      },
+      "broll_012": {
+        "path": "mcp/assets/broll_cache/Revolution_6258444.mp4"
+      },
       "broll_002": {
         "path": "mcp/assets/broll_cache/The_32973936.mp4"
       },
-      "broll_019": {
-        "path": "mcp/assets/broll_cache/He_9363892.mp4"
+      "broll_017": {
+        "path": "mcp/assets/broll_cache/of_10366920.mp4"
+      },
+      "broll_015": {
+        "path": "mcp/assets/broll_cache/generation_9479753.mp4"
+      },
+      "broll_018": {
+        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
+      },
+      "broll_006": {
+        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
+      },
+      "broll_003": {
+        "path": "mcp/assets/broll_cache/The_32973936.mp4"
       },
       "broll_001": {
         "path": "mcp/assets/broll_cache/The_32973936.mp4"
@@ -1400,64 +1480,43 @@
       "broll_009": {
         "path": "mcp/assets/broll_cache/And_34990553.mp4"
       },
-      "broll_006": {
-        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
-      },
-      "broll_005": {
-        "path": "mcp/assets/broll_cache/But_36546412.mp4"
-      },
-      "broll_007": {
-        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
+      "broll_019": {
+        "path": "mcp/assets/broll_cache/He_9363892.mp4"
       },
       "broll_004": {
         "path": "mcp/assets/broll_cache/voice,_7599377.mp4"
       },
-      "broll_014": {
-        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
-      },
-      "broll_003": {
-        "path": "mcp/assets/broll_cache/The_32973936.mp4"
-      },
-      "broll_016": {
-        "path": "mcp/assets/broll_cache/Now,_27306385.mp4"
-      },
-      "broll_010": {
-        "path": "mcp/assets/broll_cache/Revolution._9466651.mp4"
-      },
-      "broll_020": {
-        "path": "mcp/assets/broll_cache/brother,_5813060.mp4"
-      },
-      "broll_015": {
-        "path": "mcp/assets/broll_cache/generation_9479753.mp4"
-      },
       "broll_008": {
         "path": "mcp/assets/broll_cache/there_5961484.mp4"
-      },
-      "broll_011": {
-        "path": "mcp/assets/broll_cache/Revolution_6258444.mp4"
       },
       "broll_013": {
         "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
       },
-      "broll_012": {
+      "broll_011": {
         "path": "mcp/assets/broll_cache/Revolution_6258444.mp4"
       },
-      "broll_017": {
-        "path": "mcp/assets/broll_cache/of_10366920.mp4"
+      "broll_010": {
+        "path": "mcp/assets/broll_cache/Revolution._9466651.mp4"
       },
-      "broll_018": {
-        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
+      "broll_016": {
+        "path": "mcp/assets/broll_cache/Now,_27306385.mp4"
+      },
+      "broll_007": {
+        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
       }
     },
     "music": {},
     "sfx": {
-      "sfx_012": {
-        "path": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav"
-      },
-      "sfx_005": {
+      "sfx_008": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_007": {
+      "sfx_003": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_009": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_010": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
       "sfx_002": {
@@ -1466,25 +1525,22 @@
       "sfx_004": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_006": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
-      },
-      "sfx_010": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
-      },
-      "sfx_003": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
-      },
       "sfx_001": {
         "path": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav"
       },
-      "sfx_009": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      "sfx_012": {
+        "path": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav"
       },
       "sfx_011": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_008": {
+      "sfx_006": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_005": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_007": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       }
     },

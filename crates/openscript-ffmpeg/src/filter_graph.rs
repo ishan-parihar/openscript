@@ -589,8 +589,7 @@ impl FilterGraphBuilder {
                 };
 
                 parts.push(format!(
-                    "[{}]movie='{}':f=mp4:si=0[broll_src_{}]",
-                    &current_v[1..current_v.len() - 1],
+                    "movie='{}':f=mp4:si=0[broll_src_{}]",
                     escaped_path,
                     i
                 ));
@@ -616,11 +615,10 @@ impl FilterGraphBuilder {
 
         // Overlay MOV (PupCaps captions) — composites the MOV on top of the video
         if let Some(_mov) = &self.overlay_mov {
-            if let Ok(escaped_mov) = escape_filter_path(_mov) {
+            if let Ok(_escaped_mov) = escape_filter_path(_mov) {
                 parts.push(format!(
-                    "[{}]movie='{}':f=mov[ovr]",
-                    &vout[1..vout.len() - 1],
-                    escaped_mov
+                    "movie='{}':f=mov[ovr]",
+                    _escaped_mov
                 ));
                 parts.push(format!(
                     "[{}][ovr]overlay=0:0:shortest=1[vovl]",
