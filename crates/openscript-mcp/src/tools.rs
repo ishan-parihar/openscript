@@ -4965,165 +4965,42 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
     }
 
     if sfx_enabled {
-        let sfx_index_path = std::env::var("OPENSCRIPT_SFX_INDEX")
-            .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
-        let sfx_index = match openscript_assets::sfx::SfxIndex::load(Some(&sfx_index_path)) {
-            Ok(idx) => Some(idx),
-            Err(e) => {
-                warnings.push(format!("SFX index failed to load: {}", e));
-                None
+        // Delegate SFX to the atomic sfx.assign tool — handles index loading,
+        // asset resolution, role mapping (hook→intro), and event creation.
+        if let Ok(tl) = Timeline::load(&timeline_path) {
+            let total_ms = tl.total_duration_ms();
+            // Hook SFX at 0ms
+            if !tl.segments.is_empty() {
+                let _ = handle_sfx_assign(json!({
+                    "timeline_path": &timeline_path,
+                    "editorial_role": "hook",
+                    "position_ms": 0,
+                })).await;
             }
-        };
-
-        if let Ok(mut timeline) = Timeline::load(&timeline_path) {
-            let total_ms = timeline.total_duration_ms();
-
-            let resolve_sfx_path = |role: &str| -> Option<String> {
-                // Map "hook" → "intro" since the SFX index uses "intro" for opening effects
-                let mapped_role = if role == "hook" { "intro" } else { role };
-                sfx_index.as_ref().and_then(|idx| {
-                    idx.search("", Some(mapped_role), None, 1)
-                        .first()
-                        .map(|a| a.path.clone())
-                })
+            // Transition SFX between segments (max 10, evenly spaced)
+            let all_trans: Vec<i64> = tl.segments.iter().skip(1)
+                .map(|s| ((s.start * 1000.0) as i64) - 100)
+                .filter(|ms| *ms > 0).collect();
+            let max_t = all_trans.len().min(10);
+            let positions: Vec<i64> = if max_t <= 1 { all_trans } else {
+                let step = (all_trans.len() / max_t).max(1);
+                all_trans.into_iter().step_by(step).take(max_t).collect()
             };
-
-            if !timeline.segments.is_empty() {
-                let hook_id = format!("sfx_{:03}", track_count(&timeline, &TrackType::Sfx) + 1);
-                let hook_path = resolve_sfx_path("hook");
-                let event = openscript_core::timeline::TimelineEvent {
-                    id: hook_id.clone(),
-                    asset_id: hook_path.clone().unwrap_or_else(|| "hook".into()),
-                    start_ms: 0,
-                    end_ms: 500,
-                    offset_ms: 0,
-                    gain_db: -10.0,
-                    fade_in_ms: 50,
-                    fade_out_ms: 50,
-                    tags: vec!["hook".into()],
-                    provenance: Some(openscript_core::timeline::Provenance {
-                        tool: "reelize.timeline".into(),
-                        editorial_role: Some("hook".into()),
-                        concept: None,
-                    }),
-                    kind: openscript_core::timeline::EventKind::Sfx {
-                        editorial_role: "hook".into(),
-                        category: "hook".into(),
-                        subcategory: String::new(),
-                        duration_ms: 500,
-                        sample_rate: 44100,
-                        peak_db: 0.0,
-                        loudness_lufs: -14.0,
-                        recommended_gain_db: -10.0,
-                        recommended_use: "single_hit".into(),
-                        safe_overlay: true,
-                    },
-                };
-                timeline.add_track_event(TrackType::Sfx, event);
-                if let Some(path) = hook_path {
-                    timeline.add_asset("sfx", hook_id, json!({"path": path}));
-                }
+            for pos in &positions {
+                let _ = handle_sfx_assign(json!({
+                    "timeline_path": &timeline_path,
+                    "editorial_role": "transition",
+                    "position_ms": *pos,
+                })).await;
             }
-
-            // Space transitions evenly — max 10 for editorial quality
-            let all_transitions: Vec<i64> = timeline
-                .segments
-                .iter()
-                .skip(1)
-                .map(|seg| ((seg.start * 1000.0) as i64) - 100)
-                .filter(|ms| *ms > 0)
-                .collect();
-
-            let max_transitions = all_transitions.len().min(10);
-            let transition_positions: Vec<i64> = if max_transitions <= 1 {
-                all_transitions
-            } else {
-                let step = all_transitions.len() / max_transitions;
-                let step = step.max(1);
-                all_transitions
-                    .into_iter()
-                    .step_by(step)
-                    .take(max_transitions)
-                    .collect()
-            };
-
-            for transition_ms in &transition_positions {
-                let sfx_count = track_count(&timeline, &TrackType::Sfx);
-                let sfx_id = format!("sfx_{:03}", sfx_count + 1);
-                let trans_path = resolve_sfx_path("transition");
-                let event = openscript_core::timeline::TimelineEvent {
-                    id: sfx_id.clone(),
-                    asset_id: trans_path.clone().unwrap_or_else(|| "transition".into()),
-                    start_ms: *transition_ms,
-                    end_ms: transition_ms + 500,
-                    offset_ms: 0,
-                    gain_db: -10.0,
-                    fade_in_ms: 50,
-                    fade_out_ms: 50,
-                    tags: vec!["transition".into()],
-                    provenance: Some(openscript_core::timeline::Provenance {
-                        tool: "reelize.timeline".into(),
-                        editorial_role: Some("transition".into()),
-                        concept: None,
-                    }),
-                    kind: openscript_core::timeline::EventKind::Sfx {
-                        editorial_role: "transition".into(),
-                        category: "transition".into(),
-                        subcategory: String::new(),
-                        duration_ms: 500,
-                        sample_rate: 44100,
-                        peak_db: 0.0,
-                        loudness_lufs: -14.0,
-                        recommended_gain_db: -10.0,
-                        recommended_use: "single_hit".into(),
-                        safe_overlay: true,
-                    },
-                };
-                timeline.add_track_event(TrackType::Sfx, event);
-                if let Some(path) = trans_path {
-                    timeline.add_asset("sfx", sfx_id, json!({"path": path}));
-                }
-            }
-
+            // Highlight SFX at midpoint (if > 2s)
             if total_ms > 2000 {
-                let highlight_id =
-                    format!("sfx_{:03}", track_count(&timeline, &TrackType::Sfx) + 1);
-                let highlight_path = resolve_sfx_path("highlight");
-                let event = openscript_core::timeline::TimelineEvent {
-                    id: highlight_id.clone(),
-                    asset_id: highlight_path.clone().unwrap_or_else(|| "highlight".into()),
-                    start_ms: total_ms / 2,
-                    end_ms: (total_ms / 2) + 500,
-                    offset_ms: 0,
-                    gain_db: -10.0,
-                    fade_in_ms: 50,
-                    fade_out_ms: 50,
-                    tags: vec!["highlight".into()],
-                    provenance: Some(openscript_core::timeline::Provenance {
-                        tool: "reelize.timeline".into(),
-                        editorial_role: Some("highlight".into()),
-                        concept: None,
-                    }),
-                    kind: openscript_core::timeline::EventKind::Sfx {
-                        editorial_role: "highlight".into(),
-                        category: "highlight".into(),
-                        subcategory: String::new(),
-                        duration_ms: 500,
-                        sample_rate: 44100,
-                        peak_db: 0.0,
-                        loudness_lufs: -14.0,
-                        recommended_gain_db: -10.0,
-                        recommended_use: "single_hit".into(),
-                        safe_overlay: true,
-                    },
-                };
-                timeline.add_track_event(TrackType::Sfx, event);
-                if let Some(path) = highlight_path {
-                    timeline.add_asset("sfx", highlight_id, json!({"path": path}));
-                }
+                let _ = handle_sfx_assign(json!({
+                    "timeline_path": &timeline_path,
+                    "editorial_role": "highlight",
+                    "position_ms": total_ms / 2,
+                })).await;
             }
-
-            timeline.save(&timeline_path)?;
         }
     }
 
