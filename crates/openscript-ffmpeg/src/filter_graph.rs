@@ -528,47 +528,47 @@ impl FilterGraphBuilder {
 
         // Subtitle burn-in (ASS or SRT) — always burn in, overlay MOV goes on top
         if let Some(ass) = &self.ass_path {
-            let escaped = escape_filter_path(ass).unwrap_or_else(|e| {
-                tracing::warn!("[filter_graph] {}", e);
-                "placeholder".to_string()
-            });
-            let filter = if let Some(fonts_dir) = &self.fonts_dir {
-                format!(
-                    "[{}]subtitles='{}':fontsdir='{}'[vsub]",
-                    &vout[1..vout.len() - 1],
-                    escaped,
-                    fonts_dir
-                )
+            if let Ok(escaped) = escape_filter_path(ass) {
+                let filter = if let Some(fonts_dir) = &self.fonts_dir {
+                    format!(
+                        "[{}]subtitles='{}':fontsdir='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped,
+                        fonts_dir
+                    )
+                } else {
+                    format!(
+                        "[{}]subtitles='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped
+                    )
+                };
+                parts.push(filter);
+                vout = "[vsub]".into();
             } else {
-                format!(
-                    "[{}]subtitles='{}'[vsub]",
-                    &vout[1..vout.len() - 1],
-                    escaped
-                )
-            };
-            parts.push(filter);
-            vout = "[vsub]".into();
+                tracing::warn!("[filter_graph] Skipping ASS subtitles (escape failed)");
+            }
         } else if let Some(srt) = &self.srt_path {
-            let escaped = escape_filter_path(srt).unwrap_or_else(|e| {
-                tracing::warn!("[filter_graph] {}", e);
-                "placeholder".to_string()
-            });
-            let filter = if let Some(fonts_dir) = &self.fonts_dir {
-                format!(
-                    "[{}]subtitles='{}':fontsdir='{}'[vsub]",
-                    &vout[1..vout.len() - 1],
-                    escaped,
-                    fonts_dir
-                )
+            if let Ok(escaped) = escape_filter_path(srt) {
+                let filter = if let Some(fonts_dir) = &self.fonts_dir {
+                    format!(
+                        "[{}]subtitles='{}':fontsdir='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped,
+                        fonts_dir
+                    )
+                } else {
+                    format!(
+                        "[{}]subtitles='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped
+                    )
+                };
+                parts.push(filter);
+                vout = "[vsub]".into();
             } else {
-                format!(
-                    "[{}]subtitles='{}'[vsub]",
-                    &vout[1..vout.len() - 1],
-                    escaped
-                )
-            };
-            parts.push(filter);
-            vout = "[vsub]".into();
+                tracing::warn!("[filter_graph] Skipping SRT subtitles (escape failed)");
+            }
         }
 
         // B-roll overlays — each b-roll event overlays at its timestamp
@@ -616,20 +616,20 @@ impl FilterGraphBuilder {
 
         // Overlay MOV (PupCaps captions) — composites the MOV on top of the video
         if let Some(_mov) = &self.overlay_mov {
-            let escaped_mov = escape_filter_path(_mov).unwrap_or_else(|e| {
-                tracing::warn!("[filter_graph] {}", e);
-                "placeholder".to_string()
-            });
-            parts.push(format!(
-                "[{}]movie='{}':f=mov[ovr]",
-                &vout[1..vout.len() - 1],
-                escaped_mov
-            ));
-            parts.push(format!(
-                "[{}][ovr]overlay=0:0:shortest=1[vovl]",
-                &vout[1..vout.len() - 1],
-            ));
-            vout = "[vovl]".into();
+            if let Ok(escaped_mov) = escape_filter_path(_mov) {
+                parts.push(format!(
+                    "[{}]movie='{}':f=mov[ovr]",
+                    &vout[1..vout.len() - 1],
+                    escaped_mov
+                ));
+                parts.push(format!(
+                    "[{}][ovr]overlay=0:0:shortest=1[vovl]",
+                    &vout[1..vout.len() - 1],
+                ));
+                vout = "[vovl]".into();
+            } else {
+                tracing::warn!("[filter_graph] Skipping overlay MOV (escape failed)");
+            }
         }
 
         // Audio loudnorm
