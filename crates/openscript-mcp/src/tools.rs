@@ -4685,14 +4685,14 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
             "query": "background music",
             "limit": 1,
         });
-        tracing::warn!("[reelize.timeline] Music search args: {}", music_search_args);
+        eprintln!("[reelize.timeline] Music search args: {}", music_search_args);
         let music_path = match handle_library_search(music_search_args).await {
             Ok(r) => {
                 let results_count = r.get("results")
                     .and_then(|v| v.as_array())
                     .map(|a| a.len())
                     .unwrap_or(0);
-                tracing::warn!("[reelize.timeline] Music search returned {} results", results_count);
+                eprintln!("[reelize.timeline] Music search returned {} results", results_count);
                 r.get("results")
                     .and_then(|v| v.as_array())
                     .and_then(|arr| arr.first())
@@ -4701,7 +4701,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
                     .map(|s| s.to_string())
             },
             Err(e) => {
-                tracing::warn!("[reelize.timeline] Music search failed: {}", e);
+                eprintln!("[reelize.timeline] Music search failed: {}", e);
                 warnings.push(format!("Music search failed: {}", e));
                 None
             }
