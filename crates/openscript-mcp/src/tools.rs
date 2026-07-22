@@ -8755,6 +8755,42 @@ async fn auto_select_music(theme: &str, video_keywords: &[String]) -> Option<Mus
             });
         }
     }
+
+    // ── Fallback 6: Pick ANY cached MP3 from mcp/assets/music_cache/ ──
+    // Phase 28: When all else fails (no library match, no Pixabay, no YouTube),
+    // use any locally cached music file. This ensures music is always present
+    // in the output when cached files exist, preventing silent music omission.
+    {
+        let music_cache = resolve_repo_path("mcp/assets/music_cache");
+        if let Ok(entries) = std::fs::read_dir(&music_cache) {
+            let mut mp3s: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "mp3")
+                        .unwrap_or(false)
+                })
+                .collect();
+            // Deterministic shuffle for variety across runs
+            mp3s.sort_by_key(|e| e.file_name());
+            if let Some(entry) = mp3s.first() {
+                let path = entry.path().to_string_lossy().to_string();
+                tracing::info!(
+                    "[script.to_video] music: using cached fallback {}",
+                    path
+                );
+                return Some(MusicSelection {
+                    path,
+                    mood: mood.clone(),
+                    tags: vec!["cached".into()],
+                    selection_query: "cached-fallback".into(),
+                    source: "cache".into(),
+                });
+            }
+        }
+    }
+
     None
 }
 
