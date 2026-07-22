@@ -4814,6 +4814,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
     match handle_captions_generate_ass(json!({
         "srt_path": &srt_path,
         "crossfade_ms": crossfade_ms,
+        "grouped_srt_path": &grouped_srt_path,
         "output_path": &ass_path,
     })).await {
         Ok(result) => {
@@ -5184,7 +5185,6 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let preset = default_str(&args, "preset", "Balanced");
     let max_duration: Option<u64> = args.get("max_duration").and_then(|v| v.as_u64());
     let aspect = default_str(&args, "aspect", "9:16");
-    let _burn_captions = default_bool(&args, "burn_captions", true);
     let _animated_captions = default_bool(&args, "animated_captions", false);
     let output_path = args.get("output_path").and_then(|v| v.as_str()).map(|s| s.to_string());
     let crf = default_u32(&args, "crf", 20);
@@ -5389,6 +5389,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         let ass_file = grouped_srt_path.replace(".srt", ".ass");
         match handle_captions_generate_ass(json!({
             "srt_path": &srt_path,
+            "grouped_srt_path": &grouped_srt_path,
             "output_path": &ass_file,
         })).await {
             Ok(result) => {
