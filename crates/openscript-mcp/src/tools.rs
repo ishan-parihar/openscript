@@ -4695,16 +4695,35 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
                 eprintln!("[reelize.timeline] Music search returned {} results", results_count);
                 // library.search results use 'filename' key (just filename),
                 // not 'path'. Construct the full path from the music directory.
+                // Fallback: if the file doesnt exist in mcp/assets/music/,
+                // search mcp/assets/music_cache/ for any available MP3.
                 r.get("results")
                     .and_then(|v| v.as_array())
                     .and_then(|arr| arr.first())
                     .and_then(|first| first.get("filename"))
                     .and_then(|p| p.as_str())
-                    .map(|s| {
-                        let rel = format!("mcp/assets/music/{}", s);
-                        let path_str = resolve_repo_path(&rel).to_string_lossy().to_string();
-                        eprintln!("[reelize.timeline] Music path resolved: {}", path_str);
-                        path_str
+                    .and_then(|s| {
+                        // Try primary path: mcp/assets/music/{filename}
+                        let primary = resolve_repo_path(&format!("mcp/assets/music/{}", s));
+                        if primary.exists() {
+                            eprintln!("[reelize.timeline] Music path (primary): {}", primary.display());
+                            return Some(primary.to_string_lossy().to_string());
+                        }
+                        // Fallback: pick first MP3 from mcp/assets/music_cache/
+                        eprintln!("[reelize.timeline] Music file not at primary path, trying cache...");
+                        let cache_dir = resolve_repo_path("mcp/assets/music_cache");
+                        if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                if path.extension().map_or(false, |e| e == "mp3") {
+                                    let path_str = path.to_string_lossy().to_string();
+                                    eprintln!("[reelize.timeline] Music path (cache fallback): {}", path_str);
+                                    return Some(path_str);
+                                }
+                            }
+                        }
+                        eprintln!("[reelize.timeline] No music files found in cache either");
+                        None
                     })
             },
             Err(e) => {
