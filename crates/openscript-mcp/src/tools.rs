@@ -5268,8 +5268,10 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         }
     }
 
-    // Fallback: if no backgrounds fetched, create a solid-color placeholder
+    // Use single background looped to match audio duration
+    // This ensures audio plays over the full video length
     if background_clips.is_empty() {
+        // No stock footage available — create a solid-color placeholder
         let placeholder_path = std::env::temp_dir().join("audio_to_video_bg.mp4");
         let _ = tokio::process::Command::new("ffmpeg")
             .args(["-y", "-f", "lavfi", "-i",
@@ -5284,6 +5286,21 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                 looped: false,
             });
         }
+    } else if background_clips.len() > 1 {
+        // Multiple backgrounds fetched — use the first one looped to match audio duration
+        // render_multilayer with all_same_bg uses -stream_loop -1 + total_duration_s
+        let first = background_clips.remove(0);
+        background_clips.clear();
+        background_clips.push(BackgroundClip {
+            path: first.path,
+            duration_s: total_duration_s,
+            looped: true,
+        });
+    } else {
+        // Single background — ensure it covers the full audio duration
+        let bg = &mut background_clips[0];
+        bg.duration_s = total_duration_s;
+        bg.looped = true;
     }
 
     // ================================================================
