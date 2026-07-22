@@ -90,6 +90,22 @@ transcribe  →  timeline.build  →  broll.director  →  timeline.render
 For editing an existing video (cut, caption, b-roll, music) without
 from-scratch TTS.
 
+### Trajectory C — From Audio File
+
+```
+transcribe → srt.prepare → timeline.build → timeline.add_segment → broll.director → library.search → music.assign → sfx.assign → timeline.validate → timeline.render → verify.production
+```
+
+`audio.to_video` was a monolithic orchestrator — it was deleted because the **agent** should decide the tool sequence, not hardcoded Rust. The atomic tools above give the agent full control.
+
+### Trajectory D — From Existing Video (NLE + Re-edit)
+
+```
+transcribe → srt.prepare → reelize.brief → (agent decides segments) → timeline.build → timeline.add_segment → broll.director → library.search → music.assign → sfx.assign → timeline.validate → timeline.render → verify.production
+```
+
+`video.to_reel` was deleted for the same reason — agent orchestration is superior to hardcoded pipelines.
+
 ### Discovery trajectory (call first when unsure)
 
 ```
