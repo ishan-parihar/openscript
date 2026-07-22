@@ -1219,12 +1219,6 @@ pub fn tool_definitions() -> serde_json::Value {
         }
     ]);
 
-    // ===================================================================
-    // GROUP 7: WORKFLOW ORCHESTRATORS — Audio-to-Video, Video-to-Reel
-    // ===================================================================
-    if let Some(arr) = tools.as_array_mut() {
-    }
-
     // Append HyperFrames tools (hf.*)
     if let Some(arr) = tools.as_array_mut() {
         arr.extend(crate::hf::tool_definitions());
