@@ -35,21 +35,6 @@ fn resolve_fonts_dir() -> Option<String> {
     }
 }
 
-/// Default caption spec for reel-style videos (reelize.timeline, audio.to_video).
-/// Uses word_highlight style with Bebas Neue for TikTok-style per-word pop-up.
-fn default_reel_caption_spec() -> CaptionsSpec {
-    CaptionsSpec {
-        style: "word_highlight".to_string(),
-        font: "Bebas Neue".to_string(),
-        font_size: 84,
-        color: "#ffffff".to_string(),
-        highlight_color: "#00ff88".to_string(),
-        position: "center".to_string(),
-        safe_zone: 0.85,
-        max_words_per_line: 5,
-    }
-}
-
 pub fn tool_definitions() -> serde_json::Value {
     let mut tools = json!([
         // ===================================================================
@@ -5298,7 +5283,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let preset = default_str(&args, "preset", "Balanced");
     let max_duration: Option<u64> = args.get("max_duration").and_then(|v| v.as_u64());
     let aspect = default_str(&args, "aspect", "9:16");
-    let burn_captions = default_bool(&args, "burn_captions", true);
+    let _burn_captions = default_bool(&args, "burn_captions", true);
     let _animated_captions = default_bool(&args, "animated_captions", false);
     let output_path = args.get("output_path").and_then(|v| v.as_str()).map(|s| s.to_string());
     let crf = default_u32(&args, "crf", 20);
@@ -5306,7 +5291,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // Sub-objects
     let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
     let broll_enabled = default_bool(&broll_obj, "enabled", true);
-    let broll_max_slots: u32 = broll_obj.get("max_slots").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
+    let _broll_max_slots: u32 = broll_obj.get("max_slots").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
 
     let music_obj = args.get("music").cloned().unwrap_or(json!({}));
     let music_enabled = default_bool(&music_obj, "enabled", true);
@@ -5332,7 +5317,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let fps: u32 = 30;
 
     // ---- Crossfade from preset ----
-    let crossfade_ms: u32 = match preset.as_str() {
+    let _crossfade_ms: u32 = match preset.as_str() {
         "Tight" => 200,
         "Natural" => 800,
         _ => 500,
