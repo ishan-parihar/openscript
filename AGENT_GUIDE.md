@@ -1,6 +1,6 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (84 tools)
+## Tool Taxonomy (88 tools)
 
 > **Always start a new environment with `system.doctor` (or `system.capabilities`).**
 > `system.doctor` returns `ready_for_production` + `next_actions` for cold-start.
@@ -34,10 +34,14 @@ Generate speech, manage voice profiles.
 | `voice.profile.list` | List available voices |
 | `voice.profile.add` | Register a new voice profile |
 
-### 3. CAPTIONS & SUBTITLES (2 tools)
-Generate word-synced captions from TTS audio.
+### 3. CAPTIONS & SUBTITLES (3 tools)
+Generate word-synced captions from TTS audio or word-level SRT.
 
 | Tool | When to use |
+|------|------------|
+| `script.generate_voices` | TTS + word timestamps (from script.to_video golden path) |
+| `script.build_captions` | ASS captions from TTS word timings (from script.to_video) |
+| `captions.generate_ass` | **Atomic tool**: Generate ASS from word-level SRT with per-word timing. Supports optional crossfade timestamp remapping for V2V workflows. Use this when you need captions outside the script.to_video pipeline. |
 |------|------------|
 | `script.generate_voices` | Generate all TTS + whisper word timestamps |
 | `script.build_captions` | Build ASS subtitle file from word timings |
