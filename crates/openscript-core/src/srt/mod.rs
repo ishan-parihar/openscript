@@ -61,15 +61,49 @@ fn parse_timestamp(ts: &str) -> Result<f64, SrtError> {
     Ok(hh * 3600.0 + mm * 60.0 + ss)
 }
 
+/// A grouped phrase with its constituent word timings.
+/// Used by `group_entries_with_words` to preserve per-word timestamps
+/// from Whisper transcription through to ASS caption generation.
+pub struct GroupedPhrase {
+    pub text: String,
+    pub start: f64,
+    pub end: f64,
+    /// Individual word timings: (word_text, start_s, end_s)
+    pub words: Vec<(String, f64, f64)>,
+}
+
 /// Group word-per-line SRT entries into phrase/sentence groups.
+///
+/// Delegates to `group_entries_with_words` and discards word timings.
 pub fn group_entries(
     entries: &[SrtEntry],
     max_words: usize,
     max_chars: usize,
     max_gap: f64,
 ) -> Vec<(String, f64, f64)> {
+    group_entries_with_words(entries, max_words, max_chars, max_gap)
+        .into_iter()
+        .map(|p| (p.text, p.start, p.end))
+        .collect()
+}
+
+/// Group word-per-line SRT entries into phrases, preserving per-word timestamps.
+
+/// Unlike `group_entries` which discards individual word timings, this function
+/// retains the real timestamps from Whisper transcription for each word within
+/// each grouped phrase. This is critical for accurate word-highlight captions.
+///
+/// Returns a Vec<GroupedPhrase> where each phrase contains its constituent
+/// word timings that can be directly passed to `generate_ass`.
+pub fn group_entries_with_words(
+    entries: &[SrtEntry],
+    max_words: usize,
+    max_chars: usize,
+    max_gap: f64,
+) -> Vec<GroupedPhrase> {
     let mut groups = Vec::new();
     let mut cur_words: Vec<String> = Vec::new();
+    let mut cur_word_timings: Vec<(String, f64, f64)> = Vec::new();
     let mut cur_start: Option<f64> = None;
     let mut cur_end: Option<f64> = None;
 
@@ -82,23 +116,36 @@ pub fn group_entries(
             cur_start = Some(e.start);
             cur_end = Some(e.end);
             cur_words = vec![w.to_string()];
+            cur_word_timings = vec![(w.to_string(), e.start, e.end)];
             continue;
         }
         let gap = e.start - cur_end.unwrap_or(e.start);
         let next_len = cur_words.join(" ").len() + 1 + w.len();
         let should_break = gap > max_gap || cur_words.len() >= max_words || next_len > max_chars;
         if should_break {
-            groups.push((cur_words.join(" "), cur_start.unwrap(), cur_end.unwrap()));
+            groups.push(GroupedPhrase {
+                text: cur_words.join(" "),
+                start: cur_start.unwrap(),
+                end: cur_end.unwrap(),
+                words: cur_word_timings,
+            });
             cur_start = Some(e.start);
             cur_end = Some(e.end);
             cur_words = vec![w.to_string()];
+            cur_word_timings = vec![(w.to_string(), e.start, e.end)];
         } else {
             cur_words.push(w.to_string());
+            cur_word_timings.push((w.to_string(), e.start, e.end));
             cur_end = Some(e.end);
         }
     }
     if !cur_words.is_empty() {
-        groups.push((cur_words.join(" "), cur_start.unwrap(), cur_end.unwrap()));
+        groups.push(GroupedPhrase {
+            text: cur_words.join(" "),
+            start: cur_start.unwrap(),
+            end: cur_end.unwrap(),
+            words: cur_word_timings,
+        });
     }
     groups
 }
@@ -597,6 +644,47 @@ mod tests {
         }];
         let segments = build_edl(&analysis, "unknown", None, 120);
         assert_eq!(segments.len(), 1);
+    }
+
+    #[test]
+    fn test_group_entries_with_words_preserves_timings() {
+        // Word-per-line SRT entries simulating Whisper output
+        let entries = vec![
+            SrtEntry { idx: 1, start: 0.0, end: 0.5, text: "hello".to_string() },
+            SrtEntry { idx: 2, start: 0.5, end: 1.2, text: "world".to_string() },
+            SrtEntry { idx: 3, start: 1.3, end: 2.0, text: "foo".to_string() },
+            SrtEntry { idx: 4, start: 3.0, end: 3.5, text: "bar".to_string() },
+        ];
+        let phrases = group_entries_with_words(&entries, 10, 64, 0.6);
+        // "hello world foo" grouped (gap < 0.6), "bar" separate (gap > 0.6)
+        assert_eq!(phrases.len(), 2);
+        assert_eq!(phrases[0].text, "hello world foo");
+        assert_eq!(phrases[0].start, 0.0);
+        assert_eq!(phrases[0].end, 2.0);
+        // Verify word timings are preserved from the original entries
+        assert_eq!(phrases[0].words.len(), 3);
+        assert_eq!(phrases[0].words[0], ("hello".to_string(), 0.0, 0.5));
+        assert_eq!(phrases[0].words[1], ("world".to_string(), 0.5, 1.2));
+        assert_eq!(phrases[0].words[2], ("foo".to_string(), 1.3, 2.0));
+        assert_eq!(phrases[1].text, "bar");
+        assert_eq!(phrases[1].words[0], ("bar".to_string(), 3.0, 3.5));
+    }
+
+    #[test]
+    fn test_group_entries_with_words_matches_group_entries() {
+        let entries = vec![
+            SrtEntry { idx: 1, start: 0.0, end: 0.5, text: "hello".to_string() },
+            SrtEntry { idx: 2, start: 0.5, end: 1.0, text: "world".to_string() },
+            SrtEntry { idx: 3, start: 2.0, end: 2.5, text: "foo".to_string() },
+        ];
+        let tuples = group_entries(&entries, 10, 64, 0.6);
+        let phrases = group_entries_with_words(&entries, 10, 64, 0.6);
+        assert_eq!(tuples.len(), phrases.len());
+        for (tuple, phrase) in tuples.iter().zip(phrases.iter()) {
+            assert_eq!(tuple.0, phrase.text);
+            assert_eq!(tuple.1, phrase.start);
+            assert_eq!(tuple.2, phrase.end);
+        }
     }
 }
 

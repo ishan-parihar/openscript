@@ -82,6 +82,10 @@ pub struct MultiLayerRenderSpec {
     pub meme_clips: Vec<MemeClip>,
     /// Short SFX hits (whoosh/stinger) mixed under VO at start_s.
     pub sfx: Vec<SfxHit>,
+    /// Optional directory containing font files (e.g. Bebas Neue) for ASS
+    /// subtitle rendering. When set, ffmpeg's subtitles filter uses
+    /// `fontsdir=` to locate custom fonts referenced in the ASS header.
+    pub fonts_dir: Option<String>,
 }
 
 /// A full-screen meme b-roll clip from GIPHY.
@@ -478,11 +482,23 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let video_label = if let Some(ref captions) = spec.captions_path {
         if std::path::Path::new(captions).exists() {
             let escaped = captions.replace('\\', "/").replace('\'', "'\\''");
+            let fontsdir_part = if let Some(ref fd) = spec.fonts_dir {
+                if std::path::Path::new(fd).exists() {
+                    let escaped_fd = fd.replace('\\', "/").replace('\'', "'\\''");
+                    format!(":fontsdir='{}'", escaped_fd)
+                } else {
+                    tracing::warn!("fonts_dir '{}' does not exist — captions will use system default font", fd);
+                    String::new()
+                }
+            } else {
+                tracing::warn!("No fonts_dir specified — captions referencing custom fonts (e.g. Bebas Neue) will use system default");
+                String::new()
+            };
             let cap_label = if video_label == "[vbg]" {
-                filters.push(format!("[vbg]subtitles='{}'[vcap]", escaped));
+                filters.push(format!("[vbg]subtitles='{}'{}[vcap]", escaped, fontsdir_part));
                 "[vcap]"
             } else {
-                filters.push(format!("{}subtitles='{}'[vcap]", video_label, escaped));
+                filters.push(format!("{}subtitles='{}'{}[vcap]", video_label, escaped, fontsdir_part));
                 "[vcap]"
             };
             cap_label.to_string()
@@ -678,8 +694,9 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     debug_log.push_str(&format!("Music: {} (vol={:.3}, ducking={})\n",
         spec.music_path.as_deref().unwrap_or("none"),
         spec.music_volume, spec.ducking));
-    debug_log.push_str(&format!("Captions: {}\n\n",
-        spec.captions_path.as_deref().unwrap_or("none")));
+    debug_log.push_str(&format!("Captions: {}\n", spec.captions_path.as_deref().unwrap_or("none")));
+    debug_log.push_str(&format!("Fonts dir: {}\n\n",
+        spec.fonts_dir.as_deref().unwrap_or("none")));
 
     // 2. Input files with probes
     debug_log.push_str("=== Input Files ===\n");

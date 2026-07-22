@@ -255,6 +255,8 @@ pub async fn render_from_timeline_with_cancel(
                 .filter(|p| p.exists());
             if let Some(fd) = workspace_fonts {
                 builder = builder.with_fonts_dir(fd.to_string_lossy().to_string());
+            } else {
+                tracing::warn!("No fonts directory found (OPENSCRIPT_FONTS_DIR not set, mcp/fonts not found) — captions with custom fonts will use system default");
             }
         }
 
