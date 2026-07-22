@@ -40,21 +40,13 @@ fn escape_filter_path(path: &str) -> Result<String, String> {
     Ok(escaped)
 }
 
-fn amovie_filter(path: &str, stream: &str) -> String {
-    match escape_filter_path(path) {
-        Ok(escaped) => {
-            let fmt = audio_format_ext(path);
-            if fmt.is_empty() {
-                format!("amovie='{}':s={}", escaped, stream)
-            } else {
-                format!("amovie='{}':f={}:s={}", escaped, fmt, stream)
-            }
-        }
-        Err(e) => {
-            // Log the error and return a placeholder that won't crash ffmpeg
-            tracing::warn!("[filter_graph] {}", e);
-            format!("amovie='placeholder':s={}", stream)
-        }
+fn amovie_filter(path: &str, stream: &str) -> Result<String, String> {
+    let escaped = escape_filter_path(path)?;
+    let fmt = audio_format_ext(path);
+    if fmt.is_empty() {
+        Ok(format!("amovie='{}':s={}", escaped, stream))
+    } else {
+        Ok(format!("amovie='{}':f={}:s={}", escaped, fmt, stream))
     }
 }
 
@@ -588,10 +580,13 @@ impl FilterGraphBuilder {
     for (i, broll) in broll_events.iter().enumerate() {
                 let start_s = broll.start_ms as f64 / 1000.0;
                 let out_label = format!("vbroll_{}", i);
-                let escaped_path = escape_filter_path(&broll.path).unwrap_or_else(|e| {
-                    tracing::warn!("[filter_graph] {}", e);
-                    "placeholder".to_string()
-                });
+                let escaped_path = match escape_filter_path(&broll.path) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!("[filter_graph] Skipping broll: {}", e);
+                        continue;
+                    }
+                };
 
                 parts.push(format!(
                     "[{}]movie='{}':f=mp4:si=0[broll_src_{}]",
@@ -657,7 +652,12 @@ impl FilterGraphBuilder {
                 let gain = 10f64.powf(vo.gain_db / 20.0);
                 let start_ms = vo.start_ms;
 
-                parts.push(format!("{}[voiceover_{}]", amovie_filter(&vo.path, "a"), i));
+                if let Ok(f) = amovie_filter(&vo.path, "a") {
+                        parts.push(format!("{}[voiceover_{}]", f, i));
+                    } else {
+                        tracing::warn!("[filter_graph] Skipping voiceover {}", i);
+                        continue;
+                    }
                 parts.push(format!("[voiceover_{}]volume={}[vo_vol_{}]", i, gain, i));
                 parts.push(format!(
                     "[vo_vol_{}]adelay={}|{}[vo_delayed_{}]",
@@ -717,7 +717,12 @@ impl FilterGraphBuilder {
 
             for (i, music) in self.music_events.iter().enumerate() {
                 let vol = music.volume;
-                parts.push(format!("{}[music_{}]", amovie_filter(&music.path, "a"), i));
+                if let Ok(f) = amovie_filter(&music.path, "a") {
+                    parts.push(format!("{}[music_{}]", f, i));
+                } else {
+                    tracing::warn!("[filter_graph] Skipping music {}", i);
+                    continue;
+                }
                 parts.push(format!("[music_{}]volume={}[music_vol_{}]", i, vol, i));
 
                 let music_out = if has_ducking {
@@ -752,7 +757,12 @@ impl FilterGraphBuilder {
             let gain = 10f64.powf(sfx.gain_db / 20.0);
             let start_s = sfx.start_ms as f64 / 1000.0;
 
-            parts.push(format!("{}[sfx_{}]", amovie_filter(&sfx.path, "a"), i));
+            if let Ok(f) = amovie_filter(&sfx.path, "a") {
+                    parts.push(format!("{}[sfx_{}]", f, i));
+                } else {
+                    tracing::warn!("[filter_graph] Skipping SFX {}", i);
+                    continue;
+                }
             parts.push(format!("[sfx_{}]volume={}[sfx_vol_{}]", i, gain, i));
             parts.push(format!(
                 "[sfx_vol_{}]adelay={}|{}[sfx_delayed_{}]",

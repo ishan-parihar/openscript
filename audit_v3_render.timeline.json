@@ -1,7 +1,7 @@
 {
   "version": "2.0",
-  "created_at": "2026-07-22T09:54:25.318946301Z",
-  "updated_at": "2026-07-22T09:55:12.279072201Z",
+  "created_at": "2026-07-22T10:48:08.781137967Z",
+  "updated_at": "2026-07-22T10:48:13.378581895Z",
   "source": "artifacts/drafts/audit_v3_render.mp4",
   "target": {
     "aspect": "9:16",
@@ -141,415 +141,46 @@
     },
     {
       "id": "seg_017",
-      "start": 124.86,
-      "end": 129.44,
-      "caption": "what a great community that he has set up! he's a big",
+      "start": 113.74,
+      "end": 120.14,
+      "caption": "no day leave he will have time either to show your identity",
       "crossfade_ms": 500,
       "semantic_role": null
     },
     {
       "id": "seg_018",
-      "start": 129.44,
-      "end": 134.56,
-      "caption": "world, and he can certainly say that he sought better and better",
+      "start": 120.14,
+      "end": 123.2,
+      "caption": "andENA and your 'p connection with quality of life area.",
       "crossfade_ms": 500,
       "semantic_role": null
     },
     {
       "id": "seg_019",
-      "start": 134.56,
-      "end": 135.38,
-      "caption": "at China and",
+      "start": 125.66,
+      "end": 127.02,
+      "caption": "Because,",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_020",
+      "start": 128.0,
+      "end": 133.32,
+      "caption": "in itself life is very experiences which sometimes are based on",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_021",
+      "start": 133.32,
+      "end": 134.48,
+      "caption": "the historical research.",
       "crossfade_ms": 500,
       "semantic_role": null
     }
   ],
   "tracks": {
-    "music": [],
-    "captions": [
-      {
-        "id": "caption_001",
-        "asset_id": "",
-        "start_ms": 0,
-        "end_ms": 6060,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "The government started the same way, the media captured the",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_002",
-        "asset_id": "",
-        "start_ms": 6060,
-        "end_ms": 8220,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "voice, the voice, the corruption.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_003",
-        "asset_id": "",
-        "start_ms": 9460,
-        "end_ms": 12040,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "But now you are watching the social media, you are banning the",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_004",
-        "asset_id": "",
-        "start_ms": 12040,
-        "end_ms": 16520,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "post, you are banning the account, nothing can change. In India,",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_005",
-        "asset_id": "",
-        "start_ms": 16680,
-        "end_ms": 17760,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "there is a revolution.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_006",
-        "asset_id": "",
-        "start_ms": 18420,
-        "end_ms": 21060,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "And a revolution is very important to me.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_007",
-        "asset_id": "",
-        "start_ms": 81060,
-        "end_ms": 84000,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "Revolution. My father -in -law is a man.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_008",
-        "asset_id": "",
-        "start_ms": 85560,
-        "end_ms": 89160,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "Revolution is good. And then things should be done.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_009",
-        "asset_id": "",
-        "start_ms": 90220,
-        "end_ms": 93320,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "Brother, we have to save something. And whatever change, this",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_010",
-        "asset_id": "",
-        "start_ms": 93320,
-        "end_ms": 94060,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "generation can change.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_011",
-        "asset_id": "",
-        "start_ms": 95000,
-        "end_ms": 97280,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "Now, see how he has changed. He has changed from the tip",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_012",
-        "asset_id": "",
-        "start_ms": 97280,
-        "end_ms": 97580,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "of the foot.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_013",
-        "asset_id": "",
-        "start_ms": 98860,
-        "end_ms": 100760,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "Brother, he has gotten a divorce on the Jaivar airport.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_014",
-        "asset_id": "",
-        "start_ms": 102060,
-        "end_ms": 104940,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "He has taken the divorce. Brother, how can he take it? Now,",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_015",
-        "asset_id": "",
-        "start_ms": 105040,
-        "end_ms": 106980,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "brother, we will see. Brother, they will make the same number.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_016",
-        "asset_id": "",
-        "start_ms": 107780,
-        "end_ms": 109240,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "Brother, they have killed him.",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_017",
-        "asset_id": "",
-        "start_ms": 124860,
-        "end_ms": 129440,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "what a great community that he has set up! he's a big",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_018",
-        "asset_id": "",
-        "start_ms": 129440,
-        "end_ms": 134560,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "world, and he can certainly say that he sought better and better",
-        "style": "default",
-        "word_timings": []
-      },
-      {
-        "id": "caption_019",
-        "asset_id": "",
-        "start_ms": 134560,
-        "end_ms": 135380,
-        "offset_ms": 0,
-        "gain_db": 0.0,
-        "fade_in_ms": 0,
-        "fade_out_ms": 0,
-        "tags": [],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": null,
-          "concept": null
-        },
-        "event_type": "caption",
-        "text": "at China and",
-        "style": "default",
-        "word_timings": []
-      }
-    ],
-    "voiceover": [],
-    "dialogue": [],
     "broll": [
       {
         "id": "broll_001",
@@ -1052,6 +683,431 @@
         "motion_intensity": "medium"
       }
     ],
+    "captions": [
+      {
+        "id": "caption_001",
+        "asset_id": "",
+        "start_ms": 0,
+        "end_ms": 6060,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "The government started the same way, the media captured the",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_002",
+        "asset_id": "",
+        "start_ms": 6060,
+        "end_ms": 8220,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "voice, the voice, the corruption.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_003",
+        "asset_id": "",
+        "start_ms": 9460,
+        "end_ms": 12040,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "But now you are watching the social media, you are banning the",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_004",
+        "asset_id": "",
+        "start_ms": 12040,
+        "end_ms": 16520,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "post, you are banning the account, nothing can change. In India,",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_005",
+        "asset_id": "",
+        "start_ms": 16680,
+        "end_ms": 17760,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "there is a revolution.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_006",
+        "asset_id": "",
+        "start_ms": 18420,
+        "end_ms": 21060,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "And a revolution is very important to me.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_007",
+        "asset_id": "",
+        "start_ms": 81060,
+        "end_ms": 84000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Revolution. My father -in -law is a man.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_008",
+        "asset_id": "",
+        "start_ms": 85560,
+        "end_ms": 89160,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Revolution is good. And then things should be done.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_009",
+        "asset_id": "",
+        "start_ms": 90220,
+        "end_ms": 93320,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Brother, we have to save something. And whatever change, this",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_010",
+        "asset_id": "",
+        "start_ms": 93320,
+        "end_ms": 94060,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "generation can change.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_011",
+        "asset_id": "",
+        "start_ms": 95000,
+        "end_ms": 97280,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Now, see how he has changed. He has changed from the tip",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_012",
+        "asset_id": "",
+        "start_ms": 97280,
+        "end_ms": 97580,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "of the foot.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_013",
+        "asset_id": "",
+        "start_ms": 98860,
+        "end_ms": 100760,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Brother, he has gotten a divorce on the Jaivar airport.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_014",
+        "asset_id": "",
+        "start_ms": 102060,
+        "end_ms": 104940,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "He has taken the divorce. Brother, how can he take it? Now,",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_015",
+        "asset_id": "",
+        "start_ms": 105040,
+        "end_ms": 106980,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "brother, we will see. Brother, they will make the same number.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_016",
+        "asset_id": "",
+        "start_ms": 107780,
+        "end_ms": 109240,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Brother, they have killed him.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_017",
+        "asset_id": "",
+        "start_ms": 113740,
+        "end_ms": 120140,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "no day leave he will have time either to show your identity",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_018",
+        "asset_id": "",
+        "start_ms": 120140,
+        "end_ms": 123200,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "andENA and your 'p connection with quality of life area.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_019",
+        "asset_id": "",
+        "start_ms": 125660,
+        "end_ms": 127020,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Because,",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_020",
+        "asset_id": "",
+        "start_ms": 128000,
+        "end_ms": 133320,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "in itself life is very experiences which sometimes are based on",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_021",
+        "asset_id": "",
+        "start_ms": 133320,
+        "end_ms": 134480,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "the historical research.",
+        "style": "default",
+        "word_timings": []
+      }
+    ],
+    "music": [],
+    "dialogue": [],
+    "voiceover": [],
     "sfx": [
       {
         "id": "sfx_001",
@@ -1114,35 +1170,6 @@
       {
         "id": "sfx_003",
         "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 9360,
-        "end_ms": 9860,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_004",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
         "start_ms": 11940,
         "end_ms": 12440,
         "offset_ms": 0,
@@ -1170,36 +1197,7 @@
         "safe_overlay": true
       },
       {
-        "id": "sfx_005",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 16580,
-        "end_ms": 17080,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_006",
+        "id": "sfx_004",
         "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
         "start_ms": 18320,
         "end_ms": 18820,
@@ -1228,36 +1226,7 @@
         "safe_overlay": true
       },
       {
-        "id": "sfx_007",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 80960,
-        "end_ms": 81460,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_008",
+        "id": "sfx_005",
         "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
         "start_ms": 85460,
         "end_ms": 85960,
@@ -1286,36 +1255,7 @@
         "safe_overlay": true
       },
       {
-        "id": "sfx_009",
-        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 90120,
-        "end_ms": 90620,
-        "offset_ms": 0,
-        "gain_db": -10.0,
-        "fade_in_ms": 50,
-        "fade_out_ms": 50,
-        "tags": [
-          "transition"
-        ],
-        "provenance": {
-          "tool": "reelize.timeline",
-          "editorial_role": "transition",
-          "concept": null
-        },
-        "event_type": "sfx",
-        "editorial_role": "transition",
-        "category": "transition",
-        "subcategory": "",
-        "duration_ms": 500,
-        "sample_rate": 44100,
-        "peak_db": 0.0,
-        "loudness_lufs": -14.0,
-        "recommended_gain_db": -10.0,
-        "recommended_use": "single_hit",
-        "safe_overlay": true
-      },
-      {
-        "id": "sfx_010",
+        "id": "sfx_006",
         "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
         "start_ms": 93220,
         "end_ms": 93720,
@@ -1344,10 +1284,126 @@
         "safe_overlay": true
       },
       {
+        "id": "sfx_007",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 97180,
+        "end_ms": 97680,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_008",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 101960,
+        "end_ms": 102460,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_009",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 107680,
+        "end_ms": 108180,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_010",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 120040,
+        "end_ms": 120540,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "transition",
+        "subcategory": "",
+        "duration_ms": 500,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
         "id": "sfx_011",
         "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
-        "start_ms": 94900,
-        "end_ms": 95400,
+        "start_ms": 127900,
+        "end_ms": 128400,
         "offset_ms": 0,
         "gain_db": -10.0,
         "fade_in_ms": 50,
@@ -1375,8 +1431,8 @@
       {
         "id": "sfx_012",
         "asset_id": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav",
-        "start_ms": 67690,
-        "end_ms": 68190,
+        "start_ms": 67240,
+        "end_ms": 67740,
         "offset_ms": 0,
         "gain_db": -10.0,
         "fade_in_ms": 50,
@@ -1416,14 +1472,53 @@
   "assets": {
     "voices": {},
     "broll": {
+      "broll_006": {
+        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
+      },
+      "broll_009": {
+        "path": "mcp/assets/broll_cache/And_34990553.mp4"
+      },
+      "broll_004": {
+        "path": "mcp/assets/broll_cache/voice,_7599377.mp4"
+      },
+      "broll_010": {
+        "path": "mcp/assets/broll_cache/Revolution._9466651.mp4"
+      },
+      "broll_015": {
+        "path": "mcp/assets/broll_cache/generation_9479753.mp4"
+      },
+      "broll_020": {
+        "path": "mcp/assets/broll_cache/brother,_5813060.mp4"
+      },
+      "broll_014": {
+        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
+      },
       "broll_003": {
         "path": "mcp/assets/broll_cache/The_32973936.mp4"
+      },
+      "broll_012": {
+        "path": "mcp/assets/broll_cache/Revolution_6258444.mp4"
+      },
+      "broll_019": {
+        "path": "mcp/assets/broll_cache/He_9363892.mp4"
+      },
+      "broll_007": {
+        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
+      },
+      "broll_016": {
+        "path": "mcp/assets/broll_cache/Now,_27306385.mp4"
       },
       "broll_005": {
         "path": "mcp/assets/broll_cache/But_36546412.mp4"
       },
-      "broll_010": {
-        "path": "mcp/assets/broll_cache/Revolution._9466651.mp4"
+      "broll_017": {
+        "path": "mcp/assets/broll_cache/of_10366920.mp4"
+      },
+      "broll_001": {
+        "path": "mcp/assets/broll_cache/The_32973936.mp4"
+      },
+      "broll_018": {
+        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
       },
       "broll_013": {
         "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
@@ -1431,97 +1526,58 @@
       "broll_011": {
         "path": "mcp/assets/broll_cache/Revolution_6258444.mp4"
       },
-      "broll_015": {
-        "path": "mcp/assets/broll_cache/generation_9479753.mp4"
-      },
-      "broll_009": {
-        "path": "mcp/assets/broll_cache/And_34990553.mp4"
-      },
-      "broll_006": {
-        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
-      },
-      "broll_018": {
-        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
-      },
-      "broll_014": {
-        "path": "mcp/assets/broll_cache/Brother,_5813060.mp4"
-      },
-      "broll_016": {
-        "path": "mcp/assets/broll_cache/Now,_27306385.mp4"
-      },
-      "broll_007": {
-        "path": "mcp/assets/broll_cache/post,_4903224.mp4"
-      },
       "broll_002": {
         "path": "mcp/assets/broll_cache/The_32973936.mp4"
       },
-      "broll_019": {
-        "path": "mcp/assets/broll_cache/He_9363892.mp4"
-      },
-      "broll_001": {
-        "path": "mcp/assets/broll_cache/The_32973936.mp4"
-      },
-      "broll_004": {
-        "path": "mcp/assets/broll_cache/voice,_7599377.mp4"
-      },
-      "broll_020": {
-        "path": "mcp/assets/broll_cache/brother,_5813060.mp4"
-      },
-      "broll_017": {
-        "path": "mcp/assets/broll_cache/of_10366920.mp4"
-      },
       "broll_008": {
         "path": "mcp/assets/broll_cache/there_5961484.mp4"
-      },
-      "broll_012": {
-        "path": "mcp/assets/broll_cache/Revolution_6258444.mp4"
       }
     },
     "music": {},
     "sfx": {
-      "sfx_002": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
-      },
-      "sfx_007": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
-      },
-      "sfx_010": {
+      "sfx_003": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
       "sfx_011": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_004": {
-        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      "sfx_001": {
+        "path": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav"
       },
-      "sfx_006": {
+      "sfx_007": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
       "sfx_008": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_009": {
+      "sfx_010": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_002": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_012": {
+        "path": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav"
       },
       "sfx_005": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_003": {
+      "sfx_004": {
         "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_001": {
-        "path": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav"
+      "sfx_009": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       },
-      "sfx_012": {
-        "path": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav"
+      "sfx_006": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
       }
     },
     "captions": {
-      "srt": {
-        "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/artifacts/drafts/audit_v3_render.grouped.srt"
-      },
       "ass": {
         "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/artifacts/drafts/audit_v3_render.grouped.ass"
+      },
+      "srt": {
+        "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/artifacts/drafts/audit_v3_render.grouped.srt"
       }
     }
   },
