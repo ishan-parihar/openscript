@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (86 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (87 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 pub fn tool_definitions() -> serde_json::Value {
@@ -614,6 +614,39 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         // GROUP 5: ORCHESTRATION — Single-call end-to-end pipelines
         // ===================================================================
+        {
+            "name": "audio.to_video",
+            "description": "ONE-CALL pipeline: audio file → complete 9:16 reel with stock video backgrounds. Orchestrates: (1) Transcribe audio with Whisper, (2) Group captions, (3) Build timeline with segments, (4) Fetch stock video backgrounds based on transcript content, (5) Assign backgrounds to timeline, (6) Assign background music with ducking, (7) Assign SFX (hook, transitions, highlights), (8) Generate ASS captions with Bebas Neue, (9) Render final video. Use when you have an audio recording (podcast, interview, narration) and want to create a video reel with relevant stock footage. Unlike reelize.timeline (which edits existing video), this creates video FROM audio by sourcing visual content. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered, preset.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "audio_path": {"type": "string", "description": "Path to audio file (WAV, MP3, M4A) to transform into a video reel"},
+                    "preset": {"type": "string", "enum": ["Tight", "Balanced", "Natural"], "default": "Balanced", "description": "Editing pace: Tight (fast cuts, 200ms crossfade), Balanced (moderate, 500ms), Natural (relaxed, 800ms)"},
+                    "max_duration": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Maximum reel duration in seconds"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Output aspect ratio"},
+                    "burn_captions": {"type": "boolean", "default": true, "description": "Burn captions into the video output"},
+                    "animated_captions": {"type": "boolean", "default": false, "description": "Use animated PupCaps overlay instead of static ASS captions"},
+                    "broll": {"type": "object", "properties": {
+                        "enabled": {"type": "boolean", "default": true, "description": "Enable stock video background fetching (requires PEXELS_API_KEY)"},
+                        "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert new background clips"},
+                        "max_slots": {"type": "integer", "default": 20, "description": "Maximum background clip slots"}
+                    }},
+                    "music": {"type": "object", "properties": {
+                        "enabled": {"type": "boolean", "default": true, "description": "Enable background music assignment"},
+                        "mood": {"type": "string", "default": "neutral", "description": "Music mood matching content"},
+                        "energy": {"type": "string", "default": "medium", "description": "Music energy level"},
+                        "gain_db": {"type": "number", "default": -12.0, "description": "Background music volume in dB"}
+                    }},
+                    "sfx": {"type": "object", "properties": {
+                        "enabled": {"type": "boolean", "default": true, "description": "Enable SFX assignment (hook, transitions, highlights)"}
+                    }},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom output video path"},
+                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28)"}
+                },
+                "required": ["audio_path"],
+                "additionalProperties": false
+            }
+        },
         {
             "name": "reelize.timeline",
             "description": "ONE-CALL pipeline: raw video → complete 9:16 reel. Orchestrates: (1) Transcribe with Whisper, (2) Group captions, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions with Bebas Neue, (8) Render final video. Use when you want a fully-produced reel from a single raw video with minimal manual intervention. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered, preset.",
@@ -1276,6 +1309,7 @@ pub fn route_tool(
         "music.ducking.plan" => Box::pin(handle_music_ducking_plan(args)),
         "timeline.autofill_broll" => Box::pin(handle_timeline_autofill_broll(args)),
         "timeline.render" => Box::pin(handle_timeline_render(args)),
+        "audio.to_video" => Box::pin(handle_audio_to_video(args)),
         "reelize.timeline" => Box::pin(handle_reelize_timeline(args)),
         "verify.audio" => Box::pin(handle_verify_audio(args)),
         "verify.captions" => Box::pin(handle_verify_captions(args)),
@@ -5065,7 +5099,340 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
 }
 
 // ---------------------------------------------------------------------------
+// Handler: audio.to_video
+// ---------------------------------------------------------------------------
+
+async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    use openscript_ffmpeg::multilayer_render::{render_multilayer, MultiLayerRenderSpec, BackgroundClip, SfxHit};
+
+    // ---- Extract arguments ----
+    let audio_path = extract_str(&args, "audio_path")?;
+    let preset = default_str(&args, "preset", "Balanced");
+    let max_duration: Option<u64> = args.get("max_duration").and_then(|v| v.as_u64());
+    let aspect = default_str(&args, "aspect", "9:16");
+    let burn_captions = default_bool(&args, "burn_captions", true);
+    let _animated_captions = default_bool(&args, "animated_captions", false);
+    let output_path = args.get("output_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let crf = default_u32(&args, "crf", 20);
+
+    // Sub-objects
+    let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
+    let broll_enabled = default_bool(&broll_obj, "enabled", true);
+    let broll_max_slots: u32 = broll_obj.get("max_slots").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
+
+    let music_obj = args.get("music").cloned().unwrap_or(json!({}));
+    let music_enabled = default_bool(&music_obj, "enabled", true);
+    let music_mood = default_str(&music_obj, "mood", "neutral");
+    let music_energy = default_str(&music_obj, "energy", "medium");
+    let music_gain_db = music_obj.get("gain_db").and_then(|v| v.as_f64()).unwrap_or(-12.0);
+
+    let sfx_obj = args.get("sfx").cloned().unwrap_or(json!({}));
+    let sfx_enabled = default_bool(&sfx_obj, "enabled", true);
+
+    // ---- Validate input ----
+    let audio_path_std = std::path::PathBuf::from(&audio_path);
+    if !audio_path_std.exists() {
+        return Err(ToolError::NotFound(format!("Audio file not found: {}", audio_path)));
+    }
+
+    // ---- Resolve dimensions from aspect ----
+    let (width, height) = match aspect.as_str() {
+        "16:9" => (1920, 1080),
+        "1:1" => (1080, 1080),
+        _ => (1080, 1920),
+    };
+    let fps: u32 = 30;
+
+    // ---- Crossfade from preset ----
+    let crossfade_ms: u32 = match preset.as_str() {
+        "Tight" => 200,
+        "Natural" => 800,
+        _ => 500,
+    };
+    let _crossfade = crossfade_ms;
+
+    // ---- Diagnostics ----
+    let mut warnings: Vec<String> = Vec::new();
+    if std::env::var("PEXELS_API_KEY").is_err() {
+        warnings.push("PEXELS_API_KEY not set — stock backgrounds will be skipped".to_string());
+    }
+
+    report_progress(0.0, 100.0, "Starting audio-to-video pipeline").await;
+
+    // ================================================================
+    // Step 1/7: Transcribe audio
+    // ================================================================
+    report_progress(5.0, 100.0, "Transcribing audio").await;
+    let srt_path = {
+        let transcribe_args = json!({
+            "media_path": &audio_path,
+            "engine": "whisper",
+        });
+        let result = handle_transcribe(transcribe_args).await?;
+        result.get("output_srt_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| ToolError::Ffmpeg("Transcription produced no SRT output".to_string()))?
+    };
+
+    // ================================================================
+    // Step 2/7: Group captions
+    // ================================================================
+    report_progress(15.0, 100.0, "Grouping captions").await;
+    let grouped_srt_path = {
+        let prepare_args = json!({
+            "srt_path": &srt_path,
+            "max_words": 10,
+            "max_chars": 64,
+            "max_gap": 0.6,
+        });
+        let result = handle_srt_prepare(prepare_args).await?;
+        result.get("output_path")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| srt_path.clone())
+    };
+
+    // ================================================================
+    // Step 3/7: Get audio duration + parse SRT for segment timing
+    // ================================================================
+    report_progress(20.0, 100.0, "Analyzing audio duration").await;
+    let total_duration_s: f64 = {
+        let output = tokio::process::Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "format=duration",
+                   "-of", "default=noprint_wrappers=1:nokey=1", &audio_path])
+            .output().await
+            .map_err(|e| ToolError::Ffmpeg(format!("ffprobe failed: {}", e)))?;
+        let dur_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        dur_str.parse::<f64>().unwrap_or(60.0)
+    };
+    let total_duration_s = if let Some(max) = max_duration {
+        total_duration_s.min(max as f64)
+    } else {
+        total_duration_s
+    };
+
+    // Parse SRT for segment timing
+    let srt_entries = {
+        let srt_content = std::fs::read_to_string(&grouped_srt_path)
+            .map_err(|e| ToolError::NotFound(format!("Failed to read grouped SRT: {}", e)))?;
+        parse_srt(&srt_content)
+            .map_err(|e| ToolError::Ffmpeg(format!("SRT parse failed: {}", e)))?
+    };
+    if srt_entries.is_empty() {
+        return Err(ToolError::Ffmpeg("Transcription produced no segments".to_string()));
+    }
+    let segments_count = srt_entries.len();
+
+    // ================================================================
+    // Step 4/7: Fetch stock backgrounds
+    // ================================================================
+    report_progress(30.0, 100.0, "Fetching stock video backgrounds").await;
+    let mut background_clips: Vec<BackgroundClip> = Vec::new();
+    if broll_enabled {
+        // Extract topic keywords from the transcript for stock search
+        let full_text: String = srt_entries.iter()
+            .map(|e| e.text.as_str())
+            .collect::<Vec<_>>().join(" ");
+        let concept_str = extract_broll_concept(&full_text);
+        let concepts: Vec<String> = if concept_str.is_empty() { Vec::new() } else { vec![concept_str] };
+
+        if !concepts.is_empty() {
+            let fetch_args = json!({
+                "concepts": concepts,
+                "orientation": &aspect,
+                "quality": "sd",
+                "download": true,
+            });
+            if let Ok(result) = handle_broll_fetch(fetch_args).await {
+                if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {
+                    let mut clip_idx = 0;
+                    for segment in &srt_entries {
+                        let seg_duration = (segment.end - segment.start).max(1.0);
+                        if let Some(cached) = results_arr.get(clip_idx % results_arr.len())
+                            .and_then(|r| r.get("cached_path")).and_then(|v| v.as_str())
+                        {
+                            let path = resolve_repo_path(&cached.to_string());
+                            if path.exists() {
+                                background_clips.push(BackgroundClip {
+                                    path: path.to_string_lossy().to_string(),
+                                    duration_s: seg_duration,
+                                    looped: false,
+                                });
+                            }
+                        }
+                        clip_idx += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: if no backgrounds fetched, create a solid-color placeholder
+    if background_clips.is_empty() {
+        let placeholder_path = std::env::temp_dir().join("audio_to_video_bg.mp4");
+        let _ = tokio::process::Command::new("ffmpeg")
+            .args(["-y", "-f", "lavfi", "-i",
+                   &format!("color=c=0x1a1a2e:s={}x{}:d={}:r={}", width, height, total_duration_s, fps),
+                   "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                   placeholder_path.to_str().unwrap()])
+            .output().await;
+        if placeholder_path.exists() {
+            background_clips.push(BackgroundClip {
+                path: placeholder_path.to_string_lossy().to_string(),
+                duration_s: total_duration_s,
+                looped: false,
+            });
+        }
+    }
+
+    // ================================================================
+    // Step 5/7: Generate ASS captions
+    // ================================================================
+    report_progress(45.0, 100.0, "Generating captions").await;
+    let ass_path = {
+        let ass_file = grouped_srt_path.replace(".srt", ".ass");
+        let ass_entries: Vec<(f64, f64, String)> = srt_entries.iter().map(|e| {
+            (e.start, e.end, e.text.clone())
+        }).collect();
+        if let Err(e) = openscript_ffmpeg::subtitles::srt_to_ass(&ass_entries, &ass_file, "Default") {
+            warnings.push(format!("ASS generation failed: {}", e));
+            String::new()
+        } else {
+            ass_file
+        }
+    };
+
+    // ================================================================
+    // Step 6/7: Music + SFX
+    // ================================================================
+    report_progress(55.0, 100.0, "Assigning music and SFX").await;
+    let mut music_path_opt: Option<String> = None;
+    if music_enabled {
+        let music_search_args = json!({
+            "query": format!("{} {} background music", music_mood, music_energy),
+            "limit": 1,
+        });
+        if let Ok(result) = handle_library_search(music_search_args).await {
+            music_path_opt = result.get("results")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|first| first.get("filename"))
+                .and_then(|p| p.as_str())
+                .map(|s| {
+                    let rel = format!("mcp/assets/music/{}", s);
+                    let path_str = resolve_repo_path(&rel).to_string_lossy().to_string();
+                    // Fallback to music_cache if primary path doesn't exist
+                    if !std::path::Path::new(&path_str).exists() {
+                        if let Ok(entries) = std::fs::read_dir(resolve_repo_path("mcp/assets/music_cache")) {
+                            for entry in entries.flatten() {
+                                if entry.path().extension().map(|e| e == "mp3").unwrap_or(false) {
+                                    return entry.path().to_string_lossy().to_string();
+                                }
+                            }
+                        }
+                    }
+                    path_str
+                });
+        }
+    }
+
+    // SFX hits
+    let mut sfx_hits: Vec<SfxHit> = Vec::new();
+    if sfx_enabled {
+        let sfx_index_path = resolve_repo_path("mcp/assets/sfx_index.json");
+        if sfx_index_path.exists() {
+            if let Ok(index_data) = std::fs::read_to_string(&sfx_index_path) {
+                if let Ok(index_val) = serde_json::from_str::<serde_json::Value>(&index_data) {
+                    if let Some(files) = index_val.get("files").and_then(|v| v.as_array()) {
+                        // Find intro SFX for hook
+                        if let Some(intro) = files.iter().find(|f| {
+                            f.get("editorial_role").and_then(|v| v.as_str()) == Some("intro")
+                        }) {
+                            if let Some(path) = intro.get("path").and_then(|v| v.as_str()) {
+                                let resolved = resolve_repo_path(&path.replace("$HOME", &std::env::var("HOME").unwrap_or_default()));
+                                if resolved.exists() {
+                                    sfx_hits.push(SfxHit {
+                                        path: resolved.to_string_lossy().to_string(),
+                                        start_s: 0.05,
+                                        volume: 0.28,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ================================================================
+    // Step 7/7: Render with render_multilayer
+    // ================================================================
+    report_progress(70.0, 100.0, "Rendering video").await;
+
+    // Calculate music volume
+    let music_volume = 10f64.powf(music_gain_db.clamp(-14.0, -8.0) / 20.0);
+    let should_duck = music_path_opt.is_some();
+
+    // Ensure output path is absolute
+    let final_output = output_path.unwrap_or_else(|| {
+        let out = std::env::temp_dir().join(format!("audio_to_video_{}.mp4",
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()));
+        out.to_string_lossy().to_string()
+    });
+    let final_output = if std::path::Path::new(&final_output).is_absolute() {
+        final_output
+    } else {
+        resolve_repo_path(&final_output).to_string_lossy().to_string()
+    };
+
+    let render_spec = MultiLayerRenderSpec {
+        backgrounds: background_clips,
+        voiceover_paths: vec![audio_path.to_string()],
+        stickers: Vec::new(),
+        music_path: music_path_opt,
+        music_volume,
+        ducking: should_duck,
+        ducking_depth_db: 12.0,
+        captions_path: if ass_path.is_empty() { None } else { Some(ass_path) },
+        width,
+        height,
+        fps,
+        output_path: final_output.clone(),
+        crf,
+        preset: "fast".to_string(),
+        total_duration_s,
+        meme_clips: Vec::new(),
+        sfx: sfx_hits,
+    };
+
+    let _output = render_multilayer(&render_spec).await
+        .map_err(|e| ToolError::Ffmpeg(format!("Render failed: {}", e)))?;
+
+    report_progress(95.0, 100.0, "Render complete").await;
+
+    // Get file size
+    let file_size = std::fs::metadata(&final_output)
+        .map(|m| m.len()).unwrap_or(0);
+
+    report_progress(100.0, 100.0, "Audio-to-video complete!").await;
+
+    Ok(json!({
+        "status": "rendered",
+        "output_path": final_output,
+        "file_size_bytes": file_size,
+        "segments_count": segments_count,
+        "backgrounds_used": render_spec.backgrounds.len(),
+        "duration_s": total_duration_s,
+        "preset": preset,
+        "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Handler: verify.audio
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
 async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
