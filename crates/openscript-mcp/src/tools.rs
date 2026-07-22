@@ -4678,15 +4678,14 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
 
     if music_enabled {
         // Search for a matching music track first, then pass its path to music.assign
-        // NOTE: Do NOT pass mood/energy filters to library.search — the
-        // music_library_index.json entries have mood="none" and energy="none"
-        // because the library.build indexer doesn't populate those fields.
-        // Exact-match filtering would reject ALL 487 tracks.
+        // NOTE: Call library.search directly instead of the deprecated music.search
+        // wrapper. The library_index.json entries have mood="none" and energy="none",
+        // so mood/energy exact-match filters would reject all tracks.
         let music_search_args = json!({
             "query": "background music",
             "limit": 1,
         });
-        let music_path = match handle_music_search(music_search_args).await {
+        let music_path = match handle_library_search(music_search_args).await {
             Ok(r) => r
                 .get("results")
                 .and_then(|v| v.as_array())
