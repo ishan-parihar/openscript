@@ -4693,12 +4693,19 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
                     .map(|a| a.len())
                     .unwrap_or(0);
                 eprintln!("[reelize.timeline] Music search returned {} results", results_count);
+                // library.search results use 'filename' key (just filename),
+                // not 'path'. Construct the full path from the music directory.
                 r.get("results")
                     .and_then(|v| v.as_array())
                     .and_then(|arr| arr.first())
-                    .and_then(|first| first.get("path"))
+                    .and_then(|first| first.get("filename"))
                     .and_then(|p| p.as_str())
-                    .map(|s| s.to_string())
+                    .map(|s| {
+                        let rel = format!("mcp/assets/music/{}", s);
+                        let path_str = resolve_repo_path(&rel).to_string_lossy().to_string();
+                        eprintln!("[reelize.timeline] Music path resolved: {}", path_str);
+                        path_str
+                    })
             },
             Err(e) => {
                 eprintln!("[reelize.timeline] Music search failed: {}", e);
