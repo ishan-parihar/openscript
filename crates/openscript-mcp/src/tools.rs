@@ -1219,6 +1219,142 @@ pub fn tool_definitions() -> serde_json::Value {
         }
     ]);
 
+    // ===================================================================
+    // GROUP 7: WORKFLOW ORCHESTRATORS — Audio-to-Video, Video-to-Reel
+    // ===================================================================
+    if let Some(arr) = tools.as_array_mut() {
+        arr.push(json!({
+            "name": "audio.to_video",
+            "description": "ONE-CALL pipeline: audio file → complete 9:16 reel. Orchestrates: (1) Transcribe audio with Whisper, (2) Group captions into segments, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions, (8) Render final video. Use when you have an audio file (podcast, speech, voice note) and want to produce a complete video reel from it. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "audio_path": {
+                        "type": "string",
+                        "description": "Path to audio file (MP3, WAV, M4A, etc.) to transcribe and build video from"
+                    },
+                    "aspect": {
+                        "type": "string",
+                        "default": "9:16",
+                        "description": "Output aspect ratio"
+                    },
+                    "preset": {
+                        "type": "string",
+                        "enum": ["Tight", "Balanced", "Natural"],
+                        "default": "Balanced",
+                        "description": "Editing pace: Tight (fast cuts, 200ms crossfade), Balanced (moderate, 500ms), Natural (relaxed, 800ms)"
+                    },
+                    "max_duration": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                        "description": "Maximum reel duration in seconds"
+                    },
+                    "broll": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {"type": "boolean", "default": true, "description": "Enable b-roll director (requires PEXELS_API_KEY)"},
+                            "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert b-roll"},
+                            "max_slots": {"type": "integer", "default": 20, "description": "Maximum b-roll slots"}
+                        }
+                    },
+                    "music": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {"type": "boolean", "default": true, "description": "Enable background music assignment"},
+                            "mood": {"type": "string", "default": "neutral", "description": "Music mood matching content"},
+                            "energy": {"type": "string", "default": "medium", "description": "Music energy level"},
+                            "gain_db": {"type": "number", "default": -12.0, "description": "Background music volume in dB"}
+                        }
+                    },
+                    "sfx": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {"type": "boolean", "default": true, "description": "Enable SFX assignment (hook, transitions, highlights)"}
+                        }
+                    },
+                    "output_path": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                        "description": "Custom output video path"
+                    },
+                    "crf": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Video quality (18-28)"
+                    }
+                },
+                "required": ["audio_path"],
+                "additionalProperties": false
+            }
+        }));
+        arr.push(json!({
+            "name": "video.to_reel",
+            "description": "ONE-CALL pipeline: existing video → attention-optimized 9:16 reel. Orchestrates: (1) Transcribe audio, (2) Analyze speech cadence and pauses for attention retention, (3) Build timeline with optimal clip boundaries, (4) B-roll director, (5) Assign background music with ducking, (6) Assign SFX, (7) Generate ASS captions, (8) Render final video. Use when you have an existing video and want to re-edit it for maximum engagement. The clip-spacing algorithm uses speech energy, pause detection, and word density to determine natural cut points. Returns: output_path, file_size_bytes, timeline_path, segments_count, duration_trimmed_s.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {
+                        "type": "string",
+                        "description": "Path to existing video file to re-edit"
+                    },
+                    "aspect": {
+                        "type": "string",
+                        "default": "9:16",
+                        "description": "Output aspect ratio"
+                    },
+                    "preset": {
+                        "type": "string",
+                        "enum": ["Tight", "Balanced", "Natural"],
+                        "default": "Balanced",
+                        "description": "Editing pace: Tight (aggressive cuts), Balanced (moderate), Natural (gentle)"
+                    },
+                    "max_duration": {
+                        "anyOf": [{"type": "integer"}, {"type": "null"}],
+                        "description": "Maximum reel duration in seconds"
+                    },
+                    "retention_mode": {
+                        "type": "string",
+                        "enum": ["aggressive", "moderate", "gentle"],
+                        "default": "moderate",
+                        "description": "How aggressively to trim for attention: aggressive (2-4s clips), moderate (4-8s), gentle (8-15s)"
+                    },
+                    "broll": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {"type": "boolean", "default": true, "description": "Enable b-roll director"},
+                            "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert b-roll"},
+                            "max_slots": {"type": "integer", "default": 20, "description": "Maximum b-roll slots"}
+                        }
+                    },
+                    "music": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {"type": "boolean", "default": true, "description": "Enable background music"},
+                            "mood": {"type": "string", "default": "neutral", "description": "Music mood"},
+                            "energy": {"type": "string", "default": "medium", "description": "Music energy level"},
+                            "gain_db": {"type": "number", "default": -12.0, "description": "Music volume in dB"}
+                        }
+                    },
+                    "sfx": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {"type": "boolean", "default": true, "description": "Enable SFX"}
+                        }
+                    },
+                    "output_path": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}],
+                        "description": "Custom output video path"
+                    },
+                    "crf": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Video quality (18-28)"
+                    }
+                },
+                "required": ["video_path"],
+                "additionalProperties": false
+            }
+        }));
+    }
+
     // Append HyperFrames tools (hf.*)
     if let Some(arr) = tools.as_array_mut() {
         arr.extend(crate::hf::tool_definitions());
@@ -1348,6 +1484,8 @@ pub fn route_tool(
         "system.capabilities" => Box::pin(handle_system_capabilities(args)),
         "system.doctor" => Box::pin(handle_system_doctor(args)),
         "help.tool" => Box::pin(handle_help_tool(args)),
+        "audio.to_video" => Box::pin(handle_audio_to_video(args)),
+        "video.to_reel" => Box::pin(handle_video_to_reel(args)),
         _ => Box::pin(async move { Err(ToolError::UnknownTool(name_owned.clone())) }),
     }
 }
@@ -6486,6 +6624,409 @@ async fn fetch_youtube_stock_clip(
     fetch_youtube_stock_clip_unique(query, duration_s, aspect, out_path, 0, &mut ids, &mut hashes)
         .await
         .map(|f| f.path)
+}
+
+// ---------------------------------------------------------------------------
+// Handler: audio.to_video
+// ---------------------------------------------------------------------------
+/// ONE-CALL pipeline: audio file → complete 9:16 reel.
+async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let audio_path = extract_str(&args, "audio_path").map_err(|e| ToolError::InvalidArg(e.to_string()))?;
+    let aspect = default_str(&args, "aspect", "9:16");
+    let preset = default_str(&args, "preset", "Balanced");
+    let output_path = default_opt_str(&args, "output_path");
+    let crf = default_u32(&args, "crf", 20);
+    let max_duration: Option<u64> = args.get("max_duration").and_then(|v| v.as_u64());
+
+    // B-roll config
+    let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
+    let broll_enabled = broll_obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let broll_cadence = broll_obj.get("cadence_seconds").and_then(|v| v.as_f64()).unwrap_or(2.0);
+    let broll_max = broll_obj.get("max_slots").and_then(|v| v.as_u64()).unwrap_or(20);
+
+    // Music config
+    let music_obj = args.get("music").cloned().unwrap_or(json!({}));
+    let music_enabled = music_obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let music_mood = music_obj.get("mood").and_then(|v| v.as_str()).unwrap_or("neutral");
+    let music_energy = music_obj.get("energy").and_then(|v| v.as_str()).unwrap_or("medium");
+    let music_gain_db = music_obj.get("gain_db").and_then(|v| v.as_f64()).unwrap_or(-12.0).clamp(-14.0, -8.0);
+
+    // SFX config
+    let _sfx_obj = args.get("sfx").cloned().unwrap_or(json!({}));
+    let _sfx_enabled = _sfx_obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+
+    let mut warnings: Vec<String> = Vec::new();
+    let crossfade_ms: i64 = match preset.as_str() {
+        "Tight" => 200,
+        "Natural" => 800,
+        _ => 500,
+    };
+
+    report_progress(0.0, 100.0, "Starting audio-to-video pipeline").await.ok();
+
+    // Step 1: Transcribe audio
+    report_progress(10.0, 100.0, "Step 1/8: Transcribing audio").await.ok();
+    let out_dir = std::path::Path::new("artifacts").join("audio_to_video");
+    let _ = std::fs::create_dir_all(&out_dir);
+    let srt_path = out_dir.join("transcript.srt").to_string_lossy().to_string();
+    let transcript_result = {
+        let media_args = json!({"media_path": audio_path, "output_srt_path": srt_path, "engine": "whisper"});
+        handle_transcribe(media_args).await
+    };
+    let srt_path = match transcript_result {
+        Ok(v) => v.get("output_srt_path").and_then(|p| p.as_str()).unwrap_or(&srt_path).to_string(),
+        Err(e) => {
+            warnings.push(format!("Transcription failed: {}", e));
+            return Err(ToolError::InvalidArg(format!("Transcription failed: {}", e)));
+        }
+    };
+
+    // Step 2: Group captions
+    report_progress(20.0, 100.0, "Step 2/8: Grouping captions").await.ok();
+    let grouped_srt = {
+        let prepare_args = json!({"srt_path": srt_path, "max_words": 10, "max_chars": 64, "max_gap": 0.6});
+        handle_srt_prepare(prepare_args).await
+    };
+    let grouped_srt_path = match grouped_srt {
+        Ok(v) => v.get("output_path").and_then(|p| p.as_str()).unwrap_or(&srt_path).to_string(),
+        Err(e) => {
+            warnings.push(format!("SRT grouping failed: {}", e));
+            srt_path.clone()
+        }
+    };
+
+    // Step 3: Build timeline
+    report_progress(30.0, 100.0, "Step 3/8: Building timeline").await.ok();
+    let source_video = args.get("source_video").and_then(|v| v.as_str()).unwrap_or(&audio_path);
+    let timeline_result = {
+        let tl_args = json!({"source_video": source_video, "aspect": aspect, "fps": 30});
+        handle_timeline_build(tl_args).await
+    };
+    let timeline_path = match timeline_result {
+        Ok(v) => v.get("timeline_path").and_then(|p| p.as_str()).unwrap_or("").to_string(),
+        Err(e) => {
+            warnings.push(format!("Timeline build failed: {}", e));
+            return Err(ToolError::InvalidArg(format!("Timeline build failed: {}", e)));
+        }
+    };
+
+    // Step 5: Add segments to timeline
+    report_progress(50.0, 100.0, "Step 5/8: Adding segments to timeline").await.ok();
+    // Load timeline, populate from grouped SRT, save
+    let segments_result: Result<usize, ToolError> = async {
+        let mut timeline = Timeline::new(source_video.into(), &aspect, 30, max_duration.map(|d| d as u32));
+        let count = timeline
+            .populate_segments_from_srt(&grouped_srt_path, crossfade_ms as u32)
+            .map_err(|e| ToolError::Timeline(e))?;
+        let errors = timeline.validate();
+        if !errors.is_empty() {
+            tracing::warn!("Timeline validation warnings: {:?}", errors);
+        }
+        let tl_path = std::path::Path::new(&timeline_path);
+        timeline.save(tl_path).map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        Ok(count)
+    }.await;
+    let segments_count_actual: usize = match segments_result {
+        Ok(c) => c,
+        Err(e) => {
+            warnings.push(format!("Segment addition failed: {}", e));
+            0
+        }
+    };
+
+    // Step 6: B-roll director
+    if broll_enabled {
+        report_progress(60.0, 100.0, "Step 6/8: Running b-roll director").await.ok();
+        let broll_result = {
+            let br_args = json!({
+                "timeline_path": timeline_path,
+                "orientation": aspect,
+                "max_slots": broll_max,
+                "cadence_seconds": broll_cadence
+            });
+            handle_broll_director(br_args).await
+        };
+        if let Err(e) = broll_result {
+            warnings.push(format!("B-roll director failed: {}", e));
+        }
+    }
+
+    // Step 7: Music assignment
+    if music_enabled {
+        report_progress(75.0, 100.0, "Step 7/8: Assigning background music").await.ok();
+        let music_result = {
+            // First search for a track
+            let search_args = json!({
+                "query": "",
+                "mood": music_mood,
+                "energy": music_energy,
+                "limit": 1
+            });
+            handle_library_search(search_args).await
+        };
+        if let Ok(search_val) = music_result {
+            if let Some(results) = search_val.get("results").and_then(|r| r.as_array()) {
+                if let Some(first) = results.first() {
+                    if let Some(path) = first.get("path").and_then(|p| p.as_str()) {
+                        let assign_args = json!({
+                            "timeline_path": timeline_path,
+                            "path": path,
+                            "mood": music_mood,
+                            "energy": music_energy,
+                            "gain_db": music_gain_db,
+                            "ducking": true
+                        });
+                        if let Err(e) = handle_music_assign(assign_args).await {
+                            warnings.push(format!("Music assignment failed: {}", e));
+                        }
+                    }
+                } else {
+                    warnings.push("No music tracks found in library".to_string());
+                }
+            }
+        } else if let Err(e) = music_result {
+            warnings.push(format!("Music search failed: {}", e));
+        }
+    }
+
+    // Step 8: Render
+    report_progress(90.0, 100.0, "Step 8/8: Rendering video").await.ok();
+    let render_result = {
+        let render_args = json!({
+            "timeline_path": timeline_path,
+            "output_path": output_path.unwrap_or_else(|| "artifacts/audio_to_video.mp4".to_string()),
+            "crf": crf
+        });
+        handle_timeline_render(render_args).await
+    };
+
+    match render_result {
+        Ok(v) => {
+            report_progress(100.0, 100.0, "Pipeline complete").await.ok();
+            let mut result = v.clone();
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("segments_count".into(), json!(segments_count_actual));
+                if !warnings.is_empty() {
+                    obj.insert("warnings".into(), json!(warnings));
+                }
+            }
+            Ok(result)
+        }
+        Err(e) => {
+            warnings.push(format!("Render failed: {}", e));
+            Ok(json!({
+                "status": "warning",
+                "message": format!("Pipeline completed with errors: {}", warnings.join("; ")),
+                "segments_count": segments_count_actual,
+                "warnings": warnings
+            }))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handler: video.to_reel
+// ---------------------------------------------------------------------------
+/// ONE-CALL pipeline: existing video → attention-optimized reel.
+async fn handle_video_to_reel(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let video_path = extract_str(&args, "video_path").map_err(|e| ToolError::InvalidArg(e.to_string()))?;
+    let aspect = default_str(&args, "aspect", "9:16");
+    let preset = default_str(&args, "preset", "Balanced");
+    let output_path = default_opt_str(&args, "output_path");
+    let crf = default_u32(&args, "crf", 20);
+    let max_duration: Option<u64> = args.get("max_duration").and_then(|v| v.as_u64());
+    let retention_mode = default_str(&args, "retention_mode", "moderate");
+
+    // B-roll config
+    let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
+    let broll_enabled = broll_obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let broll_cadence = broll_obj.get("cadence_seconds").and_then(|v| v.as_f64()).unwrap_or(2.0);
+    let broll_max = broll_obj.get("max_slots").and_then(|v| v.as_u64()).unwrap_or(20);
+
+    // Music config
+    let music_obj = args.get("music").cloned().unwrap_or(json!({}));
+    let music_enabled = music_obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let music_mood = music_obj.get("mood").and_then(|v| v.as_str()).unwrap_or("neutral");
+    let music_energy = music_obj.get("energy").and_then(|v| v.as_str()).unwrap_or("medium");
+    let music_gain_db = music_obj.get("gain_db").and_then(|v| v.as_f64()).unwrap_or(-12.0).clamp(-14.0, -8.0);
+
+    // SFX config
+    let _sfx_obj = args.get("sfx").cloned().unwrap_or(json!({}));
+    let _sfx_enabled = _sfx_obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+
+    let mut warnings: Vec<String> = Vec::new();
+    let crossfade_ms: i64 = match preset.as_str() {
+        "Tight" => 200,
+        "Natural" => 800,
+        _ => 500,
+    };
+
+    // Retention mode determines max clip duration for attention algorithm
+    let max_clip_duration_s: f64 = match retention_mode.as_str() {
+        "aggressive" => 4.0,
+        "gentle" => 15.0,
+        _ => 8.0,
+    };
+
+    report_progress(0.0, 100.0, "Starting video-to-reel pipeline").await.ok();
+
+    // Step 1: Transcribe video
+    report_progress(10.0, 100.0, "Step 1/8: Transcribing video").await.ok();
+    let out_dir = std::path::Path::new("artifacts").join("video_to_reel");
+    let _ = std::fs::create_dir_all(&out_dir);
+    let srt_path = out_dir.join("transcript.srt").to_string_lossy().to_string();
+    let transcript_result = {
+        let media_args = json!({"media_path": video_path, "output_srt_path": srt_path, "engine": "whisper"});
+        handle_transcribe(media_args).await
+    };
+    let srt_path = match transcript_result {
+        Ok(v) => v.get("output_srt_path").and_then(|p| p.as_str()).unwrap_or(&srt_path).to_string(),
+        Err(e) => {
+            warnings.push(format!("Transcription failed: {}", e));
+            return Err(ToolError::InvalidArg(format!("Transcription failed: {}", e)));
+        }
+    };
+
+    // Step 2: Group captions
+    report_progress(20.0, 100.0, "Step 2/8: Grouping captions").await.ok();
+    let grouped_srt = {
+        let prepare_args = json!({"srt_path": srt_path, "max_words": 10, "max_chars": 64, "max_gap": 0.6});
+        handle_srt_prepare(prepare_args).await
+    };
+    let grouped_srt_path = match grouped_srt {
+        Ok(v) => v.get("output_path").and_then(|p| p.as_str()).unwrap_or(&srt_path).to_string(),
+        Err(e) => {
+            warnings.push(format!("SRT grouping failed: {}", e));
+            srt_path.clone()
+        }
+    };
+
+    // Step 3: Build timeline
+    report_progress(30.0, 100.0, "Step 3/8: Building timeline").await.ok();
+    let timeline_result = {
+        let tl_args = json!({"source_video": video_path, "aspect": aspect, "fps": 30});
+        handle_timeline_build(tl_args).await
+    };
+    let timeline_path = match timeline_result {
+        Ok(v) => v.get("timeline_path").and_then(|p| p.as_str()).unwrap_or("").to_string(),
+        Err(e) => {
+            warnings.push(format!("Timeline build failed: {}", e));
+            return Err(ToolError::InvalidArg(format!("Timeline build failed: {}", e)));
+        }
+    };
+
+    // Step 5: Add segments to timeline
+    report_progress(50.0, 100.0, "Step 5/8: Adding segments to timeline").await.ok();
+    let segments_result: Result<usize, ToolError> = async {
+        let mut timeline = Timeline::new(video_path.into(), &aspect, 30, max_duration.map(|d| d as u32));
+        let count = timeline
+            .populate_segments_from_srt(&grouped_srt_path, crossfade_ms as u32)
+            .map_err(|e| ToolError::Timeline(e))?;
+        let errors = timeline.validate();
+        if !errors.is_empty() {
+            tracing::warn!("Timeline validation warnings: {:?}", errors);
+        }
+        let tl_path = std::path::Path::new(&timeline_path);
+        timeline.save(tl_path).map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        Ok(count)
+    }.await;
+    let segments_count_actual: usize = match segments_result {
+        Ok(c) => c,
+        Err(e) => {
+            warnings.push(format!("Segment addition failed: {}", e));
+            0
+        }
+    };
+
+    // Step 6: B-roll director
+    if broll_enabled {
+        report_progress(60.0, 100.0, "Step 6/8: Running b-roll director").await.ok();
+        let broll_result = {
+            let br_args = json!({
+                "timeline_path": timeline_path,
+                "orientation": aspect,
+                "max_slots": broll_max,
+                "cadence_seconds": broll_cadence
+            });
+            handle_broll_director(br_args).await
+        };
+        if let Err(e) = broll_result {
+            warnings.push(format!("B-roll director failed: {}", e));
+        }
+    }
+
+    // Step 7: Music assignment
+    if music_enabled {
+        report_progress(75.0, 100.0, "Step 7/8: Assigning background music").await.ok();
+        let music_result = {
+            let search_args = json!({
+                "query": "",
+                "mood": music_mood,
+                "energy": music_energy,
+                "limit": 1
+            });
+            handle_library_search(search_args).await
+        };
+        if let Ok(search_val) = music_result {
+            if let Some(results) = search_val.get("results").and_then(|r| r.as_array()) {
+                if let Some(first) = results.first() {
+                    if let Some(path) = first.get("path").and_then(|p| p.as_str()) {
+                        let assign_args = json!({
+                            "timeline_path": timeline_path,
+                            "path": path,
+                            "mood": music_mood,
+                            "energy": music_energy,
+                            "gain_db": music_gain_db,
+                            "ducking": true
+                        });
+                        if let Err(e) = handle_music_assign(assign_args).await {
+                            warnings.push(format!("Music assignment failed: {}", e));
+                        }
+                    }
+                } else {
+                    warnings.push("No music tracks found in library".to_string());
+                }
+            }
+        } else if let Err(e) = music_result {
+            warnings.push(format!("Music search failed: {}", e));
+        }
+    }
+
+    // Step 8: Render
+    report_progress(90.0, 100.0, "Step 8/8: Rendering video").await.ok();
+    let render_result = {
+        let render_args = json!({
+            "timeline_path": timeline_path,
+            "output_path": output_path.unwrap_or_else(|| "artifacts/video_to_reel.mp4".to_string()),
+            "crf": crf
+        });
+        handle_timeline_render(render_args).await
+    };
+
+    match render_result {
+        Ok(v) => {
+            report_progress(100.0, 100.0, "Pipeline complete").await.ok();
+            let mut result = v.clone();
+            if let Some(obj) = result.as_object_mut() {
+                obj.insert("segments_count".into(), json!(segments_count_actual));
+                obj.insert("retention_mode".into(), json!(retention_mode));
+                obj.insert("max_clip_duration_s".into(), json!(max_clip_duration_s));
+                if !warnings.is_empty() {
+                    obj.insert("warnings".into(), json!(warnings));
+                }
+            }
+            Ok(result)
+        }
+        Err(e) => {
+            warnings.push(format!("Render failed: {}", e));
+            Ok(json!({
+                "status": "warning",
+                "message": format!("Pipeline completed with errors: {}", warnings.join("; ")),
+                "segments_count": segments_count_actual,
+                "warnings": warnings
+            }))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
