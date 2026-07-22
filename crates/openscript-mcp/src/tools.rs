@@ -4788,14 +4788,8 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
         ));
     }
 
-    // Generate ASS subtitles with word-level timing for burn-in.
-    // We use generate_ass (from openscript_core::captions) instead of
-    // srt_to_ass to get per-word timing for kinetic-style captions.
-    //
-    // CRITICAL: After xfade rendering, the output time basis differs from
-    // the source. We remap SRT timestamps from source time → output time
-    // by calculating each segment's output start offset accounting for
-    // crossfade overlap between consecutive segments.
+    // Generate ASS subtitles via the atomic captions.generate_ass tool.
+    // This handles word-level timing, crossfade remapping, and ASS writing.
     let ass_path = {
         let p = Path::new(&grouped_srt_path);
         let parent = p.parent().unwrap_or(Path::new("."));
@@ -4808,120 +4802,24 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
             .to_string_lossy()
             .to_string()
     };
-    // Parse the WORD-LEVEL SRT and group with real word timings.
-    // This preserves Whisper's per-word timestamps instead of approximating
-    // them with estimate_word_timings (which evenly spaces words across the
-    // segment duration, producing out-of-sync captions).
-    match openscript_core::srt::parse_srt(&srt_path) {
-        Ok(word_entries) => {
-            let grouped_phrases = group_entries_with_words(&word_entries, 10, 64, 0.6);
-
-            // Calculate output-time offsets for each segment.
-            // The filter graph trims each segment from source, then
-            // concatenates with xfade. After concat, segment i starts at:
-            //   output_start[i] = sum(seg[0..i].dur) - i * crossfade_s
-            let crossfade_s = crossfade_ms as f64 / 1000.0;
-            let mut output_offsets: Vec<f64> = Vec::new();
-            let mut accum = 0.0;
-            for phrase in &grouped_phrases {
-                let idx = output_offsets.len();
-                output_offsets.push(accum - (idx as f64 * crossfade_s));
-                let dur = phrase.end - phrase.start;
-                accum += dur;
-            }
-
-            // Build CaptionSegment list with REMAPPED timestamps using
-            // REAL word timings from Whisper transcription.
-            let caption_segments: Vec<CaptionSegment> = grouped_phrases
-                .iter()
-                .enumerate()
-                .map(|(i, phrase)| {
-                    let out_start = (output_offsets[i] * 1000.0).round() as i64;
-                    let out_end = out_start + ((phrase.end - phrase.start) * 1000.0).round() as i64;
-                    // Remap each word's timing from source-time to output-time
-                    let words: Vec<WordTiming> = phrase
-                        .words
-                        .iter()
-                        .map(|(word, ws, we)| {
-                            let word_start_ms = out_start + ((*ws - phrase.start) * 1000.0).round() as i64;
-                            let word_end_ms = out_start + ((*we - phrase.start) * 1000.0).round() as i64;
-                            WordTiming {
-                                word: word.clone(),
-                                start_ms: word_start_ms,
-                                end_ms: word_end_ms,
-                            }
-                        })
-                        .collect();
-                    CaptionSegment {
-                        text: phrase.text.clone(),
-                        start_ms: out_start,
-                        end_ms: out_end,
-                        words,
-                    }
-                })
-                .collect();
-
-            let caption_spec = default_reel_caption_spec();
-            let ass_content = generate_ass(&caption_segments, &caption_spec, 1080, 1920);
-            // Canonicalize the ASS path to ensure it's absolute
-            let canonical_ass = std::fs::canonicalize(&ass_path)
-                .unwrap_or_else(|_| ass_path.clone().into());
-            match std::fs::write(&ass_path, &ass_content) {
-                Ok(()) => {
-                    timeline
-                        .assets
-                        .captions
-                        .insert("ass".into(), json!({"path": canonical_ass.to_string_lossy()}));
-                }
-                Err(e) => warnings.push(format!("ASS write failed: {}", e)),
-            }
+    match handle_captions_generate_ass(json!({
+        "srt_path": &srt_path,
+        "crossfade_ms": crossfade_ms,
+        "output_path": &ass_path,
+    })).await {
+        Ok(result) => {
+            let canonical = result.get("ass_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&ass_path)
+                .to_string();
+            timeline
+                .assets
+                .captions
+                .insert("ass".into(), json!({"path": canonical}));
         }
         Err(e) => {
-            // Fallback: use grouped SRT entries with estimated word timings
-            // (less accurate than Whisper word-level, but better than no captions)
-            warnings.push(format!("Word-level SRT parse failed for ASS, falling back to grouped SRT: {}", e));
-            match openscript_core::srt::parse_srt(&grouped_srt_path) {
-                Ok(entries) => {
-                    let crossfade_s = crossfade_ms as f64 / 1000.0;
-                    let mut output_offsets: Vec<f64> = Vec::new();
-                    let mut accum = 0.0;
-                    for (i, entry) in entries.iter().enumerate() {
-                        output_offsets.push(accum - (i as f64 * crossfade_s));
-                        let dur = entry.end - entry.start;
-                        accum += dur;
-                    }
-                    let caption_segments: Vec<CaptionSegment> = entries
-                        .iter()
-                        .enumerate()
-                        .map(|(i, entry)| {
-                            let out_start = (output_offsets[i] * 1000.0).round() as i64;
-                            let out_end = out_start + ((entry.end - entry.start) * 1000.0).round() as i64;
-                            let words = estimate_word_timings(&entry.text, out_start, out_end);
-                            CaptionSegment {
-                                text: entry.text.clone(),
-                                start_ms: out_start,
-                                end_ms: out_end,
-                                words,
-                            }
-                        })
-                        .collect();
-                    let caption_spec = default_reel_caption_spec();
-                    let ass_content = generate_ass(&caption_segments, &caption_spec, 1080, 1920);
-                    let canonical_ass = std::fs::canonicalize(&ass_path)
-                        .unwrap_or_else(|_| ass_path.clone().into());
-                    match std::fs::write(&ass_path, &ass_content) {
-                        Ok(()) => {
-                            timeline
-                                .assets
-                                .captions
-                                .insert("ass".into(), json!({"path": canonical_ass.to_string_lossy()}));
-                        }
-                        Err(e) => warnings.push(format!("ASS write failed: {}", e)),
-                    }
-                }
-                Err(e2) => warnings.push(format!("Both SRT parses failed for ASS: {} / {}", e, e2)),
-            }
-        },
+            warnings.push(format!("ASS generation failed: {}", e));
+        }
     }
 
     let validation_errors = timeline.validate();
@@ -5601,65 +5499,22 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // render_multilayer, the SRT timestamps already match the audio
     // timeline — no remapping needed.
     report_progress(45.0, 100.0, "Generating captions").await;
-    // Parse the WORD-LEVEL SRT and group with real word timings.
-    // This preserves Whisper's per-word timestamps instead of approximating
-    // them with estimate_word_timings (which evenly spaces words across the
-    // segment duration, producing out-of-sync captions).
     let ass_path = {
         let ass_file = grouped_srt_path.replace(".srt", ".ass");
-        let caption_segments: Vec<CaptionSegment> = match openscript_core::srt::parse_srt(&srt_path) {
-            Ok(word_entries) => {
-                let grouped_phrases = group_entries_with_words(&word_entries, 10, 64, 0.6);
-                grouped_phrases
-                    .iter()
-                    .map(|phrase| {
-                        let start_ms = (phrase.start * 1000.0).round() as i64;
-                        let end_ms = (phrase.end * 1000.0).round() as i64;
-                        // Use REAL word timings from Whisper, not estimate_word_timings
-                        let words: Vec<WordTiming> = phrase
-                            .words
-                            .iter()
-                            .map(|(word, ws, we)| {
-                                WordTiming {
-                                    word: word.clone(),
-                                    start_ms: (ws * 1000.0).round() as i64,
-                                    end_ms: (we * 1000.0).round() as i64,
-                                }
-                            })
-                            .collect();
-                        CaptionSegment {
-                            text: phrase.text.clone(),
-                            start_ms,
-                            end_ms,
-                            words,
-                        }
-                    })
-                    .collect()
+        match handle_captions_generate_ass(json!({
+            "srt_path": &srt_path,
+            "output_path": &ass_file,
+        })).await {
+            Ok(result) => {
+                result.get("ass_path")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| ass_file)
             }
             Err(e) => {
-                warnings.push(format!("Word-level SRT parse failed for ASS, falling back to grouped SRT: {}", e));
-                // Fallback: use grouped SRT entries with estimated word timings
-                srt_entries.iter().map(|e| {
-                    let start_ms = (e.start * 1000.0).round() as i64;
-                    let end_ms = (e.end * 1000.0).round() as i64;
-                    let words = estimate_word_timings(&e.text, start_ms, end_ms);
-                    CaptionSegment {
-                        text: e.text.clone(),
-                        start_ms,
-                        end_ms,
-                        words,
-                    }
-                }).collect()
+                warnings.push(format!("ASS generation failed: {}", e));
+                String::new()
             }
-        };
-
-        let caption_spec = default_reel_caption_spec();
-        let ass_content = generate_ass(&caption_segments, &caption_spec, width, height);
-        if let Err(e) = std::fs::write(&ass_file, &ass_content) {
-            warnings.push(format!("ASS generation failed: {}", e));
-            String::new()
-        } else {
-            ass_file
         }
     };
 
