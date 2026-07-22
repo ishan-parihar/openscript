@@ -98,6 +98,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "width": {"type": "integer", "default": 1080, "description": "Video width in pixels"},
                     "height": {"type": "integer", "default": 1920, "description": "Video height in pixels"},
                     "crossfade_ms": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Crossfade duration in ms. When set, remaps SRT timestamps from source-time to output-time to account for xfade overlaps between segments."},
+                    "grouped_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional grouped SRT path for fallback when word-level SRT parsing fails. When set, uses this file with estimated word timings as a fallback."},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output ASS file path (auto-generated if omitted)"}
                 },
                 "required": ["srt_path"],
@@ -1811,6 +1812,9 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
 // ---------------------------------------------------------------------------
 async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let srt_path = extract_str(&args, "srt_path")?;
+    let grouped_srt_path = args.get("grouped_srt_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let style = default_str(&args, "style", "word_highlight");
     let font = default_str(&args, "font", "Bebas Neue");
     let font_size = default_u32(&args, "font_size", 84);
@@ -1916,9 +1920,29 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
             }
         }
         Err(e) => {
-            return Err(ToolError::InvalidArg(format!(
-                "Failed to parse SRT {}: {}", srt_path, e
-            )));
+            // Fallback: try grouped SRT with estimated word timings
+            let fallback_path = grouped_srt_path.as_deref().unwrap_or(&srt_path);
+            match openscript_core::srt::parse_srt(fallback_path) {
+                Ok(fallback_entries) => {
+                    tracing::warn!("Word-level SRT parse failed for captions: {}, using grouped SRT fallback", e);
+                    fallback_entries.iter().map(|entry| {
+                        let start_ms = (entry.start * 1000.0).round() as i64;
+                        let end_ms = (entry.end * 1000.0).round() as i64;
+                        let words = estimate_word_timings(&entry.text, start_ms, end_ms);
+                        CaptionSegment {
+                            text: entry.text.clone(),
+                            start_ms,
+                            end_ms,
+                            words,
+                        }
+                    }).collect()
+                }
+                Err(e2) => {
+                    return Err(ToolError::InvalidArg(format!(
+                        "Failed to parse SRT {}: {} (fallback also failed: {})", srt_path, e, e2
+                    )));
+                }
+            }
         }
     };
 
