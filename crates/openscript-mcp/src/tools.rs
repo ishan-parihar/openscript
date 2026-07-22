@@ -4500,12 +4500,9 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
 
     // Music options
     let music_obj = args.get("music").cloned().unwrap_or(json!({}));
-    let music_enabled = default_bool(&music_obj, "enabled", true);        // NOTE: mood/energy are extracted but not used for library.search because
-        // music_library_index.json entries all have mood="none" and energy="none",
-        // causing exact-match filtering to reject all tracks. Kept for future use
-        // when the library indexer populates these fields properly.
-        let _music_mood = default_str(&music_obj, "mood", "neutral");
-        let _music_energy = default_str(&music_obj, "energy", "medium");
+    let music_enabled = default_bool(&music_obj, "enabled", true);
+    let music_mood = default_str(&music_obj, "mood", "neutral");
+    let music_energy = default_str(&music_obj, "energy", "medium");
     let music_gain_db = default_f64(&music_obj, "gain_db", -10.0);
 
     // SFX options
@@ -4682,17 +4679,15 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
         // wrapper. The library_index.json entries have mood="none" and energy="none",
         // so mood/energy exact-match filters would reject all tracks.
         let music_search_args = json!({
-            "query": "background music",
+            "query": format!("{} {} background music", music_mood, music_energy),
             "limit": 1,
         });
-        eprintln!("[reelize.timeline] Music search args: {}", music_search_args);
         let music_path = match handle_library_search(music_search_args).await {
             Ok(r) => {
-                let results_count = r.get("results")
+                let _results_count = r.get("results")
                     .and_then(|v| v.as_array())
                     .map(|a| a.len())
                     .unwrap_or(0);
-                eprintln!("[reelize.timeline] Music search returned {} results", results_count);
                 // library.search results use 'filename' key (just filename),
                 // not 'path'. Construct the full path from the music directory.
                 // Fallback: if the file doesnt exist in mcp/assets/music/,
@@ -4710,24 +4705,20 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
                             return Some(primary.to_string_lossy().to_string());
                         }
                         // Fallback: pick first MP3 from mcp/assets/music_cache/
-                        eprintln!("[reelize.timeline] Music file not at primary path, trying cache...");
                         let cache_dir = resolve_repo_path("mcp/assets/music_cache");
                         if let Ok(entries) = std::fs::read_dir(&cache_dir) {
                             for entry in entries.flatten() {
                                 let path = entry.path();
                                 if path.extension().map_or(false, |e| e == "mp3") {
                                     let path_str = path.to_string_lossy().to_string();
-                                    eprintln!("[reelize.timeline] Music path (cache fallback): {}", path_str);
                                     return Some(path_str);
                                 }
                             }
                         }
-                        eprintln!("[reelize.timeline] No music files found in cache either");
                         None
                     })
             },
             Err(e) => {
-                eprintln!("[reelize.timeline] Music search failed: {}", e);
                 warnings.push(format!("Music search failed: {}", e));
                 None
             }
@@ -4737,8 +4728,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
             let music_args = json!({
                 "timeline_path": &timeline_path,
                 "path": path,
-                "mood": _music_mood,
-                "energy": _music_energy,
+
                 "gain_db": music_gain_db,
                 "ducking": true,
             });
