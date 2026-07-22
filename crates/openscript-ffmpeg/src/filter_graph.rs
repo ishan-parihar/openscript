@@ -582,7 +582,10 @@ impl FilterGraphBuilder {
         // B-roll overlays — each b-roll event overlays at its timestamp
         if !self.broll_events.is_empty() {
             let mut current_v = vout.clone();
-            for (i, broll) in self.broll_events.iter().enumerate() {
+            let broll_events: Vec<_> = self.broll_events.iter().filter(|b| {
+        !b.path.is_empty() && b.path != "placeholder" && std::path::Path::new(&b.path).exists()
+    }).collect();
+    for (i, broll) in broll_events.iter().enumerate() {
                 let start_s = broll.start_ms as f64 / 1000.0;
                 let out_label = format!("vbroll_{}", i);
                 let escaped_path = escape_filter_path(&broll.path).unwrap_or_else(|e| {
@@ -591,7 +594,7 @@ impl FilterGraphBuilder {
                 });
 
                 parts.push(format!(
-                    "[{}]movie='{}':f=mp4:si=v[broll_src_{}]",
+                    "[{}]movie='{}':f=mp4:si=0[broll_src_{}]",
                     &current_v[1..current_v.len() - 1],
                     escaped_path,
                     i
