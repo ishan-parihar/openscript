@@ -4704,8 +4704,8 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
             let music_args = json!({
                 "timeline_path": &timeline_path,
                 "path": path,
-                "mood": music_mood,
-                "energy": music_energy,
+                "mood": _music_mood,
+                "energy": _music_energy,
                 "gain_db": music_gain_db,
                 "ducking": true,
             });
