@@ -1,4 +1,77 @@
 {
-  "assets": [],
-  "total_assets": 0
+  "version": "1.0",
+  "created_at": "2026-07-22T11:47:34.954714880+00:00",
+  "music_paths": [
+    "mcp/assets/music_cache"
+  ],
+  "total_assets": 3,
+  "moods": {
+    "neutral": 3
+  },
+  "energy_levels": {
+    "medium": 3
+  },
+  "assets": [
+    {
+      "id": "music_0000",
+      "path": "mcp/assets/music_cache/jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill.mp3",
+      "title": "jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill",
+      "artist": "Unknown",
+      "duration_ms": 172315,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0001",
+      "path": "mcp/assets/music_cache/_Melodic_Lofi_Chill_Music_For_Videos_-_Alone_by_Al_-jrh3Mk8ZCA.mp3",
+      "title": "_Melodic_Lofi_Chill_Music_For_Videos_-_Alone_by_Al_-jrh3Mk8ZCA",
+      "artist": "Unknown",
+      "duration_ms": 140713,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "_Melodic_Lofi_Chill_Music_For_Videos_-_Alone_by_Al_-jrh3Mk8ZCA"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0002",
+      "path": "mcp/assets/music_cache/øneheart_x_reidenshi_-_snowfall_LlN8MPS7KQs.mp3",
+      "title": "øneheart_x_reidenshi_-_snowfall_LlN8MPS7KQs",
+      "artist": "Unknown",
+      "duration_ms": 123228,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "øneheart_x_reidenshi_-_snowfall_LlN8MPS7KQs"
+      ],
+      "genre": ""
+    }
+  ],
+  "search_aliases": {}
 }

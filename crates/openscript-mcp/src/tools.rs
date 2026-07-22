@@ -4500,9 +4500,12 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
 
     // Music options
     let music_obj = args.get("music").cloned().unwrap_or(json!({}));
-    let music_enabled = default_bool(&music_obj, "enabled", true);
-    let music_mood = default_str(&music_obj, "mood", "neutral");
-    let music_energy = default_str(&music_obj, "energy", "medium");
+    let music_enabled = default_bool(&music_obj, "enabled", true);        // NOTE: mood/energy are extracted but not used for library.search because
+        // music_library_index.json entries all have mood="none" and energy="none",
+        // causing exact-match filtering to reject all tracks. Kept for future use
+        // when the library indexer populates these fields properly.
+        let _music_mood = default_str(&music_obj, "mood", "neutral");
+        let _music_energy = default_str(&music_obj, "energy", "medium");
     let music_gain_db = default_f64(&music_obj, "gain_db", -10.0);
 
     // SFX options
@@ -4675,10 +4678,12 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
 
     if music_enabled {
         // Search for a matching music track first, then pass its path to music.assign
+        // NOTE: Do NOT pass mood/energy filters to library.search — the
+        // music_library_index.json entries have mood="none" and energy="none"
+        // because the library.build indexer doesn't populate those fields.
+        // Exact-match filtering would reject ALL 487 tracks.
         let music_search_args = json!({
-            "query": format!("{} {} background", music_mood, music_energy),
-            "mood": music_mood,
-            "energy": music_energy,
+            "query": "background music",
             "limit": 1,
         });
         let music_path = match handle_music_search(music_search_args).await {
