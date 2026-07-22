@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (87 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (88 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 /// Resolve the fonts directory for ASS subtitle rendering.
@@ -90,6 +90,30 @@ pub fn tool_definitions() -> serde_json::Value {
                     "max_words": {"type": "integer", "default": 10, "description": "Max words per caption segment"},
                     "max_chars": {"type": "integer", "default": 64, "description": "Max characters per caption segment"},
                     "max_gap": {"type": "number", "default": 0.6, "description": "Max gap in seconds between words to keep them in same group"}
+                },
+                "required": ["srt_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "captions.generate_ass",
+            "description": "Generate ASS subtitle file from word-level SRT with per-word timing. Optionally remaps timestamps to account for xfade crossfade overlaps between concatenated segments. Use this to create kinetic-style captions (word_highlight, standard, etc.) for any timeline. Returns: ass_path, segment_count.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "srt_path": {"type": "string", "description": "Path to word-level SRT file (from transcribe)"},
+                    "style": {"type": "string", "default": "word_highlight", "description": "Caption style: 'word_highlight' (TikTok per-word pop-up), 'standard' (full-sentence), 'kinetic' (animated word-by-word)"},
+                    "font": {"type": "string", "default": "Bebas Neue", "description": "Font name for captions"},
+                    "font_size": {"type": "integer", "default": 84, "description": "Font size in pixels"},
+                    "color": {"type": "string", "default": "#ffffff", "description": "Primary caption color (hex)"},
+                    "highlight_color": {"type": "string", "default": "#00ff88", "description": "Word highlight color for word_highlight style (hex)"},
+                    "position": {"type": "string", "default": "center", "description": "Caption position: 'center' or 'bottom'"},
+                    "safe_zone": {"type": "number", "default": 0.85, "description": "Vertical safe zone (0.0-1.0) for caption placement"},
+                    "max_words_per_line": {"type": "integer", "default": 5, "description": "Max words per displayed line"},
+                    "width": {"type": "integer", "default": 1080, "description": "Video width in pixels"},
+                    "height": {"type": "integer", "default": 1920, "description": "Video height in pixels"},
+                    "crossfade_ms": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Crossfade duration in ms. When set, remaps SRT timestamps from source-time to output-time to account for xfade overlaps between segments."},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output ASS file path (auto-generated if omitted)"}
                 },
                 "required": ["srt_path"],
                 "additionalProperties": false
@@ -1304,6 +1328,7 @@ pub fn route_tool(
         "transcribe" => Box::pin(handle_transcribe(args)),
         "srt.read" => Box::pin(handle_srt_read(args)),
         "srt.prepare" => Box::pin(handle_srt_prepare(args)),
+        "captions.generate_ass" => Box::pin(handle_captions_generate_ass(args)),
         "srt.apply_edit" => Box::pin(handle_srt_apply_edit(args)),
         "edl.build" => Box::pin(handle_edl_build(args)),
         "render" => Box::pin(handle_render(args)),
@@ -1793,6 +1818,136 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
         "word_srt_path": result.word_srt_path,
         "phrase_srt_path": result.phrase_srt_path,
         "engine": format!("{}", result.engine),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: captions.generate_ass
+// ---------------------------------------------------------------------------
+async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let srt_path = extract_str(&args, "srt_path")?;
+    let style = default_str(&args, "style", "word_highlight");
+    let font = default_str(&args, "font", "Bebas Neue");
+    let font_size = default_u32(&args, "font_size", 84);
+    let color = default_str(&args, "color", "#ffffff");
+    let highlight_color = default_str(&args, "highlight_color", "#00ff88");
+    let position = default_str(&args, "position", "center");
+    let safe_zone = args.get("safe_zone").and_then(|v| v.as_f64()).unwrap_or(0.85);
+    let max_words_per_line = default_u32(&args, "max_words_per_line", 5);
+    let width = default_u32(&args, "width", 1080);
+    let height = default_u32(&args, "height", 1920);
+    let crossfade_ms = args.get("crossfade_ms").and_then(|v| v.as_i64()).map(|v| v as u32);
+    let output_path = args.get("output_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let spec = CaptionsSpec {
+        style: style.to_string(),
+        font: font.to_string(),
+        font_size,
+        color: color.to_string(),
+        highlight_color: highlight_color.to_string(),
+        position: position.to_string(),
+        safe_zone,
+        max_words_per_line,
+    };
+
+    // Determine output path
+    let ass_path = if let Some(p) = output_path {
+        p
+    } else {
+        let parent = Path::new(&srt_path).parent().unwrap_or(Path::new("."));
+        parent.join("captions.ass").to_string_lossy().to_string()
+    };
+
+    // Parse word-level SRT and group with real word timings
+    let caption_segments: Vec<CaptionSegment> = match openscript_core::srt::parse_srt(&srt_path) {
+        Ok(word_entries) => {
+            let grouped_phrases = group_entries_with_words(&word_entries, 10, 64, 0.6);
+
+            if let Some(cf_ms) = crossfade_ms {
+                // Remap timestamps for xfade crossfade overlaps
+                let crossfade_s = cf_ms as f64 / 1000.0;
+                let mut output_offsets: Vec<f64> = Vec::new();
+                let mut accum = 0.0;
+                for phrase in &grouped_phrases {
+                    let idx = output_offsets.len();
+                    output_offsets.push(accum - (idx as f64 * crossfade_s));
+                    let dur = phrase.end - phrase.start;
+                    accum += dur;
+                }
+
+                grouped_phrases
+                    .iter()
+                    .enumerate()
+                    .map(|(i, phrase)| {
+                        let out_start = (output_offsets[i] * 1000.0).round() as i64;
+                        let out_end = out_start + ((phrase.end - phrase.start) * 1000.0).round() as i64;
+                        let words: Vec<WordTiming> = phrase
+                            .words
+                            .iter()
+                            .map(|(word, ws, we)| {
+                                let word_start_ms = out_start + ((*ws - phrase.start) * 1000.0).round() as i64;
+                                let word_end_ms = out_start + ((*we - phrase.start) * 1000.0).round() as i64;
+                                WordTiming {
+                                    word: word.clone(),
+                                    start_ms: word_start_ms,
+                                    end_ms: word_end_ms,
+                                }
+                            })
+                            .collect();
+                        CaptionSegment {
+                            text: phrase.text.clone(),
+                            start_ms: out_start,
+                            end_ms: out_end,
+                            words,
+                        }
+                    })
+                    .collect()
+            } else {
+                // No crossfade remapping — use source timestamps directly
+                grouped_phrases
+                    .iter()
+                    .map(|phrase| {
+                        let start_ms = (phrase.start * 1000.0).round() as i64;
+                        let end_ms = (phrase.end * 1000.0).round() as i64;
+                        let words: Vec<WordTiming> = phrase
+                            .words
+                            .iter()
+                            .map(|(word, ws, we)| WordTiming {
+                                word: word.clone(),
+                                start_ms: (ws * 1000.0).round() as i64,
+                                end_ms: (we * 1000.0).round() as i64,
+                            })
+                            .collect();
+                        CaptionSegment {
+                            text: phrase.text.clone(),
+                            start_ms,
+                            end_ms,
+                            words,
+                        }
+                    })
+                    .collect()
+            }
+        }
+        Err(e) => {
+            return Err(ToolError::InvalidArg(format!(
+                "Failed to parse SRT {}: {}", srt_path, e
+            )));
+        }
+    };
+
+    let ass_content = generate_ass(&caption_segments, &spec, width, height);
+    std::fs::write(&ass_path, &ass_content)
+        .map_err(|e| ToolError::Io(e))?;
+
+    let canonical_ass = std::fs::canonicalize(&ass_path)
+        .unwrap_or_else(|_| ass_path.clone().into());
+
+    Ok(json!({
+        "status": "success",
+        "ass_path": canonical_ass.to_string_lossy().to_string(),
+        "segment_count": caption_segments.len(),
     }))
 }
 
