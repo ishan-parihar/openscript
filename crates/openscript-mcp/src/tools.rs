@@ -1419,6 +1419,37 @@ fn default_opt_bool(args: &serde_json::Value, key: &str) -> Option<bool> {
     args.get(key).and_then(|v| v.as_bool())
 }
 
+/// Extract a meaningful b-roll concept from a caption string.
+/// Skips stopwords and short words to avoid garbage Pexels searches like
+/// "The" or "But". Falls back to the first 2 significant words.
+fn extract_broll_concept(caption: &str) -> String {
+    let stopwords = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
+        "had", "do", "does", "did", "will", "would", "could", "should", "can", "may",
+        "might", "this", "that", "these", "those", "your", "you", "they", "them",
+        "their", "with", "from", "into", "about", "what", "when", "where", "which",
+        "who", "how", "why", "for", "and", "but", "not", "all", "any", "some",
+        "more", "most", "other", "such", "only", "own", "same", "than", "too",
+        "very", "just", "also", "now", "then", "there", "here", "he", "she", "it",
+        "we", "us", "our", "my", "me", "i", "his", "her", "its", "or", "so",
+        "if", "in", "on", "at", "to", "of", "no", "up",
+    ];
+    let significant: Vec<String> = caption
+        .split_whitespace()
+        .map(|w| {
+            let clean: String = w.chars().filter(|c| c.is_alphanumeric()).collect();
+            clean.to_lowercase()
+        })
+        .filter(|w| w.len() > 2 && !stopwords.contains(&w.as_str()))
+        .take(3)
+        .collect();
+    if significant.is_empty() {
+        "b-roll".to_string()
+    } else {
+        significant.join(" ")
+    }
+}
+
 fn default_opt_str(args: &serde_json::Value, key: &str) -> Option<String> {
     args.get(key)
         .and_then(|v| v.as_str())
@@ -3226,21 +3257,13 @@ async fn handle_broll_suggest(args: serde_json::Value) -> Result<serde_json::Val
         let end = seg.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let duration_ms = ((end - start) * 1000.0) as i64;
         // Derive concept from the segment caption instead of hardcoding "b-roll".
-        // Use the first 3 words of the caption as the concept — this gives the
-        // agent real keywords to search Pexels/YouTube for relevant footage.
+        // Use a salient noun/phrase from the caption — skip stopwords and short
+        // words that produce garbage Pexels searches ("The", "But", "And").
         let caption = seg
             .get("caption")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let concept = if caption.is_empty() {
-            "b-roll".to_string()
-        } else {
-            caption
-                .split_whitespace()
-                .take(3)
-                .collect::<Vec<_>>()
-                .join(" ")
-        };
+        let concept = extract_broll_concept(caption);
 
         if duration_ms > cadence_ms * 2 {
             let mut t = 0i64;
@@ -4653,6 +4676,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
     if music_enabled {
         // Search for a matching music track first, then pass its path to music.assign
         let music_search_args = json!({
+            "query": format!("{} {} background", music_mood, music_energy),
             "mood": music_mood,
             "energy": music_energy,
             "limit": 1,
