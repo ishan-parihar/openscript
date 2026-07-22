@@ -5149,7 +5149,6 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         "Natural" => 800,
         _ => 500,
     };
-    let _crossfade = crossfade_ms;
 
     // ---- Diagnostics ----
     let mut warnings: Vec<String> = Vec::new();
@@ -5424,9 +5423,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         sfx: sfx_hits,
     };
 
-    let _output = render_multilayer(&render_spec).await
-        .map_err(|e| ToolError::Ffmpeg(format!("Render failed: {}", e)))?;
-
+    render_multilayer(&render_spec).await        .map_err(|e| ToolError::Ffmpeg(format!("Render failed: {}", e)))?;
     report_progress(95.0, 100.0, "Render complete").await;
 
     // Get file size
