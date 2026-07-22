@@ -188,6 +188,7 @@ The three supported workflows are NOT hardcoded pipelines — they are **golden 
 - Agent decides caption style (word_highlight, sentence_fade, karaoke_fill, subtitle_rail)
 - Agent selects music mood/energy based on content tone
 - Agent can retry with different presets if verify.production scores low
+- **Manual control:** For fine-grained control, skip script.to_video and call individual tools: script.generate_voices → script.build_captions → background.fetch → sticker.render → script.to_timeline → timeline.render
 
 ### Trajectory B — NLE Editing of Existing Footage
 
@@ -223,7 +224,7 @@ The three supported workflows are NOT hardcoded pipelines — they are **golden 
 6. broll.director               → AI-directed b-roll: search Pexels + download + assign
 7. library.search               → find background music matching content tone
 8. music.assign                 → assign music with ducking under speech
-9. sfx.index                    → (run once) build SFX library index
+9. sfx.index                    → (idempotent) build SFX library index — skip if mcp/assets/sfx_index.json exists
 10. sfx.assign                   → hook SFX at 0ms, transitions between segments
 10. timeline.validate            → check for timing errors
 11. timeline.render              → final multi-track render
@@ -254,7 +255,7 @@ The three supported workflows are NOT hardcoded pipelines — they are **golden 
 8. broll.director               → search + download + assign contextually relevant clips
 9. library.search               → find music matching content energy
 10. music.assign                 → assign music with ducking
-11. sfx.index                    → (run once) build SFX library index
+11. sfx.index                    → (idempotent) build SFX library index — skip if mcp/assets/sfx_index.json exists
 12. sfx.assign                   → attention hooks at segment transitions
 13. timeline.validate            → check for errors
 14. timeline.render              → final render
