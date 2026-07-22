@@ -583,7 +583,7 @@ impl FilterGraphBuilder {
         if !self.broll_events.is_empty() {
             let mut current_v = vout.clone();
             let broll_events: Vec<_> = self.broll_events.iter().filter(|b| {
-        !b.path.is_empty() && b.path != "placeholder" && std::path::Path::new(&b.path).exists()
+        !b.path.is_empty() && b.path != "placeholder"
     }).collect();
     for (i, broll) in broll_events.iter().enumerate() {
                 let start_s = broll.start_ms as f64 / 1000.0;
