@@ -5396,13 +5396,19 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         let mut used_pexels_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for (scene_idx, (scene_text, scene_start, scene_end)) in scenes.iter().enumerate() {
-            // Build diverse Pexels concepts from scene text
+            // Build diverse Pexels concepts from scene text.
+            // Use cycling fallbacks to ensure each scene gets a UNIQUE background.
+            let fallbacks = ["abstract motion", "city timelapse", "technology waves", "nature aerial", "ocean sunset", "space nebula", "ocean waves", "mountain landscape"];
+            let mut concepts: Vec<String> = Vec::new();
+            
+            // Try to extract scene-specific concept
             let base_concept = extract_broll_concept(scene_text);
             let significant_words: Vec<&str> = scene_text.split_whitespace()
                 .filter(|w| w.len() > 3)
                 .collect();
-            let mut concepts: Vec<String> = Vec::new();
-            if !base_concept.is_empty() {
+            
+            // Use scene-specific concept if it's meaningful (not just 'b-roll')
+            if !base_concept.is_empty() && base_concept != "b-roll" {
                 concepts.push(base_concept);
             }
             // Add a 2-word phrase from the scene for more relevant stock search
@@ -5412,10 +5418,10 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                     concepts.push(phrase);
                 }
             }
-            // Fallback: cycle through generic concepts per scene for diversity
-            if concepts.is_empty() {
-                let fallbacks = ["abstract motion", "city timelapse", "technology waves", "nature aerial", "ocean sunset"];
-                concepts.push(fallbacks[scene_idx % fallbacks.len()].to_string());
+            // Always add a cycling fallback to ensure diversity across scenes
+            let fallback = fallbacks[scene_idx % fallbacks.len()];
+            if !concepts.iter().any(|c| c == fallback) {
+                concepts.push(fallback.to_string());
             }
             let fetch_args = json!({
                 "concepts": concepts,
