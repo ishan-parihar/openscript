@@ -5423,7 +5423,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                                 background_clips.push(BackgroundClip {
                                     path: path.to_string_lossy().to_string(),
                                     duration_s: scene_dur,
-                                    looped: false,
+                                    looped: true, // Loop so shorter clips fill the scene duration
                                 });
                                 tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
                                 break;
