@@ -250,19 +250,15 @@ def transcribe_ggml(
         all_words = _parse_word_srt_file(str(word_srt_path_out))
         _log_hinglish(f"Parsed {len(all_words)} words with actual timestamps")
     else:
-        _log_hinglish("WARNING: Word-level SRT not found, estimating timestamps from segments")
-        # Fallback: estimate word timestamps from segment data
+        _log_hinglish("WARNING: Word-level SRT not found — using segment-level data only")
+        # Do NOT estimate word timestamps — they produce garbage timing
+        # that breaks word-highlight captions. Use segment-level text only.
         for entry in entries:
-            words = entry["text"].split()
-            if words:
-                duration = entry["end_s"] - entry["start_s"]
-                word_duration = duration / len(words)
-                for i, word in enumerate(words):
-                    all_words.append({
-                        "word": word,
-                        "start_s": entry["start_s"] + i * word_duration,
-                        "end_s": entry["start_s"] + (i + 1) * word_duration,
-                    })
+            all_words.append({
+                "word": entry["text"],
+                "start_s": entry["start_s"],
+                "end_s": entry["end_s"],
+            })
     
     full_text = " ".join(s["text"] for s in entries)
     duration_s = entries[-1]["end_s"] if entries else 0.0

@@ -735,8 +735,8 @@ fn build_result(
             format!("{}/{}.apex.phrase.srt", out_dir_str, stem),
         ),
         TranscriptionEngine::HinglishGgml => (
-            format!("{}/{}.nemotron.word.srt", out_dir_str, stem),
-            format!("{}/{}.nemotron.phrase.srt", out_dir_str, stem),
+            format!("{}/{}.hinglish-ggml.word.srt", out_dir_str, stem),
+            format!("{}/{}.hinglish-ggml.phrase.srt", out_dir_str, stem),
         ),
     };
 
