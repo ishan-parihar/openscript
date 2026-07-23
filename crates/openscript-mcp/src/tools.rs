@@ -15010,14 +15010,21 @@ async fn handle_system_capabilities(
     });
 
     // Transcription engine (HinglishGgml — the sole engine)
-    let transcription_available = {
+    let transcription = {
         let result = openscript_transcribe::transcriber::check_hinglish_ggml_health().await;
-        result.is_ok()
+        match result {
+            Ok(_) => json!({
+                "available": true,
+                "engine": "hinglish-ggml",
+                "reason": serde_json::Value::Null,
+            }),
+            Err(reason) => json!({
+                "available": false,
+                "engine": "hinglish-ggml",
+                "reason": reason,
+            }),
+        }
     };
-    let transcription = json!({
-        "available": transcription_available,
-        "engine": "hinglish-ggml",
-    });
 
     // HyperFrames (default render engine)
     let hf_dir = resolve("hyperframes");
