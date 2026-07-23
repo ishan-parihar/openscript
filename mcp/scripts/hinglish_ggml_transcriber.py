@@ -190,7 +190,7 @@ def transcribe_ggml(
             vad_model = candidate
             break
     
-    if vad_model.exists():
+    if vad_model is not None and vad_model.exists():
         cmd.extend(["--vad", "--vad-model", str(vad_model)])
         _log_hinglish(f"Using VAD model: {vad_model}")
     else:
