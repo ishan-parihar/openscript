@@ -20,7 +20,11 @@
 //    - Python sidecar: mcp/scripts/apex_transcriber.py
 //    - Kept for backward compatibility, will be removed in a future release.
 //
-// Whisper is the only functional engine. Nemotron and Apex are deprecated.
+// 4. HinglishGgml — whisper.cpp + Whisper-Hindi2Hinglish-Apex-GGML (q8_0)
+//    - Direct Hinglish output from Hindi audio (no LLM post-processing needed)
+//    - Requires whisper-cli (built from source) and GGML model file
+//    - Python sidecar: mcp/scripts/hinglish_ggml_transcriber.py
+//    - Best for Hindi audio where native Latin-script output is desired.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -49,6 +53,7 @@ pub enum TranscriptionEngine {
     
     Nemotron,
     Apex,
+    HinglishGgml,
 }
 
 impl std::fmt::Display for TranscriptionEngine {
@@ -58,6 +63,7 @@ impl std::fmt::Display for TranscriptionEngine {
             #[allow(deprecated)]
             Self::Nemotron => write!(f, "nemotron"),
             Self::Apex => write!(f, "apex"),
+            Self::HinglishGgml => write!(f, "hinglish-ggml"),
         }
     }
 }
@@ -210,6 +216,11 @@ fn find_apex_script() -> Option<PathBuf> {
 /// Find the Nemotron ONNX transcription script (onnxruntime-genai).
 fn find_nemotron_onnx_script() -> Option<PathBuf> {
     resolve_script("OPENSCRIPT_NEMOTRON_ONNX_WRAPPER", "nemotron_onnx_transcriber.py")
+}
+
+/// Find the Hinglish GGML transcription script (whisper.cpp + Hindi2Hinglish).
+fn find_hinglish_ggml_script() -> Option<PathBuf> {
+    resolve_script("OPENSCRIPT_HINGLISH_GGML_WRAPPER", "hinglish_ggml_transcriber.py")
 }
 
 /// Cross-platform home directory resolution.
@@ -418,6 +429,10 @@ pub async fn transcribe_with_engine(
             tracing::warn!("Apex engine is deprecated. Use Whisper instead.");
             transcribe_apex(media_path, output_srt_path, &stem, out_dir).await
         }
+        TranscriptionEngine::HinglishGgml => {
+            tracing::info!("Using Hinglish GGML engine (whisper.cpp + Hindi2Hinglish-Apex-GGML)");
+            transcribe_hinglish_ggml(media_path, output_srt_path, &stem, out_dir, language_hint).await
+        }
     }
 }
 
@@ -530,6 +545,90 @@ async fn transcribe_nemotron_onnx(
 }
 
 // =============================================================================
+// =============================================================================
+// TRANSCRIPTION — HINGLISH GGML ENGINE (whisper.cpp + Hindi2Hinglish-Apex-GGML)
+// ==============================================================================
+
+/// Transcribe using whisper.cpp with the Whisper-Hindi2Hinglish-Apex-GGML model.
+/// Outputs Hinglish (Latin script) directly from Hindi audio.
+async fn transcribe_hinglish_ggml(
+    media_path: &str,
+    output_srt_path: &str,
+    stem: &str,
+    out_dir: &Path,
+    language_hint: &str,
+) -> Result<TranscribeResult, TranscribeError> {
+    let wrapper = find_hinglish_ggml_script().ok_or_else(|| {
+        TranscribeError::WrapperNotFound(
+            "hinglish_ggml_transcriber.py not found. Set OPENSCRIPT_HINGLISH_GGML_WRAPPER or \
+             ensure mcp/scripts/hinglish_ggml_transcriber.py exists."
+                .into(),
+        )
+    })?;
+
+    let python = find_system_python().ok_or_else(|| {
+        TranscribeError::PythonNotFound(
+            "System Python 3 not found. Set OPENSCRIPT_PYTHON env var.".into(),
+        )
+    })?;
+
+    let mut cmd = Command::new(&python);
+    cmd.arg(&wrapper)
+        .arg("run")
+        .arg("--video")
+        .arg(media_path)
+        .arg("--out-dir")
+        .arg(out_dir)
+        .arg("--language")
+        .arg(language_hint)
+        .kill_on_drop(true);
+
+    let output = cmd.output().await.map_err(TranscribeError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(TranscribeError::TranscriptionFailed {
+            engine: "hinglish-ggml".into(),
+            detail: stderr.lines().rev().take(5).collect::<Vec<_>>().join("
+"),
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let result: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+        TranscribeError::TranscriptionFailed {
+            engine: "hinglish-ggml".into(),
+            detail: format!("Failed to parse sidecar output: {}", e),
+        }
+    })?;
+
+    if result.get("error").is_some() {
+        return Err(TranscribeError::TranscriptionFailed {
+            engine: "hinglish-ggml".into(),
+            detail: result["error"].as_str().unwrap_or("unknown error").to_string(),
+        });
+    }
+
+    let output_srt = result["output_srt_path"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            out_dir
+                .join(format!("{}.nemotron.srt", stem))
+                .to_string_lossy()
+                .to_string()
+        });
+
+    if output_srt != output_srt_path && Path::new(&output_srt).exists() {
+        if let Ok(content) = std::fs::read_to_string(&output_srt) {
+            std::fs::write(output_srt_path, content).map_err(TranscribeError::Io)?;
+        }
+    }
+
+    build_result(output_srt_path, stem, out_dir, TranscriptionEngine::HinglishGgml)
+}
+
+
 // TRANSCRIPTION — APEX ENGINE (DEPRECATED)
 // =============================================================================
 
@@ -635,6 +734,10 @@ fn build_result(
             format!("{}/{}.apex.word.srt", out_dir_str, stem),
             format!("{}/{}.apex.phrase.srt", out_dir_str, stem),
         ),
+        TranscriptionEngine::HinglishGgml => (
+            format!("{}/{}.nemotron.word.srt", out_dir_str, stem),
+            format!("{}/{}.nemotron.phrase.srt", out_dir_str, stem),
+        ),
     };
 
     Ok(TranscribeResult {
@@ -717,10 +820,18 @@ mod tests {
     }
 
     #[test]
+    fn test_find_hinglish_ggml_script() {
+        let result = find_hinglish_ggml_script();
+        // On a dev machine with the repo checked out, this should find the file
+        assert!(result.is_some() || std::env::var("OPENSCRIPT_HINGLISH_GGML_WRAPPER").is_err());
+    }
+
+    #[test]
     fn test_transcription_engine_display() {
         assert_eq!(TranscriptionEngine::Whisper.to_string(), "whisper");
         assert_eq!(TranscriptionEngine::Nemotron.to_string(), "nemotron");
         assert_eq!(TranscriptionEngine::Apex.to_string(), "apex");
+        assert_eq!(TranscriptionEngine::HinglishGgml.to_string(), "hinglish-ggml");
     }
 
     #[tokio::test]

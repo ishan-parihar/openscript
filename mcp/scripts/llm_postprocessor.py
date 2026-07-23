@@ -63,7 +63,12 @@ def _log(msg: str):
 # ---------------------------------------------------------------------------
 
 def detect_script(text: str) -> str:
-    """Detect the dominant script of the text."""
+    """Detect the dominant script of the text.
+    
+    Recognizes: Latin, Devanagari (Hindi), Arabic/Urdu, and falls back to 'other'.
+    Arabic/Urdu script (0x0600-0x06FF) is common for Hindi audio transcribed
+    by Whisper when it auto-detects Urdu instead of Hindi.
+    """
     chars = list(text)
     total_alpha = sum(1 for c in chars if c.isalpha())
 
@@ -75,14 +80,21 @@ def detect_script(text: str) -> str:
         1 for c in chars
         if DEVANAGARI_RANGE[0] <= ord(c) <= DEVANAGARI_RANGE[1]
     )
+    arabic = sum(
+        1 for c in chars
+        if 0x0600 <= ord(c) <= 0x06FF or 0x0750 <= ord(c) <= 0x077F
+    )
 
     latin_pct = latin / total_alpha
     deva_pct = devanagari / total_alpha
+    arabic_pct = arabic / total_alpha
 
     if latin_pct > LATIN_THRESHOLD:
         return "latin"
     elif deva_pct > 0.3:
         return "devanagari"
+    elif arabic_pct > 0.3:
+        return "arabic"  # Whisper often outputs Urdu script for Hindi audio
     else:
         return "other"
 
@@ -194,24 +206,162 @@ DEVANAGARI_MAP = {
     "५": "5", "६": "6", "७": "7", "८": "8", "९": "9",
 }
 
+# Arabic/Urdu → Latin mapping (common Hindi/Urdu words in Arabic script)
+# Whisper outputs this when it auto-detects Urdu instead of Hindi.
+ARABIC_MAP = {
+    # Consonants
+    "ا": "a",   # ا  alef
+    "ب": "b",   # ب  ba
+    "ت": "t",   # ت  ta
+    "ث": "th",  # ث  tha
+    "ج": "j",   # ج  jim
+    "ح": "h",   # ح  ha
+    "خ": "kh",  # خ  kha
+    "د": "d",   # د  dal
+    "ذ": "z",   # ذ  zal
+    "ر": "r",   # ر  ra
+    "ز": "z",   # ز  za
+    "س": "s",   # س  sin
+    "ش": "sh",  # ش  shin
+    "ص": "s",   # ص  sad
+    "ض": "z",   # ض  dad
+    "ط": "t",   # ط  ta
+    "ظ": "z",   # ظ  za
+    "ع": "a",   # ع  ain
+    "غ": "gh",  # غ  ghain
+    "ف": "f",   # ف  fa
+    "ق": "q",   # ق  qaf
+    "ك": "k",   # ك  kaf
+    "ل": "l",   # ل  lam
+    "م": "m",   # م  mim
+    "ن": "n",   # ن  nun
+    "و": "w",   # و  waw
+    "ه": "h",   # ه  ha
+    "ی": "y",   # ی  ya
+    # Diacritics (harakat) - typically stripped in casual text
+    "َ": "a",   # ـَ  fatha
+    "ِ": "i",   # ـِ  kasra
+    "ُ": "u",   # ـُ  damma
+    "ْ": "",    # ـْ  sukun (silent)
+}
+
+# Common Hindi/Urdu words written in Arabic script → Hinglish
+ARABIC_WORD_MAP = {
+    "ہیں": "hain",
+    "ہی": "hi",
+    "کی": "ki",
+    "کا": "ka",
+    "کے": "ke",
+    "سے": "se",
+    "کو": "ko",
+    "میں": "main",
+    "یہ": "yeh",
+    "وہ": "woh",
+    "اور": "aur",
+    "لیکن": "lekin",
+    "نہیں": "nahi",
+    "بھی": "bhi",
+    "تم": "tum",
+    "ہم": "hum",
+    "سب": "sab",
+    "لوگ": "log",
+    "ہے": "hai",
+    "ہو": "ho",
+    "کر": "kar",
+    "جو": "jo",
+    "اس": "us",
+    "ایک": "ek",
+    "کہا": "kaha",
+    "پر": "par",
+    "بہت": "bahut",
+    "دنیا": "duniya",
+    "آپ": "aap",
+    "کیا": "kya",
+    "یہاں": "yahan",
+    "وہاں": "wahan",
+    "کیوں": "kyun",
+    "لے": "le",
+    "دے": "de",
+    "ان": "in",
+    "سرکار": "sarkar",
+    "پٹی": "pati",
+    "میڈیا": "media",
+    "کا": "ka",
+    "بچے": "bacche",
+    "آواज": "awaaz",
+    "کرپشن": "corruption",
+    "پیسے": "paise",
+    "بھائی": "bhai",
+    "گریبی": "gareebi",
+    "پروٹیسٹ": "protest",
+    "موٹی": "moti",
+    "چار": "char",
+    "گاڑی": "gaadi",
+    "نکل": "nikal",
+    "چاپل": "chaapal",
+    "نائی": "nai",
+    "بیجی": "bijli",
+    "و": "wa",
+    "کہ": "ki",
+    "جیس": "jaise",
+    "شروعاتی": "shuruati",
+    "دیتے": "dete",
+    "لکھ": "likh",
+    "ہوگے": "hoge",
+    "والا": "wala",
+    "پیستے": "peeste",
+    "سی": "si",
+    "ٹا": "taa",
+    "گر": "gar",
+}
+
+
+def _transliterate_arabic_word(word: str) -> str:
+    """Transliterate a single Arabic/Urdu word to Latin script.
+    First checks the word map, then falls back to char-by-char."""
+    # Check common word map first
+    if word in ARABIC_WORD_MAP:
+        return ARABIC_WORD_MAP[word]
+    # Char-by-char fallback
+    result = []
+    for ch in word:
+        if 0x0600 <= ord(ch) <= 0x06FF or 0x0750 <= ord(ch) <= 0x077F:
+            result.append(ARABIC_MAP.get(ch, ""))
+        elif ch.isascii():
+            result.append(ch)
+        else:
+            result.append(ch)
+    return "".join(result)
+
 
 def rule_based_transliterate(text: str) -> str:
-    """Simple rule-based Devanagari → Latin transliteration.
+    """Rule-based Devanagari/Arabic → Latin transliteration.
 
     This is a fallback when the LLM API is unavailable.
-    Not as good as LLM conversion but functional.
+    Uses word-level mapping for Arabic/Urdu (higher quality) and
+    char-by-char for Devanagari.
     """
-    result = []
-    for char in text:
-        if DEVANAGARI_RANGE[0] <= ord(char) <= DEVANAGARI_RANGE[1]:
-            result.append(DEVANAGARI_MAP.get(char, char))
-        elif char.isascii():
-            result.append(char)
-        else:
-            result.append(char)
+    # Detect dominant script
+    arabic_chars = sum(1 for c in text if 0x0600 <= ord(c) <= 0x06FF)
+    deva_chars = sum(1 for c in text if DEVANAGARI_RANGE[0] <= ord(c) <= DEVANAGARI_RANGE[1])
+
+    if arabic_chars > deva_chars:
+        # Arabic/Urdu script — use word-level transliteration
+        words = text.split()
+        result = [_transliterate_arabic_word(w) for w in words]
+    else:
+        # Devanagari — char-by-char transliteration
+        result = []
+        for char in text:
+            if DEVANAGARI_RANGE[0] <= ord(char) <= DEVANAGARI_RANGE[1]:
+                result.append(DEVANAGARI_MAP.get(char, char))
+            elif char.isascii():
+                result.append(char)
+            else:
+                result.append(char)
 
     # Clean up double spaces
-    output = "".join(result)
+    output = " ".join(result)
     output = re.sub(r"\s+", " ", output).strip()
 
     # Capitalize first letter of sentences
@@ -228,7 +378,7 @@ def postprocess(text: str, source_lang: str = "hi-IN") -> dict:
     """Post-process transcription text.
 
     Args:
-        text: Input text (Devanagari for Hindi, Latin for other langs)
+        text: Input text (Devanagari/Arabic for Hindi, Latin for other langs)
         source_lang: Source language code
 
     Returns:
@@ -239,26 +389,28 @@ def postprocess(text: str, source_lang: str = "hi-IN") -> dict:
     if script == "empty":
         return {"text": "", "script": "empty", "skipped": True}
 
-    # Skip conversion for non-Devanagari text
-    if script != "devanagari":
-        _log(f"Text is {script} script, skipping conversion")
+    # Skip conversion for Latin text (already Hinglish)
+    if script == "latin":
+        _log(f"Text is Latin script, skipping conversion")
         return {"text": text, "script": script, "skipped": True}
 
-    _log(f"Converting Devanagari → Hinglish ({len(text)} chars)")
-    start = time.time()
+    # Convert Devanagari or Arabic/Urdu to Hinglish
+    if script in ("devanagari", "arabic"):
+        _log(f"Converting {script} → Hinglish ({len(text)} chars)")
+        start = time.time()
+        converted = call_llm_api(text)
+        elapsed = time.time() - start
+        _log(f"Conversion done in {elapsed:.1f}s")
+        return {
+            "text": converted,
+            "script": "hinglish",
+            "source_script": script,
+            "source_lang": source_lang,
+            "skipped": False,
+        }
 
-    converted = call_llm_api(text)
-
-    elapsed = time.time() - start
-    _log(f"Conversion done in {elapsed:.1f}s")
-
-    return {
-        "text": converted,
-        "script": "hinglish",
-        "source_script": "devanagari",
-        "source_lang": source_lang,
-        "skipped": False,
-    }
+    _log(f"Text is {script} script, skipping conversion")
+    return {"text": text, "script": script, "skipped": True}
 
 
 # ---------------------------------------------------------------------------
