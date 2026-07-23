@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (87 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (89 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 use openscript_ffmpeg::multilayer_render::StickerOverlay;
@@ -608,6 +608,19 @@ pub fn tool_definitions() -> serde_json::Value {
                     "quality": {"type": "string", "default": "sd", "description": "Video quality for Pexels search"},
                     "max_slots": {"type": "integer", "default": 20, "description": "Maximum b-roll slots to create"},
                     "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert b-roll"}
+                },
+                "required": ["timeline_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "broll.plan",
+            "description": "Analyze timeline segments and return structured JSON with timestamps, captions, and suggested b-roll keywords for each segment. The agent reviews these suggestions, customizes keywords using its LLM capabilities, then calls broll.fetch with approved keywords. Returns: segments array with id, start_s, end_s, caption, suggested_keywords. Use BEFORE broll.fetch to get contextually relevant b-roll placement plan.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"},
+                    "max_keywords_per_segment": {"type": "integer", "default": 3, "description": "Max keyword suggestions per segment"}
                 },
                 "required": ["timeline_path"],
                 "additionalProperties": false
@@ -1425,6 +1438,7 @@ pub fn route_tool(
         "broll.fetch" => Box::pin(handle_broll_fetch(args)),
         "broll.assign" => Box::pin(handle_broll_assign(args)),
         "broll.director" => Box::pin(handle_broll_director(args)),
+        "broll.plan" => Box::pin(handle_broll_plan(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
         "timeline.diff" => Box::pin(handle_timeline_diff(args)),
@@ -4749,6 +4763,116 @@ async fn handle_broll_director(args: serde_json::Value) -> Result<serde_json::Va
         "broll_slots_filled": filled_count,
         "concepts_used": concepts,
         "cached_paths": cached_paths,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: broll.plan — segment inspector for agent-orchestrated b-roll
+// ---------------------------------------------------------------------------
+
+/// Generate basic keyword suggestions from a caption for Pexels search.
+fn generate_broll_keywords(caption: &str, max_keywords: usize) -> Vec<String> {
+    if caption.trim().is_empty() {
+        return vec!["abstract motion".to_string()];
+    }
+    let stopwords: std::collections::HashSet<&str> = [
+        "this", "that", "with", "from", "have", "been", "were", "they",
+        "their", "what", "when", "where", "which", "about", "would",
+        "could", "should", "there", "these", "those", "than", "then",
+        "into", "over", "just", "also", "very", "some", "more",
+        "most", "other", "only", "such", "each", "much", "many",
+        "like", "well", "back", "made", "make", "here", "take",
+        "know", "want", "look", "come", "good", "give", "first",
+        "bhai", "log", "aaj", "hum", "baat", "karenge", "ke",
+        "hai", "mein", "ko", "se", "ne", "ka", "ki", "ye",
+        "wo", "aur", "ek", "do", "jo", "nahi", "ho", "to",
+        "ab", "us", "par", "bhi", "kya", "kaise", "kyun",
+        "the", "and", "for", "are", "but", "not", "you", "all",
+        "can", "had", "her", "was", "one", "our", "out", "day",
+        "get", "has", "him", "his", "how", "its", "may", "new",
+        "now", "old", "see", "way", "who", "did", "got",
+    ].iter().cloned().collect();
+    let words: Vec<String> = caption
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() > 3 && !stopwords.contains(w.as_str()))
+        .take(max_keywords * 2)
+        .collect();
+    if words.is_empty() {
+        return vec!["abstract motion".to_string()];
+    }
+    let mut keywords = Vec::new();
+    let mut i = 0;
+    while i < words.len() && keywords.len() < max_keywords {
+        let remaining = words.len() - i;
+        if remaining >= 2 && keywords.len() < max_keywords {
+            keywords.push(format!("{} {}", words[i], words[i + 1]));
+            i += 2;
+        } else if keywords.len() < max_keywords {
+            keywords.push(words[i].clone());
+            i += 1;
+        } else {
+            break;
+        }
+    }
+    if keywords.is_empty() {
+        vec!["abstract motion".to_string()]
+    } else {
+        keywords
+    }
+}
+
+async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let timeline_path = extract_str(&args, "timeline_path")?;
+    let max_keywords = args.get("max_keywords_per_segment")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3) as usize;
+    let timeline_str = std::fs::read_to_string(&timeline_path)
+        .map_err(|e| ToolError::InvalidArg(format!("Failed to read timeline {}: {}", timeline_path, e)))?;
+    let timeline: serde_json::Value = serde_json::from_str(&timeline_str)
+        .map_err(|e| ToolError::InvalidArg(format!("Failed to parse timeline JSON: {}", e)))?;
+    let segments = if let Some(tracks) = timeline.get("tracks") {
+        if let Some(dialogue) = tracks.get("dialogue") {
+            dialogue.get("events").and_then(|e| e.as_array()).cloned().unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else if let Some(segs) = timeline.get("segments") {
+        segs.as_array().cloned().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut result_segments = Vec::new();
+    for (idx, seg) in segments.iter().enumerate() {
+        let start_s = seg.get("start_s")
+            .or_else(|| seg.get("start_ms")).and_then(|v| v.as_f64())
+            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+            .unwrap_or(0.0);
+        let end_s = seg.get("end_s")
+            .or_else(|| seg.get("end_ms")).and_then(|v| v.as_f64())
+            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+            .unwrap_or(start_s + 5.0);
+        let caption = seg.get("caption")
+            .or_else(|| seg.get("text")).and_then(|v| v.as_str())
+            .unwrap_or("");
+        let duration_s = end_s - start_s;
+        let keywords = generate_broll_keywords(caption, max_keywords);
+        result_segments.push(json!({
+            "id": format!("seg_{}", idx),
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": duration_s,
+            "caption": caption,
+            "suggested_keywords": keywords,
+        }));
+    }
+    Ok(json!({
+        "status": "success",
+        "segments_count": result_segments.len(),
+        "segments": result_segments,
     }))
 }
 
