@@ -131,7 +131,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "media_path": {"type": "string", "description": "Path to video or audio file to transcribe"},
                     "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."},
                     "language_hint": {"type": "string", "default": "auto", "description": "Language hint: 'auto' (detect), 'hi-IN' (Hindi → Hinglish), 'en-US' (English), 'hinglish'"},
-                    "engine": {"type": "string", "default": "hinglish-ggml", "description": "Transcription engine (default: hinglish-ggml)"}
+                    "engine": {"type": "string", "default": "hinglish-ggml", "description": "Reserved. Only hinglish-ggml (whisper.cpp + Hindi2Hinglish-Apex-GGML) is supported."}
                 },
                 "required": ["media_path"],
                 "additionalProperties": false
@@ -1848,11 +1848,8 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
         )));
     }
 
-    let language_hint = default_str(&args, "language_hint", "auto");
-    let _engine_str = default_str(&args, "engine", "hinglish-ggml");
-
-    // All transcription uses HinglishGgml (the sole engine)
-    let engine = openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml;
+    let language_hint = default_str(&args, "language_hint", "auto");        // All transcription uses HinglishGgml (the sole engine)
+        let engine = openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml;
 
     report_progress(0.0, 100.0, "Starting transcription...")
         .await
@@ -5308,7 +5305,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let srt_path = {
         let transcribe_args = json!({
             "media_path": &audio_path,
-            "engine": "whisper",
+            "engine": "hinglish-ggml",
         });
         let result = handle_transcribe(transcribe_args).await?;
         result.get("output_srt_path")

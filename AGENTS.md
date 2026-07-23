@@ -164,9 +164,7 @@ in a new environment** — it tells you which downstream tools will work.
 - **Stdin/stdout JSON protocol** for long-lived sidecars. Fresh-process-per-call
   is acceptable for one-shot tools but NEVER for per-segment TTS or alignment.
   (Note: `music_library_indexer.py` was deleted in Phase C — its `--build` path
-  is now a native Rust module at `crates/openscript-mcp/src/library_indexer.rs`.
-  The 3 remaining Python sidecars — `apex_transcriber.py`, `kokoro_tts_sidecar.py`,
-  `whisper_align.py` — all wrap Python-only ML models and must stay Python.)
+  is now a native Rust module at `crates/openscript-mcp/src/library_indexer.rs`.The 2 remaining Python sidecars — `kokoro_tts_sidecar.py` and `whisper_align.py` — wrap Python-only ML models and must stay Python. The HinglishGgml transcription uses `hinglish_ggml_transcriber.py` (whisper.cpp wrapper).)
 - **No `os.system`**, no `eval`, no `exec`.
 
 ---
@@ -460,7 +458,7 @@ If all 7 boxes are checked, the iteration is done. If not, you're not done.
 OpenScript must work on any developer's machine, not just the original
 author's. **Never hardcode a home directory.** Path resolution priority:
 
-1. **Explicit env var** (e.g. `OPENSCRIPT_SFX_PATH`, `OPENSCRIPT_APEX_WRAPPER`,
+1. **Explicit env var** (e.g. `OPENSCRIPT_SFX_PATH`,
    `KOKORO_SIDECAR`, `KOKORO_PYTHON`, `PEXELS_API_KEY`)
 2. **`CARGO_MANIFEST_DIR`** (compile-time workspace path; works in dev)
 3. **`OPENSCRIPT_ROOT`** (deployment override)

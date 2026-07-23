@@ -117,8 +117,7 @@ step "2/8 — Installing Python ML sidecar deps"
 # Kokoro sidecar needs: kokoro-onnx + numpy.
 # Pin a range that supports Python 3.11–3.13. Old pin kokoro-onnx==0.4.0
 # fails on Python 3.13 (requires <3.13). Prefer >=0.4.4 / latest 0.5.x.
-# Whisper sidecar (apex_transcriber.py) needs whisper_timestamped in the
-# whisper-hindi conda env (see AGENTS.md §16).
+# HinglishGgml transcription uses whisper.cpp + GGML model (see hinglish_ggml_transcriber.py).
 
 if command -v pip3 >/dev/null 2>&1; then
   info "Installing kokoro-onnx + numpy (user-level, no virtualenv)..."
