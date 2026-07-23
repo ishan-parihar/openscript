@@ -1,0 +1,1456 @@
+{
+  "version": "2.0",
+  "created_at": "2026-07-23T00:24:57.499988602Z",
+  "updated_at": "2026-07-23T00:25:37.163106977Z",
+  "source": "artifacts/black_holes_reel.mp4",
+  "target": {
+    "aspect": "9:16",
+    "fps": 30,
+    "max_duration": null,
+    "width": null,
+    "height": null
+  },
+  "segments": [
+    {
+      "id": "seg_001",
+      "start": 0.0,
+      "end": 3.0,
+      "caption": "Black holes are the most extreme objects in the universe.",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_002",
+      "start": 3.66,
+      "end": 7.8,
+      "caption": "They warp space and time so severely that nothing, not even",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_003",
+      "start": 7.8,
+      "end": 11.7,
+      "caption": "light can escape. At the edge of a black hole lies the",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_004",
+      "start": 11.7,
+      "end": 12.56,
+      "caption": "event horizon.",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_005",
+      "start": 13.28,
+      "end": 17.14,
+      "caption": "Once anything crosses this boundary, it is lost forever to the",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_006",
+      "start": 17.14,
+      "end": 21.1,
+      "caption": "singularity at the center. Black holes form when massive stars",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_007",
+      "start": 21.1,
+      "end": 22.84,
+      "caption": "collapse under their own gravity.",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_008",
+      "start": 23.46,
+      "end": 27.56,
+      "caption": "The resulting density is so extreme that a teaspoon of black",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_009",
+      "start": 27.56,
+      "end": 31.28,
+      "caption": "hole matter would weigh billions of tons. Near a black hole,",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_010",
+      "start": 31.56,
+      "end": 36.1,
+      "caption": "time itself slows down. If you could orbit close to one, time",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_011",
+      "start": 36.1,
+      "end": 39.2,
+      "caption": "would pass more slowly for you than for everyone else in the",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_012",
+      "start": 39.2,
+      "end": 42.96,
+      "caption": "universe. Black holes remind us that the universe is stranger",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_013",
+      "start": 42.96,
+      "end": 44.18,
+      "caption": "than we can imagine.",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_014",
+      "start": 44.84,
+      "end": 49.0,
+      "caption": "They are not destroyers, but the ultimate architects of cosmic",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_015",
+      "start": 49.0,
+      "end": 49.56,
+      "caption": "structure.",
+      "crossfade_ms": 500,
+      "semantic_role": null
+    }
+  ],
+  "tracks": {
+    "dialogue": [],
+    "broll": [
+      {
+        "id": "broll_001",
+        "asset_id": "mcp/assets/broll_cache/Black_13243859.mp4",
+        "start_ms": 0,
+        "end_ms": 2000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "Black"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "Black"
+        },
+        "event_type": "broll",
+        "concept": "Black",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_002",
+        "asset_id": "mcp/assets/broll_cache/Black_13243859.mp4",
+        "start_ms": 2000,
+        "end_ms": 3000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "Black"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "Black"
+        },
+        "event_type": "broll",
+        "concept": "Black",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_003",
+        "asset_id": "mcp/assets/broll_cache/They_6531803.mp4",
+        "start_ms": 3660,
+        "end_ms": 5660,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "They"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "They"
+        },
+        "event_type": "broll",
+        "concept": "They",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_004",
+        "asset_id": "mcp/assets/broll_cache/They_6531803.mp4",
+        "start_ms": 5660,
+        "end_ms": 7660,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "They"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "They"
+        },
+        "event_type": "broll",
+        "concept": "They",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_005",
+        "asset_id": "mcp/assets/broll_cache/They_6531803.mp4",
+        "start_ms": 7660,
+        "end_ms": 7800,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "They"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "They"
+        },
+        "event_type": "broll",
+        "concept": "They",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_006",
+        "asset_id": "mcp/assets/broll_cache/light_6782213.mp4",
+        "start_ms": 7800,
+        "end_ms": 9800,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "light"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "light"
+        },
+        "event_type": "broll",
+        "concept": "light",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_007",
+        "asset_id": "mcp/assets/broll_cache/light_6782213.mp4",
+        "start_ms": 9800,
+        "end_ms": 11700,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "light"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "light"
+        },
+        "event_type": "broll",
+        "concept": "light",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_008",
+        "asset_id": "mcp/assets/broll_cache/event_14875803.mp4",
+        "start_ms": 11700,
+        "end_ms": 12560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "event"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "event"
+        },
+        "event_type": "broll",
+        "concept": "event",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_009",
+        "asset_id": "mcp/assets/broll_cache/Once_10435896.mp4",
+        "start_ms": 13280,
+        "end_ms": 15280,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "Once"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "Once"
+        },
+        "event_type": "broll",
+        "concept": "Once",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_010",
+        "asset_id": "mcp/assets/broll_cache/Once_10435896.mp4",
+        "start_ms": 15280,
+        "end_ms": 17140,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "Once"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "Once"
+        },
+        "event_type": "broll",
+        "concept": "Once",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_011",
+        "asset_id": "mcp/assets/broll_cache/singularity_20349634.mp4",
+        "start_ms": 17140,
+        "end_ms": 19140,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "singularity"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "singularity"
+        },
+        "event_type": "broll",
+        "concept": "singularity",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_012",
+        "asset_id": "mcp/assets/broll_cache/singularity_20349634.mp4",
+        "start_ms": 19140,
+        "end_ms": 21100,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "singularity"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "singularity"
+        },
+        "event_type": "broll",
+        "concept": "singularity",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_013",
+        "asset_id": "mcp/assets/broll_cache/collapse_26976624.mp4",
+        "start_ms": 21100,
+        "end_ms": 22840,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "collapse"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "collapse"
+        },
+        "event_type": "broll",
+        "concept": "collapse",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_014",
+        "asset_id": "mcp/assets/broll_cache/The_32973936.mp4",
+        "start_ms": 23460,
+        "end_ms": 25460,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "The"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "The"
+        },
+        "event_type": "broll",
+        "concept": "The",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_015",
+        "asset_id": "mcp/assets/broll_cache/The_32973936.mp4",
+        "start_ms": 25460,
+        "end_ms": 27460,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "The"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "The"
+        },
+        "event_type": "broll",
+        "concept": "The",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_016",
+        "asset_id": "mcp/assets/broll_cache/The_32973936.mp4",
+        "start_ms": 27460,
+        "end_ms": 27560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "The"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "The"
+        },
+        "event_type": "broll",
+        "concept": "The",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_017",
+        "asset_id": "mcp/assets/broll_cache/hole_5874850.mp4",
+        "start_ms": 27560,
+        "end_ms": 29560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "hole"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "hole"
+        },
+        "event_type": "broll",
+        "concept": "hole",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_018",
+        "asset_id": "mcp/assets/broll_cache/hole_5874850.mp4",
+        "start_ms": 29560,
+        "end_ms": 31280,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "hole"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "hole"
+        },
+        "event_type": "broll",
+        "concept": "hole",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_019",
+        "asset_id": "mcp/assets/broll_cache/time_8322013.mp4",
+        "start_ms": 31560,
+        "end_ms": 33560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "time"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "time"
+        },
+        "event_type": "broll",
+        "concept": "time",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_020",
+        "asset_id": "mcp/assets/broll_cache/time_8322013.mp4",
+        "start_ms": 33560,
+        "end_ms": 35560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "time"
+        ],
+        "provenance": {
+          "tool": "broll.director",
+          "editorial_role": null,
+          "concept": "time"
+        },
+        "event_type": "broll",
+        "concept": "time",
+        "source_provider": "placeholder",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      }
+    ],
+    "captions": [
+      {
+        "id": "caption_001",
+        "asset_id": "",
+        "start_ms": 0,
+        "end_ms": 3000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Black holes are the most extreme objects in the universe.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_002",
+        "asset_id": "",
+        "start_ms": 3660,
+        "end_ms": 7800,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "They warp space and time so severely that nothing, not even",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_003",
+        "asset_id": "",
+        "start_ms": 7800,
+        "end_ms": 11700,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "light can escape. At the edge of a black hole lies the",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_004",
+        "asset_id": "",
+        "start_ms": 11700,
+        "end_ms": 12560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "event horizon.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_005",
+        "asset_id": "",
+        "start_ms": 13280,
+        "end_ms": 17140,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "Once anything crosses this boundary, it is lost forever to the",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_006",
+        "asset_id": "",
+        "start_ms": 17140,
+        "end_ms": 21100,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "singularity at the center. Black holes form when massive stars",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_007",
+        "asset_id": "",
+        "start_ms": 21100,
+        "end_ms": 22840,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "collapse under their own gravity.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_008",
+        "asset_id": "",
+        "start_ms": 23460,
+        "end_ms": 27560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "The resulting density is so extreme that a teaspoon of black",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_009",
+        "asset_id": "",
+        "start_ms": 27560,
+        "end_ms": 31280,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "hole matter would weigh billions of tons. Near a black hole,",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_010",
+        "asset_id": "",
+        "start_ms": 31560,
+        "end_ms": 36100,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "time itself slows down. If you could orbit close to one, time",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_011",
+        "asset_id": "",
+        "start_ms": 36100,
+        "end_ms": 39200,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "would pass more slowly for you than for everyone else in the",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_012",
+        "asset_id": "",
+        "start_ms": 39200,
+        "end_ms": 42960,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "universe. Black holes remind us that the universe is stranger",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_013",
+        "asset_id": "",
+        "start_ms": 42960,
+        "end_ms": 44180,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "than we can imagine.",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_014",
+        "asset_id": "",
+        "start_ms": 44840,
+        "end_ms": 49000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "They are not destroyers, but the ultimate architects of cosmic",
+        "style": "default",
+        "word_timings": []
+      },
+      {
+        "id": "caption_015",
+        "asset_id": "",
+        "start_ms": 49000,
+        "end_ms": 49560,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [],
+        "provenance": {
+          "tool": "reelize.timeline",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "caption",
+        "text": "structure.",
+        "style": "default",
+        "word_timings": []
+      }
+    ],
+    "voiceover": [],
+    "music": [
+      {
+        "id": "music_001",
+        "asset_id": "music_001",
+        "start_ms": 0,
+        "end_ms": 49560,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 500,
+        "fade_out_ms": 500,
+        "tags": [
+          "neutral",
+          "medium"
+        ],
+        "provenance": {
+          "tool": "music.assign",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "music",
+        "mood": "neutral",
+        "energy": "medium",
+        "bpm": null,
+        "loopability": true,
+        "intro_friendly": true,
+        "cta_friendly": true,
+        "loudness_target_lufs": -14.0,
+        "loop_mode": "loop",
+        "ducking_policy": "auto"
+      }
+    ],
+    "sfx": [
+      {
+        "id": "sfx_001",
+        "asset_id": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav",
+        "start_ms": 0,
+        "end_ms": 3370,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "hook"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "hook",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "hook",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 3370,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_002",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 3560,
+        "end_ms": 12871,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_003",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 7700,
+        "end_ms": 17011,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_004",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 11600,
+        "end_ms": 20911,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_005",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 13180,
+        "end_ms": 22491,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_006",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 17040,
+        "end_ms": 26351,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_007",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 21000,
+        "end_ms": 30311,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_008",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 23360,
+        "end_ms": 32671,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_009",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 27460,
+        "end_ms": 36771,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_010",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 31460,
+        "end_ms": 40771,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_011",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 36000,
+        "end_ms": 45311,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_012",
+        "asset_id": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav",
+        "start_ms": 24780,
+        "end_ms": 26113,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "highlight"
+        ],
+        "provenance": {
+          "tool": "sfx.assign",
+          "editorial_role": "highlight",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "highlight",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1333,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      }
+    ]
+  },
+  "directives": {
+    "ducking": [],
+    "transitions": [],
+    "mix": {
+      "master_gain_db": 0.0,
+      "limiter_threshold_db": -1.0,
+      "normalize_to_lufs": -14.0
+    },
+    "render_backend": "auto"
+  },
+  "assets": {
+    "voices": {},
+    "broll": {
+      "broll_020": {
+        "path": "mcp/assets/broll_cache/time_8322013.mp4"
+      },
+      "broll_009": {
+        "path": "mcp/assets/broll_cache/Once_10435896.mp4"
+      },
+      "broll_008": {
+        "path": "mcp/assets/broll_cache/event_14875803.mp4"
+      },
+      "broll_012": {
+        "path": "mcp/assets/broll_cache/singularity_20349634.mp4"
+      },
+      "broll_001": {
+        "path": "mcp/assets/broll_cache/Black_13243859.mp4"
+      },
+      "broll_017": {
+        "path": "mcp/assets/broll_cache/hole_5874850.mp4"
+      },
+      "broll_018": {
+        "path": "mcp/assets/broll_cache/hole_5874850.mp4"
+      },
+      "broll_006": {
+        "path": "mcp/assets/broll_cache/light_6782213.mp4"
+      },
+      "broll_003": {
+        "path": "mcp/assets/broll_cache/They_6531803.mp4"
+      },
+      "broll_019": {
+        "path": "mcp/assets/broll_cache/time_8322013.mp4"
+      },
+      "broll_005": {
+        "path": "mcp/assets/broll_cache/They_6531803.mp4"
+      },
+      "broll_014": {
+        "path": "mcp/assets/broll_cache/The_32973936.mp4"
+      },
+      "broll_004": {
+        "path": "mcp/assets/broll_cache/They_6531803.mp4"
+      },
+      "broll_016": {
+        "path": "mcp/assets/broll_cache/The_32973936.mp4"
+      },
+      "broll_007": {
+        "path": "mcp/assets/broll_cache/light_6782213.mp4"
+      },
+      "broll_002": {
+        "path": "mcp/assets/broll_cache/Black_13243859.mp4"
+      },
+      "broll_015": {
+        "path": "mcp/assets/broll_cache/The_32973936.mp4"
+      },
+      "broll_013": {
+        "path": "mcp/assets/broll_cache/collapse_26976624.mp4"
+      },
+      "broll_010": {
+        "path": "mcp/assets/broll_cache/Once_10435896.mp4"
+      },
+      "broll_011": {
+        "path": "mcp/assets/broll_cache/singularity_20349634.mp4"
+      }
+    },
+    "music": {
+      "music_001": {
+        "path": "mcp/assets/music_cache/jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill.mp3"
+      }
+    },
+    "sfx": {
+      "sfx_007": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_001": {
+        "path": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav"
+      },
+      "sfx_002": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_012": {
+        "path": "mcp/assets/sfx_library/highlights/boom_crash__energy_blast_large_01.wav"
+      },
+      "sfx_006": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_009": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_004": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_010": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_011": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_003": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_008": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_005": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      }
+    },
+    "captions": {
+      "ass": {
+        "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/artifacts/black_holes_reel.grouped.ass"
+      },
+      "srt": {
+        "path": "/home/ishanp/Documents/GitHub/MY-PROJECTS/CONTENT-CREATION/openscript/artifacts/black_holes_reel.grouped.srt"
+      }
+    }
+  },
+  "effects": {
+    "burn_captions": true,
+    "audio": {
+      "loudnorm": true
+    }
+  }
+}

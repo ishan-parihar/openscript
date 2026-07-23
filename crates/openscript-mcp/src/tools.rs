@@ -5286,12 +5286,8 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     };
 
     // Parse SRT for segment timing
-    let srt_entries = {
-        let srt_content = std::fs::read_to_string(&grouped_srt_path)
-            .map_err(|e| ToolError::NotFound(format!("Failed to read grouped SRT: {}", e)))?;
-        parse_srt(&srt_content)
-            .map_err(|e| ToolError::Ffmpeg(format!("SRT parse failed: {}", e)))?
-    };
+    let srt_entries = parse_srt(&grouped_srt_path)
+        .map_err(|e| ToolError::Ffmpeg(format!("SRT parse failed: {}", e)))?;
     if srt_entries.is_empty() {
         return Err(ToolError::Ffmpeg("Transcription produced no segments".to_string()));
     }
