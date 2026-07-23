@@ -1849,7 +1849,7 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
     }
 
     let language_hint = default_str(&args, "language_hint", "auto");
-    let engine_str = default_str(&args, "engine", "whisper");
+    let _engine_str = default_str(&args, "engine", "hinglish-ggml");
 
     // All transcription uses HinglishGgml (the sole engine)
     let engine = openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml;
@@ -15358,6 +15358,11 @@ async fn handle_system_doctor(_args: serde_json::Value) -> Result<serde_json::Va
     push(&mut checklist, &mut next_actions, "hinglish-ggml", hinglish_ok, &hinglish_msg, Some("Build whisper.cpp + download GGML model — run bash setup.sh"));
 
     // Production-ready: binaries + pexels + music + kokoro. GIPHY optional.
+    // HinglishGgml transcription engine check
+    let hinglish_available = openscript_transcribe::transcriber::check_hinglish_ggml_health().await;
+    let hinglish_ok = hinglish_available.is_ok();
+    let hinglish_msg = if hinglish_ok { hinglish_available.unwrap() } else { hinglish_available.unwrap_err() };
+    push(&mut checklist, &mut next_actions, "hinglish-ggml", hinglish_ok, &hinglish_msg, Some("Build whisper.cpp + download GGML model - run bash setup.sh"));
     let ready_for_production = ffmpeg_ok && ffprobe_ok && pexels_ok && music_ok && kokoro_ok;
     if ready_for_production && next_actions.is_empty() {
         next_actions.push(
