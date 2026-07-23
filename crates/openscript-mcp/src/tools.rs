@@ -5226,7 +5226,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
 
     // ---- Diagnostics ----
     let mut warnings: Vec<String> = Vec::new();
-    if std::env::var("PEXELS_API_KEY").is_err() {
+    if get_api_key("pexels_api_key", "PEXELS_API_KEY").is_empty() {
         warnings.push("PEXELS_API_KEY not set — stock backgrounds will be skipped".to_string());
     }
 
