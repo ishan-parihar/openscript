@@ -1,30 +1,16 @@
 // =============================================================================
-// TRANSCRIPTION ENGINES
+// TRANSCRIPTION ENGINE — HinglishGgml (canonical default)
 // =============================================================================
 //
-// Three engines are supported:
+// Single engine: HinglishGgml — whisper.cpp + Whisper-Hindi2Hinglish-Apex-GGML
+//   - Direct Hinglish output from Hindi audio (no LLM post-processing needed)
+//   - Requires whisper-cli (built from source) and GGML model file
+//   - Python sidecar: mcp/scripts/hinglish_ggml_transcriber.py
+//   - Best for Hindi audio where native Latin-script output is desired.
 //
-// 1. Whisper (DEFAULT) — openai-whisper (base model)
-//    - 99 languages, native word-level timestamps
-//    - Python sidecar: mcp/scripts/nemotron_transcriber.py (uses Whisper)
-//    - LLM post-processing: mcp/scripts/llm_postprocessor.py (Devanagari→Hinglish)
-//    - Word alignment: built-in via whisper word_timestamps=True
-//
-// 2. Nemotron (DEPRECATED) — ONNX streaming model (non-functional)
-//    - The streaming ONNX model cannot do offline batch inference.
-//    - Kept as enum variant for backward compat with external callers.
-//
-// 3. Apex (DEPRECATED) — Oriserve/Whisper-Hindi2Hinglish-Apex via whisper_timestamped
-//    - Hindi/Hinglish only, 29.79% Hindi WER
-//    - Requires conda env: whisper-hindi
-//    - Python sidecar: mcp/scripts/apex_transcriber.py
-//    - Kept for backward compatibility, will be removed in a future release.
-//
-// 4. HinglishGgml — whisper.cpp + Whisper-Hindi2Hinglish-Apex-GGML (q8_0)
-//    - Direct Hinglish output from Hindi audio (no LLM post-processing needed)
-//    - Requires whisper-cli (built from source) and GGML model file
-//    - Python sidecar: mcp/scripts/hinglish_ggml_transcriber.py
-//    - Best for Hindi audio where native Latin-script output is desired.
+// Previous engines (Whisper, Nemotron ONNX, Apex) were removed in Phase 41
+// as YAGNI cleanup — they were deprecated, non-functional, or required
+// environments (conda) that are not standard on this system.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -45,38 +31,18 @@ pub struct TranscribeResult {
     pub engine: TranscriptionEngine,
 }
 
-/// The transcription engine used.
-/// Whisper is the default. Nemotron and Apex are deprecated.
+/// The transcription engine used. HinglishGgml is the sole engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TranscriptionEngine {
-    Whisper,
-    
-    Nemotron,
-    Apex,
     HinglishGgml,
 }
 
 impl std::fmt::Display for TranscriptionEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Whisper => write!(f, "whisper"),
-            #[allow(deprecated)]
-            Self::Nemotron => write!(f, "nemotron"),
-            Self::Apex => write!(f, "apex"),
             Self::HinglishGgml => write!(f, "hinglish-ggml"),
         }
     }
-}
-
-/// Result of the Apex health check (deprecated).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ApexHealth {
-    /// Apex model loads and transcribes correctly.
-    Healthy,
-    /// Conda python exists but Apex model fails to load.
-    PythonOkModelBroken { detail: String },
-    /// Conda python not found at any known path.
-    PythonMissing,
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +140,9 @@ fn resolve_script(env_var: &str, relative_name: &str) -> Option<PathBuf> {
 
     // 2. CARGO_MANIFEST_DIR (compile-time workspace path; works in dev)
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let p = Path::new(&manifest_dir).join("../../mcp/scripts/").join(relative_name);
+        let p = Path::new(&manifest_dir)
+            .join("../../mcp/scripts/")
+            .join(relative_name);
         if p.exists() {
             return Some(p);
         }
@@ -182,7 +150,9 @@ fn resolve_script(env_var: &str, relative_name: &str) -> Option<PathBuf> {
 
     // 3. OPENSCRIPT_ROOT (deployment override)
     if let Ok(root) = std::env::var("OPENSCRIPT_ROOT") {
-        let p = Path::new(&root).join("mcp/scripts/").join(relative_name);
+        let p = Path::new(&root)
+            .join("mcp/scripts/")
+            .join(relative_name);
         if p.exists() {
             return Some(p);
         }
@@ -203,69 +173,15 @@ fn resolve_script(env_var: &str, relative_name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Find the Nemotron transcription wrapper script.
-fn find_whisper_script() -> Option<PathBuf> {
-    resolve_script("OPENSCRIPT_NEMOTRON_WRAPPER", "nemotron_transcriber.py")
-}
-
-/// Find the Apex transcription wrapper script (DEPRECATED).
-fn find_apex_script() -> Option<PathBuf> {
-    resolve_script("OPENSCRIPT_APEX_WRAPPER", "apex_transcriber.py")
-}
-
-/// Find the Nemotron ONNX transcription script (onnxruntime-genai).
-fn find_nemotron_onnx_script() -> Option<PathBuf> {
-    resolve_script("OPENSCRIPT_NEMOTRON_ONNX_WRAPPER", "nemotron_onnx_transcriber.py")
-}
-
 /// Find the Hinglish GGML transcription script (whisper.cpp + Hindi2Hinglish).
 fn find_hinglish_ggml_script() -> Option<PathBuf> {
-    resolve_script("OPENSCRIPT_HINGLISH_GGML_WRAPPER", "hinglish_ggml_transcriber.py")
+    resolve_script(
+        "OPENSCRIPT_HINGLISH_GGML_WRAPPER",
+        "hinglish_ggml_transcriber.py",
+    )
 }
 
-/// Cross-platform home directory resolution.
-fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
-        .map(PathBuf::from)
-}
-
-/// Find the conda environment python (DEPRECATED — used by Apex only).
-fn find_conda_python() -> Option<PathBuf> {
-    // Priority 1: explicit env var
-    if let Ok(path) = std::env::var("WHISPER_HINDI_PYTHON") {
-        let p = PathBuf::from(&path);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // Priority 2: common conda/venv paths
-    let home = home_dir()?;
-    let candidates = [
-        home.join("miniconda3/envs/whisper-hindi/bin/python3.11"),
-        home.join("miniconda3/envs/whisper-hindi/bin/python3"),
-        home.join("miniconda3/envs/whisper-hindi/bin/python"),
-        home.join("anaconda3/envs/whisper-hindi/bin/python3.11"),
-        home.join("anaconda3/envs/whisper-hindi/bin/python3"),
-        home.join(".conda/envs/whisper-hindi/bin/python3.11"),
-        home.join(".local/share/conda/envs/whisper-hindi/bin/python3.11"),
-        home.join("miniconda3/envs/whisper-hindi/python.exe"),
-        home.join("miniconda3/envs/whisper-hindi/Scripts/python.exe"),
-        home.join("anaconda3/envs/whisper-hindi/python.exe"),
-        home.join("anaconda3/envs/whisper-hindi/Scripts/python.exe"),
-    ];
-    for c in &candidates {
-        if c.exists() {
-            return Some(c.clone());
-        }
-    }
-
-    None
-}
-
-/// Find system Python 3 (for Nemotron sidecar).
+/// Find system Python 3.
 fn find_system_python() -> Option<PathBuf> {
     // Priority 1: explicit env var
     if let Ok(path) = std::env::var("OPENSCRIPT_PYTHON") {
@@ -288,9 +204,14 @@ fn find_system_python() -> Option<PathBuf> {
     }
 
     // Priority 3: which python3
-    if let Ok(output) = std::process::Command::new("which").arg("python3").output() {
+    if let Ok(output) = std::process::Command::new("which")
+        .arg("python3")
+        .output()
+    {
         if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let path = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
             let p = PathBuf::from(&path);
             if p.exists() {
                 return Some(p);
@@ -301,101 +222,60 @@ fn find_system_python() -> Option<PathBuf> {
     None
 }
 
-// ---------------------------------------------------------------------------
-// Health check — Nemotron
-// ---------------------------------------------------------------------------
+/// Check if HinglishGgml transcription is available.
+pub async fn check_hinglish_ggml_health() -> Result<String, String> {
+    let _python = find_system_python()
+        .ok_or("System Python 3 not found".to_string())?;
+    let script = find_hinglish_ggml_script()
+        .ok_or("hinglish_ggml_transcriber.py not found".to_string())?;
 
-/// Check if Whisper transcription is available (primary engine).
-pub async fn check_whisper_health() -> Result<String, String> {
-    let _python = find_system_python().ok_or("System Python 3 not found".to_string())?;
-    let script = find_whisper_script()
-        .ok_or("nemotron_transcriber.py not found".to_string())?;
+    // Check that whisper-cli is available
+    let whisper_cli = std::env::var("WHISPER_CLI")
+        .unwrap_or_else(|_| {
+            dirs_or_home()
+                .join(".local/bin/whisper-cli")
+                .to_string_lossy()
+                .to_string()
+        });
 
-    // Check that openai-whisper is importable
-    let mut cmd = Command::new("python3");
-    cmd.arg("-c")
-        .arg("import whisper; print('ok')");
-    cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-
-    match cmd.output().await {
-        Ok(o) if o.status.success() => Ok(format!(
-            "Whisper available (script: {})",
-            script.display()
-        )),
-        Ok(o) => Err(format!(
-            "Whisper Python deps missing: {}",
-            String::from_utf8_lossy(&o.stderr)
-                .lines()
-                .next()
-                .unwrap_or("")
-        )),
-        Err(e) => Err(format!("Failed to check Whisper health: {}", e)),
+    if Path::new(&whisper_cli).exists() {
+        Ok(format!(
+            "HinglishGgml available (script: {}, whisper-cli: {})",
+            script.display(),
+            whisper_cli
+        ))
+    } else {
+        Err(format!(
+            "whisper-cli not found at {}. Build whisper.cpp or set WHISPER_CLI env var.",
+            whisper_cli
+        ))
     }
 }
 
-
-
-/// Quick health check for Apex (DEPRECATED).
-pub async fn check_apex_health() -> ApexHealth {
-    let conda_python = match find_conda_python() {
-        Some(p) => p,
-        None => return ApexHealth::PythonMissing,
-    };
-
-    let mut cmd = Command::new(&conda_python);
-    cmd.arg("-c").arg("import whisper_timestamped; print('ok')");
-    cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-
-    let output = match cmd.output().await {
-        Ok(o) => o,
-        Err(e) => {
-            return ApexHealth::PythonOkModelBroken {
-                detail: format!("Failed to run conda python: {}", e),
-            }
-        }
-    };
-
-    if !output.status.success() {
-        return ApexHealth::PythonOkModelBroken {
-            detail: format!(
-                "whisper_timestamped import failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-                    .lines()
-                    .next()
-                    .unwrap_or("")
-            ),
-        };
-    }
-
-    ApexHealth::Healthy
+/// Helper to get home dir for health check.
+fn dirs_or_home() -> PathBuf {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
 // =============================================================================
 // TRANSCRIPTION — MAIN ENTRY POINT
 // =============================================================================
 
-/// Transcribe media to SRT.
+/// Transcribe media to SRT using the HinglishGgml engine (canonical default).
 ///
-/// This is the main transcription entry point. It routes to the appropriate
-/// engine based on the `engine` parameter:
-/// - `Whisper` (default): Uses openai-whisper (base model)
-/// - `Nemotron` (deprecated): ONNX streaming model (non-functional)
-/// - `Apex` (deprecated): Uses whisper_timestamped via conda env
-///
-/// Pipeline (Whisper):
+/// Pipeline:
 /// 1. Extract 16kHz mono WAV via ffmpeg
-/// 2. Run Whisper transcription via Python sidecar
-/// 3. If Hindi: Run LLM post-processor (Devanagari → Hinglish)
-/// 4. Generate word-level and phrase-level SRT
+/// 2. Run whisper.cpp with Hindi2Hinglish GGML model
+/// 3. Generate word-level and phrase-level SRT
 pub async fn transcribe(
     media_path: &str,
     output_srt_path: &str,
 ) -> Result<TranscribeResult, TranscribeError> {
-    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::HinglishGgml, "auto").await
+    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::HinglishGgml, "auto")
+        .await
 }
 
 /// Transcribe with a specific engine and language hint.
@@ -415,139 +295,19 @@ pub async fn transcribe_with_engine(
         .unwrap_or_else(|| "output".to_string());
 
     match engine {
-        TranscriptionEngine::Whisper => {
-            transcribe_nemotron_onnx(media_path, output_srt_path, &stem, out_dir, language_hint).await
-        }
-        #[allow(deprecated)]
-        TranscriptionEngine::Nemotron => {
-            tracing::info!("Using Nemotron ONNX engine (onnxruntime-genai, cache-aware streaming)");
-            // Route through Whisper since Nemotron ONNX cannot do offline batch inference
-            transcribe_nemotron_onnx(media_path, output_srt_path, &stem, out_dir, language_hint).await
-        }
-        #[allow(deprecated)]
-        TranscriptionEngine::Apex => {
-            tracing::warn!("Apex engine is deprecated. Use Whisper instead.");
-            transcribe_apex(media_path, output_srt_path, &stem, out_dir).await
-        }
         TranscriptionEngine::HinglishGgml => {
-            tracing::info!("Using Hinglish GGML engine (whisper.cpp + Hindi2Hinglish-Apex-GGML)");
-            transcribe_hinglish_ggml(media_path, output_srt_path, &stem, out_dir, language_hint).await
+            tracing::info!(
+                "Using Hinglish GGML engine (whisper.cpp + Hindi2Hinglish-Apex-GGML)"
+            );
+            transcribe_hinglish_ggml(media_path, output_srt_path, &stem, out_dir, language_hint)
+                .await
         }
     }
 }
 
-// =============================================================================
-// TRANSCRIPTION — NEMOTRON ENGINE
-// =============================================================================
-
-// =============================================================================
-// TRANSCRIPTION — NEMOTRON ONNX ENGINE (via onnxruntime-genai)
-// =============================================================================
-
-/// Transcribe using Nemotron ONNX via onnxruntime-genai with cache-aware streaming.
-/// Uses 560ms chunks (8960 samples at 16kHz) with automatic cache management.
-async fn transcribe_nemotron_onnx(
-    media_path: &str,
-    output_srt_path: &str,
-    stem: &str,
-    out_dir: &Path,
-    language_hint: &str,
-) -> Result<TranscribeResult, TranscribeError> {
-    let wrapper = find_nemotron_onnx_script().ok_or_else(|| {
-        TranscribeError::WrapperNotFound(
-            "nemotron_onnx_transcriber.py not found. Set OPENSCRIPT_NEMOTRON_ONNX_WRAPPER or \
-             ensure mcp/scripts/nemotron_onnx_transcriber.py exists."
-                .into(),
-        )
-    })?;
-
-    let python = find_system_python().ok_or_else(|| {
-        TranscribeError::PythonNotFound(
-            "System Python 3 not found. Set OPENSCRIPT_PYTHON env var.".into(),
-        )
-    })?;
-
-    // Run the onnxruntime-genai sidecar
-    let mut cmd = Command::new(&python);
-    cmd.arg(&wrapper)
-        .arg("run")
-        .arg("--video")
-        .arg(media_path)
-        .arg("--out-dir")
-        .arg(out_dir)
-        .arg("--language")
-        .arg(language_hint)
-        .kill_on_drop(true);
-
-    let output = cmd.output().await.map_err(TranscribeError::Io)?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(TranscribeError::TranscriptionFailed {
-            engine: "nemotron-onnx".into(),
-            detail: stderr.lines().rev().take(5).collect::<Vec<_>>().join("\n"),
-        });
-    }
-
-    // Parse JSON output from the sidecar
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let result: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
-        TranscribeError::TranscriptionFailed {
-            engine: "nemotron-onnx".into(),
-            detail: format!("Failed to parse sidecar output: {}", e),
-        }
-    })?;
-
-    if result.get("error").is_some() {
-        return Err(TranscribeError::TranscriptionFailed {
-            engine: "nemotron-onnx".into(),
-            detail: result["error"].as_str().unwrap_or("unknown error").to_string(),
-        });
-    }
-
-    // Get output paths from sidecar result
-    let phrase_srt = result["phrase_srt_path"]
-        .as_str()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            out_dir
-                .join(format!("{}.nemotron.phrase.srt", stem))
-                .to_string_lossy()
-                .to_string()
-        });
-
-    // Get the output SRT path from sidecar result
-    let output_srt = result["output_srt_path"]
-        .as_str()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            out_dir
-                .join(format!("{}.nemotron.srt", stem))
-                .to_string_lossy()
-                .to_string()
-        });
-
-    // If the sidecar didn't produce the output SRT, copy from phrase_srt
-    if !Path::new(&output_srt).exists() && Path::new(&phrase_srt).exists() {
-        if let Ok(content) = std::fs::read_to_string(&phrase_srt) {
-            let _ = std::fs::write(&output_srt, content);
-        }
-    }
-
-    // Copy to the requested output path if different
-    if output_srt != output_srt_path && Path::new(&output_srt).exists() {
-        if let Ok(content) = std::fs::read_to_string(&output_srt) {
-            std::fs::write(output_srt_path, content).map_err(TranscribeError::Io)?;
-        }
-    }
-
-    build_result(output_srt_path, stem, out_dir, TranscriptionEngine::Nemotron)
-}
-
-// =============================================================================
 // =============================================================================
 // TRANSCRIPTION — HINGLISH GGML ENGINE (whisper.cpp + Hindi2Hinglish-Apex-GGML)
-// ==============================================================================
+// =============================================================================
 
 /// Transcribe using whisper.cpp with the Whisper-Hindi2Hinglish-Apex-GGML model.
 /// Outputs Hinglish (Latin script) directly from Hindi audio.
@@ -589,8 +349,7 @@ async fn transcribe_hinglish_ggml(
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(TranscribeError::TranscriptionFailed {
             engine: "hinglish-ggml".into(),
-            detail: stderr.lines().rev().take(5).collect::<Vec<_>>().join("
-"),
+            detail: stderr.lines().rev().take(5).collect::<Vec<_>>().join("\n"),
         });
     }
 
@@ -605,7 +364,10 @@ async fn transcribe_hinglish_ggml(
     if result.get("error").is_some() {
         return Err(TranscribeError::TranscriptionFailed {
             engine: "hinglish-ggml".into(),
-            detail: result["error"].as_str().unwrap_or("unknown error").to_string(),
+            detail: result["error"]
+                .as_str()
+                .unwrap_or("unknown error")
+                .to_string(),
         });
     }
 
@@ -614,7 +376,7 @@ async fn transcribe_hinglish_ggml(
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
             out_dir
-                .join(format!("{}.nemotron.srt", stem))
+                .join(format!("{}.hinglish-ggml.srt", stem))
                 .to_string_lossy()
                 .to_string()
         });
@@ -626,64 +388,6 @@ async fn transcribe_hinglish_ggml(
     }
 
     build_result(output_srt_path, stem, out_dir, TranscriptionEngine::HinglishGgml)
-}
-
-
-// TRANSCRIPTION — APEX ENGINE (DEPRECATED)
-// =============================================================================
-
-/// Transcribe using Apex model via conda env (DEPRECATED).
-#[allow(deprecated)]
-async fn transcribe_apex(
-    media_path: &str,
-    output_srt_path: &str,
-    stem: &str,
-    out_dir: &Path,
-) -> Result<TranscribeResult, TranscribeError> {
-    let wrapper = find_apex_script().ok_or_else(|| {
-        TranscribeError::WrapperNotFound(
-            "apex_transcriber.py not found. Set OPENSCRIPT_APEX_WRAPPER or \
-             ensure mcp/scripts/apex_transcriber.py exists."
-                .into(),
-        )
-    })?;
-
-    let conda_python = find_conda_python().ok_or_else(|| {
-        TranscribeError::PythonNotFound(
-            "Conda environment python not found. Set WHISPER_HINDI_PYTHON env var \
-             or install at ~/miniconda3/envs/whisper-hindi/bin/python3.11"
-                .into(),
-        )
-    })?;
-
-    let mut cmd = Command::new(&conda_python);
-    cmd.arg(&wrapper)
-        .arg("run")
-        .arg("--video")
-        .arg(media_path)
-        .arg("--out-dir")
-        .arg(out_dir)
-        .kill_on_drop(true);
-
-    let output = cmd.output().await.map_err(|e| TranscribeError::Io(e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(TranscribeError::TranscriptionFailed {
-            engine: "apex".into(),
-            detail: stderr.lines().rev().take(5).collect::<Vec<_>>().join("\n"),
-        });
-    }
-
-    // Apex creates {stem}.apex.phrase.srt — copy to expected output path
-    let phrase_srt = out_dir.join(format!("{}.apex.phrase.srt", stem));
-    if phrase_srt.exists() {
-        if let Ok(content) = std::fs::read_to_string(&phrase_srt) {
-            std::fs::write(output_srt_path, content).map_err(|e| TranscribeError::Io(e))?;
-        }
-    }
-
-    build_result(output_srt_path, stem, out_dir, TranscriptionEngine::Apex)
 }
 
 // ---------------------------------------------------------------------------
@@ -703,7 +407,7 @@ fn build_result(
         return Err(TranscribeError::OutputNotFound(output_srt_path.to_string()));
     }
 
-    let content = std::fs::read_to_string(output_srt_path).map_err(|e| TranscribeError::Io(e))?;
+    let content = std::fs::read_to_string(output_srt_path).map_err(TranscribeError::Io)?;
 
     if let Err(reason) = validate_hinglish_output(&content) {
         tracing::warn!(
@@ -718,27 +422,9 @@ fn build_result(
         .filter(|b| !b.trim().is_empty())
         .count();
 
-    // Find word/phrase SRT files for the appropriate engine
-    let (word_srt_pattern, phrase_srt_pattern) = match engine {
-        TranscriptionEngine::Whisper => (
-            format!("{}/{}.nemotron.word.srt", out_dir_str, stem),
-            format!("{}/{}.nemotron.phrase.srt", out_dir_str, stem),
-        ),
-        #[allow(deprecated)]
-        TranscriptionEngine::Nemotron => (
-            format!("{}/{}.nemotron.word.srt", out_dir_str, stem),
-            format!("{}/{}.nemotron.phrase.srt", out_dir_str, stem),
-        ),
-        #[allow(deprecated)]
-        TranscriptionEngine::Apex => (
-            format!("{}/{}.apex.word.srt", out_dir_str, stem),
-            format!("{}/{}.apex.phrase.srt", out_dir_str, stem),
-        ),
-        TranscriptionEngine::HinglishGgml => (
-            format!("{}/{}.hinglish-ggml.word.srt", out_dir_str, stem),
-            format!("{}/{}.hinglish-ggml.phrase.srt", out_dir_str, stem),
-        ),
-    };
+    // Find word/phrase SRT files for HinglishGgml
+    let word_srt_pattern = format!("{}/{}.hinglish-ggml.word.srt", out_dir_str, stem);
+    let phrase_srt_pattern = format!("{}/{}.hinglish-ggml.phrase.srt", out_dir_str, stem);
 
     Ok(TranscribeResult {
         output_path: output_srt_path.to_string(),
@@ -766,16 +452,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_find_whisper_script() {
-        let result = find_whisper_script();
+    fn test_find_hinglish_ggml_script() {
+        let result = find_hinglish_ggml_script();
         // On a dev machine with the repo checked out, this should find the file
-        assert!(result.is_some() || std::env::var("OPENSCRIPT_NEMOTRON_WRAPPER").is_err());
-    }
-
-    #[test]
-    fn test_find_apex_script() {
-        let result = find_apex_script();
-        assert!(result.is_some() || std::env::var("OPENSCRIPT_APEX_WRAPPER").is_err());
+        assert!(
+            result.is_some() || std::env::var("OPENSCRIPT_HINGLISH_GGML_WRAPPER").is_err()
+        );
     }
 
     #[test]
@@ -820,26 +502,19 @@ mod tests {
     }
 
     #[test]
-    fn test_find_hinglish_ggml_script() {
-        let result = find_hinglish_ggml_script();
-        // On a dev machine with the repo checked out, this should find the file
-        assert!(result.is_some() || std::env::var("OPENSCRIPT_HINGLISH_GGML_WRAPPER").is_err());
-    }
-
-    #[test]
     fn test_transcription_engine_display() {
-        assert_eq!(TranscriptionEngine::Whisper.to_string(), "whisper");
-        assert_eq!(TranscriptionEngine::Nemotron.to_string(), "nemotron");
-        assert_eq!(TranscriptionEngine::Apex.to_string(), "apex");
         assert_eq!(TranscriptionEngine::HinglishGgml.to_string(), "hinglish-ggml");
     }
 
     #[tokio::test]
-    async fn test_check_whisper_health() {
-        // On a dev machine with openai-whisper installed, this should succeed
-        let result = check_whisper_health().await;
-        // We don't assert success because whisper may not be installed in CI
+    async fn test_check_hinglish_ggml_health() {
+        // On a dev machine with whisper-cli installed, this should succeed
+        let result = check_hinglish_ggml_health().await;
+        // We don't assert success because whisper-cli may not be installed in CI
         // but we verify the function doesn't panic
-        assert!(result.is_ok() || result.is_err(), "check_whisper_health must not panic");
+        assert!(
+            result.is_ok() || result.is_err(),
+            "check_hinglish_ggml_health must not panic"
+        );
     }
 }

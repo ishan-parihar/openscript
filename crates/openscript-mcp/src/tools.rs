@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (88 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (87 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 use openscript_ffmpeg::multilayer_render::StickerOverlay;
@@ -124,14 +124,14 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "transcribe",
-            "description": "Convert spoken audio to word-level SRT subtitles. Uses openai-whisper (base model) — the DEFAULT transcription engine. Supports 99 languages with native word-level timestamps. For Hindi input, automatically converts Devanagari to Hinglish via LLM post-processing. Nemotron ONNX and Apex (deprecated) are available as fallback engines. ALWAYS call this first on any raw video — it produces the SRT that every other tool depends on. Returns: output_srt_path, entry_count, phrase_srt_path, word_srt_path.",
+            "description": "Convert spoken audio to word-level SRT subtitles. Uses HinglishGgml engine (whisper.cpp + Hindi2Hinglish-Apex-GGML) — produces native Latin-script Hinglish output from Hindi audio. No LLM post-processing needed. ALWAYS call this first on any raw video — it produces the SRT that every other tool depends on. Returns: output_srt_path, entry_count, phrase_srt_path, word_srt_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "media_path": {"type": "string", "description": "Path to video or audio file to transcribe"},
                     "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."},
                     "language_hint": {"type": "string", "default": "auto", "description": "Language hint: 'auto' (detect), 'hi-IN' (Hindi → Hinglish), 'en-US' (English), 'hinglish'"},
-                    "engine": {"type": "string", "default": "hinglish-ggml", "description": "Engine: whisper (default, 99 langs, word timestamps) or hinglish-ggml (whisper.cpp + Hindi2Hinglish, direct Latin output) or nemotron-onnx (40 langs, cache-aware streaming) or apex (deprecated)"}
+                    "engine": {"type": "string", "default": "hinglish-ggml", "description": "Transcription engine (default: hinglish-ggml)"}
                 },
                 "required": ["media_path"],
                 "additionalProperties": false
@@ -1851,25 +1851,8 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
     let language_hint = default_str(&args, "language_hint", "auto");
     let engine_str = default_str(&args, "engine", "whisper");
 
-    // Parse engine selection
-    let engine = match engine_str.as_str() {
-        "whisper" => openscript_transcribe::transcriber::TranscriptionEngine::Whisper,
-        "hinglish-ggml" => {
-            tracing::info!("Using Hinglish GGML engine (whisper.cpp + Hindi2Hinglish-Apex-GGML)");
-            openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml
-        }
-        "nemotron-onnx" | "nemotron" => {
-            tracing::info!("Using Nemotron ONNX engine (onnxruntime-genai)");
-            #[allow(deprecated)]
-            openscript_transcribe::transcriber::TranscriptionEngine::Nemotron
-        }
-        #[allow(deprecated)]
-        "apex" => {
-            tracing::warn!("Apex engine requested (deprecated). Use Whisper instead.");
-            openscript_transcribe::transcriber::TranscriptionEngine::Apex
-        }
-        _ => openscript_transcribe::transcriber::TranscriptionEngine::Whisper,
-    };
+    // All transcription uses HinglishGgml (the sole engine)
+    let engine = openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml;
 
     report_progress(0.0, 100.0, "Starting transcription...")
         .await
@@ -15368,23 +15351,11 @@ async fn handle_system_doctor(_args: serde_json::Value) -> Result<serde_json::Va
         Some("bash scripts/setup_openscript_config.sh"),
     );
 
-    // Whisper ASR check (primary engine)
-    let whisper_available = openscript_transcribe::transcriber::check_whisper_health()
-        .await;
-    let whisper_ok = whisper_available.is_ok();
-    let whisper_msg = if whisper_ok {
-        whisper_available.unwrap()
-    } else {
-        whisper_available.unwrap_err()
-    };
-    push(
-        &mut checklist,
-        &mut next_actions,
-        "whisper",
-        whisper_ok,
-        &whisper_msg,
-        Some("pip install openai-whisper  # or run bash setup.sh"),
-    );
+    // HinglishGgml transcription engine check
+    let hinglish_available = openscript_transcribe::transcriber::check_hinglish_ggml_health().await;
+    let hinglish_ok = hinglish_available.is_ok();
+    let hinglish_msg = if hinglish_ok { hinglish_available.unwrap() } else { hinglish_available.unwrap_err() };
+    push(&mut checklist, &mut next_actions, "hinglish-ggml", hinglish_ok, &hinglish_msg, Some("Build whisper.cpp + download GGML model — run bash setup.sh"));
 
     // Production-ready: binaries + pexels + music + kokoro. GIPHY optional.
     let ready_for_production = ffmpeg_ok && ffprobe_ok && pexels_ok && music_ok && kokoro_ok;
