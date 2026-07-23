@@ -5477,7 +5477,6 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                     .unwrap_or_else(|| ass_file)
             }
             Err(e) => {
-                tracing::warn!("[audio.to_video] ASS caption generation failed: {}", e);
                 warnings.push(format!("ASS generation failed: {}", e));
                 String::new()
             }
@@ -5642,17 +5641,9 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         warnings.push(format!("ASS file not found at: {}", ass_path_for_verify));
     }
 
-    // Verify render quality (technical integrity)
-    let render_verification = match handle_verify_render(json!({
-        "video_path": &final_output,
-        "expected_aspect": &aspect,
-    })).await {
-        Ok(v) => Some(v),
-        Err(e) => {
-            tracing::warn!("[audio.to_video] Render verification skipped: {}", e);
-            None
-        }
-    };
+    // Note: verify.render requires timeline_path which A2V doesn't produce.
+    // Caption verification above is the primary quality gate for A2V.
+    let render_verification: Option<serde_json::Value> = None;
 
     let _ = report_progress(100.0, 100.0, "Audio-to-video complete!").await;
 
