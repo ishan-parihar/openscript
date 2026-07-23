@@ -5429,30 +5429,46 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                 "quality": "sd",
                 "download": true,
             });
-            if let Ok(result) = handle_broll_fetch(fetch_args).await {
-                if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {
-                    // Find first clip not already used
-                    for r in results_arr {
-                        let pexels_id = r.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if used_pexels_ids.contains(&pexels_id) {
-                            continue;
-                        }
-                        if let Some(cached) = r.get("cached_path").and_then(|v| v.as_str()) {
-                            let path = resolve_repo_path(&cached.to_string());
-                            if path.exists() {
-                                used_pexels_ids.insert(pexels_id);
-                                let scene_dur = (scene_end - scene_start).max(1.0);
-                                background_clips.push(BackgroundClip {
-                                    path: path.to_string_lossy().to_string(),
-                                    duration_s: scene_dur,
-                                    looped: true, // Loop so shorter clips fill the scene duration
-                                });
-                                tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
-                                break;
+            match handle_broll_fetch(fetch_args).await {
+                Ok(result) => {
+                    if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {
+                        // Find first clip not already used
+                        let mut found = false;
+                        for r in results_arr {
+                            let pexels_id = r.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            if used_pexels_ids.contains(&pexels_id) {
+                                continue;
+                            }
+                            if let Some(cached) = r.get("cached_path").and_then(|v| v.as_str()) {
+                                let path = resolve_repo_path(&cached.to_string());
+                                if path.exists() {
+                                    used_pexels_ids.insert(pexels_id);
+                                    let scene_dur = (scene_end - scene_start).max(1.0);
+                                    background_clips.push(BackgroundClip {
+                                        path: path.to_string_lossy().to_string(),
+                                        duration_s: scene_dur,
+                                        looped: true, // Loop so shorter clips fill the scene duration
+                                    });
+                                    tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
+                                    found = true;
+                                    break;
+                                }
                             }
                         }
+                        if !found {
+                            tracing::warn!("[audio.to_video] Scene {}: no new clip found (all deduplicated)", scene_idx);
+                        }
+                    } else {
+                        tracing::warn!("[audio.to_video] Scene {}: no results array in broll response", scene_idx);
                     }
                 }
+                Err(e) => {
+                    tracing::warn!("[audio.to_video] Scene {}: broll fetch failed: {}", scene_idx, e);
+                }
+            }
+            // Rate-limiting delay between Pexels API calls to avoid 429 errors
+            if scene_idx + 1 < scenes.len() {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             }
         }
     }
