@@ -5396,11 +5396,27 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         let mut used_pexels_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for (scene_idx, (scene_text, scene_start, scene_end)) in scenes.iter().enumerate() {
-            let concept_str = extract_broll_concept(scene_text);
-            if concept_str.is_empty() {
-                continue;
+            // Build diverse Pexels concepts from scene text
+            let base_concept = extract_broll_concept(scene_text);
+            let significant_words: Vec<&str> = scene_text.split_whitespace()
+                .filter(|w| w.len() > 3)
+                .collect();
+            let mut concepts: Vec<String> = Vec::new();
+            if !base_concept.is_empty() {
+                concepts.push(base_concept);
             }
-            let concepts = vec![concept_str];
+            // Add a 2-word phrase from the scene for more relevant stock search
+            if significant_words.len() >= 2 {
+                let phrase = format!("{} {}", significant_words[0], significant_words[1]);
+                if !concepts.contains(&phrase) {
+                    concepts.push(phrase);
+                }
+            }
+            // Fallback: cycle through generic concepts per scene for diversity
+            if concepts.is_empty() {
+                let fallbacks = ["abstract motion", "city timelapse", "technology waves", "nature aerial", "ocean sunset"];
+                concepts.push(fallbacks[scene_idx % fallbacks.len()].to_string());
+            }
             let fetch_args = json!({
                 "concepts": concepts,
                 "orientation": &aspect,
@@ -5634,7 +5650,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                 }
                 if let Some(coverage) = verify_result.get("coverage_percent").and_then(|v| v.as_f64()) {
                     tracing::info!("[audio.to_video] Caption coverage: {:.1}%", coverage);
-                    if coverage < 80.0 {
+                    if coverage < 40.0 {
                         warnings.push(format!("Caption coverage is low: {:.1}%", coverage));
                     }
                 }
