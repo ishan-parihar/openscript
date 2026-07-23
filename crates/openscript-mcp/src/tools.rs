@@ -5392,8 +5392,8 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
             })
             .collect();
 
-        // Track used Pexels IDs to avoid duplicates across scenes
-        let mut used_pexels_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        // No deduplication across scenes — the same Pexels video at different
+        // scene durations with different captions/stickers provides enough variety.
 
         for (scene_idx, (scene_text, scene_start, scene_end)) in scenes.iter().enumerate() {
             // Build diverse Pexels concepts from scene text.
@@ -5432,17 +5432,11 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
             match handle_broll_fetch(fetch_args).await {
                 Ok(result) => {
                     if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {
-                        // Find first clip not already used
-                        let mut found = false;
+                        // Take the first result with a valid cached path
                         for r in results_arr {
-                            let pexels_id = r.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            if used_pexels_ids.contains(&pexels_id) {
-                                continue;
-                            }
                             if let Some(cached) = r.get("cached_path").and_then(|v| v.as_str()) {
                                 let path = resolve_repo_path(&cached.to_string());
                                 if path.exists() {
-                                    used_pexels_ids.insert(pexels_id);
                                     let scene_dur = (scene_end - scene_start).max(1.0);
                                     background_clips.push(BackgroundClip {
                                         path: path.to_string_lossy().to_string(),
@@ -5450,13 +5444,9 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                                         looped: true, // Loop so shorter clips fill the scene duration
                                     });
                                     tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
-                                    found = true;
                                     break;
                                 }
                             }
-                        }
-                        if !found {
-                            tracing::warn!("[audio.to_video] Scene {}: no new clip found (all deduplicated)", scene_idx);
                         }
                     } else {
                         tracing::warn!("[audio.to_video] Scene {}: no results array in broll response", scene_idx);
