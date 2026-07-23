@@ -327,6 +327,18 @@ def run_transcription(
     
     # Generate SRT files via shared utility
     srt = build_srt_files(words, out_dir, stem)
+
+    # Rename SRT files from *.nemotron.* to *.hinglish-ggml.*
+    # (build_srt_files uses 'nemotron' prefix; Rust build_result looks for 'hinglish-ggml')
+    for key, suffix in [('word_srt_path', '.hinglish-ggml.word.srt'),
+                         ('phrase_srt_path', '.hinglish-ggml.phrase.srt'),
+                         ('output_srt_path', '.hinglish-ggml.srt')]:
+        src = Path(srt[key])
+        dst = src.parent / (stem + suffix)
+        if src.exists() and str(src) != str(dst):
+            src.rename(dst)
+            srt[key] = str(dst)
+
     result["status"] = "transcribed"
     result["engine"] = "hinglish-ggml"
     result["word_srt_path"] = srt["word_srt_path"]
