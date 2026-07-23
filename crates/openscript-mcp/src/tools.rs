@@ -5477,6 +5477,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                     .unwrap_or_else(|| ass_file)
             }
             Err(e) => {
+                tracing::warn!("[audio.to_video] ASS caption generation failed: {}", e);
                 warnings.push(format!("ASS generation failed: {}", e));
                 String::new()
             }
@@ -5578,6 +5579,9 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     ).await;
     tracing::info!("[audio.to_video] Stickers fetched: {}", stickers.len());
 
+    // Clone ass_path before it's moved into render_spec (needed for post-render verification)
+    let ass_path_for_verify = ass_path.clone();
+
     let render_spec = MultiLayerRenderSpec {
         backgrounds: background_clips,
         voiceover_paths: vec![audio_path.to_string()],
@@ -5606,6 +5610,50 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let file_size = std::fs::metadata(&final_output)
         .map(|m| m.len()).unwrap_or(0);
 
+    // ================================================================
+    // Step 8: Post-render verification
+    // ================================================================
+    // Verify captions are properly burned in and readable
+    if !ass_path_for_verify.is_empty() && std::path::Path::new(&ass_path_for_verify).exists() {
+        match handle_verify_captions(json!({
+            "video_path": &final_output,
+            "srt_path": &ass_path_for_verify,
+        })).await {
+            Ok(verify_result) => {
+                if let Some(score) = verify_result.get("readability_score").and_then(|v| v.as_f64()) {
+                    tracing::info!("[audio.to_video] Caption readability score: {:.0}/100", score);
+                    if score < 50.0 {
+                        warnings.push(format!("Caption readability is low: {:.0}/100", score));
+                    }
+                }
+                if let Some(coverage) = verify_result.get("coverage_percent").and_then(|v| v.as_f64()) {
+                    tracing::info!("[audio.to_video] Caption coverage: {:.1}%", coverage);
+                    if coverage < 80.0 {
+                        warnings.push(format!("Caption coverage is low: {:.1}%", coverage));
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[audio.to_video] Caption verification failed: {}", e);
+            }
+        }
+    } else if !ass_path_for_verify.is_empty() {
+        // ASS path was provided but file doesn't exist
+        warnings.push(format!("ASS file not found at: {}", ass_path_for_verify));
+    }
+
+    // Verify render quality (technical integrity)
+    let render_verification = match handle_verify_render(json!({
+        "video_path": &final_output,
+        "expected_aspect": &aspect,
+    })).await {
+        Ok(v) => Some(v),
+        Err(e) => {
+            tracing::warn!("[audio.to_video] Render verification skipped: {}", e);
+            None
+        }
+    };
+
     let _ = report_progress(100.0, 100.0, "Audio-to-video complete!").await;
 
     Ok(json!({
@@ -5616,6 +5664,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         "backgrounds_used": render_spec.backgrounds.len(),
         "duration_s": total_duration_s,
         "preset": preset,
+        "verification": render_verification.unwrap_or(serde_json::Value::Null),
         "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
     }))
 }
