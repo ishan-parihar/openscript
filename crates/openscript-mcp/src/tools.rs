@@ -19,6 +19,89 @@ use crate::server::report_progress;
 // Tool definitions (88 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
+use openscript_ffmpeg::multilayer_render::{StickerOverlay, MemeClip};
+
+/// Build sticker overlays for A2V/V2V pipelines.
+/// Fetches GIPHY stickers per speaker segment and creates StickerOverlay
+/// structs. Returns empty vec if GIPHY_API_KEY is not set or no segments.
+async fn build_v2v_stickers(
+    segments: &[(f64, f64, String)], // (start_s, end_s, text)
+    canvas_width: u32,
+    canvas_height: u32,
+    sticker_dir: &str,
+) -> Vec<StickerOverlay> {
+    let key = giphy_key();
+    if key.is_empty() {
+        return Vec::new();
+    }
+
+    let _ = std::fs::create_dir_all(sticker_dir);
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut stickers = Vec::new();
+    let mut used_queries: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (idx, (start_s, end_s, text)) in segments.iter().enumerate() {
+        // Build a search query from the first few words of the segment
+        let query = text.split_whitespace().take(3).collect::<Vec<_>>().join(" ");
+        if query.is_empty() || used_queries.contains(&query) {
+            continue;
+        }
+        used_queries.insert(query.clone());
+
+        // Search GIPHY for a relevant sticker
+        let url = format!(
+            "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=1&rating=g",
+            key, query
+        );
+        let resp = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let body: serde_json::Value = match resp.json().await {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+
+        let gif_url = body["data"][0]["images"]["original"]["mp4"]
+            .as_str()
+            .or_else(|| body["data"][0]["images"]["fixed_height"]["mp4"].as_str());
+
+        let gif_url = match gif_url {
+            Some(u) => u,
+            None => continue,
+        };
+
+        // Download the sticker
+        let sticker_path = format!("{}/sticker_{}.mp4", sticker_dir, idx);
+        if let Ok(resp) = client.get(gif_url).send().await {
+            if let Ok(bytes) = resp.bytes().await {
+                if std::fs::write(&sticker_path, &bytes).is_ok() {
+                    stickers.push(StickerOverlay {
+                        path: sticker_path,
+                        start_s: *start_s,
+                        end_s: *end_s,
+                        position: "bottom-right".to_string(),
+                        scale: 0.15,
+                        center_x: 0,
+                        center_y: 0,
+                        sticker_width: (canvas_width as f64 * 0.15) as u32,
+                        sticker_height: (canvas_width as f64 * 0.15) as u32,
+                    });
+                }
+            }
+        }
+    }
+
+    stickers
+}
+
 /// Resolve the fonts directory for ASS subtitle rendering.
 /// Checks OPENSCRIPT_FONTS_DIR env var, then falls back to $CWD/mcp/fonts.
 fn resolve_fonts_dir() -> Option<String> {
@@ -5485,10 +5568,22 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         resolve_repo_path(&final_output).to_string_lossy().to_string()
     };
 
+    // Build GIPHY sticker overlays per segment (like script.to_video golden path)
+    let sticker_segments: Vec<(f64, f64, String)> = srt_entries.iter()
+        .map(|e| (e.start, e.end, e.text.clone()))
+        .collect();
+    let stickers = build_v2v_stickers(
+        &sticker_segments,
+        width,
+        height,
+        "mcp/assets/stickers",
+    ).await;
+    let _ = warnings.push(format!("Stickers fetched: {}", stickers.len()));
+
     let render_spec = MultiLayerRenderSpec {
         backgrounds: background_clips,
         voiceover_paths: vec![audio_path.to_string()],
-        stickers: Vec::new(),
+        stickers,
         music_path: music_path_opt,
         music_volume,
         ducking: should_duck,
