@@ -131,7 +131,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "media_path": {"type": "string", "description": "Path to video or audio file to transcribe"},
                     "output_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output SRT path. Auto-generated if omitted."},
                     "language_hint": {"type": "string", "default": "auto", "description": "Language hint: 'auto' (detect), 'hi-IN' (Hindi → Hinglish), 'en-US' (English), 'hinglish'"},
-                    "engine": {"type": "string", "default": "whisper", "description": "Engine: whisper (default, 99 langs, word timestamps) or hinglish-ggml (whisper.cpp + Hindi2Hinglish, direct Latin output) or nemotron-onnx (40 langs, cache-aware streaming) or apex (deprecated)"}
+                    "engine": {"type": "string", "default": "hinglish-ggml", "description": "Engine: whisper (default, 99 langs, word timestamps) or hinglish-ggml (whisper.cpp + Hindi2Hinglish, direct Latin output) or nemotron-onnx (40 langs, cache-aware streaming) or apex (deprecated)"}
                 },
                 "required": ["media_path"],
                 "additionalProperties": false

@@ -270,7 +270,7 @@ def transcribe_ggml(
     _log_hinglish(f"Words: {len(all_words)}, Segments: {len(entries)}, Duration: {duration_s:.1f}s")
     
     # Cleanup temp SRT files
-    for f in [segment_srt, word_srt_path_out]:
+    for f in [segment_srt, word_srt_path_out, Path(out_dir) / 'whisper_words.srt']:
         try:
             os.remove(f)
         except OSError:
@@ -304,7 +304,7 @@ def run_transcription(
     stem = Path(media_path).stem
     
     _log_hinglish(f"Preparing audio from {media_path}...")
-    wav_path = ensure_wav_16k(media_path, out_dir)
+    wav_path = ensure_wav_16k(media_path, out_dir, suffix="hinglish")
     _log_hinglish(f"Audio ready: {wav_path}")
     
     result = transcribe_ggml(wav_path, out_dir, language_hint)

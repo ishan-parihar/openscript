@@ -29,12 +29,7 @@ from transcribe_common import (
     group_words_into_phrases,
 )
 
-# Import LLM post-processor for Devanagari/Arabic → Hinglish conversion
-try:
-    from llm_postprocessor import detect_script, postprocess, rule_based_transliterate
-    HAS_POSTPROCESSOR = True
-except ImportError:
-    HAS_POSTPROCESSOR = False
+
 
 # Whisper model sizes: tiny < base < small < medium < large-v3
 # tiny: fastest, ~39x realtime on CPU, lowest accuracy
@@ -219,48 +214,6 @@ def run_transcription(
     phrase_srt_path = srt["phrase_srt_path"]
     output_srt_path = srt["output_srt_path"]
     phrases = srt["phrases"]
-
-    # Step 3.5: Post-process Devanagari/Arabic → Hinglish
-    script = "unknown"
-    if HAS_POSTPROCESSOR:
-        script = detect_script(text)
-        _log(f"Detected script: {script}")
-
-        if script in ("devanagari", "arabic"):
-            _log(f"Converting {script} script → Hinglish via LLM post-processor...")
-            # Convert the full text
-            post_result = postprocess(text, language_hint)
-            if not post_result.get("skipped"):
-                converted_text = post_result["text"]
-                _log(f"Converted text: {converted_text[:100]}...")
-
-                # Rebuild words with converted text (preserve timestamps)
-                # Split converted text into words and map to original word timestamps
-                converted_words_list = converted_text.split()
-                if len(converted_words_list) == len(words):
-                    # Perfect 1:1 mapping - replace word text, keep timestamps
-                    for i, w in enumerate(words):
-                        w["word"] = converted_words_list[i]
-                else:
-                    # Word counts differ - keep original word data intact
-                    # (proportional mapping produces garbage timing that breaks captions)
-                    # Only convert the phrase-level text which captions actually display.
-                    _log(f"Word count mismatch ({len(converted_words_list)} vs {len(words)}), keeping original word timestamps")
-
-                # Rebuild phrases and SRT files with converted text
-                phrases = group_words_into_phrases(words)
-                generate_word_srt(words, word_srt_path)
-                generate_phrase_srt(phrases, phrase_srt_path)
-                generate_phrase_srt(phrases, output_srt_path)
-                _log(f"SRT files rebuilt with Hinglish text")
-            else:
-                _log(f"Post-processing skipped: {post_result.get('script', 'unknown')}")
-        elif script == "latin":
-            _log("Text already in Latin script (Hinglish), no conversion needed")
-        else:
-            _log(f"Script '{script}' not convertible, keeping as-is")
-    else:
-        _log("LLM post-processor not available, skipping conversion")
 
     # Step 4: Build result
     result["status"] = "transcribed"

@@ -395,7 +395,7 @@ pub async fn transcribe(
     media_path: &str,
     output_srt_path: &str,
 ) -> Result<TranscribeResult, TranscribeError> {
-    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::Whisper, "auto").await
+    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::HinglishGgml, "auto").await
 }
 
 /// Transcribe with a specific engine and language hint.
