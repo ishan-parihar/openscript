@@ -5376,19 +5376,31 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let segments_count = srt_entries.len();
 
     // ================================================================
-    // Step 4/7: Fetch stock backgrounds
+    // Step 4/7: Fetch stock backgrounds (per-scene, unique clips)
     // ================================================================
     let _ = report_progress(30.0, 100.0, "Fetching stock video backgrounds").await;
     let mut background_clips: Vec<BackgroundClip> = Vec::new();
     if broll_enabled {
-        // Extract topic keywords from the transcript for stock search
-        let full_text: String = srt_entries.iter()
-            .map(|e| e.text.as_str())
-            .collect::<Vec<_>>().join(" ");
-        let concept_str = extract_broll_concept(&full_text);
-        let concepts: Vec<String> = if concept_str.is_empty() { Vec::new() } else { vec![concept_str] };
+        // Group SRT entries into scenes (every 3-5 segments = one scene)
+        let scene_size = 4; // segments per scene
+        let scenes: Vec<(String, f64, f64)> = srt_entries.chunks(scene_size)
+            .map(|chunk| {
+                let text = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
+                let start = chunk.first().map(|e| e.start).unwrap_or(0.0);
+                let end = chunk.last().map(|e| e.end).unwrap_or(0.0);
+                (text, start, end)
+            })
+            .collect();
 
-        if !concepts.is_empty() {
+        // Track used Pexels IDs to avoid duplicates across scenes
+        let mut used_pexels_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for (scene_idx, (scene_text, scene_start, scene_end)) in scenes.iter().enumerate() {
+            let concept_str = extract_broll_concept(scene_text);
+            if concept_str.is_empty() {
+                continue;
+            }
+            let concepts = vec![concept_str];
             let fetch_args = json!({
                 "concepts": concepts,
                 "orientation": &aspect,
@@ -5397,30 +5409,33 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
             });
             if let Ok(result) = handle_broll_fetch(fetch_args).await {
                 if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {
-                    let mut clip_idx = 0;
-                    for segment in &srt_entries {
-                        let seg_duration = (segment.end - segment.start).max(1.0);
-                        if let Some(cached) = results_arr.get(clip_idx % results_arr.len())
-                            .and_then(|r| r.get("cached_path")).and_then(|v| v.as_str())
-                        {
+                    // Find first clip not already used
+                    for r in results_arr {
+                        let pexels_id = r.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if used_pexels_ids.contains(&pexels_id) {
+                            continue;
+                        }
+                        if let Some(cached) = r.get("cached_path").and_then(|v| v.as_str()) {
                             let path = resolve_repo_path(&cached.to_string());
                             if path.exists() {
+                                used_pexels_ids.insert(pexels_id);
+                                let scene_dur = (scene_end - scene_start).max(1.0);
                                 background_clips.push(BackgroundClip {
                                     path: path.to_string_lossy().to_string(),
-                                    duration_s: seg_duration,
+                                    duration_s: scene_dur,
                                     looped: false,
                                 });
+                                tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
+                                break;
                             }
                         }
-                        clip_idx += 1;
                     }
                 }
             }
         }
     }
 
-    // Use single background looped to match audio duration
-    // This ensures audio plays over the full video length
+    // Fallback: single background looped to match audio duration
     if background_clips.is_empty() {
         // No stock footage available — create a solid-color placeholder
         let placeholder_path = std::env::temp_dir().join("audio_to_video_bg.mp4");
@@ -5437,17 +5452,10 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                 looped: false,
             });
         }
-    } else if background_clips.len() > 1 {
-        // Multiple backgrounds fetched — use the first one looped to match audio duration
-        // render_multilayer with all_same_bg uses -stream_loop -1 + total_duration_s
-        let first = background_clips.remove(0);
-        background_clips.clear();
-        background_clips.push(BackgroundClip {
-            path: first.path,
-            duration_s: total_duration_s,
-            looped: true,
-        });
-    } else {
+    }
+    // Note: multiple scene backgrounds are kept as-is for per-scene rendering.
+    // The render_multilayer engine handles concatenating multiple backgrounds.
+    if !background_clips.is_empty() {
         // Single background — ensure it covers the full audio duration
         let bg = &mut background_clips[0];
         bg.duration_s = total_duration_s;
@@ -5517,28 +5525,27 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         }
     }
 
-    // SFX hits
+    // SFX hits — use sfx.search for dynamic lookup instead of manual JSON parsing
     let mut sfx_hits: Vec<SfxHit> = Vec::new();
     if sfx_enabled {
-        let sfx_index_path = resolve_repo_path("mcp/assets/sfx_index.json");
-        if sfx_index_path.exists() {
-            if let Ok(index_data) = std::fs::read_to_string(&sfx_index_path) {
-                if let Ok(index_val) = serde_json::from_str::<serde_json::Value>(&index_data) {
-                    if let Some(files) = index_val.get("files").and_then(|v| v.as_array()) {
-                        // Find intro SFX for hook
-                        if let Some(intro) = files.iter().find(|f| {
-                            f.get("editorial_role").and_then(|v| v.as_str()) == Some("intro")
-                        }) {
-                            if let Some(path) = intro.get("path").and_then(|v| v.as_str()) {
-                                let resolved = resolve_repo_path(&path.replace("$HOME", &std::env::var("HOME").unwrap_or_default()));
-                                if resolved.exists() {
-                                    sfx_hits.push(SfxHit {
-                                        path: resolved.to_string_lossy().to_string(),
-                                        start_s: 0.05,
-                                        volume: 0.28,
-                                    });
-                                }
-                            }
+        // Search for intro hook SFX
+        if let Ok(sfx_result) = handle_sfx_search(json!({
+            "editorial_role": "intro",
+            "limit": 3,
+        })).await {
+            if let Some(sfx_results) = sfx_result.get("results").and_then(|v| v.as_array()) {
+                if let Some(first) = sfx_results.first() {
+                    if let Some(path) = first.get("path").and_then(|v| v.as_str()) {
+                        let resolved = resolve_repo_path(path);
+                        if resolved.exists() {
+                            let gain = first.get("recommended_gain_db")
+                                .and_then(|v| v.as_f64()).unwrap_or(-10.0);
+                            let volume = 10f64.powf(gain / 20.0);
+                            sfx_hits.push(SfxHit {
+                                path: resolved.to_string_lossy().to_string(),
+                                start_s: 0.05,
+                                volume,
+                            });
                         }
                     }
                 }
