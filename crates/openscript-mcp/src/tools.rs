@@ -5230,12 +5230,12 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         warnings.push("PEXELS_API_KEY not set — stock backgrounds will be skipped".to_string());
     }
 
-    report_progress(0.0, 100.0, "Starting audio-to-video pipeline").await;
+    let _ = report_progress(0.0, 100.0, "Starting audio-to-video pipeline").await;
 
     // ================================================================
     // Step 1/7: Transcribe audio
     // ================================================================
-    report_progress(5.0, 100.0, "Transcribing audio").await;
+    let _ = report_progress(5.0, 100.0, "Transcribing audio").await;
     let srt_path = {
         let transcribe_args = json!({
             "media_path": &audio_path,
@@ -5251,7 +5251,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // ================================================================
     // Step 2/7: Group captions
     // ================================================================
-    report_progress(15.0, 100.0, "Grouping captions").await;
+    let _ = report_progress(15.0, 100.0, "Grouping captions").await;
     let grouped_srt_path = {
         let prepare_args = json!({
             "srt_path": &srt_path,
@@ -5269,7 +5269,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // ================================================================
     // Step 3/7: Get audio duration + parse SRT for segment timing
     // ================================================================
-    report_progress(20.0, 100.0, "Analyzing audio duration").await;
+    let _ = report_progress(20.0, 100.0, "Analyzing audio duration").await;
     let total_duration_s: f64 = {
         let output = tokio::process::Command::new("ffprobe")
             .args(["-v", "error", "-show_entries", "format=duration",
@@ -5300,7 +5300,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // ================================================================
     // Step 4/7: Fetch stock backgrounds
     // ================================================================
-    report_progress(30.0, 100.0, "Fetching stock video backgrounds").await;
+    let _ = report_progress(30.0, 100.0, "Fetching stock video backgrounds").await;
     let mut background_clips: Vec<BackgroundClip> = Vec::new();
     if broll_enabled {
         // Extract topic keywords from the transcript for stock search
@@ -5384,7 +5384,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // Since audio.to_video passes the full audio file as-is to
     // render_multilayer, the SRT timestamps already match the audio
     // timeline — no remapping needed.
-    report_progress(45.0, 100.0, "Generating captions").await;
+    let _ = report_progress(45.0, 100.0, "Generating captions").await;
     let ass_path = {
         let ass_file = grouped_srt_path.replace(".srt", ".ass");
         match handle_captions_generate_ass(json!({
@@ -5408,7 +5408,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // ================================================================
     // Step 6/7: Music + SFX
     // ================================================================
-    report_progress(55.0, 100.0, "Assigning music and SFX").await;
+    let _ = report_progress(55.0, 100.0, "Assigning music and SFX").await;
     let mut music_path_opt: Option<String> = None;
     if music_enabled {
         let music_search_args = json!({
@@ -5471,7 +5471,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // ================================================================
     // Step 7/7: Render with render_multilayer
     // ================================================================
-    report_progress(70.0, 100.0, "Rendering video").await;
+    let _ = report_progress(70.0, 100.0, "Rendering video").await;
 
     // Calculate music volume
     let music_volume = 10f64.powf(music_gain_db.clamp(-14.0, -8.0) / 20.0);
@@ -5511,13 +5511,13 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     };
 
     render_multilayer(&render_spec).await        .map_err(|e| ToolError::Ffmpeg(format!("Render failed: {}", e)))?;
-    report_progress(95.0, 100.0, "Render complete").await;
+    let _ = report_progress(95.0, 100.0, "Render complete").await;
 
     // Get file size
     let file_size = std::fs::metadata(&final_output)
         .map(|m| m.len()).unwrap_or(0);
 
-    report_progress(100.0, 100.0, "Audio-to-video complete!").await;
+    let _ = report_progress(100.0, 100.0, "Audio-to-video complete!").await;
 
     Ok(json!({
         "status": "rendered",
