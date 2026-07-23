@@ -19,7 +19,7 @@ use crate::server::report_progress;
 // Tool definitions (88 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
-use openscript_ffmpeg::multilayer_render::{StickerOverlay, MemeClip};
+use openscript_ffmpeg::multilayer_render::StickerOverlay;
 
 /// Build sticker overlays for A2V/V2V pipelines.
 /// Fetches GIPHY stickers per speaker segment and creates StickerOverlay
@@ -27,7 +27,6 @@ use openscript_ffmpeg::multilayer_render::{StickerOverlay, MemeClip};
 async fn build_v2v_stickers(
     segments: &[(f64, f64, String)], // (start_s, end_s, text)
     canvas_width: u32,
-    canvas_height: u32,
     sticker_dir: &str,
 ) -> Vec<StickerOverlay> {
     let key = giphy_key();
@@ -5575,10 +5574,9 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let stickers = build_v2v_stickers(
         &sticker_segments,
         width,
-        height,
         "mcp/assets/stickers",
     ).await;
-    let _ = warnings.push(format!("Stickers fetched: {}", stickers.len()));
+    tracing::info!("[audio.to_video] Stickers fetched: {}", stickers.len());
 
     let render_spec = MultiLayerRenderSpec {
         backgrounds: background_clips,
