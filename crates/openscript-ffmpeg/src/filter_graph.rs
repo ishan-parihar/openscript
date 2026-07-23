@@ -24,7 +24,9 @@ fn audio_format_ext(path: &str) -> &'static str {
 fn escape_filter_path(path: &str) -> Result<String, String> {
     // Reject paths containing filter metacharacters that could inject
     // arbitrary filter graph nodes.
-    let dangerous_chars = [';', '[', ']', ','];
+    // Commas are common in filenames (e.g. "voice,_7599377.mp4") and are
+    // safe when the path is wrapped in single quotes in the filter string.
+    let dangerous_chars = [';', '[', ']'];
     for ch in dangerous_chars {
         if path.contains(ch) {
             return Err(format!(
