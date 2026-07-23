@@ -15009,24 +15009,14 @@ async fn handle_system_capabilities(
         "reason": kokoro_reason,
     });
 
-    // Transcription engine (Apex)
-    let apex_wrapper = std::env::var("OPENSCRIPT_APEX_WRAPPER").ok();
-    let transcription_available = apex_wrapper
-        .as_ref()
-        .map(|p| path_exists(p))
-        .unwrap_or_else(|| {
-            // Fall back to checking the relative path
-            path_exists("mcp/scripts/apex_transcriber.py")
-        });
+    // Transcription engine (HinglishGgml — the sole engine)
+    let transcription_available = {
+        let result = openscript_transcribe::transcriber::check_hinglish_ggml_health().await;
+        result.is_ok()
+    };
     let transcription = json!({
         "available": transcription_available,
-        "engine": "apex",
-        "wrapper_path": apex_wrapper.unwrap_or_else(|| "mcp/scripts/apex_transcriber.py".to_string()),
-        "reason": if transcription_available {
-            serde_json::Value::Null
-        } else {
-            "Apex wrapper script not found. Set OPENSCRIPT_APEX_WRAPPER env var. Requires whisper-hindi conda env with whisper_timestamped installed.".into()
-        },
+        "engine": "hinglish-ggml",
     });
 
     // HyperFrames (default render engine)
