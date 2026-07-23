@@ -156,7 +156,6 @@ def transcribe_ggml(
     
     # Output paths
     segment_srt = Path(out_dir) / "whisper_segments.srt"
-    word_srt = Path(out_dir) / "whisper_words.srt"
     
     # Build whisper-cli command
     # -osrt: segment-level SRT
@@ -266,7 +265,7 @@ def transcribe_ggml(
     _log_hinglish(f"Words: {len(all_words)}, Segments: {len(entries)}, Duration: {duration_s:.1f}s")
     
     # Cleanup temp SRT files
-    for f in [segment_srt, word_srt_path_out, Path(out_dir) / 'whisper_words.srt']:
+    for f in [segment_srt, word_srt_path_out]:
         try:
             os.remove(f)
         except OSError:
