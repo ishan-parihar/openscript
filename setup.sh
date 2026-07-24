@@ -126,10 +126,12 @@ if [ ! -f "$HOME/.local/bin/whisper-cli" ] || [ ! -f "$WHISPER_LIB_DIR/libwhispe
     echo "[setup] Building whisper.cpp from source..."
     mkdir -p "$HOME/.local/src"
     rm -rf "$WHISPER_SRC"
-    git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$WHISPER_SRC"
-    cd "$WHISPER_SRC" && cmake -B build -DGGML_NATIVE=ON && cmake --build build --config Release -j"$(nproc)"
-    cp build/bin/whisper-cli "$HOME/.local/bin/whisper-cli"
-    cp build/bin/lib*.so* "$WHISPER_LIB_DIR/"
+    git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$WHISPER_SRC" || { echo "[setup] ERROR: Failed to clone whisper.cpp"; exit 1; }
+    ( cd "$WHISPER_SRC" && cmake -B build -DGGML_NATIVE=ON && cmake --build build --config Release -j"$(nproc)" ) || { echo "[setup] ERROR: Failed to build whisper.cpp"; exit 1; }
+    cp "$WHISPER_SRC/build/bin/whisper-cli" "$HOME/.local/bin/whisper-cli"
+    cp "$WHISPER_SRC/build/bin/libwhisper.so"* "$WHISPER_LIB_DIR/"
+    cp "$WHISPER_SRC/build/bin/libggml"*.so* "$WHISPER_LIB_DIR/"
+    cp "$WHISPER_SRC/build/bin/libparakeet.so"* "$WHISPER_LIB_DIR/"
     echo "[setup] Whisper shared libraries installed to $WHISPER_LIB_DIR"
 else
     echo "[setup] whisper-cli already installed at $HOME/.local/bin/whisper-cli"
