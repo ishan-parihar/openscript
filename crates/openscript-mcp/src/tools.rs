@@ -361,7 +361,23 @@ pub fn tool_definitions() -> serde_json::Value {
                 "additionalProperties": false
             }
         },
-        {
+                {
+            "name": "srt.to_timeline",
+            "description": "Convert an SRT file into a timeline with segments in one call. Reads all SRT entries, creates a timeline, and adds each entry as a segment with start/end times and caption text. This is the ONE-CALL replacement for calling timeline.add_segment N times. Returns: timeline_path, segments_count, duration_s.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "srt_path": {"type": "string", "description": "Path to SRT file (from transcribe or srt.prepare)"},
+                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional existing timeline to add segments to. If omitted, creates a new timeline."},
+                    "crossfade_ms": {"type": "integer", "default": 80, "description": "Audio crossfade between segments in ms"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for new timelines"},
+                    "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"}
+                },
+                "required": ["srt_path"],
+                "additionalProperties": false
+            }
+        },
+{
             "name": "timeline.upgrade",
             "description": "Convert a legacy EDL v1 JSON into the modern EDL v2 timeline format. Use when working with old renders that need multi-track capabilities. Returns: timeline_path, segments_count.",
             "inputSchema": {
@@ -1445,6 +1461,7 @@ pub fn route_tool(
         "timeline.build" => Box::pin(handle_timeline_build(args)),
         "timeline.load" => Box::pin(handle_timeline_load(args)),
         "timeline.validate" => Box::pin(handle_timeline_validate(args)),
+        "srt.to_timeline" => Box::pin(handle_srt_to_timeline(args)),
         "timeline.upgrade" => Box::pin(handle_timeline_upgrade(args)),
         "timeline.add_segment" => Box::pin(handle_timeline_add_segment(args)),
         "timeline.add_track_event" => Box::pin(handle_timeline_add_track_event(args)),
@@ -2680,6 +2697,80 @@ async fn handle_timeline_load(args: serde_json::Value) -> Result<serde_json::Val
 // Handler: timeline.validate
 // ---------------------------------------------------------------------------
 
+
+/// Convert SRT entries into timeline segments in one call.
+async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?;
+    let crossfade_ms = default_u32(&args, "crossfade_ms", 80);
+    let aspect = default_str(&args, "aspect", "9:16");
+    let fps = default_u32(&args, "fps", 30);
+
+    // Parse SRT file
+    let entries = parse_srt(&srt_path)
+        .map_err(|e| ToolError::InvalidArg(format!("Failed to parse SRT: {}", e)))?;
+
+    if entries.is_empty() {
+        return Err(ToolError::InvalidArg("SRT file has no entries".to_string()));
+    }
+
+    // Load or create timeline
+    let timeline_path_arg = args.get("timeline_path")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let mut timeline = if let Some(ref tp) = timeline_path_arg {
+        if !tp.is_empty() {
+            Timeline::load(tp).map_err(|e| ToolError::Timeline(e.to_string()))?
+        } else {
+            Timeline::new(std::path::PathBuf::from(srt_path.with_extension("")), &aspect, fps, None)
+        }
+    } else {
+        Timeline::new(std::path::PathBuf::from(srt_path.with_extension("")), &aspect, fps, None)
+    };
+
+    // Add each SRT entry as a segment
+    let mut segments_count = 0;
+    for entry in &entries {
+        if entry.end > entry.start {
+            timeline.add_segment(
+                entry.start,
+                entry.end,
+                &entry.text,
+                crossfade_ms,
+                None,
+            );
+            segments_count += 1;
+        }
+    }
+
+    // Determine output path
+    let output_path = if let Some(ref tp) = timeline_path_arg {
+        if !tp.is_empty() {
+            tp.clone()
+        } else {
+            let p = srt_path.with_extension(".timeline.json");
+            p.to_string_lossy().to_string()
+        }
+    } else {
+        let p = srt_path.with_extension(".timeline.json");
+        p.to_string_lossy().to_string()
+    };
+
+    // Save timeline
+    timeline.save(&output_path)
+        .map_err(|e| ToolError::Timeline(format!("Failed to save timeline: {}", e)))?;
+
+    let duration_s = entries.last().map(|e| e.end).unwrap_or(0.0);
+
+    Ok(json!({
+        "status": "built",
+        "timeline_path": output_path,
+        "segments_count": segments_count,
+        "duration_s": duration_s,
+        "aspect": aspect,
+        "fps": fps,
+    }))
+}
 async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?
         .to_string_lossy()
