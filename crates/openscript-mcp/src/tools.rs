@@ -2688,7 +2688,7 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
     let mut errors = timeline.validate();
     // Phase 54: Reject empty timelines
     if timeline.segments.is_empty() {
-        errors.push("Timeline has no segments. Call srt.to_timeline or timeline.add_segment to populate it.".to_string());
+        errors.push("Timeline has no segments. Call timeline.add_segment to populate it with segments.".to_string());
     }
     let valid = errors.is_empty();
 
