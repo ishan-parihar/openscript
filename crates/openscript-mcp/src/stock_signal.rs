@@ -51,6 +51,10 @@ const NOISE_TOKENS: &[&str] = &[
     "it", "its", "as", "if", "then", "than", "when", "where", "why", "how",
     // meta
     "stock", "footage", "cinematic", "video", "clip", "free", "royalty",
+    // Hinglish noise tokens (Hindi function words with no visual content)
+    "hai", "ho", "ka", "ki", "ke", "ko", "se", "mein", "par", "aur",
+    "yeh", "woh", "jo", "kya", "kaise", "kyun", "nahi", "haan",
+    "bhi", "ab", "phir", "toh", "yaar", "dekho", "suno", "bolo",
 ];
 
 // ---------------------------------------------------------------------------

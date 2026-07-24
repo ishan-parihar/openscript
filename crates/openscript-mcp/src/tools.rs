@@ -2685,7 +2685,11 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
         .to_string_lossy()
         .to_string();
     let timeline = Timeline::load(&timeline_path)?;
-    let errors = timeline.validate();
+    let mut errors = timeline.validate();
+    // Phase 54: Reject empty timelines
+    if timeline.segments.is_empty() {
+        errors.push("Timeline has no segments. Call srt.to_timeline or timeline.add_segment to populate it.".to_string());
+    }
     let valid = errors.is_empty();
 
     Ok(json!({
@@ -5559,7 +5563,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     // ---- Diagnostics ----
     let mut warnings: Vec<String> = Vec::new();
     if get_api_key("pexels_api_key", "PEXELS_API_KEY").is_empty() {
-        warnings.push("PEXELS_API_KEY not set — stock backgrounds will be skipped".to_string());
+        warnings.push("PEXELS_API_KEY not set — no stock backgrounds. Set PEXELS_API_KEY env var for real stock footage.".to_string());
     }
 
     let _ = report_progress(0.0, 100.0, "Starting audio-to-video pipeline").await;
@@ -5884,9 +5888,31 @@ for r in results_arr {
     // Clone ass_path before it's moved into render_spec (needed for post-render verification)
     let ass_path_for_verify = ass_path.clone();
 
+    // Phase 50: Extract audio from input to WAV before passing as voiceover.
+    // The concat demuxer (-f concat) can drop audio streams from MP4 containers.
+    // Extracting to WAV ensures the voiceover pipeline receives pure audio.
+    // Extract audio to WAV only if input is not already WAV/PCM
+    let voiceover_wav = if audio_path.ends_with(".wav") || audio_path.ends_with(".pcm") {
+        audio_path.to_string()
+    } else {
+        let wav_path = std::env::temp_dir().join(format!("audio_to_video_vo_{}.wav", std::process::id()));
+        let extraction = std::process::Command::new("ffmpeg")
+            .args(["-y", "-i", &audio_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", wav_path.to_str().unwrap_or("/dev/null")])
+            .output();
+        match extraction {
+            Ok(o) if o.status.success() && wav_path.exists() => {
+                warnings.push("Audio extracted to WAV for voiceover pipeline".to_string());
+                wav_path.to_string_lossy().to_string()
+            }
+            _ => {
+                warnings.push("WAV extraction failed, using original audio path".to_string());
+                audio_path.to_string()
+            }
+        }
+    };
     let render_spec = MultiLayerRenderSpec {
         backgrounds: background_clips,
-        voiceover_paths: vec![audio_path.to_string()],
+        voiceover_paths: vec![voiceover_wav],
         stickers,
         music_path: music_path_opt,
         music_volume,

@@ -6,20 +6,19 @@
 
 ---
 
-## BUG-1: CRITICAL — No Audio Passthrough (Silent Output)
+## BUG-1: MEDIUM — Audio Present But Potentially Wrong Content
 
-**Root Cause:** The input audio path is passed as `voiceover_paths: vec![audio_path.to_string()]` (line 5889). The `render_multilayer` function treats this as a VOICEOVER — it writes a concat file and runs it through `concat=n=N` filter. When there's only ONE voiceover file, the concat filter should work, BUT:
+**Root Cause:** The input audio path is passed as `voiceover_paths: vec![audio_path.to_string()]` (line 5889). The `render_multilayer` function treats this as a VOICEOVER — it writes a concat file and runs it through `concat=n=N` filter.
 
-1. The concat filter expects all inputs to have the same codec/parameters. If the input audio is MP3 and ffmpeg expects WAV, the concat fails silently.
-2. The `amix` filter uses `duration=first` — if the voiceover concat produces a shorter stream than expected, audio gets truncated.
-3. **There's no error checking on the audio concat result** — if it fails, the render proceeds with no audio.
+**Evidence (ffprobe on `/tmp/audio_to_video_1784914088.mp4`):**
+- Audio stream EXISTS: aac, mono, 143.5s
+- mean_volume: -11.3 dB (LOUDER than input at -21.9 dB)
+- max_volume: -0.3 dB
+- The audio is NOT silent — it has proper volume levels
 
-**Evidence:** The output video has video frames but no audible audio track.
+**Conclusion:** The audio passthrough WORKS. The user may have tested a different file, or the audio content is correct but the user expected different audio (e.g., TTS voiceover instead of original speech).
 
-**Fix:** 
-- Add explicit audio format normalization before concat (force WAV 44100Hz mono)
-- Add audio stream existence check after render
-- Log the ffmpeg filter graph for debugging
+**Remaining Risk:** No verification that the output audio matches the input audio content (only volume is checked). Add audio fingerprint comparison if needed.
 
 ---
 
@@ -48,9 +47,10 @@
 **Evidence:** The b-roll search queries would be garbled Hinglish phrases that Pexels can't match.
 
 **Fix:**
-- Add Hinglish → English visual concept mapping in `stock_signal`
-- Use the LLM (via `llm.complete`) to generate English visual keywords from Hinglish transcript
-- Add Hinglish noise tokens to `NOISE_TOKENS`
+- Add `stock_signal::hinglish_to_english_concepts()` function that maps common Hinglish phrases to English visual concepts (e.g., "sarkar" → "government", "inquilab" → "revolution protest")
+- Fall back to `llm.complete` for unknown phrases
+- Add Hinglish noise tokens to `NOISE_TOKENS` (e.g., "hai", "ho", "ka", "ki", "ke", "ko", "se", "mein", "par")
+- This is a one-function change in `stock_signal.rs`, not a pipeline redesign
 
 ---
 
@@ -156,12 +156,10 @@ An agent would make BETTER decisions based on the content:
 
 ## Recommendation
 
-**Delete `audio.to_video` entirely.** It produces garbage output (looping placeholder, no audio, no relevant b-roll). The atomic tool chain, when fixed with `srt.to_timeline`, will produce BETTER output because the agent can:
-1. Generate English keywords from Hinglish transcript
-2. Choose appropriate music mood/energy
-3. Add intro/outro voiceover
-4. Add transition SFX
-5. Verify audio before rendering
-6. Fail gracefully when stock footage is unavailable
+**Don't delete `audio.to_video` yet.** Audit #22 scored atomic tools at 2.9/10 vs monolithic at 5.0/10. The monolith produces *some* output; the atomic chain produces *no* output. Instead:
 
-The monolith is a liability, not an asset.
+1. **Fix the monolith's bugs** (keyword extraction, placeholder fallback) so it produces USEFUL output
+2. **Add `srt.to_timeline` tool** so the atomic chain can also produce output
+3. **Only then** delete the monolith once the atomic chain is proven
+
+The monolith is a crutch, not a solution — but we need the crutch until the replacement works.
