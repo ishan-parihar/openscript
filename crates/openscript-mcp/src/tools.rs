@@ -5896,9 +5896,9 @@ for r in results_arr {
         audio_path.to_string()
     } else {
         let wav_path = std::env::temp_dir().join(format!("audio_to_video_vo_{}.wav", std::process::id()));
-        let extraction = std::process::Command::new("ffmpeg")
+        let extraction = tokio::process::Command::new("ffmpeg")
             .args(["-y", "-i", &audio_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", wav_path.to_str().unwrap_or("/dev/null")])
-            .output();
+            .output().await;
         match extraction {
             Ok(o) if o.status.success() && wav_path.exists() => {
                 warnings.push("Audio extracted to WAV for voiceover pipeline".to_string());
