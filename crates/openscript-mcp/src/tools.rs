@@ -5649,8 +5649,9 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
             })
             .collect();
 
-        // No deduplication across scenes — the same Pexels video at different
-        // scene durations with different captions/stickers provides enough variety.
+        // Cross-scene deduplication: track used video paths to avoid the same
+        // Pexels clip appearing in multiple scenes.
+        let mut used_video_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for (scene_idx, (scene_text, scene_start, scene_end)) in scenes.iter().enumerate() {
             // Build diverse Pexels concepts from scene text.
@@ -5697,23 +5698,24 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
             });
             match handle_broll_fetch(fetch_args).await {
                 Ok(result) => {
-                    if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {
-                        // Take the first result with a valid cached path
-                        for r in results_arr {
-                            if let Some(cached) = r.get("cached_path").and_then(|v| v.as_str()) {
-                                let path = resolve_repo_path(&cached.to_string());
-                                if path.exists() {
-                                    let scene_dur = (scene_end - scene_start).max(1.0);
-                                    background_clips.push(BackgroundClip {
-                                        path: path.to_string_lossy().to_string(),
-                                        duration_s: scene_dur,
-                                        looped: true, // Loop so shorter clips fill the scene duration
-                                    });
-                                    tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
-                                    break;
-                                }
-                            }
-                        }
+                    if let Some(results_arr) = result.get("results").and_then(|v| v.as_array()) {// Take the first result with a valid cached path that hasn't been used in another scene
+for r in results_arr {
+    if let Some(cached) = r.get("cached_path").and_then(|v| v.as_str()) {
+        let path = resolve_repo_path(&cached.to_string());
+        let path_str = path.to_string_lossy().to_string();
+        if path.exists() && !used_video_paths.contains(&path_str) {
+            let scene_dur = (scene_end - scene_start).max(1.0);
+            background_clips.push(BackgroundClip {
+                path: path_str.clone(),
+                duration_s: scene_dur,
+                looped: true, // Loop so shorter clips fill the scene duration
+            });
+            used_video_paths.insert(path_str);
+            tracing::info!("[audio.to_video] Scene {}: concept='{}', clip={}", scene_idx, concepts[0], path.file_name().unwrap_or_default().to_string_lossy());
+            break;
+        }
+    }
+}
                     } else {
                         tracing::warn!("[audio.to_video] Scene {}: no results array in broll response", scene_idx);
                     }
