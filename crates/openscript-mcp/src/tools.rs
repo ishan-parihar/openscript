@@ -628,6 +628,25 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         // ===================================================================
+        // GROUP 2b: SEGMENT ANALYSIS — Transcript-to-keyword pipeline
+        // ===================================================================
+        {
+            "name": "segment.analyze",
+            "description": "Analyze a transcript or audio file and return structured segments with ideal clip durations, suggested b-roll keywords, and visual anchors. This is a PURE ANALYSIS tool — it does NOT fetch any broll or render any video. Use this to understand what segments exist before creating keywords for broll.fetch. The agent reviews these suggestions, customizes keywords using its LLM capabilities, then calls broll.fetch with approved keywords. Returns: segments array with id, start_s, end_s, duration_s, caption, suggested_keywords, visual_anchor, topic_category.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "audio_path": {"type": "string", "description": "Path to audio/video file to analyze"},
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT (skip transcription)"},
+                    "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Whole-video topic keywords for context-aware analysis"},
+                    "theme": {"type": "string", "default": "neutral", "description": "Content theme for visual anchor selection"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for orientation bias"}
+                },
+                "required": ["audio_path"],
+                "additionalProperties": false
+            }
+        },
+        // ===================================================================
         // GROUP 3: VOICEOVER & TTS — Commentary, narration, and voice production
         // ===================================================================
         {
@@ -1441,6 +1460,7 @@ pub fn route_tool(
         "broll.assign" => Box::pin(handle_broll_assign(args)),
         "broll.director" => Box::pin(handle_broll_director(args)),
         "broll.plan" => Box::pin(handle_broll_plan(args)),
+        "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
         "timeline.diff" => Box::pin(handle_timeline_diff(args)),
@@ -4878,6 +4898,97 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
             "suggested_keywords": keywords,
         }));
     }
+    Ok(json!({
+        "status": "success",
+        "segments_count": result_segments.len(),
+        "segments": result_segments,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: segment.analyze (transcript → segments with stock_signal keywords)
+// ---------------------------------------------------------------------------
+
+async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let audio_path = extract_str(&args, "audio_path")?;
+    let srt_path = args.get("srt_path").and_then(|v| v.as_str()).map(String::from);
+    let video_keywords: Vec<String> = args
+        .get("video_keywords")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let theme = args.get("theme").and_then(|v| v.as_str()).unwrap_or("neutral");
+    let aspect = args.get("aspect").and_then(|v| v.as_str()).unwrap_or("9:16");
+
+    // Step 1: Transcribe or load SRT
+    let word_srt_path = if let Some(ref path) = srt_path {
+        path.clone()
+    } else {
+        // Transcribe the audio
+        report_progress(0.0, 100.0, "Transcribing audio...").await.ok();
+        let out_dir = std::env::temp_dir().join("segment_analyze");
+        let _ = std::fs::create_dir_all(&out_dir);
+        let out_srt = out_dir.join("transcript.srt").to_string_lossy().to_string();
+        let result = transcribe_with_engine(
+            &audio_path,
+            &out_srt,
+            openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml,
+            "auto",
+        )
+        .await
+        .map_err(|e| ToolError::InvalidArg(format!("Transcription failed: {}", e)))?;
+        result.word_srt_path
+            .unwrap_or(result.phrase_srt_path.unwrap_or(result.output_path))
+    };
+
+    // Step 2: Parse SRT entries
+    report_progress(30.0, 100.0, "Parsing SRT entries...").await.ok();
+    let entries = parse_srt(&word_srt_path)?;
+
+    if entries.is_empty() {
+        return Ok(json!({
+            "status": "warning",
+            "message": "No SRT entries found",
+            "segments": [],
+        }));
+    }
+
+    // Step 3: Group into segments (4 entries per segment)
+    report_progress(50.0, 100.0, "Grouping into segments...").await.ok();
+    let scene_size = 4;
+    let scenes: Vec<(String, f64, f64)> = entries.chunks(scene_size)
+        .map(|chunk| {
+            let text: String = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
+            let start = chunk.first().map(|e| e.start).unwrap_or(0.0);
+            let end = chunk.last().map(|e| e.end).unwrap_or(0.0);
+            (text, start, end)
+        })
+        .collect();
+
+    // Step 4: For each segment, run stock_signal analysis
+    report_progress(60.0, 100.0, "Analyzing segments for b-roll keywords...").await.ok();
+    let mut result_segments = Vec::new();
+    for (idx, (text, start_s, end_s)) in scenes.iter().enumerate() {
+        let duration_s = end_s - start_s;
+        let stock_q = crate::stock_signal::build_scene_stock_query(
+            text,
+            &video_keywords,
+            theme,
+            aspect,
+            idx,
+        );
+        result_segments.push(json!({
+            "id": format!("seg_{:03}", idx + 1),
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": duration_s,
+            "caption": text,
+            "suggested_keywords": stock_q.signal_tokens,
+            "visual_anchor": stock_q.visual_anchor,
+        }));
+    }
+
+    report_progress(100.0, 100.0, "Analysis complete.").await.ok();
     Ok(json!({
         "status": "success",
         "segments_count": result_segments.len(),
