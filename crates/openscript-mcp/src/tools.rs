@@ -776,7 +776,7 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "audio.to_video",
-            "description": "ONE-CALL pipeline: audio file → complete 9:16 reel with stock video backgrounds. Orchestrates: (1) Transcribe audio with Whisper, (2) Group captions, (3) Build timeline with segments, (4) Fetch stock video backgrounds based on transcript content, (5) Assign backgrounds to timeline, (6) Assign background music with ducking, (7) Assign SFX (hook, transitions, highlights), (8) Generate ASS captions with Bebas Neue, (9) Render final video. Use when you have an audio recording (podcast, interview, narration) and want to create a video reel with relevant stock footage. Unlike reelize.timeline (which edits existing video), this creates video FROM audio by sourcing visual content. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered, preset.",
+            "description": "ONE-CALL pipeline: audio file → complete 9:16 reel with stock video backgrounds. Orchestrates: (1) Transcribe audio with Whisper, (2) Group captions, (3) Build timeline with segments, (4) Fetch stock video backgrounds based on transcript content, (5) Assign backgrounds to timeline, (6) Assign background music with ducking, (7) Assign SFX (hook, transitions, highlights), (8) Generate ASS captions with Bebas Neue, (9) Render final video. Use when you have an audio recording (podcast, interview, narration) and want to create a video reel with relevant stock footage. Unlike reelize.timeline (which edits existing video), this creates video FROM audio by sourcing visual content. Returns: output_path, file_size_bytes, segments_count, tracks_rendered, srt_path, grouped_srt_path, ass_path, duration_s, preset, verification, warnings.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -5892,7 +5892,7 @@ for r in results_arr {
         music_volume,
         ducking: should_duck,
         ducking_depth_db: 12.0,
-        captions_path: if ass_path.is_empty() { None } else { Some(ass_path) },
+        captions_path: if ass_path.is_empty() { None } else { Some(ass_path.clone()) },
         width,
         height,
         fps,
@@ -5950,6 +5950,14 @@ for r in results_arr {
 
     let _ = report_progress(100.0, 100.0, "Audio-to-video complete!").await;
 
+    // Count rendered tracks for agent visibility
+    let mut tracks_rendered = 0usize;
+    if !render_spec.backgrounds.is_empty() { tracks_rendered += 1; }
+    if !render_spec.voiceover_paths.is_empty() { tracks_rendered += 1; }
+    if render_spec.music_path.is_some() { tracks_rendered += 1; }
+    if !render_spec.stickers.is_empty() { tracks_rendered += 1; }
+    if render_spec.captions_path.is_some() { tracks_rendered += 1; }
+
     Ok(json!({
         "status": "rendered",
         "output_path": final_output,
@@ -5958,6 +5966,10 @@ for r in results_arr {
         "backgrounds_used": render_spec.backgrounds.len(),
         "duration_s": total_duration_s,
         "preset": preset,
+        "srt_path": srt_path,
+        "grouped_srt_path": grouped_srt_path,
+        "ass_path": ass_path,
+        "tracks_rendered": tracks_rendered,
         "verification": render_verification.unwrap_or(serde_json::Value::Null),
         "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
     }))
