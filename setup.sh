@@ -118,6 +118,22 @@ step "2/8 — Installing Python ML sidecar deps"
 # Pin a range that supports Python 3.11–3.13. Old pin kokoro-onnx==0.4.0
 # fails on Python 3.13 (requires <3.13). Prefer >=0.4.4 / latest 0.5.x.
 # HinglishGgml transcription uses whisper.cpp + GGML model (see hinglish_ggml_transcriber.py).
+# Build whisper.cpp from source if not already built, install libs to ~/.local/lib/.
+WHISPER_SRC="$HOME/.local/src/whisper.cpp"
+WHISPER_LIB_DIR="$HOME/.local/lib"
+mkdir -p "$WHISPER_LIB_DIR"
+if [ ! -f "$HOME/.local/bin/whisper-cli" ] || [ ! -f "$WHISPER_LIB_DIR/libwhisper.so.1" ]; then
+    echo "[setup] Building whisper.cpp from source..."
+    mkdir -p "$HOME/.local/src"
+    rm -rf "$WHISPER_SRC"
+    git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$WHISPER_SRC"
+    cd "$WHISPER_SRC" && cmake -B build -DGGML_NATIVE=ON && cmake --build build --config Release -j"$(nproc)"
+    cp build/bin/whisper-cli "$HOME/.local/bin/whisper-cli"
+    cp build/bin/lib*.so* "$WHISPER_LIB_DIR/"
+    echo "[setup] Whisper shared libraries installed to $WHISPER_LIB_DIR"
+else
+    echo "[setup] whisper-cli already installed at $HOME/.local/bin/whisper-cli"
+fi
 
 if command -v pip3 >/dev/null 2>&1; then
   info "Installing kokoro-onnx + numpy (user-level, no virtualenv)..."
