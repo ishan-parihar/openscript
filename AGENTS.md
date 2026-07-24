@@ -98,6 +98,10 @@ transcribe → srt.prepare → timeline.build → timeline.add_segment → broll
 
 `audio.to_video` was a monolithic orchestrator — it was deleted because the **agent** should decide the tool sequence, not hardcoded Rust. The atomic tools above give the agent full control.
 
+> ### ⚠️ IRON RULE — FRESH-AGENT AUDITS MUST USE ATOMIC TOOLS
+>
+> **Never call `audio.to_video`, `script.to_video`, `reelize.timeline`, or `reelize.direct` in a fresh-agent audit.** These are monolithic orchestrators that bypass the agent's decision-making. A fresh-agent audit must call each atomic tool individually (transcribe → srt.prepare → timeline.build → ... → verify.render) so we can evaluate the agent's ability to navigate the tool surface, make decisions at each step, and recover from errors. The audit score reflects the agent's UX — not the orchestrator's hardcoded pipeline.
+
 ### Trajectory D — From Existing Video (NLE + Re-edit)
 
 ```
