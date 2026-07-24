@@ -5556,21 +5556,18 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                         &aspect,
                         scene_idx,
                     );
-                    // Use the stock_signal query as the primary concept
-                    if !stock_q.query.is_empty() {
-                        concepts.push(stock_q.query.clone());
+                    // Use short signal tokens as individual Pexels concepts
+                    // (NOT the full query string which is too verbose for Pexels)
+                    for token in stock_q.signal_tokens.iter().take(2) {
+                        if !concepts.iter().any(|c| c == token) {
+                            concepts.push(token.clone());
+                        }
                     }
-                    // Add the visual anchor as a secondary concept for diversity
+                    // Add the visual anchor as a concept for diversity
                     if !stock_q.visual_anchor.is_empty()
                         && !concepts.iter().any(|c| c == &stock_q.visual_anchor)
                     {
                         concepts.push(stock_q.visual_anchor.clone());
-                    }
-                    // Add signal tokens as additional concepts (up to 3)
-                    for token in stock_q.signal_tokens.iter().take(3) {
-                        if !concepts.iter().any(|c| c == token) {
-                            concepts.push(token.clone());
-                        }
                     }
                     // Always add a cycling fallback to ensure diversity across scenes
                     let fallback = fallbacks[scene_idx % fallbacks.len()];
