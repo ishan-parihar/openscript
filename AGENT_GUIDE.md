@@ -79,7 +79,7 @@ Render the final video.
 | `hf.render` | Render HyperFrames HTML composition to MP4 |
 | `hf.classify` | Classify Remotion source for HF native vs interop |
 
-### 7. TIMELINE MANAGEMENT (8 tools)
+### 7. TIMELINE MANAGEMENT (10 tools)
 Inspect, validate, and modify timelines.
 
 | Tool | When to use |
@@ -92,6 +92,7 @@ Inspect, validate, and modify timelines.
 | `timeline.add_track_event` | Add an event to any track |
 | `timeline.diff` | Compare two timeline versions |
 | `timeline.autofill_broll` | Auto-fill b-roll from segment captions |
+| `broll.plan` | Analyze timeline → segment timestamps + suggested b-roll keywords |
 | `segment.analyze` | Analyze transcript → segments with stock_signal b-roll keywords |
 
 ### 8. QUALITY & VERIFICATION (4 tools)
