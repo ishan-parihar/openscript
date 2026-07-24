@@ -5517,8 +5517,15 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let mut background_clips: Vec<BackgroundClip> = Vec::new();
     if broll_enabled {
         // Group SRT entries into scenes (every 3-5 segments = one scene)
-        let scene_size = 4; // segments per scene
-        let scenes: Vec<(String, f64, f64)> = srt_entries.chunks(scene_size)
+    // Phase 43a: stock_signal needs video_keywords and theme for topic-aware
+    // b-roll query building. In A2V mode there is no user-provided script, so
+    // we default to empty keywords (topic falls back to Lifestyle) and neutral
+    // theme. The agent can override via broll.keywords in future.
+    let video_keywords: Vec<String> = Vec::new();
+    let theme = "neutral";
+
+    let scene_size = 4; // segments per scene
+    let scenes: Vec<(String, f64, f64)> = srt_entries.chunks(scene_size)
             .map(|chunk| {
                 let text = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
                 let start = chunk.first().map(|e| e.start).unwrap_or(0.0);
@@ -5538,28 +5545,38 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
                     if scene_idx < agent_broll_keywords.len() {
                         concepts.extend(agent_broll_keywords[scene_idx].iter().cloned());
                     }
-                    // Try to extract scene-specific concept
-                    let base_concept = extract_broll_concept(scene_text);
-            let significant_words: Vec<&str> = scene_text.split_whitespace()
-                .filter(|w| w.len() > 3)
-                .collect();
-            
-            // Use scene-specific concept if it's meaningful (not just 'b-roll')
-            if !base_concept.is_empty() && base_concept != "b-roll" {
-                concepts.push(base_concept);
-            }
-            // Add a 2-word phrase from the scene for more relevant stock search
-            if significant_words.len() >= 2 {
-                let phrase = format!("{} {}", significant_words[0], significant_words[1]);
-                if !concepts.contains(&phrase) {
-                    concepts.push(phrase);
-                }
-            }
-            // Always add a cycling fallback to ensure diversity across scenes
-            let fallback = fallbacks[scene_idx % fallbacks.len()];
-            if !concepts.iter().any(|c| c == fallback) {
-                concepts.push(fallback.to_string());
-            }
+                    // Phase 43a: Use stock_signal for topic-aware query building.
+                    // This replaces the naive extract_broll_concept (stopword filter)
+                    // with sophisticated topic detection, visual anchor selection,
+                    // and signal token extraction.
+                    let stock_q = crate::stock_signal::build_scene_stock_query(
+                        scene_text,
+                        &video_keywords,
+                        &theme,
+                        &aspect,
+                        scene_idx,
+                    );
+                    // Use the stock_signal query as the primary concept
+                    if !stock_q.query.is_empty() {
+                        concepts.push(stock_q.query.clone());
+                    }
+                    // Add the visual anchor as a secondary concept for diversity
+                    if !stock_q.visual_anchor.is_empty()
+                        && !concepts.iter().any(|c| c == &stock_q.visual_anchor)
+                    {
+                        concepts.push(stock_q.visual_anchor.clone());
+                    }
+                    // Add signal tokens as additional concepts (up to 3)
+                    for token in stock_q.signal_tokens.iter().take(3) {
+                        if !concepts.iter().any(|c| c == token) {
+                            concepts.push(token.clone());
+                        }
+                    }
+                    // Always add a cycling fallback to ensure diversity across scenes
+                    let fallback = fallbacks[scene_idx % fallbacks.len()];
+                    if !concepts.iter().any(|c| c == fallback) {
+                        concepts.push(fallback.to_string());
+                    }
             let fetch_args = json!({
                 "concepts": concepts,
                 "orientation": &aspect,
