@@ -110,13 +110,29 @@
 
 **Fix:** Cycle sticker positions across scenes (bottom-right, top-left, center, etc.) based on scene index.
 
+### 🟢 LOW — MCP Server Binary Goes Stale After Code Changes
+
+**Gap:** The release binary (`target/release/mcp-server`) must be manually rebuilt (`cargo build -p openscript-mcp --release`) after every code change. The fresh agent doesn't know this — it may be running a stale binary.
+
+**Fresh agent experience:** Agent runs `system.doctor` which reports `ready_for_production: true`, but the binary is from a previous build and may have different behavior than expected.
+
+**Fix:** Add a `version` field to `system.doctor` output that includes the git commit hash. If the hash doesn't match the source code, warn the agent to rebuild.
+
+### 🟢 LOW — Pexels API Key Validity Not Checked
+
+**Gap:** `system.doctor` reports whether `PEXELS_API_KEY` is set, but not whether it's valid. An expired/invalid key causes b-roll fetching to fail silently.
+
+**Fresh agent experience:** Agent sees `PEXELS_API_KEY: set` in system.doctor, assumes b-roll will work, then gets empty results from `broll.fetch`.
+
+**Fix:** `system.doctor` should make a test Pexels API call and report validity.
+
 ### 🟢 LOW — No Progress Feedback During Long Renders
 
-**Gap:** `audio.to_video` takes ~2 minutes to complete but the MCP protocol provides no progress updates during the render. The agent blocks for 2 minutes with no feedback.
+**Gap:** `audio.to_video` takes ~2 minutes to complete but the MCP `notifications/progress` capability isn't surfaced to agents in the stdio transport. The `report_progress` calls exist in the handler but the agent doesn't see them.
 
 **Fresh agent experience:** Agent sends request, waits 2 minutes, gets response. No way to know if it's stuck or progressing.
 
-**Fix:** The MCP `notifications/progress` capability is already supported — use it to send progress updates during transcription, b-roll fetching, and rendering phases.
+**Fix:** Surface MCP progress notifications in the stdio transport, or add a `tool.progress` field to the tool response.
 
 ### 🟢 LOW — SCENE_SIZE Hardcoded to 4 SRT Entries
 
