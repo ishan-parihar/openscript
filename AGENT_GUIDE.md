@@ -1,6 +1,6 @@
 # OpenScript Agent Guide — Golden Trajectory for Video Creation
 
-## Tool Taxonomy (88 tools)
+## Tool Taxonomy (90 tools)
 
 > **Always start a new environment with `system.doctor` (or `system.capabilities`).**
 > `system.doctor` returns `ready_for_production` + `next_actions` for cold-start.
@@ -92,6 +92,7 @@ Inspect, validate, and modify timelines.
 | `timeline.add_track_event` | Add an event to any track |
 | `timeline.diff` | Compare two timeline versions |
 | `timeline.autofill_broll` | Auto-fill b-roll from segment captions |
+| `segment.analyze` | Analyze transcript → segments with stock_signal b-roll keywords |
 
 ### 8. QUALITY & VERIFICATION (4 tools)
 Post-render quality checks.
