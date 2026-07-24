@@ -758,7 +758,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "timeline.render",
-            "description": "Render a complete multi-track timeline to a final video. This is the PRODUCTION render — it processes ALL tracks: b-roll overlays, background music with ducking, SFX hits, voiceover narration, and burned-in captions (static ASS or animated via PupCaps overlay). ALWAYS run timeline.validate first. Returns: output_path, file_size_bytes, segments_count, tracks_rendered.",
+            "description": "Render a complete multi-track timeline to a final video. This is the PRODUCTION render — it processes ALL tracks: b-roll overlays, background music with ducking, SFX hits, voiceover narration, and burned-in captions (static ASS or animated via PupCaps overlay). ALWAYS run timeline.validate first. Returns: output_path, file_size_bytes, segments_count, overlays_rendered.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -776,7 +776,7 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "audio.to_video",
-            "description": "ONE-CALL pipeline: audio file → complete 9:16 reel with stock video backgrounds. Orchestrates: (1) Transcribe audio with Whisper, (2) Group captions, (3) Build timeline with segments, (4) Fetch stock video backgrounds based on transcript content, (5) Assign backgrounds to timeline, (6) Assign background music with ducking, (7) Assign SFX (hook, transitions, highlights), (8) Generate ASS captions with Bebas Neue, (9) Render final video. Use when you have an audio recording (podcast, interview, narration) and want to create a video reel with relevant stock footage. Unlike reelize.timeline (which edits existing video), this creates video FROM audio by sourcing visual content. Returns: output_path, file_size_bytes, segments_count, tracks_rendered, srt_path, grouped_srt_path, ass_path, duration_s, preset, verification, warnings.",
+            "description": "ONE-CALL pipeline: audio file → complete 9:16 reel with stock video backgrounds. Orchestrates: (1) Transcribe audio with Whisper, (2) Group captions, (3) Build timeline with segments, (4) Fetch stock video backgrounds based on transcript content, (5) Assign backgrounds to timeline, (6) Assign background music with ducking, (7) Assign SFX (hook, transitions, highlights), (8) Generate ASS captions with Bebas Neue, (9) Render final video. Use when you have an audio recording (podcast, interview, narration) and want to create a video reel with relevant stock footage. Unlike reelize.timeline (which edits existing video), this creates video FROM audio by sourcing visual content. Returns: output_path, file_size_bytes, segments_count, overlays_rendered, srt_path, grouped_srt_path, ass_path, duration_s, preset, verification, warnings. For verification of A2V output (no timeline JSON), use verify.render instead of verify.production.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -810,7 +810,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "reelize.timeline",
-            "description": "ONE-CALL pipeline: raw video → complete 9:16 reel. Orchestrates: (1) Transcribe with Whisper, (2) Group captions, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions with Bebas Neue, (8) Render final video. Use when you want a fully-produced reel from a single raw video with minimal manual intervention. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, tracks_rendered, preset.",
+            "description": "ONE-CALL pipeline: raw video → complete 9:16 reel. Orchestrates: (1) Transcribe with Whisper, (2) Group captions, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions with Bebas Neue, (8) Render final video. Use when you want a fully-produced reel from a single raw video with minimal manual intervention. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, overlays_rendered, preset.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -4649,7 +4649,7 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
                 "output_path": out_path,
                 "file_size_bytes": file_size,
                 "segments_count": timeline.segments.len(),
-                "tracks_rendered": total_tracks,
+                "overlays_rendered": total_tracks,
             }))
         }
         Err(e) => {
@@ -5474,7 +5474,7 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
                 "file_size_bytes": file_size,
                 "timeline_path": timeline_path,
                 "segments_count": timeline.segments.len(),
-                "tracks_rendered": total_tracks,
+                "overlays_rendered": total_tracks,
                 "preset": preset,
                 "tts_available": tts_available,
                 "broll_count": broll_count,
@@ -5951,12 +5951,12 @@ for r in results_arr {
     let _ = report_progress(100.0, 100.0, "Audio-to-video complete!").await;
 
     // Count rendered tracks for agent visibility
-    let mut tracks_rendered = 0usize;
-    if !render_spec.backgrounds.is_empty() { tracks_rendered += 1; }
-    if !render_spec.voiceover_paths.is_empty() { tracks_rendered += 1; }
-    if render_spec.music_path.is_some() { tracks_rendered += 1; }
-    if !render_spec.stickers.is_empty() { tracks_rendered += 1; }
-    if render_spec.captions_path.is_some() { tracks_rendered += 1; }
+    let mut overlays_rendered = 0usize;
+    if !render_spec.backgrounds.is_empty() { overlays_rendered += 1; }
+    if !render_spec.voiceover_paths.is_empty() { overlays_rendered += 1; }
+    if render_spec.music_path.is_some() { overlays_rendered += 1; }
+    if !render_spec.stickers.is_empty() { overlays_rendered += 1; }
+    if render_spec.captions_path.is_some() { overlays_rendered += 1; }
 
     Ok(json!({
         "status": "rendered",
@@ -5969,7 +5969,7 @@ for r in results_arr {
         "srt_path": srt_path,
         "grouped_srt_path": grouped_srt_path,
         "ass_path": ass_path,
-        "tracks_rendered": tracks_rendered,
+        "overlays_rendered": overlays_rendered,
         "verification": render_verification.unwrap_or(serde_json::Value::Null),
         "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
     }))
