@@ -19,6 +19,10 @@ use crate::server::report_progress;
 // Tool definitions (89 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
+/// Number of SRT entries grouped into one b-roll scene/segment.
+/// Shared between audio.to_video and segment.analyze to ensure consistent groupings.
+const SCENE_SIZE: usize = 4;
+
 use openscript_ffmpeg::multilayer_render::StickerOverlay;
 
 /// Build sticker overlays for A2V/V2V pipelines.
@@ -4955,7 +4959,7 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
 
     // Step 3: Group into segments (4 entries per segment)
     report_progress(50.0, 100.0, "Grouping into segments...").await.ok();
-    let scene_size = 4;
+    let scene_size = SCENE_SIZE;
     let scenes: Vec<(String, f64, f64)> = entries.chunks(scene_size)
         .map(|chunk| {
             let text: String = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
@@ -5635,7 +5639,7 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let video_keywords: Vec<String> = Vec::new();
     let theme = "neutral";
 
-    let scene_size = 4; // segments per scene
+    let scene_size = SCENE_SIZE;
     let scenes: Vec<(String, f64, f64)> = srt_entries.chunks(scene_size)
             .map(|chunk| {
                 let text = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");

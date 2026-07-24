@@ -16,7 +16,8 @@ if [ "$TOOL_COUNT" -ne 90 ]; then
 fi
 
 # Verify key tools are present
-for tool in "transcribe" "reelize.timeline" "tts.generate" "hf.lint" "hf.validate" "hf.snapshot" "hf.render" "hf.classify" "composition.render" "verify.render" "verify.production" "llm.complete" "vision.analyze_clip" "vision.score_clip" "system.config.get" "system.config.set" "director.run" "system.doctor"; do
+for tool in "transcribe" "reelize.timeline" "tts.generate" "hf.lint" "hf.validate" "hf.snapshot" "hf.render" "hf.classify" "composition.render" "verify.render" "verify.production" "llm.complete" "vision.analyze_clip" "vision.score_clip" "system.config.get" "system.config.set" "director.run" "system.doctor"
+    "segment.analyze"; do
     if echo "$TOOLS_RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); tools=[t['name'] for t in r['result']['tools']]; exit(0 if '$tool' in tools else 1)"; then
         echo "  ✓ $tool"
     else
