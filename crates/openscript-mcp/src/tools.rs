@@ -2707,10 +2707,10 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
 
     // Parse SRT file
     let entries = parse_srt(&srt_path)
-        .map_err(|e| ToolError::InvalidArg(format!("Failed to parse SRT: {}", e)))?;
+        .map_err(|e| ToolError::Srt(format!("Failed to parse SRT: {}", e)))?;
 
     if entries.is_empty() {
-        return Err(ToolError::InvalidArg("SRT file has no entries".to_string()));
+        return Err(ToolError::Srt("SRT file has no entries".to_string()));
     }
 
     // Load or create timeline
@@ -2722,10 +2722,10 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         if !tp.is_empty() {
             Timeline::load(tp).map_err(|e| ToolError::Timeline(e.to_string()))?
         } else {
-            Timeline::new(std::path::PathBuf::from(srt_path.with_extension("")), &aspect, fps, None)
+            Timeline::new(std::path::PathBuf::new(), &aspect, fps, None)
         }
     } else {
-        Timeline::new(std::path::PathBuf::from(srt_path.with_extension("")), &aspect, fps, None)
+        Timeline::new(std::path::PathBuf::new(), &aspect, fps, None)
     };
 
     // Add each SRT entry as a segment
@@ -6091,6 +6091,7 @@ for r in results_arr {
         "grouped_srt_path": grouped_srt_path,
         "ass_path": ass_path,
         "overlays_rendered": overlays_rendered,
+        "tracks_rendered": overlays_rendered,
         "verification": render_verification.unwrap_or(serde_json::Value::Null),
         "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
     }))
