@@ -88,10 +88,15 @@ pub fn group_entries(
 }
 
 /// Group word-per-line SRT entries into phrases, preserving per-word timestamps.
-
+///
 /// Unlike `group_entries` which discards individual word timings, this function
 /// retains the real timestamps from Whisper transcription for each word within
 /// each grouped phrase. This is critical for accurate word-highlight captions.
+///
+/// `max_duration_s` caps the total duration of a single group (default: 5.0s).
+/// When the accumulated time span exceeds this, the group breaks even if
+/// max_words/max_chars haven't been reached. This prevents the last few
+/// captions from being excessively slow (>5s).
 ///
 /// Returns a Vec<GroupedPhrase> where each phrase contains its constituent
 /// word timings that can be directly passed to `generate_ass`.
@@ -100,6 +105,17 @@ pub fn group_entries_with_words(
     max_words: usize,
     max_chars: usize,
     max_gap: f64,
+) -> Vec<GroupedPhrase> {
+    group_entries_with_words_max_duration(entries, max_words, max_chars, max_gap, f64::MAX)
+}
+
+/// Group entries with an explicit max_duration_s cap.
+pub fn group_entries_with_words_max_duration(
+    entries: &[SrtEntry],
+    max_words: usize,
+    max_chars: usize,
+    max_gap: f64,
+    max_duration_s: f64,
 ) -> Vec<GroupedPhrase> {
     let mut groups = Vec::new();
     let mut cur_words: Vec<String> = Vec::new();
@@ -121,7 +137,11 @@ pub fn group_entries_with_words(
         }
         let gap = e.start - cur_end.unwrap_or(e.start);
         let next_len = cur_words.join(" ").len() + 1 + w.len();
-        let should_break = gap > max_gap || cur_words.len() >= max_words || next_len > max_chars;
+        let cur_duration = cur_end.unwrap() - cur_start.unwrap();
+        let should_break = gap > max_gap
+            || cur_words.len() >= max_words
+            || next_len > max_chars
+            || cur_duration >= max_duration_s;
         if should_break {
             groups.push(GroupedPhrase {
                 text: cur_words.join(" "),
@@ -684,6 +704,30 @@ mod tests {
             assert_eq!(tuple.0, phrase.text);
             assert_eq!(tuple.1, phrase.start);
             assert_eq!(tuple.2, phrase.end);
+        }
+    }
+
+    #[test]
+    fn test_group_entries_max_duration_cap() {
+        // Words spanning 10 seconds should be split at 5s default cap
+        let entries = vec![
+            SrtEntry { idx: 1, start: 0.0, end: 1.0, text: "a".to_string() },
+            SrtEntry { idx: 2, start: 1.0, end: 2.0, text: "b".to_string() },
+            SrtEntry { idx: 3, start: 2.0, end: 3.0, text: "c".to_string() },
+            SrtEntry { idx: 4, start: 3.0, end: 4.0, text: "d".to_string() },
+            SrtEntry { idx: 5, start: 4.0, end: 5.0, text: "e".to_string() },
+            SrtEntry { idx: 6, start: 5.0, end: 6.0, text: "f".to_string() },
+            SrtEntry { idx: 7, start: 6.0, end: 7.0, text: "g".to_string() },
+        ];
+        // Default 5s cap: should split around 5s boundary
+        let phrases = group_entries_with_words_max_duration(&entries, 100, 1000, 0.6, 5.0);
+        assert!(phrases.len() >= 2, "Expected >= 2 groups, got {}", phrases.len());
+        // First group should end around 4-5s
+        assert!(phrases[0].end <= 5.5, "First group end {} > 5.5s", phrases[0].end);
+        // No group should span more than 5.5s (with 0.5s tolerance)
+        for p in &phrases {
+            let dur = p.end - p.start;
+            assert!(dur <= 5.5, "Group '{}' spans {}s > 5.5s", p.text, dur);
         }
     }
 }

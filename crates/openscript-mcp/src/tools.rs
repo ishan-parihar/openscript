@@ -156,7 +156,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "srt_path": {"type": "string", "description": "Path to word-level SRT (from transcribe)"},
                     "max_words": {"type": "integer", "default": 10, "description": "Max words per caption segment"},
                     "max_chars": {"type": "integer", "default": 64, "description": "Max characters per caption segment"},
-                    "max_gap": {"type": "number", "default": 0.6, "description": "Max gap in seconds between words to keep them in same group"}
+                    "max_gap": {"type": "number", "default": 0.6, "description": "Max gap in seconds between words to keep them in same group"},
+                    "max_duration_s": {"type": "number", "default": 5.0, "description": "Max duration in seconds per caption group. Prevents slow captions >5s at end of video."}
                 },
                 "required": ["srt_path"],
                 "additionalProperties": false
@@ -765,7 +766,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "broll": {"type": "object", "properties": {
                         "enabled": {"type": "boolean", "default": true, "description": "Enable stock video background fetching (requires PEXELS_API_KEY)"},
                         "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert new background clips"},
-                        "max_slots": {"type": "integer", "default": 20, "description": "Maximum background clip slots"}
+                        "max_slots": {"type": "integer", "default": 20, "description": "Maximum background clip slots"},
+                        "keywords": {"type": "array", "items": {"type": "string"}, "description": "Agent-supplied keywords per scene for Pexels search. Each string is a comma-separated concept (e.g. 'galaxy, space, nebula'). When provided, overrides auto-extraction. Length must match scene count."}
                     }},
                     "music": {"type": "object", "properties": {
                         "enabled": {"type": "boolean", "default": true, "description": "Enable background music assignment"},
@@ -2079,9 +2081,16 @@ async fn handle_srt_prepare(args: serde_json::Value) -> Result<serde_json::Value
     let max_words = default_u32(&args, "max_words", 10) as usize;
     let max_chars = default_u32(&args, "max_chars", 64) as usize;
     let max_gap = default_f64(&args, "max_gap", 0.6);
+    let max_duration_s = default_f64(&args, "max_duration_s", 5.0);
 
     let entries = parse_srt(&srt_path)?;
-    let groups = group_entries(&entries, max_words, max_chars, max_gap);
+    let groups = {
+        use openscript_core::srt::group_entries_with_words_max_duration;
+        let phrases = group_entries_with_words_max_duration(
+            &entries, max_words, max_chars, max_gap, max_duration_s,
+        );
+        phrases.into_iter().map(|p| (p.text, p.start, p.end)).collect::<Vec<_>>()
+    };
 
     let out_srt_path = {
         let p = Path::new(&srt_path);
@@ -5383,6 +5392,24 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
     let broll_enabled = default_bool(&broll_obj, "enabled", true);
     let _broll_max_slots: u32 = broll_obj.get("max_slots").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
+    // Agent-supplied broll keywords override auto-extraction.
+    // Each string in the array is a comma-separated concept list for one scene.
+    let agent_broll_keywords: Vec<Vec<String>> = broll_obj
+        .get("keywords")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|v| {
+                    v.as_str()
+                        .unwrap_or("")
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let music_obj = args.get("music").cloned().unwrap_or(json!({}));
     let music_enabled = default_bool(&music_obj, "enabled", true);
@@ -5506,11 +5533,13 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
         for (scene_idx, (scene_text, scene_start, scene_end)) in scenes.iter().enumerate() {
             // Build diverse Pexels concepts from scene text.
             // Use cycling fallbacks to ensure each scene gets a UNIQUE background.
-            let fallbacks = ["abstract motion", "city timelapse", "technology waves", "nature aerial", "ocean sunset", "space nebula", "ocean waves", "mountain landscape"];
-            let mut concepts: Vec<String> = Vec::new();
-            
-            // Try to extract scene-specific concept
-            let base_concept = extract_broll_concept(scene_text);
+            let fallbacks = ["abstract motion", "city timelapse", "technology waves", "nature aerial", "ocean sunset", "space nebula", "ocean waves", "mountain landscape"];                    let mut concepts: Vec<String> = Vec::new();
+                    // Inject agent-supplied keywords if available for this scene
+                    if scene_idx < agent_broll_keywords.len() {
+                        concepts.extend(agent_broll_keywords[scene_idx].iter().cloned());
+                    }
+                    // Try to extract scene-specific concept
+                    let base_concept = extract_broll_concept(scene_text);
             let significant_words: Vec<&str> = scene_text.split_whitespace()
                 .filter(|w| w.len() > 3)
                 .collect();
