@@ -5,16 +5,16 @@
 
 ---
 
-## Tool Families (27 families, 89 tools)
+## Tool Families (27 families, 88 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
 | timeline | 11 | build, load, validate, add_segment, add_track_event, diff, preview, inspect, autofill_broll, render, upgrade |
 | script | 6 | schema, parse, generate_voices, build_captions, to_timeline, to_video |
-| hf | 5 | classify, lint, validate, snapshot, render |
+| hf | 6 | classify, lint, validate, snapshot, render |
 | tts | 4 | generate, estimate_duration, preview, commentary |
 | music | 4 | index, search, assign, ducking.plan |
-| broll | 4 | suggest, fetch, assign, plan |
+| broll | 3 | suggest, fetch, assign, plan |
 | srt | 4 | read, prepare, apply_edit, to_timeline |
 | voice | 3 | profile.add, profile.list, profile.remove |
 | sfx | 3 | index, search, assign |
@@ -167,7 +167,7 @@ help.tool           — Natural-language tool discovery
 |------|--------|-------------|
 | `audio.to_video` | **DELETED** | Use atomic pipeline: transcribe → srt.prepare → srt.to_timeline → segment.analyze → broll.fetch → timeline.render |
 | `reelize.timeline` | **DELETED** | Use atomic pipeline: transcribe → srt.prepare → srt.to_timeline → segment.analyze → broll.fetch → timeline.render |
-| `broll.director` | **DEPRECATED** | Use `broll.plan` + agent keyword generation + `broll.fetch` |
+| `broll.director` | **DELETED** | Use `broll.plan` + agent keywords + `broll.fetch` |
 | `music.search` | **DEPRECATED** | Use `library.search` |
 
 ---

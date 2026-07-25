@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (83 tools + 6 hf.* dynamic = 89 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (82 tools + 6 hf.* dynamic = 88 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 /// Number of SRT entries grouped into one b-roll scene.
@@ -538,24 +538,8 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
-            "name": "broll.director",
-            "description": "DEPRECATED: Use broll.plan + agent keywords + broll.fetch for better results with non-English content. AI director mode for b-roll: analyzes the script/segments, creates b-roll slots at natural pauses, searches Pexels for contextually relevant footage, downloads, and assigns to the timeline. ONE CALL replaces broll.suggest + broll.fetch + broll.assign. Requires PEXELS_API_KEY. Returns: broll_slots_filled, concepts_used, cached_paths.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "timeline_path": {"type": "string", "description": "Path to timeline JSON (must have populated segments)"},
-                    "orientation": {"type": "string", "default": "9:16", "description": "Video orientation for Pexels search"},
-                    "quality": {"type": "string", "default": "sd", "description": "Video quality for Pexels search"},
-                    "max_slots": {"type": "integer", "default": 20, "description": "Maximum b-roll slots to create"},
-                    "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert b-roll"}
-                },
-                "required": ["timeline_path"],
-                "additionalProperties": false
-            }
-        },
-        {
             "name": "broll.plan",
-            "description": "Analyze timeline segments and return structured JSON with timestamps, captions, and suggested b-roll keywords for each segment. The agent reviews these suggestions, customizes keywords using its LLM capabilities, then calls broll.fetch with approved keywords. Returns: segments array with id, start_s, end_s, caption, suggested_keywords. Use BEFORE broll.fetch to get contextually relevant b-roll placement plan.",
+            "description": "Analyze timeline segments and return structured JSON with timestamps, captions, and timing for each segment. The agent reads this data, generates English visual keywords using its LLM capabilities (translating Hinglish if needed), then calls broll.fetch with those agent-generated keywords. Returns: segments array with id, start_s, end_s, caption, duration_s. Use BEFORE broll.fetch to get segment data for keyword generation.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -677,7 +661,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "timeline.autofill_broll",
-            "description": "Auto-fill b-roll slots across the timeline based on segment cadence. Creates placeholder b-roll events at regular intervals (cadence_seconds) using concept keywords extracted from nearby segment captions. FASTER than broll.director but LESS contextually accurate — use for quick drafts, then refine with broll.director for final. Returns: broll_events_added count.",
+            "description": "Auto-fill b-roll slots across the timeline based on segment cadence. Creates placeholder b-roll events at regular intervals (cadence_seconds) using concept keywords extracted from nearby segment captions. FASTER than manual broll.fetch but LESS contextually accurate — use for quick drafts, then refine with agent-generated keywords via broll.fetch for final. Returns: broll_events_added count.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1330,9 +1314,7 @@ pub fn route_tool(
         "music.assign" => Box::pin(handle_music_assign(args)),
         "broll.suggest" => Box::pin(handle_broll_suggest(args)),
         "broll.fetch" => Box::pin(handle_broll_fetch(args)),
-        "broll.assign" => Box::pin(handle_broll_assign(args)),
-        "broll.director" => Box::pin(handle_broll_director(args)),
-        "broll.plan" => Box::pin(handle_broll_plan(args)),
+        "broll.assign" => Box::pin(handle_broll_assign(args)),        "broll.plan" => Box::pin(handle_broll_plan(args)),
         "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
@@ -4630,183 +4612,17 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
 }
 
 // ---------------------------------------------------------------------------
-// Handler: broll.director
+// Handler removed: broll.director was a monolithic orchestrator
 // ---------------------------------------------------------------------------
-
-async fn handle_broll_director(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    use openscript_assets::pexels::PexelsClient;
-
-    let timeline_path = extract_str(&args, "timeline_path")?;
-    let orientation = default_str(&args, "orientation", "9:16");
-    let quality = default_str(&args, "quality", "sd");
-    let max_slots = default_u32(&args, "max_slots", 20) as usize;
-    let cadence_seconds = default_f64(&args, "cadence_seconds", 2.0);
-    let cadence_ms = (cadence_seconds * 1000.0) as i64;
-
-    let api_key = pexels_key();
-    if api_key.is_empty() {
-        return Err(ToolError::Asset(
-            "PEXELS_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Get a free key at https://www.pexels.com/api/".to_string()
-        ));
-    }
-
-    let mut timeline = Timeline::load(timeline_path)?;
-
-    report_progress(0.0, 100.0, "Analyzing script and creating b-roll slots...")
-        .await
-        .ok();
-
-    let slots_created = timeline.generate_broll_from_script(cadence_ms, max_slots);
-
-    if slots_created == 0 {
-        return Ok(json!({
-            "status": "no_slots",
-            "timeline_path": timeline_path,
-            "broll_slots_filled": 0,
-            "concepts_used": [],
-            "cached_paths": [],
-        }));
-    }
-
-    let broll_events = timeline.get_track_events("broll");
-    let mut concepts: Vec<String> = Vec::new();
-    let mut event_concept_map: Vec<(String, String)> = Vec::new();
-
-    for event in &broll_events {
-        if event.asset_id == "placeholder" {
-            let concept = event
-                .tags
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "general".into());
-            if !concepts.contains(&concept) {
-                concepts.push(concept.clone());
-            }
-            event_concept_map.push((event.id.clone(), concept));
-        }
-    }
-
-    let asset_dir = "mcp/assets/broll_cache";
-    let mut client = PexelsClient::new(&api_key, asset_dir);
-    let mut cached_paths: Vec<serde_json::Value> = Vec::new();
-    let mut filled_count = 0;
-
-    let total_concepts = concepts.len();
-    for (i, concept) in concepts.iter().enumerate() {
-        report_progress(
-            (i as f64 / total_concepts as f64) * 80.0 + 10.0,
-            100.0,
-            &format!("Fetching b-roll for: {}", concept),
-        )
-        .await
-        .ok();
-
-        let search_result = client
-            .search_for_slot(concept, &orientation, &quality)
-            .await;
-        match search_result {
-            Ok(Some(video)) => match client.download_best(&video, concept).await {
-                Ok(path) => {
-                    for (event_id, event_concept) in &event_concept_map {
-                        if event_concept == concept {
-                            timeline.add_asset("broll", event_id.clone(), json!({"path": &path}));
-                            if let Some(events) = timeline.tracks.get_mut(&TrackType::Broll) {
-                                for event in events.iter_mut() {
-                                    if event.id == *event_id {
-                                        event.asset_id = path.clone();
-                                        break;
-                                    }
-                                }
-                            }
-                            filled_count += 1;
-                        }
-                    }
-                    cached_paths.push(json!({"concept": concept, "path": path}));
-                }
-                Err(e) => tracing::warn!("[broll.director] Download failed for {}: {}", concept, e),
-            },
-            Ok(None) => tracing::warn!("[broll.director] No video found for concept: {}", concept),
-            Err(e) => tracing::warn!("[broll.director] Search failed for {}: {}", concept, e),
-        }
-    }
-
-    timeline.save(timeline_path)?;
-
-    report_progress(100.0, 100.0, "B-roll director complete")
-        .await
-        .ok();
-
-    Ok(json!({
-        "status": "success",
-        "timeline_path": timeline_path,
-        "broll_slots_filled": filled_count,
-        "concepts_used": concepts,
-        "cached_paths": cached_paths,
-    }))
-}
 
 // ---------------------------------------------------------------------------
 // Handler: broll.plan — segment inspector for agent-orchestrated b-roll
 // ---------------------------------------------------------------------------
 
 /// Generate basic keyword suggestions from a caption for Pexels search.
-fn generate_broll_keywords(caption: &str, max_keywords: usize) -> Vec<String> {
-    if caption.trim().is_empty() {
-        return vec!["abstract motion".to_string()];
-    }
-    let stopwords: std::collections::HashSet<&str> = [
-        "this", "that", "with", "from", "have", "been", "were", "they",
-        "their", "what", "when", "where", "which", "about", "would",
-        "could", "should", "there", "these", "those", "than", "then",
-        "into", "over", "just", "also", "very", "some", "more",
-        "most", "other", "only", "such", "each", "much", "many",
-        "like", "well", "back", "made", "make", "here", "take",
-        "know", "want", "look", "come", "good", "give", "first",
-        "bhai", "log", "aaj", "hum", "baat", "karenge", "ke",
-        "hai", "mein", "ko", "se", "ne", "ka", "ki", "ye",
-        "wo", "aur", "ek", "do", "jo", "nahi", "ho", "to",
-        "ab", "us", "par", "bhi", "kya", "kaise", "kyun",
-        "the", "and", "for", "are", "but", "not", "you", "all",
-        "can", "had", "her", "was", "one", "our", "out", "day",
-        "get", "has", "him", "his", "how", "its", "may", "new",
-        "now", "old", "see", "way", "who", "did", "got",
-    ].iter().cloned().collect();
-    let words: Vec<String> = caption
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { ' ' })
-        .collect::<String>()
-        .split_whitespace()
-        .map(|w| w.to_lowercase())
-        .filter(|w| w.len() > 3 && !stopwords.contains(w.as_str()))
-        .take(max_keywords * 2)
-        .collect();
-    if words.is_empty() {
-        return vec!["abstract motion".to_string()];
-    }
-    let mut keywords = Vec::new();
-    let mut i = 0;
-    while i < words.len() && keywords.len() < max_keywords {
-        let remaining = words.len() - i;
-        if remaining >= 2 && keywords.len() < max_keywords {
-            keywords.push(format!("{} {}", words[i], words[i + 1]));
-            i += 2;
-        } else if keywords.len() < max_keywords {
-            keywords.push(words[i].clone());
-            i += 1;
-        } else {
-            break;
-        }
-    }
-    if keywords.is_empty() {
-        vec!["abstract motion".to_string()]
-    } else {
-        keywords
-    }
-}
-
 async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path = extract_str(&args, "timeline_path")?;
-    let max_keywords = args.get("max_keywords_per_segment")
+    let _max_keywords = args.get("max_keywords_per_segment")
         .and_then(|v| v.as_u64())
         .unwrap_or(3) as usize;
     let timeline_str = std::fs::read_to_string(&timeline_path)
@@ -4838,14 +4654,14 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
             .or_else(|| seg.get("text")).and_then(|v| v.as_str())
             .unwrap_or("");
         let duration_s = end_s - start_s;
-        let keywords = generate_broll_keywords(caption, max_keywords);
+        let keywords: Vec<String> = vec![]; // Agent generates keywords, not the tool
         result_segments.push(json!({
             "id": format!("seg_{}", idx),
             "start_s": start_s,
             "end_s": end_s,
             "duration_s": duration_s,
             "caption": caption,
-            "suggested_keywords": keywords,
+            "suggested_keywords": keywords, // Agent fills this via broll.fetch with its own keywords
         }));
     }
     Ok(json!({
@@ -14785,7 +14601,6 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
                     | "reelize.brief"
                     | "timeline.render"
                     | "timeline.build"
-                    | "broll.director"
                     | "srt.prepare"
                     | "edl.build"
             ) {
@@ -14816,7 +14631,6 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         } else if matches!(
             name,
                 | "reelize.direct"
-                | "broll.director"
                 | "composition.render"
                 | "tts.commentary"
                 | "script.to_timeline"
@@ -15054,7 +14868,6 @@ mod tests {
                 "transcribe"
                     | "reelize.direct"
                     | "reelize.brief"
-                    | "broll.director"
                     | "timeline.render"
                     | "timeline.build"
             )

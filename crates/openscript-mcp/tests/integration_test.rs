@@ -179,8 +179,8 @@ fn test_mcp_tools_list() {
     // 90 tools: including srt.to_timeline, broll.plan, segment.analyze, etc.
     assert_eq!(
         tools.len(),
-        89,
-        "Expected 89 MCP tools, got {}",
+        88,
+        "Expected 88 MCP tools, got {}",
         tools.len()
     );
 
@@ -239,7 +239,6 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"broll.suggest"));
     assert!(tool_names.contains(&"broll.fetch"));
     assert!(tool_names.contains(&"broll.assign"));
-    assert!(tool_names.contains(&"broll.director"));
 
     // Voiceover tools
     assert!(tool_names.contains(&"voiceover.generate"));
