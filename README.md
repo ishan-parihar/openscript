@@ -135,7 +135,7 @@ cargo run -p openscript-mcp --bin mcp-server
 
 ### NLE (existing footage)
 
-Use MCP tools `transcribe` → `reelize.timeline` / `timeline.*`, or the legacy reelize CLI flows documented in older tooling.
+Use MCP tools `transcribe` → `reelize.brief` → `reelize.direct` (agentic pipeline) / `timeline.*`, or the legacy reelize CLI flows documented in older tooling.
 
 ---
 
@@ -151,7 +151,7 @@ High-level map (full “when to use” tables: [`AGENT_GUIDE.md`](./AGENT_GUIDE.
 | **Background / b-roll** | `background.fetch`, `background.search`, `broll.director`, `broll.fetch` |
 | **Media / stickers** | `gif.search`, `gif.download`, `media.search`, `media.download`, `overlay.assign`, `sticker.*` |
 | **Music / SFX / library** | `music.search`, `music.assign`, `sfx.search`, `library.search`, `library.build` |
-| **NLE / reelize** | `transcribe`, `srt.*`, `edl.build`, `reelize`, `reelize.timeline`, `reelize.brief`, `reelize.direct` |
+| **NLE / reelize** | `transcribe`, `srt.*`, `edl.build`, `reelize`, `reelize.brief` → `reelize.direct` (agentic pipeline), `reelize.brief`, `reelize.direct` |
 | **Render** | `composition.render`, `hf.classify`, `hf.lint`, `hf.validate`, `hf.snapshot`, `hf.render`, `render` |
 | **QA** | `verify.audio`, `verify.captions`, `verify.render` |
 | **Stock / YouTube** | `stock.search`, `stock.fetch`, `youtube.search`, `youtube.download` |

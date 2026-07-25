@@ -4951,7 +4951,7 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Handler: audio.to_video
+// Handler removed: audio.to_video was a monolithic orchestrator
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -14775,7 +14775,7 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 
     // Tool weight table: golden-path tools get a base boost, orchestrators get
     // a medium boost, primitives get no boost. Trajectory-aware: NLE queries
-    // boost transcribe/reelize/timeline; from-scratch boosts script.to_video.
+    // boost transcribe/reelize/timeline.
     let tool_weight = |name: &str| -> f64 {
         if nle_intent {
             if matches!(
