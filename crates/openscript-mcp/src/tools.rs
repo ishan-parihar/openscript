@@ -818,7 +818,8 @@ pub fn tool_definitions() -> serde_json::Value {
                         "enabled": {"type": "boolean", "default": true, "description": "Enable SFX assignment (hook, transitions, highlights)"}
                     }},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom output video path"},
-                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28)"}
+                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28)"},
+                "scene_size": {"type": "integer", "default": 4, "description": "Number of SRT entries per scene chunk for stock footage search. Default 4 (each ~2-4s)."}
                 },
                 "required": ["audio_path"],
                 "additionalProperties": false
@@ -851,7 +852,8 @@ pub fn tool_definitions() -> serde_json::Value {
                         "enabled": {"type": "boolean", "default": true, "description": "Enable SFX assignment (hook, transitions, highlights)"}
                     }},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom output video path"},
-                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28)"}
+                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28)"},
+                "scene_size": {"type": "integer", "default": 4, "description": "Number of SRT entries per scene chunk for stock footage search. Default 4 (each ~2-4s)."}
                 },
                 "required": ["video_path"],
                 "additionalProperties": false
@@ -5112,6 +5114,10 @@ async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::
     let animated_captions = default_bool(&args, "animated_captions", false);
     let output_path = default_opt_str(&args, "output_path");
     let crf = default_u32(&args, "crf", 20);
+    let scene_size = {
+        let v = default_u32(&args, "scene_size", 4);
+        if v < 1 { 4 } else { v as usize }
+    };
 
     if !Path::new(&video_path).exists() {
         return Err(ToolError::NotFound(format!(
@@ -5599,6 +5605,10 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let _animated_captions = default_bool(&args, "animated_captions", false);
     let output_path = args.get("output_path").and_then(|v| v.as_str()).map(|s| s.to_string());
     let crf = default_u32(&args, "crf", 20);
+    let scene_size = {
+        let v = default_u32(&args, "scene_size", 4);
+        if v < 1 { 4 } else { v as usize }
+    };
 
     // Sub-objects
     let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
@@ -5736,7 +5746,6 @@ async fn handle_audio_to_video(args: serde_json::Value) -> Result<serde_json::Va
     let video_keywords: Vec<String> = Vec::new();
     let theme = "neutral";
 
-    let scene_size = SCENE_SIZE;
     let scenes: Vec<(String, f64, f64)> = srt_entries.chunks(scene_size)
             .map(|chunk| {
                 let text = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
@@ -5828,9 +5837,35 @@ for r in results_arr {
         }
     }
 
-    // Fallback: single background looped to match audio duration
+    // Fallback: try Pexels with generic queries before solid-color placeholder
+    if background_clips.is_empty() && std::env::var("PEXELS_API_KEY").is_ok() {
+        let fallback_query = "abstract motion";
+        tracing::warn!("[audio.to_video] All scene brolls failed, trying generic Pexels query: {}", fallback_query);
+        let fetch_args = serde_json::json!({
+            "concepts": [fallback_query],
+            "download": true,
+            "count": 3,
+        });
+        if let Ok(result) = handle_broll_fetch(fetch_args).await {
+            if let Some(videos) = result.get("results").and_then(|v| v.as_array()) {
+                for video in videos {
+                    if let Some(cached) = video.get("cached_path").and_then(|v| v.as_str()) {
+                        let path = cached.to_string();
+                        if !path.is_empty() && path != "placeholder" {
+                            background_clips.push(BackgroundClip {
+                                path,
+                                duration_s: total_duration_s,
+                                looped: true,
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Final fallback: solid-color placeholder if Pexels also failed
     if background_clips.is_empty() {
-        // No stock footage available — create a solid-color placeholder
         let placeholder_path = std::env::temp_dir().join("audio_to_video_bg.mp4");
         let _ = tokio::process::Command::new("ffmpeg")
             .args(["-y", "-f", "lavfi", "-i",
