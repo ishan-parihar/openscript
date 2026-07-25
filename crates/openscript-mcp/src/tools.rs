@@ -543,8 +543,7 @@ pub fn tool_definitions() -> serde_json::Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"},
-                    "max_keywords_per_segment": {"type": "integer", "default": 3, "description": "Reserved for future use"}
+                    "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"}
                 },
                 "required": ["timeline_path"],
                 "additionalProperties": false
@@ -560,10 +559,7 @@ pub fn tool_definitions() -> serde_json::Value {
                 "type": "object",
                 "properties": {
                     "audio_path": {"type": "string", "description": "Path to audio/video file to analyze"},
-                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT (skip transcription)"},
-                    "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Reserved for future use"},
-                    "theme": {"type": "string", "default": "neutral", "description": "Reserved for future use"},
-                    "aspect": {"type": "string", "default": "9:16", "description": "Reserved for future use"}
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT (skip transcription)"}
                 },
                 "required": ["audio_path"],
                 "additionalProperties": false
@@ -4622,9 +4618,6 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
 /// Generate basic keyword suggestions from a caption for Pexels search.
 async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path = extract_str(&args, "timeline_path")?;
-    let _max_keywords = args.get("max_keywords_per_segment")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(3) as usize;
     let timeline_str = std::fs::read_to_string(&timeline_path)
         .map_err(|e| ToolError::InvalidArg(format!("Failed to read timeline {}: {}", timeline_path, e)))?;
     let timeline: serde_json::Value = serde_json::from_str(&timeline_str)
@@ -4676,13 +4669,6 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
 async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let audio_path = extract_str(&args, "audio_path")?;
     let srt_path = args.get("srt_path").and_then(|v| v.as_str()).map(String::from);
-    let _video_keywords: Vec<String> = args
-        .get("video_keywords")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-    let _theme = args.get("theme").and_then(|v| v.as_str()).unwrap_or("neutral");
-    let _aspect = args.get("aspect").and_then(|v| v.as_str()).unwrap_or("9:16");
 
     // Step 1: Transcribe or load SRT
     let word_srt_path = if let Some(ref path) = srt_path {
