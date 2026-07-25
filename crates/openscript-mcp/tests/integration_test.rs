@@ -176,7 +176,7 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 84 tools: prior 83 + system.doctor
+    // 91 tools: including srt.to_timeline, broll.plan, segment.analyze, etc.
     assert_eq!(
         tools.len(),
         91,
