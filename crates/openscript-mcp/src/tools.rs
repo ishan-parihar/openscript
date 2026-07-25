@@ -16,11 +16,11 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (89 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (83 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 /// Number of SRT entries grouped into one b-roll scene.
-/// Scene chunk size for segment.analyze b-roll scene grouping.
+/// Scene chunk size for segment.analyze.
 const SCENE_SIZE: usize = 4;
 
 
@@ -168,7 +168,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "reelize",
-            "description": "One-call reel creation: transcribe → group captions → build EDL → render with burned-in captions. Use for quick turnaround when you don't need b-roll, music, or SFX. For full production reels with all tracks, use reelize.timeline instead. Returns: output_path, segments_count, total_duration_s, preset used.",
+            "description": "One-call reel creation: transcribe → group captions → build EDL → render with burned-in captions. Use for quick turnaround when you don't need b-roll, music, or SFX. For full production reels with all tracks, use timeline.render with atomic tools instead. Returns: output_path, segments_count, total_duration_s, preset used.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -699,7 +699,7 @@ pub fn tool_definitions() -> serde_json::Value {
                 "properties": {
                     "timeline_path": {"type": "string", "description": "Path to validated timeline JSON"},
                     "source_video": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Override source video path (uses timeline source if omitted)"},
-                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom output path (auto-generated if omitted)"},
+                    "output_path": {"anyOf": [{"type": "string"}, ], "description": "Custom output path (auto-generated if omitted)"},
                     "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28, lower=better)"}
                 },
                 "required": ["timeline_path"],
@@ -709,41 +709,7 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         // GROUP 5: ORCHESTRATION — Single-call end-to-end pipelines
         // ===================================================================
-{
-            "name": "reelize.timeline",
-            "description": "ONE-CALL pipeline: raw video → complete 9:16 reel. Orchestrates: (1) Transcribe with Whisper, (2) Group captions, (3) Build timeline with segments, (4) B-roll director (Pexels search + download + assign), (5) Assign background music with ducking, (6) Assign SFX (hook, transitions, highlights), (7) Generate ASS captions with Bebas Neue, (8) Render final video. Use when you want a fully-produced reel from a single raw video with minimal manual intervention. All sub-steps are configurable via broll/music/sfx objects. Returns: output_path, file_size_bytes, timeline_path, segments_count, overlays_rendered, preset.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "video_path": {"type": "string", "description": "Raw source video to transform into a reel"},
-                    "preset": {"type": "string", "enum": ["Tight", "Balanced", "Natural"], "default": "Balanced", "description": "Editing pace: Tight (fast cuts, 200ms crossfade), Balanced (moderate, 500ms), Natural (relaxed, 800ms)"},
-                    "max_duration": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Maximum reel duration in seconds"},
-                    "aspect": {"type": "string", "default": "9:16", "description": "Output aspect ratio"},
-                    "burn_captions": {"type": "boolean", "default": true, "description": "Burn captions into the video output"},
-                    "animated_captions": {"type": "boolean", "default": false, "description": "Use animated PupCaps overlay instead of static ASS captions"},
-                    "broll": {"type": "object", "properties": {
-                        "enabled": {"type": "boolean", "default": true, "description": "Enable b-roll director (requires PEXELS_API_KEY)"},
-                        "cadence_seconds": {"type": "number", "default": 2.0, "description": "How often to insert b-roll"},
-                        "max_slots": {"type": "integer", "default": 20, "description": "Maximum b-roll slots"}
-                    }},
-                    "music": {"type": "object", "properties": {
-                        "enabled": {"type": "boolean", "default": true, "description": "Enable background music assignment"},
-                        "mood": {"type": "string", "default": "neutral", "description": "Music mood matching content"},
-                        "energy": {"type": "string", "default": "medium", "description": "Music energy level"},
-                        "gain_db": {"type": "number", "default": -12.0, "description": "Background music volume in dB"}
-                    }},
-                    "sfx": {"type": "object", "properties": {
-                        "enabled": {"type": "boolean", "default": true, "description": "Enable SFX assignment (hook, transitions, highlights)"}
-                    }},
-                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom output video path"},
-                    "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28)"},
-                "scene_size": {"type": "integer", "default": 4, "description": "Number of SRT entries per scene chunk for stock footage search. Default 4 (each ~2-4s)."}
-                },
-                "required": ["video_path"],
-                "additionalProperties": false
-            }
-        },
-        // ===================================================================
+// ===================================================================
         // GROUP 6: VERIFICATION — Render quality assurance
         // ===================================================================
         {
@@ -1375,9 +1341,7 @@ pub fn route_tool(
         "tts.preview" => Box::pin(handle_tts_preview(args)),
         "music.ducking.plan" => Box::pin(handle_music_ducking_plan(args)),
         "timeline.autofill_broll" => Box::pin(handle_timeline_autofill_broll(args)),
-        "timeline.render" => Box::pin(handle_timeline_render(args)),
-        "reelize.timeline" => Box::pin(handle_reelize_timeline(args)),
-        "verify.audio" => Box::pin(handle_verify_audio(args)),
+        "timeline.render" => Box::pin(handle_timeline_render(args)),        "verify.audio" => Box::pin(handle_verify_audio(args)),
         "verify.captions" => Box::pin(handle_verify_captions(args)),
         "verify.render" => Box::pin(handle_verify_render(args)),
         "verify.production" => Box::pin(handle_verify_production(args)),
@@ -3264,7 +3228,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
     let fade_out_ms = default_u32(&args, "fade_out_ms", 50);
 
     // P1-1 fix: map "hook" -> "intro". The SFX index uses "intro" for opening
-    // effects, but the tool documentation and `reelize.timeline` refer to the
+    // effects, but the tool documentation and `` refer to the
     // opening slot as "hook". Without this mapping, `sfx.assign(editorial_role="hook")`
     // returns 0 results even though perfectly suitable "intro" SFX exist.
     let mapped_role = if editorial_role == "hook" {
@@ -4892,7 +4856,7 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
 }
 
 // ---------------------------------------------------------------------------
-// Handler: segment.analyze (transcript → segments with stock_signal keywords)
+// Handler: segment.analyze (transcript → clean segments for agent consumption)
 // ---------------------------------------------------------------------------
 
 async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
@@ -4983,495 +4947,8 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
 }
 
 // ---------------------------------------------------------------------------
-// Handler: reelize.timeline (end-to-end pipeline)
+// Handler:  (atomic tools)
 // ---------------------------------------------------------------------------
-
-async fn handle_reelize_timeline(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    use openscript_ffmpeg::render::render_from_timeline;
-
-    let video_path = extract_str(&args, "video_path")?;
-    let preset = default_str(&args, "preset", "Balanced");
-    let max_duration = default_opt_u32(&args, "max_duration");
-    let aspect = default_str(&args, "aspect", "9:16");
-    let burn_captions = default_bool(&args, "burn_captions", true);
-    let animated_captions = default_bool(&args, "animated_captions", false);
-    let output_path = default_opt_str(&args, "output_path");
-    let crf = default_u32(&args, "crf", 20);
-    let _scene_size = {
-        let v = default_u32(&args, "scene_size", 4);
-        if v < 1 { 4 } else { v as usize }
-    };
-
-    if !Path::new(&video_path).exists() {
-        return Err(ToolError::NotFound(format!(
-            "Video not found: {}",
-            video_path
-        )));
-    }
-
-    let mut warnings: Vec<String> = Vec::new();
-
-    // Environment diagnostics — warn about missing capabilities early
-    if pexels_key().is_empty() {
-        warnings.push("PEXELS_API_KEY not set — b-roll will be skipped".into());
-    }
-    let tts_available = std::env::var("OPENSCRIPT_TTS_URL").is_ok();
-    if !tts_available {
-        warnings
-            .push("No TTS server configured (OPENSCRIPT_TTS_URL) — voiceover unavailable".into());
-    }
-
-    // B-roll options
-    let broll_obj = args.get("broll").cloned().unwrap_or(json!({}));
-    let broll_enabled = default_bool(&broll_obj, "enabled", true);
-    let broll_cadence = default_f64(&broll_obj, "cadence_seconds", 2.0);
-    let broll_max_slots = default_u32(&broll_obj, "max_slots", 20);
-
-    // Music options
-    let music_obj = args.get("music").cloned().unwrap_or(json!({}));
-    let music_enabled = default_bool(&music_obj, "enabled", true);
-    let music_mood = default_str(&music_obj, "mood", "neutral");
-    let music_energy = default_str(&music_obj, "energy", "medium");
-    let music_gain_db = default_f64(&music_obj, "gain_db", -10.0);
-
-    // SFX options
-    let sfx_obj = args.get("sfx").cloned().unwrap_or(json!({}));
-    let sfx_enabled = default_bool(&sfx_obj, "enabled", true);
-
-    let crossfade_ms = match preset.as_str() {
-        "Tight" => 200,
-        "Balanced" => 500,
-        "Natural" => 800,
-        _ => 500,
-    };
-
-    let timeline_path = default_timeline_path(video_path);
-
-    // Step 1/7: Transcribe → SRT
-    report_progress(0.0, 100.0, "Step 1/7: Transcribing audio...")
-        .await
-        .ok();
-    let transcribe_args = json!({ "media_path": video_path });
-    let transcribe_result = handle_transcribe(transcribe_args).await?;
-    let srt_path = transcribe_result
-        .get("output_srt_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ToolError::Srt("Transcription did not return output path".to_string()))?
-        .to_string();
-    report_progress(15.0, 100.0, "Transcription complete")
-        .await
-        .ok();
-
-    // Step 2/7: SRT prepare → grouped SRT
-    report_progress(15.0, 100.0, "Step 2/7: Grouping captions...")
-        .await
-        .ok();
-    let prepare_args = json!({
-        "srt_path": &srt_path,
-        "max_words": 10,
-        "max_chars": 64,
-        "max_gap": 0.6,
-    });
-    let prepare_result = handle_srt_prepare(prepare_args).await?;
-    let grouped_srt_path = prepare_result
-        .get("output_path")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ToolError::Srt("SRT prepare did not return output path".to_string()))?
-        .to_string();
-    report_progress(25.0, 100.0, "Caption grouping complete")
-        .await
-        .ok();
-
-    // Step 3/7: Build timeline + populate segments from SRT
-    report_progress(25.0, 100.0, "Step 3/7: Building timeline...")
-        .await
-        .ok();
-    let mut timeline = Timeline::new(video_path.into(), &aspect, 30, max_duration);
-    let segment_count = timeline
-        .populate_segments_from_srt(&grouped_srt_path, crossfade_ms)
-        .map_err(|e| ToolError::Timeline(e))?;
-
-    if segment_count == 0 {
-        return Err(ToolError::Timeline(
-            "No segments created from SRT — transcript may be empty".to_string(),
-        ));
-    }
-
-    // Generate ASS subtitles via the atomic captions.generate_ass tool.
-    // This handles word-level timing, crossfade remapping, and ASS writing.
-    let ass_path = {
-        let p = Path::new(&grouped_srt_path);
-        let parent = p.parent().unwrap_or(Path::new("."));
-        let stem = p
-            .file_stem()
-            .map(|s| s.to_string_lossy())
-            .unwrap_or_default();
-        parent
-            .join(format!("{}.ass", stem))
-            .to_string_lossy()
-            .to_string()
-    };
-    match handle_captions_generate_ass(json!({
-        "srt_path": &srt_path,
-        "crossfade_ms": crossfade_ms,
-        "grouped_srt_path": &grouped_srt_path,
-        "output_path": &ass_path,
-    })).await {
-        Ok(result) => {
-            let canonical = result.get("ass_path")
-                .and_then(|v| v.as_str())
-                .unwrap_or(&ass_path)
-                .to_string();
-            timeline
-                .assets
-                .captions
-                .insert("ass".into(), json!({"path": canonical}));
-        }
-        Err(e) => {
-            warnings.push(format!("ASS generation failed: {}", e));
-        }
-    }
-
-    let validation_errors = timeline.validate();
-    if !validation_errors.is_empty() {
-        return Err(ToolError::Timeline(format!(
-            "Timeline validation failed after segment population: {:?}",
-            validation_errors
-        )));
-    }
-
-    timeline.save(&timeline_path)?;
-    report_progress(
-        40.0,
-        100.0,
-        &format!("Timeline built with {} segments", segment_count),
-    )
-    .await
-    .ok();
-
-    // Step 4/7: B-roll director (if enabled)
-    if broll_enabled {
-        report_progress(40.0, 100.0, "Step 4/7: B-roll director...")
-            .await
-            .ok();
-        let broll_args = json!({
-            "timeline_path": &timeline_path,
-            "orientation": "9:16",
-            "quality": "sd",
-            "max_slots": broll_max_slots,
-            "cadence_seconds": broll_cadence,
-        });
-        let broll_result = handle_broll_director(broll_args).await;
-        match broll_result {
-            Ok(r) => {
-                let filled = r
-                    .get("broll_slots_filled")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0);
-                report_progress(55.0, 100.0, &format!("B-roll: {} slots filled", filled))
-                    .await
-                    .ok();
-
-                // Clean up placeholder b-roll events that failed to download.
-                // These have asset_id="placeholder" and would crash the render
-                // pipeline or be silently skipped. Remove them so the timeline
-                // is clean for subsequent validate/render calls.
-                if let Ok(mut timeline) = Timeline::load(&timeline_path) {
-                    if let Some(broll_events) = timeline.tracks.get_mut(&TrackType::Broll) {
-                        let before = broll_events.len();
-                        broll_events.retain(|e| e.asset_id != "placeholder");
-                        let removed = before - broll_events.len();
-                        if removed > 0 {
-                            warnings.push(format!(
-                                "Removed {} placeholder b-roll events (no asset downloaded)",
-                                removed
-                            ));
-                        }
-                        // Save the cleaned timeline
-                        let _ = timeline.save(&timeline_path);
-                    }
-                }
-            }
-            Err(e) => warnings.push(format!("B-roll director skipped: {}", e)),
-        }
-    } else {
-        report_progress(55.0, 100.0, "B-roll disabled, skipping")
-            .await
-            .ok();
-    }
-
-    // Step 5/7: Music + SFX
-    report_progress(55.0, 100.0, "Step 5/7: Assigning music and SFX...")
-        .await
-        .ok();
-
-    if music_enabled {
-        // Search for a matching music track first, then pass its path to music.assign
-        // NOTE: Call library.search directly instead of the deprecated music.search
-        // wrapper. The library_index.json entries have mood="none" and energy="none",
-        // so mood/energy exact-match filters would reject all tracks.
-        let music_search_args = json!({
-            "query": format!("{} {} background music", music_mood, music_energy),
-            "limit": 1,
-        });
-        let music_path = match handle_library_search(music_search_args).await {
-            Ok(r) => {
-                let _results_count = r.get("results")
-                    .and_then(|v| v.as_array())
-                    .map(|a| a.len())
-                    .unwrap_or(0);
-                // library.search results use 'filename' key (just filename),
-                // not 'path'. Construct the full path from the music directory.
-                // Fallback: if the file doesnt exist in mcp/assets/music/,
-                // search mcp/assets/music_cache/ for any available MP3.
-                r.get("results")
-                    .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.first())
-                    .and_then(|first| first.get("filename"))
-                    .and_then(|p| p.as_str())
-                    .and_then(|s| {
-                        // Try primary path: mcp/assets/music/{filename}
-                        let primary = resolve_repo_path(&format!("mcp/assets/music/{}", s));
-                        if primary.exists() {
-                            eprintln!("[reelize.timeline] Music path (primary): {}", primary.display());
-                            return Some(primary.to_string_lossy().to_string());
-                        }
-                        // Fallback: pick first MP3 from mcp/assets/music_cache/
-                        let cache_dir = resolve_repo_path("mcp/assets/music_cache");
-                        if let Ok(entries) = std::fs::read_dir(&cache_dir) {
-                            for entry in entries.flatten() {
-                                let path = entry.path();
-                                if path.extension().map_or(false, |e| e == "mp3") {
-                                    let path_str = path.to_string_lossy().to_string();
-                                    return Some(path_str);
-                                }
-                            }
-                        }
-                        None
-                    })
-            },
-            Err(e) => {
-                warnings.push(format!("Music search failed: {}", e));
-                None
-            }
-        };
-
-        if let Some(path) = music_path {
-            let music_args = json!({
-                "timeline_path": &timeline_path,
-                "path": path,
-
-                "gain_db": music_gain_db,
-                "ducking": true,
-            });
-            let music_result = handle_music_assign(music_args).await;
-            match music_result {
-                Ok(_r) => {
-                    if let Ok(t) = Timeline::load(&timeline_path) {
-                        let music_count = t
-                            .tracks
-                            .get(&TrackType::Music)
-                            .map(|v| v.len())
-                            .unwrap_or(0);
-                        report_progress(
-                            60.0,
-                            100.0,
-                            &format!("Music assigned ({} track(s))", music_count),
-                        )
-                        .await
-                        .ok();
-                    }
-                }
-                Err(e) => warnings.push(format!("Music assign skipped: {}", e)),
-            }
-        } else {
-            warnings.push("No music track found in index — skipping music assignment".to_string());
-        }
-    }
-
-    if sfx_enabled {
-        // Delegate SFX to the atomic sfx.assign tool — handles index loading,
-        // asset resolution, role mapping (hook→intro), and event creation.
-        if let Ok(tl) = Timeline::load(&timeline_path) {
-            let total_ms = tl.total_duration_ms();
-            // Hook SFX at 0ms
-            if !tl.segments.is_empty() {
-                let _ = handle_sfx_assign(json!({
-                    "timeline_path": &timeline_path,
-                    "editorial_role": "hook",
-                    "position_ms": 0,
-                })).await;
-            }
-            // Transition SFX between segments (max 10, evenly spaced)
-            let all_trans: Vec<i64> = tl.segments.iter().skip(1)
-                .map(|s| ((s.start * 1000.0) as i64) - 100)
-                .filter(|ms| *ms > 0).collect();
-            let max_t = all_trans.len().min(10);
-            let positions: Vec<i64> = if max_t <= 1 { all_trans } else {
-                let step = (all_trans.len() / max_t).max(1);
-                all_trans.into_iter().step_by(step).take(max_t).collect()
-            };
-            for pos in &positions {
-                let _ = handle_sfx_assign(json!({
-                    "timeline_path": &timeline_path,
-                    "editorial_role": "transition",
-                    "position_ms": *pos,
-                })).await;
-            }
-            // Highlight SFX at midpoint (if > 2s)
-            if total_ms > 2000 {
-                let _ = handle_sfx_assign(json!({
-                    "timeline_path": &timeline_path,
-                    "editorial_role": "highlight",
-                    "position_ms": total_ms / 2,
-                })).await;
-            }
-        }
-    }
-
-    let sfx_count = if let Ok(t) = Timeline::load(&timeline_path) {
-        track_count(&t, &TrackType::Sfx)
-    } else {
-        0
-    };
-    report_progress(
-        70.0,
-        100.0,
-        &format!("Music and SFX assigned ({} SFX events)", sfx_count),
-    )
-    .await
-    .ok();
-
-    // Step 6/7: Animated captions overlay
-    if animated_captions && burn_captions {
-        report_progress(
-            70.0,
-            100.0,
-            "Step 6/7: Generating animated caption overlay...",
-        )
-        .await
-        .ok();
-        // Need an EDL path for overlay.generate — create a minimal one
-        let edl_path = {
-            let p = Path::new(&timeline_path);
-            let stem = p
-                .file_stem()
-                .map(|s| s.to_string_lossy())
-                .unwrap_or_default();
-            p.parent()
-                .unwrap_or(Path::new("."))
-                .join(format!("{}.edl.json", stem))
-                .to_string_lossy()
-                .to_string()
-        };
-        let t = Timeline::load(&timeline_path).map_err(|e| ToolError::Timeline(e.to_string()))?;
-        let segments_json: Vec<serde_json::Value> = t
-            .segments
-            .iter()
-            .map(|s| {
-                json!({"id": s.id, "start": s.start, "end": s.end, "caption": s.caption, "crossfade_ms": s.crossfade_ms})
-            })
-            .collect();
-        let edl = json!({
-            "source": video_path,
-            "target": {"aspect": &aspect, "fps": 30},
-            "segments": segments_json,
-            "effects": {"burn_captions": true, "audio": {"loudnorm": true}},
-        });
-        std::fs::write(
-            &edl_path,
-            serde_json::to_string_pretty(&edl).unwrap_or_default(),
-        )
-        .ok();
-
-        let overlay_args = json!({
-            "srt_path": &grouped_srt_path,
-            "edl_path": &edl_path,
-            "timeline_path": &timeline_path,
-            "animate": true,
-            "style": "pupcaps_center",
-        });
-        let overlay_result = handle_overlay_generate(overlay_args).await;
-        if let Err(e) = overlay_result {
-            warnings.push(format!("Animated overlay skipped: {}", e));
-        }
-        report_progress(85.0, 100.0, "Animated captions generated")
-            .await
-            .ok();
-    } else {
-        report_progress(85.0, 100.0, "Static captions (burn-in)")
-            .await
-            .ok();
-    }
-
-    // Step 7/7: Validate + render
-    report_progress(85.0, 100.0, "Step 7/7: Validating and rendering...")
-        .await
-        .ok();
-
-    let timeline =
-        Timeline::load(&timeline_path).map_err(|e| ToolError::Timeline(e.to_string()))?;
-    let errors = timeline.validate();
-    if !errors.is_empty() {
-        return Err(ToolError::Timeline(format!(
-            "Timeline validation failed before render: {:?}",
-            errors
-        )));
-    }
-
-    let broll_count = timeline
-        .tracks
-        .get(&TrackType::Broll)
-        .map(|v| v.len())
-        .unwrap_or(0);
-    let music_count = timeline
-        .tracks
-        .get(&TrackType::Music)
-        .map(|v| v.len())
-        .unwrap_or(0);
-    let sfx_count = timeline
-        .tracks
-        .get(&TrackType::Sfx)
-        .map(|v| v.len())
-        .unwrap_or(0);
-    let total_tracks = timeline.tracks.values().map(|v| v.len()).sum::<usize>();
-    report_progress(
-        90.0,
-        100.0,
-        &format!(
-            "Rendering ({} segments, {} track events)...",
-            timeline.segments.len(),
-            total_tracks
-        ),
-    )
-    .await
-    .ok();
-
-    let source = video_path;
-    let result = render_from_timeline(&timeline, source, output_path.as_deref(), Some(crf)).await;
-
-    match result {
-        Ok(out_path) => {
-            let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
-            report_progress(100.0, 100.0, "Reel complete!").await.ok();
-            Ok(json!({
-                "status": "rendered",
-                "output_path": out_path,
-                "file_size_bytes": file_size,
-                "timeline_path": timeline_path,
-                "segments_count": timeline.segments.len(),
-                "overlays_rendered": total_tracks,
-                "preset": preset,
-                "tts_available": tts_available,
-                "broll_count": broll_count,
-                "music_count": music_count,
-                "sfx_count": sfx_count,
-                "warnings": if warnings.is_empty() { serde_json::Value::Null } else { json!(warnings) },
-            }))
-        }
-        Err(e) => Err(ToolError::Ffmpeg(e.to_string())),
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Handler: audio.to_video
@@ -15304,7 +14781,6 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
             if matches!(
                 name,
                 "transcribe"
-                    | "reelize.timeline"
                     | "reelize.direct"
                     | "reelize.brief"
                     | "timeline.render"
@@ -15339,7 +14815,6 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         // Orchestrators
         } else if matches!(
             name,
-            "reelize.timeline"
                 | "reelize.direct"
                 | "broll.director"
                 | "composition.render"
@@ -15577,7 +15052,6 @@ mod tests {
             matches!(
                 *n,
                 "transcribe"
-                    | "reelize.timeline"
                     | "reelize.direct"
                     | "reelize.brief"
                     | "broll.director"

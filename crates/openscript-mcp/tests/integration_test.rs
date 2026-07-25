@@ -179,8 +179,8 @@ fn test_mcp_tools_list() {
     // 90 tools: including srt.to_timeline, broll.plan, segment.analyze, etc.
     assert_eq!(
         tools.len(),
-        90,
-        "Expected 90 MCP tools, got {}",
+        89,
+        "Expected 89 MCP tools, got {}",
         tools.len()
     );
 
@@ -205,7 +205,6 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"edl.build"));
     assert!(tool_names.contains(&"render"));
     assert!(tool_names.contains(&"reelize"));
-    assert!(tool_names.contains(&"reelize.timeline"));
     assert!(tool_names.contains(&"overlay.generate"));
 
     // Timeline V2 tools
@@ -248,7 +247,6 @@ fn test_mcp_tools_list() {
 
     // Orchestration
     assert!(tool_names.contains(&"reelize"));
-    assert!(tool_names.contains(&"reelize.timeline"));
 
     // Verification tools
     assert!(tool_names.contains(&"verify.audio"));
