@@ -2714,9 +2714,7 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     }
 
     // Load or create timeline
-    let timeline_path_arg = args.get("timeline_path")
-        .and_then(|v| v.as_str())
-        .map(String::from);
+    let timeline_path_arg = default_opt_str(&args, "timeline_path");
 
     let mut timeline = if let Some(ref tp) = timeline_path_arg {
         if !tp.is_empty() {
