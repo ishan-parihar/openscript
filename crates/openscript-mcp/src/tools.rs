@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (83 tools: 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (83 tools + 6 hf.* dynamic = 89 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
 // ---------------------------------------------------------------------------
 
 /// Number of SRT entries grouped into one b-roll scene.
@@ -539,7 +539,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "broll.director",
-            "description": "AI director mode for b-roll: analyzes the script/segments, creates b-roll slots at natural pauses, searches Pexels for contextually relevant footage, downloads, and assigns to the timeline. ONE CALL replaces broll.suggest + broll.fetch + broll.assign. Requires PEXELS_API_KEY. Returns: broll_slots_filled, concepts_used, cached_paths.",
+            "description": "DEPRECATED: Use broll.plan + agent keywords + broll.fetch for better results with non-English content. AI director mode for b-roll: analyzes the script/segments, creates b-roll slots at natural pauses, searches Pexels for contextually relevant footage, downloads, and assigns to the timeline. ONE CALL replaces broll.suggest + broll.fetch + broll.assign. Requires PEXELS_API_KEY. Returns: broll_slots_filled, concepts_used, cached_paths.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
