@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 91 tools: including srt.to_timeline, broll.plan, segment.analyze, etc.
+    // 90 tools: including srt.to_timeline, broll.plan, segment.analyze, etc.
     assert_eq!(
         tools.len(),
-        91,
-        "Expected 91 MCP tools, got {}",
+        90,
+        "Expected 90 MCP tools, got {}",
         tools.len()
     );
 
