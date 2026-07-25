@@ -4678,13 +4678,13 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
 async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let audio_path = extract_str(&args, "audio_path")?;
     let srt_path = args.get("srt_path").and_then(|v| v.as_str()).map(String::from);
-    let video_keywords: Vec<String> = args
+    let _video_keywords: Vec<String> = args
         .get("video_keywords")
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
-    let theme = args.get("theme").and_then(|v| v.as_str()).unwrap_or("neutral");
-    let aspect = args.get("aspect").and_then(|v| v.as_str()).unwrap_or("9:16");
+    let _theme = args.get("theme").and_then(|v| v.as_str()).unwrap_or("neutral");
+    let _aspect = args.get("aspect").and_then(|v| v.as_str()).unwrap_or("9:16");
 
     // Step 1: Transcribe or load SRT
     let word_srt_path = if let Some(ref path) = srt_path {
@@ -4736,21 +4736,13 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
     let mut result_segments = Vec::new();
     for (idx, (text, start_s, end_s)) in scenes.iter().enumerate() {
         let duration_s = end_s - start_s;
-        let stock_q = crate::stock_signal::build_scene_stock_query(
-            text,
-            &video_keywords,
-            theme,
-            aspect,
-            idx,
-        );
+        // Agent generates English keywords from Hinglish content - no auto-extraction
         result_segments.push(json!({
             "id": format!("seg_{:03}", idx + 1),
             "start_s": start_s,
             "end_s": end_s,
             "duration_s": duration_s,
             "caption": text,
-            "suggested_keywords": stock_q.signal_tokens,
-            "visual_anchor": stock_q.visual_anchor,
         }));
     }
 
