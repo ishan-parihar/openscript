@@ -544,7 +544,7 @@ pub fn tool_definitions() -> serde_json::Value {
                 "type": "object",
                 "properties": {
                     "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"},
-                    "max_keywords_per_segment": {"type": "integer", "default": 3, "description": "Max keyword suggestions per segment"}
+                    "max_keywords_per_segment": {"type": "integer", "default": 3, "description": "Reserved for future use"}
                 },
                 "required": ["timeline_path"],
                 "additionalProperties": false
@@ -555,15 +555,15 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "segment.analyze",
-            "description": "Analyze a transcript or audio file and return structured segments with ideal clip durations, suggested b-roll keywords, and visual anchors. This is a PURE ANALYSIS tool — it does NOT fetch any broll or render any video. Use this to understand what segments exist before creating keywords for broll.fetch. The agent reviews these suggestions, customizes keywords using its LLM capabilities, then calls broll.fetch with approved keywords. Returns: segments array with id, start_s, end_s, duration_s, caption, suggested_keywords, visual_anchor, topic_category.",
+            "description": "Analyze a transcript or audio file and return structured segments with captions and timing. This is a PURE ANALYSIS tool — it does NOT fetch any broll or render any video. The agent reads the returned segments, generates English visual keywords from Hinglish content using its LLM capabilities, then calls broll.fetch with those agent-generated keywords. Returns: segments array with id, start_s, end_s, duration_s, caption.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "audio_path": {"type": "string", "description": "Path to audio/video file to analyze"},
                     "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT (skip transcription)"},
-                    "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Whole-video topic keywords for context-aware analysis"},
-                    "theme": {"type": "string", "default": "neutral", "description": "Content theme for visual anchor selection"},
-                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for orientation bias"}
+                    "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Reserved for future use"},
+                    "theme": {"type": "string", "default": "neutral", "description": "Reserved for future use"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Reserved for future use"}
                 },
                 "required": ["audio_path"],
                 "additionalProperties": false
@@ -4654,14 +4654,12 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
             .or_else(|| seg.get("text")).and_then(|v| v.as_str())
             .unwrap_or("");
         let duration_s = end_s - start_s;
-        let keywords: Vec<String> = vec![]; // Agent generates keywords, not the tool
         result_segments.push(json!({
             "id": format!("seg_{}", idx),
             "start_s": start_s,
             "end_s": end_s,
             "duration_s": duration_s,
             "caption": caption,
-            "suggested_keywords": keywords, // Agent fills this via broll.fetch with its own keywords
         }));
     }
     Ok(json!({
