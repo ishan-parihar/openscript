@@ -58,6 +58,89 @@ const NOISE_TOKENS: &[&str] = &[
 ];
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Hinglish -> English visual concept mapping
+// ---------------------------------------------------------------------------
+
+/// Maps Hindi/Hinglish visual nouns to English equivalents for stock footage search.
+/// When the agent processes Hindi audio transcripts, scene_text may contain
+/// Hindi words like "samundar" (ocean), "pahad" (mountain), etc.
+/// This mapping ensures stock footage search returns relevant results.
+const HINGLISH_VISUAL_MAP: &[(&str, &[&str])] = &[
+    // Nature / Geography
+    ("samundar", &["ocean", "sea", "shore", "coast"]),
+    ("pahad", &["mountain", "peak", "hill", "summit"]),
+    ("nadi", &["river", "stream", "waterway"]),
+    ("jungle", &["forest", "jungle", "woods", "wilderness"]),
+    ("phasal", &["farm", "field", "crop", "agriculture"]),
+    ("ret", &["sand", "desert", "dunes"]),
+    ("barish", &["rain", "rainfall", "monsoon", "downpour"]),
+    ("bijli", &["lightning", "thunderstorm", "storm"]),
+    ("hawa", &["wind", "breeze", "air"]),
+    ("aasmaan", &["sky", "heavens", "clouds"]),
+    ("dharti", &["earth", "ground", "soil", "land"]),
+    ("suraj", &["sun", "sunlight", "sunrise", "sunset"]),
+    ("chand", &["moon", "lunar", "night sky"]),
+    ("taare", &["stars", "starlight", "constellation"]),
+    ("phool", &["flower", "blossom", "bloom", "garden"]),
+    ("ped", &["tree", "trees", "timber"]),
+    ("patta", &["leaf", "leaves", "foliage"]),
+    ("pani", &["water", "droplet", "splash"]),
+    ("patthar", &["rock", "stone", "boulder"]),
+    ("aag", &["fire", "flame", "blaze"]),
+    ("barf", &["ice", "snow", "glacier", "frozen"]),
+    ("moti", &["pearl", "gem", "jewel"]),
+    // Animals
+    ("sher", &["lion", "tiger", "predator"]),
+    ("hathi", &["elephant", "mammal", "wildlife"]),
+    ("cheel", &["eagle", "hawk", "bird of prey"]),
+    ("machhli", &["fish", "aquatic", "underwater"]),
+    ("kauwa", &["crow", "raven", "bird"]),
+    ("kabutar", &["pigeon", "dove", "bird"]),
+    ("saamp", &["snake", "serpent", "reptile"]),
+    // Urban / Modern
+    ("sheher", &["city", "urban", "metropolis", "skyline"]),
+    ("ghar", &["house", "home", "building", "residence"]),
+    ("sadak", &["road", "street", "highway", "traffic"]),
+    ("bazaar", &["market", "bazaar", "shopping", "store"]),
+    ("school", &["school", "education", "classroom", "learning"]),
+    ("aspatal", &["hospital", "medical", "healthcare"]),
+    // Abstract / Emotional
+    ("khushi", &["happiness", "joy", "smile", "celebration"]),
+    ("dukh", &["sadness", "grief", "tears", "sorrow"]),
+    ("pyaar", &["love", "romance", "affection", "heart"]),
+    ("darr", &["fear", "darkness", "shadow", "anxiety"]),
+    ("ummeed", &["hope", "light", "sunrise", "dawn"]),
+    ("waqt", &["time", "clock", "hourglass", "sunset"]),
+    ("zindagi", &["life", "living", "nature", "vitality"]),
+    ("maut", &["death", "darkness", "decay", "autumn"]),
+    ("taqat", &["strength", "power", "muscle", "energy"]),
+    ("safar", &["journey", "travel", "road", "adventure"]),
+    ("sapna", &["dream", "stars", "clouds", "sky"]),
+    ("yaad", &["memory", "nostalgia", "old photos", "vintage"]),
+    // Body / Human
+    ("aankh", &["eye", "gaze", "closeup", "face"]),
+    ("haath", &["hand", "hands", "gesture", "reach"]),
+    ("dil", &["heart", "pulse", "heartbeat", "anatomy"]),
+    ("dimag", &["brain", "mind", "thinking", "neuron"]),
+    ("chehra", &["face", "portrait", "expression", "smile"]),
+];
+
+/// Translate Hindi/Hinglish visual nouns in a scene to English equivalents.
+/// Returns the scene text with Hindi words replaced by their English translations.
+pub fn translate_hinglish_visuals(scene_text: &str) -> String {
+    let lower = scene_text.to_ascii_lowercase();
+    let mut result = scene_text.to_string();
+    for (hindi, english_variants) in HINGLISH_VISUAL_MAP {
+        if lower.contains(hindi) {
+            // Append English equivalents to the text so tokenize() can pick them up
+            result = format!("{} {}", result, english_variants.join(" "));
+        }
+    }
+    result
+}
+
 // Topic detection + topic-aware visual boost + anchor banks
 // ---------------------------------------------------------------------------
 
@@ -345,11 +428,13 @@ fn is_noise(tok: &str) -> bool {
 /// `video_keywords`, so multi-broll queries differ per scene instead of all
 /// collapsing to the same topic list.
 pub fn signal_tokens_from_scene(scene_text: &str, video_keywords: &[String]) -> Vec<String> {
+    // Phase 56: Translate Hindi/Hinglish visual nouns to English before tokenization
+    let scene_text_en = translate_hinglish_visuals(scene_text);
     let mut seen = HashSet::new();
     let mut out: Vec<String> = Vec::new();
 
     // 1) Scene tokens (visual-boosted) — per-scene specificity
-    let mut scene: Vec<String> = tokenize(scene_text)
+    let mut scene: Vec<String> = tokenize(&scene_text_en)
         .into_iter()
         .filter(|t| !is_noise(t))
         .collect();

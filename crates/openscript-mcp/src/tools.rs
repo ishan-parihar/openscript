@@ -2717,7 +2717,7 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     let timeline_path_arg = default_opt_str(&args, "timeline_path");
 
     let mut timeline = if let Some(ref tp) = timeline_path_arg {
-        if !tp.is_empty() {
+        if !tp.is_empty() && std::path::Path::new(tp).exists() {
             Timeline::load(tp).map_err(|e| ToolError::Timeline(e.to_string()))?
         } else {
             Timeline::new(std::path::PathBuf::new(), &aspect, fps, None)
@@ -16413,4 +16413,92 @@ mod background_search_tests {
             .count();
         assert!(calm_count >= 3, "expected at least 3 calm backgrounds, got {}", calm_count);
     }
+
+
+#[cfg(test)]
+mod srt_to_timeline_tests {
+    use super::*;
+    use std::io::Write;
+    
+    #[tokio::test]
+    async fn parses_srt_and_creates_timeline() {
+        // Create a temp SRT file with 3 entries
+        let tmp_dir = std::env::temp_dir();
+        let srt_path = tmp_dir.join("test_srt_to_timeline.srt");
+        let timeline_path = tmp_dir.join("test_srt_to_timeline_out.json");
+        
+        let srt_content = r"1
+00:00:01,000 --> 00:00:04,000
+Hello world this is segment one
+
+2
+00:00:05,000 --> 00:00:08,000
+Second segment with more text
+
+3
+00:00:09,500 --> 00:00:12,000
+Third and final segment
+";
+        
+        {
+            let mut f = std::fs::File::create(&srt_path).unwrap();
+            f.write_all(srt_content.as_bytes()).unwrap();
+        }
+        
+        // Clean up any previous output
+        let _ = std::fs::remove_file(&timeline_path);
+        
+        // Build the args
+        let args = json!({
+            "srt_path": srt_path.to_str().unwrap(),
+            "timeline_path": timeline_path.to_str().unwrap(),
+            "aspect": "9:16",
+            "fps": 30,
+        });
+        
+        // Call the handler
+        let result = handle_srt_to_timeline(args).await;
+        assert!(result.is_ok(), "handler failed: {:?}", result.err());
+        
+        let val = result.unwrap();
+        assert_eq!(val["status"], "built");
+        let segments_count = val["segments_count"].as_u64().unwrap();
+        assert_eq!(segments_count, 3, "expected 3 segments, got {}", segments_count);
+        
+        // Verify the timeline file exists and has content
+        assert!(timeline_path.exists(), "timeline file should exist");
+        let tl_content = std::fs::read_to_string(&timeline_path).unwrap();
+        assert!(tl_content.contains("Hello world"));
+        
+        // Cleanup
+        let _ = std::fs::remove_file(&srt_path);
+        let _ = std::fs::remove_file(&timeline_path);
+    }
+    
+    #[tokio::test]
+    async fn rejects_empty_srt() {
+        let tmp_dir = std::env::temp_dir();
+        let srt_path = tmp_dir.join("test_empty.srt");
+        
+        {
+            let mut f = std::fs::File::create(&srt_path).unwrap();
+            f.write_all(b"").unwrap(); // Truly empty SRT
+        }
+        
+        let args = json!({
+            "srt_path": srt_path.to_str().unwrap(),
+        });
+        
+        let result = handle_srt_to_timeline(args).await;
+        assert!(result.is_err(), "should fail on empty SRT");
+        // Verify it's a Srt error type
+        match result.err().unwrap() {
+            ToolError::Srt(_) => {}
+            e => panic!("expected ToolError::Srt, got {:?}", e),
+        }
+        
+        let _ = std::fs::remove_file(&srt_path);
+    }
+}
+
 }
