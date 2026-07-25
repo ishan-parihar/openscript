@@ -286,11 +286,12 @@ pub fn tool_definitions() -> serde_json::Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "srt_path": {"type": "string", "description": "Path to SRT file (from transcribe or srt.prepare)"},
-                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional existing timeline to add segments to. If omitted, creates a new timeline."},
-                    "crossfade_ms": {"type": "integer", "default": 80, "description": "Audio crossfade between segments in ms"},
-                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for new timelines"},
-                    "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"}
+            "srt_path": {"type": "string", "description": "Path to SRT file (from transcribe or srt.prepare)"},
+            "source_video": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Source video/audio path. Sets the timeline's source for rendering and validation. If omitted, uses the SRT filename stem."},
+            "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional existing timeline to add segments to. If omitted, creates a new timeline."},
+            "crossfade_ms": {"type": "integer", "default": 80, "description": "Audio crossfade between segments in ms"},
+            "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for new timelines"},
+            "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"}
                 },
                 "required": ["srt_path"],
                 "additionalProperties": false
@@ -2528,6 +2529,7 @@ async fn handle_timeline_load(args: serde_json::Value) -> Result<serde_json::Val
 /// Convert SRT entries into timeline segments in one call.
 async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?;
+    let source_video = default_opt_str(&args, "source_video");
     let crossfade_ms = default_u32(&args, "crossfade_ms", 80);
     let aspect = default_str(&args, "aspect", "9:16");
     let fps = default_u32(&args, "fps", 30);
@@ -2543,14 +2545,18 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     // Load or create timeline
     let timeline_path_arg = default_opt_str(&args, "timeline_path");
 
+    let source_path = source_video.as_ref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::path::PathBuf::new);
+
     let mut timeline = if let Some(ref tp) = timeline_path_arg {
         if !tp.is_empty() && std::path::Path::new(tp).exists() {
             Timeline::load(tp).map_err(|e| ToolError::Timeline(e.to_string()))?
         } else {
-            Timeline::new(std::path::PathBuf::new(), &aspect, fps, None)
+            Timeline::new(source_path, &aspect, fps, None)
         }
     } else {
-        Timeline::new(std::path::PathBuf::new(), &aspect, fps, None)
+        Timeline::new(source_path, &aspect, fps, None)
     };
 
     // Add each SRT entry as a segment
