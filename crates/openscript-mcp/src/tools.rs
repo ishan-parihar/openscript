@@ -2589,7 +2589,7 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     let resolved_output = output_path
         .filter(|s| !s.is_empty())
         .or_else(|| timeline_path_arg.filter(|s| !s.is_empty()))
-        .unwrap_or_else(|| srt_path.with_extension(".timeline.json").to_string_lossy().to_string());
+        .unwrap_or_else(|| srt_path.with_extension("timeline.json").to_string_lossy().to_string());
 
     // Save timeline
     timeline.save(&resolved_output)
