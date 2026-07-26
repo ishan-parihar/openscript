@@ -210,13 +210,42 @@ def transcribe_ggml(
             lib_dir + (":" + existing if existing else "")
         )
 
-    result = subprocess.run(
+    # Use Popen to stream stderr for progress reporting.
+    # whisper-cli emits progress to stderr as percentage lines.
+    import sys as _sys
+    proc = subprocess.Popen(
         cmd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=600,
         env=env,
     )
+
+    stderr_lines = []
+    # Read stderr line-by-line to extract progress from whisper-cli
+    for line in proc.stderr:
+        line = line.strip()
+        stderr_lines.append(line)
+        # whisper-cli emits lines like "progress: 50%" or "[00:05.000 --> 00:10.000]"
+        if '%' in line:
+            try:
+                pct = float(line.split('%')[0].split()[-1])
+                print(f'[progress:{pct:.0f}]', flush=True)
+            except (ValueError, IndexError):
+                pass
+
+    proc.wait(timeout=600)
+    stdout_text = proc.stdout.read() if proc.stdout else ''
+    stderr_text = '\n'.join(stderr_lines)
+
+    # Build a result-like object for backward compat
+    class _Result:
+        pass
+    result = _Result()
+    result.returncode = proc.returncode
+    result.stdout = stdout_text
+    result.stderr = stderr_text
+    result.status = type('status', (), {'success': lambda self: proc.returncode == 0})()
     
     elapsed = time.time() - start
     _log_hinglish(f"whisper-cli completed in {elapsed:.1f}s (exit={result.returncode})")

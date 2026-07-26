@@ -246,7 +246,10 @@ pub struct Effects {
     pub audio: AudioEffects,
 }
 
+fn default_true() -> bool { true }
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AudioEffects {
+    #[serde(default = "default_true")]
     pub loudnorm: bool,
 }
