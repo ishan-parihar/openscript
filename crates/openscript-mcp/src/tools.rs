@@ -3562,6 +3562,9 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
     use openscript_assets::pexels::PexelsClient;
 
     // Accept both "concepts" (array) and "keywords" (string or array) for backward compat.
+    if args.get("concepts").is_some() && args.get("keywords").is_some() {
+        tracing::warn!("[broll.fetch] Both 'concepts' and 'keywords' provided; 'concepts' will take precedence.");
+    }
     let concepts = if args.get("concepts").is_some() {
         extract_arr(&args, "concepts")?
     } else if let Some(s) = args.get("keywords").and_then(|v| v.as_str()) {
