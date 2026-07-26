@@ -1743,7 +1743,14 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
         .await
         .ok();
 
-    let result = transcribe_with_engine(&media_path, &output_srt_path, engine, &language_hint, None)
+    // Wire progress callback so the MCP client sees real-time transcription progress
+    let progress_cb = |pct: f64, msg: &str| {
+        let msg_owned = msg.to_string();
+        tokio::spawn(async move {
+            let _ = report_progress(pct, 100.0, &msg_owned).await;
+        });
+    };
+    let result = transcribe_with_engine(&media_path, &output_srt_path, engine, &language_hint, Some(&progress_cb))
         .await
         .map_err(|e| ToolError::Srt(e.to_string()))?;
 
