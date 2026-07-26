@@ -270,7 +270,7 @@ fn build_highlighted_line(
             if i == highlight_idx {
                 // Highlight: change color + scale up slightly for emphasis
                 format!(
-                    "{{\\c{}\\fscx110\\fscy110}}{}{{\\c{}\\fscx100\\fscy100}}",
+                    "{{\\fad(80,80)\\c{}\\fscx110\\fscy110}}{}{{\\c{}\\fscx100\\fscy100}}",
                     highlight_color, escaped_word, primary_color
                 )
             } else {

@@ -3819,10 +3819,8 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                     .unwrap_or("");
                 let position_ms = (start_s * 1000.0) as i64;
                 let duration_ms = ((end_s - start_s) * 1000.0) as i64;
-                if duration_ms <= 0 { continue; }
-
-                let event_id = format!("broll_{}", i);
-                let asset_id = format!("broll_asset_{}", i);
+                if duration_ms <= 0 { continue; }let event_id = format!("broll_{}", i);
+                    let asset_id = event_id.clone();
                 let broll_event = openscript_core::timeline::TimelineEvent {
                     id: event_id.clone(),
                     asset_id: asset_id.clone(),
@@ -3849,11 +3847,10 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                 };
                 tl.tracks.entry(openscript_core::types::TrackType::Broll)
                     .or_default()
-                    .push(broll_event);
-                tl.assets.broll.insert(asset_id, serde_json::json!({
-                    "path": cached_path,
-                    "concept": concept_str,
-                }));
+                    .push(broll_event);tl.assets.broll.insert(asset_id.clone(), serde_json::json!({
+                        "path": cached_path,
+                        "concept": concept_str,
+                    }));
                 assigned_count += 1;
             }
             tl.updated_at = chrono::Utc::now();
