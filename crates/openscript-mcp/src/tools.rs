@@ -287,8 +287,8 @@ pub fn tool_definitions() -> serde_json::Value {
                 "type": "object",
                 "properties": {
             "srt_path": {"type": "string", "description": "Path to SRT file (from transcribe or srt.prepare)"},
-            "source_video": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Source video/audio path. Sets the timeline's source for rendering and validation. If omitted, uses the SRT filename stem."},
-            "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional existing timeline to add segments to. If omitted, creates a new timeline."},
+            "source_video": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Source video/audio path. Sets the timeline's source for rendering and validation. If omitted, uses the SRT filename stem."},                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional existing timeline to add segments to. If omitted, creates a new timeline."},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Explicit output path for the timeline JSON. Overrides timeline_path for the save location. Auto-generated from srt_path if omitted."},
             "crossfade_ms": {"type": "integer", "default": 80, "description": "Audio crossfade between segments in ms"},
             "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for new timelines"},
             "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"}
@@ -505,7 +505,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "broll.fetch",
-            "description": "Search Pexels for b-roll videos matching given concepts. Set download=true to actually download videos to the cache directory. Use BEFORE broll.assign — this finds the footage, broll.assign places it on the timeline. Requires PEXELS_API_KEY (in mcp/assets/.openscript_config.json or env var); without a key, returns status:warning with fallback_pool results if provided. Returns: results with concept, videos (id, width, height, duration, url), cached_path if downloaded.",
+            "description": "Search Pexels for b-roll videos matching given concepts or keywords. At least one of 'concepts' (array) or 'keywords' (string or array) is required. Set download=true to actually download videos to the cache directory. Use BEFORE broll.assign — this finds the footage, broll.assign places it on the timeline. Requires PEXELS_API_KEY (in mcp/assets/.openscript_config.json or env var); without a key, returns status:warning with fallback_pool results if provided. Returns: results with concept, videos (id, width, height, duration, url), cached_path if downloaded.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2531,6 +2531,7 @@ async fn handle_timeline_load(args: serde_json::Value) -> Result<serde_json::Val
 async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let srt_path = sanitize_input_path(extract_str(&args, "srt_path")?)?;
     let source_video = default_opt_str(&args, "source_video");
+    let output_path = default_opt_str(&args, "output_path");
     let crossfade_ms = default_u32(&args, "crossfade_ms", 80);
     let aspect = default_str(&args, "aspect", "9:16");
     let fps = default_u32(&args, "fps", 30);
@@ -2575,28 +2576,21 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
-    // Determine output path
-    let output_path = if let Some(ref tp) = timeline_path_arg {
-        if !tp.is_empty() {
-            tp.clone()
-        } else {
-            let p = srt_path.with_extension(".timeline.json");
-            p.to_string_lossy().to_string()
-        }
-    } else {
-        let p = srt_path.with_extension(".timeline.json");
-        p.to_string_lossy().to_string()
-    };
+    // Determine output path: explicit output_path > timeline_path > derived from srt_path
+    let resolved_output = output_path
+        .filter(|s| !s.is_empty())
+        .or_else(|| timeline_path_arg.filter(|s| !s.is_empty()))
+        .unwrap_or_else(|| srt_path.with_extension(".timeline.json").to_string_lossy().to_string());
 
     // Save timeline
-    timeline.save(&output_path)
+    timeline.save(&resolved_output)
         .map_err(|e| ToolError::Timeline(format!("Failed to save timeline: {}", e)))?;
 
     let duration_s = entries.last().map(|e| e.end).unwrap_or(0.0);
 
     Ok(json!({
         "status": "built",
-        "timeline_path": output_path,
+        "timeline_path": resolved_output,
         "segments_count": segments_count,
         "duration_s": duration_s,
         "aspect": aspect,
