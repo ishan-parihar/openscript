@@ -838,7 +838,9 @@ pub fn tool_definitions() -> serde_json::Value {
                     "background_sources": {"type": "array", "items": {"type": "string"}, "description": "Fallback background paths if no manifest"},
                     "music_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Music path used at render if any"},
                     "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F)."},
-                    "vision_rescore": {"type": "boolean", "default": false, "description": "If true, re-score each background clip with vision.score_clip (local Qwen GGUF/Ollama → OpenRouter free multimodal). Adds vision_scores to the response."}
+                    "vision_rescore": {"type": "boolean", "default": false, "description": "If true, re-score each background clip with vision.score_clip (local Qwen GGUF/Ollama → OpenRouter free multimodal). Adds vision_scores to the response."},
+                    "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Agent-generated keywords describing the video content (e.g., ['corruption', 'protest', 'freedom']). Used by context_relevance scoring to verify b-roll matches the topic."},
+                    "caption_style": {"type": "string", "description": "Caption style used: 'word_highlight', 'standard', 'kinetic', 'karaoke'. Detected from ASS file if not provided."}
                 },
                 "required": ["video_path", "timeline_path"],
                 "additionalProperties": false
@@ -5922,6 +5924,23 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         manifest.duration_ms = timeline.rendered_duration_ms();
     }
     manifest.has_dialogue = has_dialogue;
+    // Set video_keywords from agent if provided
+    if manifest.video_keywords.is_empty() {
+        if let Some(kw_arr) = args.get("video_keywords").and_then(|v| v.as_array()) {
+            manifest.video_keywords = kw_arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
+    }
+    // Set caption_style from agent if provided
+    if manifest.caption_style.is_none() {
+        manifest.caption_style = args.get("caption_style").and_then(|v| v.as_str()).map(|s| s.to_string());
+    }
+    // Set voiceover_count based on dialogue detection
+    // If the video has dialogue (original audio), count it as voiceover
+    if manifest.voiceover_count == 0 && has_dialogue {
+        manifest.voiceover_count = 1;
+    }
     manifest.rms_ok = rms_ok;
 
     // Update manifest with measured audio metrics (override planned values with reality)
