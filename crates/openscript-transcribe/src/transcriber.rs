@@ -14,6 +14,8 @@
 // =============================================================================
 
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt};
 use tokio::process::Command;
 
 // ---------------------------------------------------------------------------
@@ -274,7 +276,7 @@ pub async fn transcribe(
     media_path: &str,
     output_srt_path: &str,
 ) -> Result<TranscribeResult, TranscribeError> {
-    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::HinglishGgml, "auto")
+    transcribe_with_engine(media_path, output_srt_path, TranscriptionEngine::HinglishGgml, "auto", None)
         .await
 }
 
@@ -284,6 +286,7 @@ pub async fn transcribe_with_engine(
     output_srt_path: &str,
     engine: TranscriptionEngine,
     language_hint: &str,
+    progress_cb: Option<&(dyn Fn(f64, &str) + Send + Sync)>,
 ) -> Result<TranscribeResult, TranscribeError> {
     let out_dir = Path::new(output_srt_path)
         .parent()
@@ -299,7 +302,7 @@ pub async fn transcribe_with_engine(
             tracing::info!(
                 "Using Hinglish GGML engine (whisper.cpp + Hindi2Hinglish-Apex-GGML)"
             );
-            transcribe_hinglish_ggml(media_path, output_srt_path, &stem, out_dir, language_hint)
+            transcribe_hinglish_ggml(media_path, output_srt_path, &stem, out_dir, language_hint, progress_cb)
                 .await
         }
     }
@@ -317,6 +320,7 @@ async fn transcribe_hinglish_ggml(
     stem: &str,
     out_dir: &Path,
     language_hint: &str,
+    progress_cb: Option<&(dyn Fn(f64, &str) + Send + Sync)>,
 ) -> Result<TranscribeResult, TranscribeError> {
     let wrapper = find_hinglish_ggml_script().ok_or_else(|| {
         TranscribeError::WrapperNotFound(
@@ -343,7 +347,64 @@ async fn transcribe_hinglish_ggml(
         .arg(language_hint)
         .kill_on_drop(true);
 
-    let output = cmd.output().await.map_err(TranscribeError::Io)?;
+    // If a progress callback is provided, stream stderr for progress lines.
+    // The Python sidecar emits lines like "[progress:XX]" during whisper processing.
+    let mut child = if progress_cb.is_some() {
+        Some(cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(TranscribeError::Io)?)
+    } else {
+        None
+    };
+
+    let output = if let Some(ref mut child) = child {
+        // Stream stderr for progress, capture stdout for result
+        let stderr_handle = child.stderr.take().expect("Failed to capture stderr");
+        let mut stderr_reader = tokio::io::BufReader::new(stderr_handle).lines();
+        let mut stderr_buf = String::new();
+        let mut stdout_buf = String::new();
+
+        // Read stderr line by line for progress updates
+        loop {
+            tokio::select! {
+                line = stderr_reader.next_line() => {
+                    match line {
+                        Ok(Some(line)) => {
+                            if line.starts_with("[progress:") {
+                                if let Some(pct_str) = line.strip_prefix("[progress:").and_then(|s| s.strip_suffix(']')) {
+                                    if let Ok(pct) = pct_str.parse::<f64>() {
+                                        if let Some(ref cb) = progress_cb {
+                                            cb(pct, "Transcribing audio...");
+                                        }
+                                    }
+                                }
+                            } else {
+                                stderr_buf.push_str(&line);
+                                stderr_buf.push('\n');
+                            }
+                        }
+                        Ok(None) => break, // EOF
+                        Err(_) => break,
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                    if let Some(ref cb) = progress_cb {
+                        cb(50.0, "Transcribing audio...");
+                    }
+                }
+            }
+        }
+
+        // Wait for process to finish and capture stdout
+        let status = child.wait().await.map_err(TranscribeError::Io)?;
+        child.stdout.take().expect("stdout should be piped").read_to_string(&mut stdout_buf).await.map_err(TranscribeError::Io)?;
+
+        std::process::Output {
+            status,
+            stdout: stdout_buf.into_bytes(),
+            stderr: stderr_buf.into_bytes(),
+        }
+    } else {
+        cmd.output().await.map_err(TranscribeError::Io)?
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

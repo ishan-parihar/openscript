@@ -1743,7 +1743,7 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
         .await
         .ok();
 
-    let result = transcribe_with_engine(&media_path, &output_srt_path, engine, &language_hint)
+    let result = transcribe_with_engine(&media_path, &output_srt_path, engine, &language_hint, None)
         .await
         .map_err(|e| ToolError::Srt(e.to_string()))?;
 
@@ -4797,6 +4797,7 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
             &out_srt,
             openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml,
             "auto",
+            None,
         )
         .await
         .map_err(|e| ToolError::InvalidArg(format!("Transcription failed: {}", e)))?;
