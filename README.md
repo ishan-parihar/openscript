@@ -72,7 +72,6 @@ trait Future {
 Executors drive futures to completion. `tokio::spawn` polls until `Ready`.
 
 *[B-roll: tokio-diagram.png]*
-```
 
 ---
 
