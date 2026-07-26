@@ -4546,10 +4546,11 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
             .output();
         match probe {
             Ok(o) => o.status.success() && !o.stdout.is_empty(),
-            Err(_) => true, // assume video if ffprobe fails
+            Err(_) => false, // assume audio-only if ffprobe fails (safer)
         }
     };
-    let effective_source = if !source_is_video {
+    let render_source = if !source_is_video {
+        // Derive duration from timeline segments instead of hardcoded fallback
         let duration = {
             let d = std::process::Command::new("ffprobe")
                 .args(["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", &source])
@@ -4558,18 +4559,33 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
                 Ok(o) => String::from_utf8_lossy(&o.stdout)
                     .trim()
                     .parse::<f64>()
-                    .unwrap_or(139.0),
-                Err(_) => 139.0,
+                    .ok(),
+                Err(_) => None,
             }
+        }
+        .unwrap_or_else(|| {
+            // Fallback: compute from timeline segment boundaries
+            timeline.segments.iter()
+                .map(|s| s.end)
+                .fold(0.0f64, f64::max)
+                .max(1.0) // guard against empty segments (avoid 0-second video)
+        });
+
+        // Derive dimensions from timeline's aspect ratio + resolve_width/resolve_height
+        let w = timeline.target.resolve_width();
+        let h = timeline.target.resolve_height();
+        let bg_video = {
+            let p = std::path::Path::new(&source);
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let parent = p.parent().unwrap_or(std::path::Path::new("."));
+            parent.join(format!("{}.bg.mp4", stem)).to_string_lossy().to_string()
         };
-        let bg_video = source.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '/')
-            .to_string() + ".bg.mp4";
-        tracing::info!("[timeline.render] Audio-only source detected. Generating black background video: {}", bg_video);
+        tracing::info!("[timeline.render] Audio-only source detected ({}x{}). Generating black background: {}", w, h, bg_video);
         report_progress(10.0, 100.0, "Generating black background video from audio...").await.ok();
         let bg_result = std::process::Command::new("ffmpeg")
             .args([
                 "-y", "-f", "lavfi",
-                "-i", &format!("color=c=black:s=1080x1920:d={:.1}:r=30", duration),
+                "-i", &format!("color=c=black:s={}x{}:d={:.1}:r={}", w, h, duration, timeline.target.fps),
                 "-i", &source,
                 "-c:v", "libx264", "-tune", "stillimage",
                 "-c:a", "aac", "-b:a", "192k",
@@ -4630,10 +4646,14 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
-    let result = render_from_timeline(&timeline, &effective_source, output_path.as_deref(), crf).await;
+    let result = render_from_timeline(&timeline, &render_source, output_path.as_deref(), crf).await;
 
     match result {
         Ok(out_path) => {
+            // Cleanup generated background video if we created one
+            if !source_is_video {
+                let _ = std::fs::remove_file(&render_source);
+            }
             report_progress(100.0, 100.0, "Render complete").await.ok();
             let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
             Ok(json!({
@@ -4645,6 +4665,10 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
             }))
         }
         Err(e) => {
+            // Cleanup generated background video on error too
+            if !source_is_video {
+                let _ = std::fs::remove_file(&render_source);
+            }
             // P0-2 fix: include the ffmpeg error inline (and a tail of the render
             // log when one exists) so AI agents can self-correct without having
             // to read a separate log file. Prior versions returned only
