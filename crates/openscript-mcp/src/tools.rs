@@ -255,7 +255,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio"},
                     "fps": {"type": "integer", "default": 30, "description": "Target framerate"},
                     "max_duration": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Maximum timeline duration in seconds"},
-                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom timeline JSON path (auto-generated if omitted)"}
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Custom timeline JSON path (auto-generated if omitted)"},
+                    "platform": {"type": "string", "description": "Target platform preset: 'tiktok'/'reels'/'shorts' (9:16, 30fps), 'youtube' (16:9, 30fps), 'instagram'/'square' (1:1, 30fps). Overrides aspect and fps."}
                 },
                 "required": ["source_video"],
                 "additionalProperties": false
@@ -2502,9 +2503,28 @@ async fn handle_overlay_generate(args: serde_json::Value) -> Result<serde_json::
 
 async fn handle_timeline_build(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let source_video = extract_str(&args, "source_video")?;
-    let aspect = default_str(&args, "aspect", "9:16");
-    let fps = default_u32(&args, "fps", 30);
+    let mut aspect = default_str(&args, "aspect", "9:16");
+    let mut fps = default_u32(&args, "fps", 30);
     let max_duration = default_opt_u32(&args, "max_duration");
+
+    // Platform presets: override aspect, fps, max_duration based on target platform
+    if let Some(platform) = args.get("platform").and_then(|v| v.as_str()) {
+        match platform {
+            "tiktok" | "reels" | "shorts" => {
+                aspect = "9:16".to_string();
+                fps = 30;
+            }
+            "youtube" | "landscape" => {
+                aspect = "16:9".to_string();
+                fps = 30;
+            }
+            "instagram" | "square" => {
+                aspect = "1:1".to_string();
+                fps = 30;
+            }
+            _ => {} // unknown platform, keep user defaults
+        }
+    }
     let output_path = default_opt_str(&args, "output_path")
         .unwrap_or_else(|| default_timeline_path(source_video));
 
@@ -4955,13 +4975,33 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
             "duration_s": duration_s,
             "caption": text,
         }));
-    }
+    }    report_progress(100.0, 100.0, "Analysis complete.").await.ok();
 
-    report_progress(100.0, 100.0, "Analysis complete.").await.ok();
+    // Build section_map: maps segment index to its role in the video structure
+    // Sections: intro (first 15%), body (middle 70%), outro (last 15%)
+    let total_segs = result_segments.len();
+    let section_map: Vec<serde_json::Value> = result_segments.iter().enumerate().map(|(i, seg)| {
+        let fraction = i as f64 / total_segs.max(1) as f64;
+        let section = if fraction < 0.15 {
+            "intro"
+        } else if fraction > 0.85 {
+            "outro"
+        } else {
+            "body"
+        };
+        json!({
+            "segment_id": seg["id"].clone(),
+            "section": section,
+            "start_s": seg["start_s"].clone(),
+            "end_s": seg["end_s"].clone(),
+        })
+    }).collect();
+
     Ok(json!({
         "status": "success",
         "segments_count": result_segments.len(),
         "segments": result_segments,
+        "section_map": section_map,
     }))
 }
 
