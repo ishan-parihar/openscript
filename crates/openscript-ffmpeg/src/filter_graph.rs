@@ -793,12 +793,13 @@ impl FilterGraphBuilder {
 
         // Post-mix safety limiter — loudnorm TP targets true peaks but
         // music/SFX mixing after it can push levels above the limit.
-        // alimiter provides a hard sample-peak ceiling at -2 dBFS as a backstop.
-        // (P0 audio clipping fix — peak was -0.4 dBFS with old TP=-1.5 + no post-mix limiter.)
+        // alimiter provides a hard sample-peak ceiling at -3 dBFS as a backstop.
+        // (P0 audio clipping fix — peak was -0.2 dBFS with limit=0.79.
+        //  Lowered to 0.70 = -3 dBFS to ensure no clipping on any platform.)
         if self.loudnorm {
             let input_label = &aout[1..aout.len() - 1];
             parts.push(format!(
-                "[{}]alimiter=limit=0.79:attack=5:release=50:asc=1:asc_level=0.5[afinal]",
+                "[{}]alimiter=limit=0.70:attack=5:release=50:asc=1:asc_level=0.5[afinal]",
                 input_label
             ));
             aout = "[afinal]".into();
