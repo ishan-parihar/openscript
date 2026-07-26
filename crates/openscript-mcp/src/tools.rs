@@ -4628,17 +4628,23 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
         .map_err(|e| ToolError::InvalidArg(format!("Failed to read timeline {}: {}", timeline_path, e)))?;
     let timeline: serde_json::Value = serde_json::from_str(&timeline_str)
         .map_err(|e| ToolError::InvalidArg(format!("Failed to parse timeline JSON: {}", e)))?;
-    let segments = if let Some(tracks) = timeline.get("tracks") {
-        if let Some(dialogue) = tracks.get("dialogue") {
-            dialogue.get("events").and_then(|e| e.as_array()).cloned().unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    } else if let Some(segs) = timeline.get("segments") {
-        segs.as_array().cloned().unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    // Try tracks.dialogue.events first, then top-level segments, then default empty.
+    // Note: dialogue may be a list (empty) instead of a dict with 'events' — handle both.
+    let segments = timeline.get("tracks")
+        .and_then(|tracks| tracks.get("dialogue"))
+        .and_then(|dialogue| {
+            // dialogue may be {"events": [...]} or a plain list [...]
+            dialogue.get("events")
+                .and_then(|e| e.as_array().cloned())
+                .filter(|v| !v.is_empty())
+                .or_else(|| dialogue.as_array().cloned().filter(|v| !v.is_empty()))
+        })
+        .or_else(|| {
+            timeline.get("segments")
+                .and_then(|s| s.as_array().cloned())
+                .filter(|v| !v.is_empty())
+        })
+        .unwrap_or_default();
     let mut result_segments = Vec::new();
     for (idx, seg) in segments.iter().enumerate() {
         let start_s = seg.get("start_s")
