@@ -4661,12 +4661,13 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
 
     let result = render_from_timeline(&timeline, &render_source, output_path.as_deref(), crf).await;
 
+    // Cleanup generated background video regardless of render outcome
+    let _cleanup_bg = (!source_is_video).then(|| {
+        let _ = std::fs::remove_file(&render_source);
+    });
+
     match result {
         Ok(out_path) => {
-            // Cleanup generated background video if we created one
-            if !source_is_video {
-                let _ = std::fs::remove_file(&render_source);
-            }
             report_progress(100.0, 100.0, "Render complete").await.ok();
             let file_size = std::fs::metadata(&out_path).map(|m| m.len()).unwrap_or(0);
             Ok(json!({
@@ -4678,10 +4679,6 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
             }))
         }
         Err(e) => {
-            // Cleanup generated background video on error too
-            if !source_is_video {
-                let _ = std::fs::remove_file(&render_source);
-            }
             // P0-2 fix: include the ffmpeg error inline (and a tail of the render
             // log when one exists) so AI agents can self-correct without having
             // to read a separate log file. Prior versions returned only
