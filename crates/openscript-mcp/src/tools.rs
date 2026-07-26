@@ -4538,6 +4538,68 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
         )));
     }
 
+    // Auto-detect audio-only source and generate a black background video.
+    // This enables A2V (audio-to-video) pipeline: audio → timeline → render.
+    let source_is_video = {
+        let probe = std::process::Command::new("ffprobe")
+            .args(["-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", &source])
+            .output();
+        match probe {
+            Ok(o) => o.status.success() && !o.stdout.is_empty(),
+            Err(_) => true, // assume video if ffprobe fails
+        }
+    };
+    let effective_source = if !source_is_video {
+        let duration = {
+            let d = std::process::Command::new("ffprobe")
+                .args(["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", &source])
+                .output();
+            match d {
+                Ok(o) => String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<f64>()
+                    .unwrap_or(139.0),
+                Err(_) => 139.0,
+            }
+        };
+        let bg_video = source.trim_end_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '/')
+            .to_string() + ".bg.mp4";
+        tracing::info!("[timeline.render] Audio-only source detected. Generating black background video: {}", bg_video);
+        report_progress(10.0, 100.0, "Generating black background video from audio...").await.ok();
+        let bg_result = std::process::Command::new("ffmpeg")
+            .args([
+                "-y", "-f", "lavfi",
+                "-i", &format!("color=c=black:s=1080x1920:d={:.1}:r=30", duration),
+                "-i", &source,
+                "-c:v", "libx264", "-tune", "stillimage",
+                "-c:a", "aac", "-b:a", "192k",
+                "-shortest",
+                &bg_video,
+            ])
+            .output();
+        match bg_result {
+            Ok(o) if o.status.success() => {
+                tracing::info!("[timeline.render] Background video generated: {}", bg_video);
+                bg_video
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                let last_lines: Vec<&str> = stderr.lines().rev().take(5).collect();
+                return Err(ToolError::Ffmpeg(format!(
+                    "Failed to generate background video from audio: {}",
+                    last_lines.join("\n")
+                )));
+            }
+            Err(e) => {
+                return Err(ToolError::Ffmpeg(format!(
+                    "Failed to run ffmpeg for background generation: {}", e
+                )));
+            }
+        }
+    } else {
+        source.clone()
+    };
+
     let total_tracks = timeline.tracks.values().map(|v| v.len()).sum::<usize>();
     report_progress(
         0.0,
@@ -4568,7 +4630,7 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
-    let result = render_from_timeline(&timeline, &source, output_path.as_deref(), crf).await;
+    let result = render_from_timeline(&timeline, &effective_source, output_path.as_deref(), crf).await;
 
     match result {
         Ok(out_path) => {
