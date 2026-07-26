@@ -105,7 +105,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "height": {"type": "integer", "default": 1920, "description": "Video height in pixels"},
                     "crossfade_ms": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Crossfade duration in ms. When set, remaps SRT timestamps from source-time to output-time to account for xfade overlaps between segments."},
                     "grouped_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional grouped SRT path for fallback when word-level SRT parsing fails. When set, uses this file with estimated word timings as a fallback."},
-                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output ASS file path (auto-generated if omitted)"}
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output ASS file path (auto-generated if omitted)"},
+                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "When provided, registers the generated ASS file in timeline.assets.captions so timeline.render can find it automatically. No manual registration needed."}
                 },
                 "required": ["srt_path"],
                 "additionalProperties": false
@@ -291,7 +292,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Explicit output path for the timeline JSON. Overrides timeline_path for the save location. Auto-generated from srt_path if omitted."},
             "crossfade_ms": {"type": "integer", "default": 80, "description": "Audio crossfade between segments in ms"},
             "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for new timelines"},
-            "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"}
+            "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"},
+            "scene_size": {"type": "integer", "default": 1, "description": "Group N consecutive SRT entries into one segment (e.g., scene_size=4 groups 4 entries per segment). Set to 1 for one-segment-per-entry. Controls segmentation granularity for b-roll placement."}
                 },
                 "required": ["srt_path"],
                 "additionalProperties": false
@@ -505,7 +507,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "broll.fetch",
-            "description": "Search Pexels for b-roll videos matching given concepts or keywords. At least one of 'concepts' (array) or 'keywords' (string or array) is required. Set download=true to actually download videos to the cache directory. Use BEFORE broll.assign — this finds the footage, broll.assign places it on the timeline. Requires PEXELS_API_KEY (in mcp/assets/.openscript_config.json or env var); without a key, returns status:warning with fallback_pool results if provided. Returns: results with concept, videos (id, width, height, duration, url), cached_path if downloaded.",
+            "description": "Search Pexels for b-roll videos matching given concepts or keywords. Set download=true to download videos. When timeline_path and segments are provided, automatically places each downloaded clip on the timeline at the correct position/duration — no manual broll.assign needed. Returns: results with concept, videos, cached_path. When auto-placed, returns timeline_path and assigned count.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -514,11 +516,11 @@ pub fn tool_definitions() -> serde_json::Value {
                     "asset_dir": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Cache directory for downloaded videos"},
                     "orientation": {"type": "string", "default": "9:16", "description": "Video orientation: '9:16' (vertical), '16:9' (horizontal)"},
                     "quality": {"type": "string", "default": "sd", "description": "Video quality: 'sd', 'hd', '4k'"},
-                    "download": {"type": "boolean", "default": false, "description": "Actually download the top result to cache"},
-                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local video file paths used when Pexels returns 0 results for a concept (or when PEXELS_API_KEY is missing). Mirrors background.fetch fallback semantics."}
+                    "download": {"type": "boolean", "default": true, "description": "Actually download the top result to cache"},
+                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local video file paths used when Pexels returns 0 results for a concept (or when PEXELS_API_KEY is missing)."},
+                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "When provided, automatically place each fetched clip on the timeline's broll track at the matching segment position. Requires segments parameter."},
+                    "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segment data from segment.analyze or broll.plan. Used with timeline_path for auto-placement. Each concept is matched to a segment by index (concept[0] → segment[0], etc.)."}
                 },
-                // Note: required is [] because JSON Schema can't express "at least one of".
-                // Handler validates at runtime: at least one of concepts/keywords must be non-empty.
                 "required": [],
                 "additionalProperties": false
             }
@@ -1914,6 +1916,18 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
     let canonical_ass = std::fs::canonicalize(&ass_path)
         .unwrap_or_else(|_| ass_path.clone().into());
 
+    // AUTO-REGISTER: If timeline_path provided, register ASS in timeline.assets.captions
+    let captions_timeline_path = default_opt_str(&args, "timeline_path");
+    if let Some(ref tl_path) = captions_timeline_path {
+        if let Ok(mut tl) = Timeline::load(tl_path) {
+            tl.assets.captions.insert("ass".to_string(), serde_json::json!({
+                "path": canonical_ass.to_string_lossy().to_string(),
+            }));
+            tl.updated_at = chrono::Utc::now();
+            let _ = tl.save(tl_path);
+        }
+    }
+
     Ok(json!({
         "status": "success",
         "ass_path": canonical_ass.to_string_lossy().to_string(),
@@ -2544,6 +2558,7 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     let crossfade_ms = default_u32(&args, "crossfade_ms", 80);
     let aspect = default_str(&args, "aspect", "9:16");
     let fps = default_u32(&args, "fps", 30);
+    let scene_size = args.get("scene_size").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
 
     // Parse SRT file
     let entries = parse_srt(&srt_path)
@@ -2570,17 +2585,31 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         Timeline::new(source_path, &aspect, fps, None)
     };
 
-    // Add each SRT entry as a segment
+    // Add each SRT entry as a segment, grouped by scene_size
     let mut segments_count = 0;
-    for entry in &entries {
-        if entry.end > entry.start {
-            timeline.add_segment(
-                entry.start,
-                entry.end,
-                &entry.text,
-                crossfade_ms,
-                None,
-            );
+    if scene_size <= 1 {
+        // One segment per SRT entry (default behavior)
+        for entry in &entries {
+            if entry.end > entry.start {
+                timeline.add_segment(
+                    entry.start,
+                    entry.end,
+                    &entry.text,
+                    crossfade_ms,
+                    None,
+                );
+                segments_count += 1;
+            }
+        }
+    } else {
+        // Group scene_size consecutive entries into one segment
+        for chunk in entries.chunks(scene_size) {
+            let valid: Vec<_> = chunk.iter().filter(|e| e.end > e.start).collect();
+            if valid.is_empty() { continue; }
+            let start = valid.first().unwrap().start;
+            let end = valid.last().unwrap().end;
+            let caption = valid.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
+            timeline.add_segment(start, end, &caption, crossfade_ms, None);
             segments_count += 1;
         }
     }
@@ -3760,6 +3789,84 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
     if !warnings.is_empty() {
         resp["warnings"] = json!(warnings);
     }
+
+    // AUTO-PLACE: If timeline_path and segments provided, place each clip on timeline
+    let timeline_path = default_opt_str(&args, "timeline_path");
+    let segments: Vec<serde_json::Value> = args.get("segments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(ref tl_path) = timeline_path {
+        if !segments.is_empty() {
+            let mut tl = Timeline::load(tl_path)
+                .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to load timeline: {}", e))))?;
+            let mut assigned_count = 0usize;
+            // Match each concept's downloaded clip to the corresponding segment by index
+            for (i, result_val) in all_results.iter().enumerate() {
+                if i >= segments.len() { break; }
+                let segment = &segments[i];
+                let cached_path = result_val.get("cached_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if cached_path.is_empty() || cached_path == "placeholder" {
+                    continue;
+                }
+                let start_s = segment.get("start_s").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let end_s = segment.get("end_s").and_then(|v| v.as_f64()).unwrap_or(start_s + 3.0);
+                let concept_str = result_val.get("concept")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let position_ms = (start_s * 1000.0) as i64;
+                let duration_ms = ((end_s - start_s) * 1000.0) as i64;
+                if duration_ms <= 0 { continue; }
+
+                let event_id = format!("broll_{}", i);
+                let asset_id = format!("broll_asset_{}", i);
+                let broll_event = openscript_core::timeline::TimelineEvent {
+                    id: event_id.clone(),
+                    asset_id: asset_id.clone(),
+                    start_ms: position_ms,
+                    end_ms: position_ms + duration_ms,
+                    offset_ms: 0,
+                    gain_db: 0.0,
+                    fade_in_ms: 0,
+                    fade_out_ms: 0,
+                    tags: vec![concept_str.to_string()],
+                    provenance: Some(openscript_core::timeline::Provenance {
+                        tool: "broll.fetch".to_string(),
+                        editorial_role: None,
+                        concept: Some(concept_str.to_string()),
+                    }),
+                    kind: openscript_core::timeline::EventKind::Broll {
+                        concept: concept_str.to_string(),
+                        source_provider: "pexels".to_string(),
+                        transition_style: "cut".to_string(),
+                        crop_mode: "center".to_string(),
+                        orientation: orientation.clone(),
+                        motion_intensity: "medium".to_string(),
+                    },
+                };
+                tl.tracks.entry(openscript_core::types::TrackType::Broll)
+                    .or_default()
+                    .push(broll_event);
+                tl.assets.broll.insert(asset_id, serde_json::json!({
+                    "path": cached_path,
+                    "concept": concept_str,
+                }));
+                assigned_count += 1;
+            }
+            tl.updated_at = chrono::Utc::now();
+            tl.save(tl_path)
+                .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to save timeline: {}", e))))?;
+            resp["timeline_path"] = json!(tl_path);
+            resp["auto_assigned"] = json!(assigned_count);
+            if assigned_count > 0 {
+                resp["status"] = json!("placed");
+            }
+        }
+    }
+
     Ok(resp)
 }
 
