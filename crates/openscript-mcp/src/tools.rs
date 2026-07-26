@@ -517,6 +517,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "download": {"type": "boolean", "default": false, "description": "Actually download the top result to cache"},
                     "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local video file paths used when Pexels returns 0 results for a concept (or when PEXELS_API_KEY is missing). Mirrors background.fetch fallback semantics."}
                 },
+                // Note: required is [] because JSON Schema can't express "at least one of".
+                // Handler validates at runtime: at least one of concepts/keywords must be non-empty.
                 "required": [],
                 "additionalProperties": false
             }

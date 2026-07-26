@@ -238,21 +238,18 @@ def transcribe_ggml(
     stdout_text = proc.stdout.read() if proc.stdout else ''
     stderr_text = '\n'.join(stderr_lines)
 
-    # Build a result-like object for backward compat
-    class _Result:
-        pass
-    result = _Result()
-    result.returncode = proc.returncode
-    result.stdout = stdout_text
-    result.stderr = stderr_text
-    result.status = type('status', (), {'success': lambda self: proc.returncode == 0})()
+    # Return values directly — no need for a wrapper object.
+    # The Rust caller reads stdout/stderr from the process pipes.
+    return_code = proc.returncode
+    captured_stdout = stdout_text
+    captured_stderr = stderr_text
     
     elapsed = time.time() - start
-    _log_hinglish(f"whisper-cli completed in {elapsed:.1f}s (exit={result.returncode})")
+    _log_hinglish(f"whisper-cli completed in {elapsed:.1f}s (exit={return_code})")
     
     # Parse stderr for detected language
     detected_language = "hi"
-    for line in result.stderr.split('\n'):
+    for line in captured_stderr.split('\n'):
         if 'language:' in line.lower() or 'detected' in line.lower():
             lang_match = re.search(r'language[:\s]+(\w+)', line, re.IGNORECASE)
             if lang_match:
