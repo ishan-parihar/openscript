@@ -4673,7 +4673,9 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
 // ---------------------------------------------------------------------------
 
 async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let audio_path = extract_str(&args, "audio_path")?;
+    // Accept both audio_path and video_path for backward compat (agents use video_path)
+    let audio_path = extract_str(&args, "audio_path")
+        .or_else(|_| extract_str(&args, "video_path"))?;
     let srt_path = args.get("srt_path").and_then(|v| v.as_str()).map(String::from);
 
     // Step 1: Transcribe or load SRT
