@@ -199,11 +199,23 @@ def transcribe_ggml(
     _log_hinglish(f"Running: {' '.join(cmd[:6])}...")
     start = time.time()
     
+    # Ensure libwhisper.so can be found at runtime.
+    # The shared library lives in ~/.local/lib but whisper-cli may not
+    # have RPATH set, so we prepend it to LD_LIBRARY_PATH.
+    env = os.environ.copy()
+    lib_dir = os.path.join(os.path.expanduser("~"), ".local", "lib")
+    if os.path.isdir(lib_dir):
+        existing = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = (
+            lib_dir + (":" + existing if existing else "")
+        )
+
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         timeout=600,
+        env=env,
     )
     
     elapsed = time.time() - start

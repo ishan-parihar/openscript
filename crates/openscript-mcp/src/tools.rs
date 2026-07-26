@@ -510,13 +510,14 @@ pub fn tool_definitions() -> serde_json::Value {
                 "type": "object",
                 "properties": {
                     "concepts": {"type": "array", "items": {"type": "string"}, "description": "Visual concepts to search for (e.g., ['city skyline', 'technology', 'nature'])"},
+                    "keywords": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}], "description": "Alias for concepts. Accepts a single keyword string or an array of strings."},
                     "asset_dir": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Cache directory for downloaded videos"},
                     "orientation": {"type": "string", "default": "9:16", "description": "Video orientation: '9:16' (vertical), '16:9' (horizontal)"},
                     "quality": {"type": "string", "default": "sd", "description": "Video quality: 'sd', 'hd', '4k'"},
                     "download": {"type": "boolean", "default": false, "description": "Actually download the top result to cache"},
                     "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local video file paths used when Pexels returns 0 results for a concept (or when PEXELS_API_KEY is missing). Mirrors background.fetch fallback semantics."}
                 },
-                "required": ["concepts"],
+                "required": [],
                 "additionalProperties": false
             }
         },
@@ -3564,7 +3565,23 @@ async fn handle_broll_suggest(args: serde_json::Value) -> Result<serde_json::Val
 async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_assets::pexels::PexelsClient;
 
-    let concepts = extract_arr(&args, "concepts")?;
+    // Accept both "concepts" (array) and "keywords" (string or array) for backward compat.
+    let concepts = if args.get("concepts").is_some() {
+        extract_arr(&args, "concepts")?
+    } else if let Some(s) = args.get("keywords").and_then(|v| v.as_str()) {
+        vec![s.to_string()]
+    } else if args.get("keywords").is_some() {
+        extract_arr(&args, "keywords")?
+    } else {
+        return Err(ToolError::MissingArg(
+            "concepts (or keywords)".to_string(),
+        ));
+    };
+    if concepts.is_empty() {
+        return Err(ToolError::InvalidArg(
+            "concepts/keywords must not be empty".into(),
+        ));
+    }
     let asset_dir =
         default_opt_str(&args, "asset_dir").unwrap_or_else(|| "mcp/assets/broll_cache".to_string());
     let orientation = default_str(&args, "orientation", "9:16");
