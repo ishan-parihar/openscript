@@ -2636,11 +2636,16 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         // === SENTENCE-AWARE MODE: duration-based grouping ===
         // Uses pause detection (>300ms gaps) and duration caps
         let min_dur = min_duration_s.unwrap_or(2.0);
+        // Sentence-aware segmentation parameters (per docs/SEGMENTATION_ARCHITECTURE.md):
+        // - 15 words ≈ 4s at 2.5 words/s natural speaking pace
+        // - 80 chars ≈ 2 lines of captions at standard font size
+        // - 300ms gap = natural breath pause boundary (silence between sentences)
+        // - max_dur = user-provided cap (e.g., 5.0s for short-form content)
         let grouped = openscript_core::srt::group_entries_with_words_max_duration(
             &entries,
-            15,    // max_words per segment
-            80,    // max_chars per segment
-            0.3,   // max_gap: 300ms pause = sentence boundary
+            15,    // max_words: ~4s at 2.5 words/s
+            80,    // max_chars: ~2 caption lines
+            0.3,   // max_gap: 300ms = breath pause boundary
             max_dur,
         );
 
