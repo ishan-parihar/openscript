@@ -3467,6 +3467,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
         }
 
         // 2) Transition SFX at each segment boundary (after each segment ends)
+        let timeline_end = segments.last().map(|s| (s.end * 1000.0) as i64).unwrap_or(0);
         for seg in &segments {
             let matched = sfx_index.search("", Some("transition"), None, 1).into_iter().next().cloned();
             if matched.is_none() { continue; }
@@ -3479,7 +3480,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
                 id: event_id.clone(),
                 asset_id: path.clone().unwrap_or_else(|| "transition".to_string()),
                 start_ms: position_ms,
-                end_ms: position_ms + duration_ms,
+                end_ms: (position_ms + duration_ms).min(timeline_end),
                 offset_ms: 0,
                 gain_db,
                 fade_in_ms: 50,
@@ -3522,8 +3523,8 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
             let event = openscript_core::timeline::TimelineEvent {
                 id: event_id.clone(),
                 asset_id: path.clone().unwrap_or_else(|| "outro".to_string()),
-                start_ms: last_end,
-                end_ms: last_end + duration_ms,
+                start_ms: (timeline_end - duration_ms).max(0),
+                end_ms: timeline_end,
                 offset_ms: 0,
                 gain_db,
                 fade_in_ms: 50,
@@ -4005,7 +4006,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                     id: event_id.clone(),
                     asset_id: asset_id.clone(),
                     start_ms: position_ms,
-                    end_ms: position_ms + duration_ms,
+                    end_ms: (position_ms + duration_ms).min(duration_ms.max(1000)),
                     offset_ms: 0,
                     gain_db: 0.0,
                     fade_in_ms: 0,
