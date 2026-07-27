@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 90 tools: including srt.to_timeline, broll.plan, segment.analyze, etc.
+    // 89 tools: including srt.to_timeline, broll.plan, segment.analyze, etc. (music.search removed)
     assert_eq!(
         tools.len(),
-        90,
-        "Expected 90 MCP tools, got {}",
+        89,
+        "Expected 89 MCP tools, got {}",
         tools.len()
     );
 
@@ -231,7 +231,7 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"sfx.search"));
     assert!(tool_names.contains(&"sfx.assign"));
     assert!(tool_names.contains(&"music.index"));
-    assert!(tool_names.contains(&"music.search"));
+    // music.search removed (YAGNI) — agents use library.search instead
     assert!(tool_names.contains(&"music.assign"));
     assert!(tool_names.contains(&"music.ducking.plan"));
 

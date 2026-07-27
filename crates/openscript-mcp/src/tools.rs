@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (90 tools + 6 hf.* dynamic = 96 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.*)
+// Tool definitions (89 tools + 6 hf.* dynamic = 96 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.*)
 // ---------------------------------------------------------------------------
 
 /// Number of SRT entries grouped into one b-roll scene.
@@ -476,26 +476,13 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
-            "name": "music.search",
-            "description": "DEPRECATED — forwards to library.search. Use library.search for all music queries. Returns: results with title, path, duration_s, mood, energy, genre, source. 393 copyright-free music tracks available.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "default": "", "description": "Keyword search in title/artist"},
-                    "mood": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Filter by mood: 'calm', 'energetic', 'upbeat', 'dramatic', 'dark', 'sad', 'neutral'"},
-                    "energy": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Filter by energy: 'low', 'medium', 'high'"},
-                    "limit": {"type": "integer", "default": 10, "description": "Max results to return"}
-                }
-            }
-        },
-        {
             "name": "music.assign",
-            "description": "Assign background music to the timeline's music track. Requires a music file path — use library.search first to find tracks, then pass the path here. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Returns: event_id, start_ms, end_ms, asset_path.",
+            "description": "Assign background music to the timeline's music track. Requires a music file path — use library.search first to find tracks, then pass the path here. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Accepts both local file paths and URLs (auto-downloads if URL). Returns: event_id, start_ms, end_ms, asset_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "timeline_path": {"type": "string", "description": "Path to timeline JSON"},
-                    "path": {"type": "string", "description": "Path to the music audio file (MP3/WAV). Use library.search to find tracks and get their path."},
+                    "path": {"type": "string", "description": "Path to the music audio file (MP3/WAV) or URL. Use library.search to find tracks and get their path."},
                     "mood": {"type": "string", "default": "neutral", "description": "Emotional mood matching content tone"},
                     "energy": {"type": "string", "default": "medium", "description": "Intensity level"},
                     "start_ms": {"type": "integer", "default": 0, "description": "Music start position on timeline"},
@@ -1347,7 +1334,6 @@ pub fn route_tool(
         "sfx.assign" => Box::pin(handle_sfx_assign(args)),
         "sfx.auto_assign" => Box::pin(handle_sfx_auto_assign(args)),
         "music.index" => Box::pin(handle_music_index(args)),
-        "music.search" => Box::pin(handle_music_search(args)),
         "music.assign" => Box::pin(handle_music_assign(args)),
         "broll.suggest" => Box::pin(handle_broll_suggest(args)),
         "broll.fetch" => Box::pin(handle_broll_fetch(args)),
@@ -3418,7 +3404,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
         let skip_outro = args.get("skip_outro").and_then(|v| v.as_bool()).unwrap_or(false);
 
         let mut timeline = Timeline::load(timeline_path)?;
-        let segments = timeline.tracks.get(&TrackType::Dialogue).map(|t| t.clone()).unwrap_or_default();
+        let segments = timeline.segments.clone();
         if segments.is_empty() {
             return Ok(json!({"status": "warning", "message": "No segments found — cannot auto-assign SFX", "events_created": 0}));
         }
@@ -3486,7 +3472,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
             if matched.is_none() { continue; }
             current_idx += 1;
             let event_id = format!("sfx_{:03}", current_idx);
-            let position_ms = seg.end_ms;
+            let position_ms = (seg.end * 1000.0) as i64;
             let duration_ms = matched.as_ref().map(|a| a.duration_ms).unwrap_or(1000);
             let path = matched.as_ref().map(|a| a.path.clone());
             let event = openscript_core::timeline::TimelineEvent {
@@ -3526,7 +3512,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
 
         // 3) Outro SFX at the end
         if !skip_outro {
-            let last_end = segments.last().map(|s| s.end_ms).unwrap_or(0);
+            let last_end = segments.last().map(|s| (s.end * 1000.0) as i64).unwrap_or(0);
             let matched = sfx_index.search("", Some("outro"), None, 1).into_iter().next().cloned();
             if matched.is_some() {
             current_idx += 1;
@@ -3636,39 +3622,6 @@ async fn handle_music_index(args: serde_json::Value) -> Result<serde_json::Value
 }
 
 // ---------------------------------------------------------------------------
-// Handler: music.search (native via openscript-assets)
-// ---------------------------------------------------------------------------
-
-/// DEPRECATED: music.search now forwards to library.search.
-/// The old music_index.json (synthetic stock tracks) has been deleted.
-/// All music lives in library_index.json (393 music + 94 SFX, copyright-free).
-async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    // Forward query/mood/energy/limit to library.search
-    let mut lib_args = args.clone();
-    // Remove music-search-only params that library.search doesn't understand
-    lib_args.as_object_mut().map(|m| {
-        m.remove("intro_friendly");
-        m.remove("cta_friendly");
-        m.remove("loopable");
-    });
-
-    let mut result = handle_library_search(lib_args).await?;
-
-    // Inject deprecation warning
-    if let Some(obj) = result.as_object_mut() {
-        let warnings = obj
-            .entry("warnings".to_string())
-            .or_insert(json!([]))
-            .as_array_mut()
-            .expect("warnings is always an array");
-        warnings.insert(
-            0,
-            json!("DEPRECATED: music.search has been replaced by library.search. All music tracks now live in the library (393 copyright-free tracks). Use library.search instead."),
-        );
-    }
-
-    Ok(result)
-}
 
 // ---------------------------------------------------------------------------
 // Handler: music.assign
@@ -3690,7 +3643,7 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
     // Validate the music file exists
     if !Path::new(music_path).exists() {
         return Err(ToolError::NotFound(format!(
-            "Music file not found: {}. Use music.search to find tracks and get their path.",
+            "Music file not found: {}. Use library.search to find tracks. Accepts both local paths and URLs..",
             music_path
         )));
     }
@@ -7244,7 +7197,7 @@ async fn handle_reelize_direct(args: serde_json::Value) -> Result<serde_json::Va
         let ducking = default_bool(music, "duck_under_dialogue", true);
 
         // Search for a matching music track, then pass its path
-        let music_path = match handle_music_search(json!({
+        let music_path = match handle_library_search(json!({
             "mood": mood,
             "energy": energy,
             "limit": 1,
@@ -13936,7 +13889,7 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
     let max_stickers = default_u32(&args, "max_stickers", 10) as usize;
 
     let mut timeline = Timeline::load(timeline_path)?;
-    let segments = timeline.tracks.get(&TrackType::Dialogue).map(|t| t.clone()).unwrap_or_default();
+    let segments = timeline.segments.clone();
     if segments.is_empty() {
         return Ok(json!({"status": "warning", "message": "No segments found — cannot auto-assign stickers", "events_created": 0}));
     }
@@ -13958,22 +13911,18 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
     let stickers_dir = std::path::PathBuf::from("mcp/assets/stickers");
     let _ = std::fs::create_dir_all(&stickers_dir);
 
-    let count = segments.len().min(max_stickers);
-    for (i, seg) in segments.iter().take(count).enumerate() {
-        // Derive query from segment provenance, tags, or fallback
+    for (i, seg) in segments.iter().enumerate() {
+        if i >= max_stickers { break; }
+
+        // Derive query from segment caption or override
         let query = if let Some(ref q) = sticker_query {
             q.clone()
-        } else if let Some(ref prov) = seg.provenance {
-            // Use provenance.concept if available (e.g., from broll.plan or segment.analyze)
-            prov.concept.clone().unwrap_or_else(|| "funny".to_string())
         } else {
-            // Fallback: extract words from tags
-            let caption = seg.tags.first().cloned().unwrap_or_else(|| "funny".to_string());
+            // Use the segment caption directly (Segment has: id, start, end, caption, crossfade_ms, semantic_role)
+            let caption = seg.caption.clone();
             let words: Vec<&str> = caption.split_whitespace().filter(|w: &&str| w.len() > 3).take(3).collect();
             if words.is_empty() { "funny".to_string() } else { words.join(" ") }
         };
-
-        // Search GIPHY for a sticker (use reqwest URL encoding)
         let url = reqwest::Url::parse_with_params(
             "https://api.giphy.com/v1/stickers/search",
             &[
@@ -14015,8 +13964,8 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
         // Place on broll track (same pattern as handle_overlay_assign)
         current_idx += 1;
         let event_id = format!("sticker_{:03}", current_idx);
-        let start_ms = seg.start_ms;
-        let end_ms = seg.end_ms.min(start_ms + 5000); // Cap at 5s
+        let start_ms = (seg.start * 1000.0) as i64;
+        let end_ms = ((seg.end * 1000.0) as i64).min(start_ms + 5000); // Cap at 5s
         let asset_path_str = sticker_path.to_string_lossy().to_string();
 
         let event = openscript_core::timeline::TimelineEvent {
@@ -15363,31 +15312,23 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 mod tests {
     use super::*;
 
-    /// music.search (deprecated wrapper) forwards to library.search and returns results.
+    /// library.search returns results for keyword queries.
     #[tokio::test]
-    async fn test_music_search_omitted_filters_returns_results() {
-        // music.search now wraps library.search; music_index.json is empty/deleted.
-        let resp = handle_music_search(json!({"query": "chill", "limit": 5}))
+    async fn test_library_search_keyword_query() {
+        let resp = handle_library_search(json!({"query": "chill", "limit": 5}))
             .await
-            .expect("music.search should succeed");
+            .expect("library.search should succeed");
         assert!(
             resp["status"] == "success" || resp["status"] == "searched",
-            "music.search should succeed; got status={}",
+            "library.search should succeed; got status={}",
             resp["status"]
         );
         let count = resp["count"].as_u64().unwrap_or(0);
         assert!(
             count > 0,
-            "deprecated music.search wrapper must forward to library.search; got count={} resp={}",
+            "library.search should find results for 'chill'; got count={} resp={}",
             count,
             resp
-        );
-        // Deprecation warning must be present
-        let warnings = resp["warnings"].as_array().cloned().unwrap_or_default();
-        assert!(
-            warnings.iter().any(|w| w.as_str().unwrap_or("").contains("DEPRECATED")),
-            "music.search must warn about deprecation; got warnings={:?}",
-            warnings
         );
     }
 
