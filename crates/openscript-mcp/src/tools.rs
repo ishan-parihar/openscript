@@ -284,7 +284,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
                 {
             "name": "srt.to_timeline",
-            "description": "Convert an SRT file into a timeline with segments in one call. Reads all SRT entries, creates a timeline, and adds each entry as a segment with start/end times and caption text. This is the ONE-CALL replacement for calling timeline.add_segment N times. Returns: timeline_path, segments_count, duration_s.",
+            "description": "Convert an SRT file into a timeline with segments in one call. Reads all SRT entries, creates a timeline, and adds each entry as a segment with start/end times and caption text. This is the ONE-CALL replacement for calling timeline.add_segment N times. Use max_duration_s for sentence-aware segmentation (pause detection + duration caps, ideal for short-form b-roll pacing). Returns: timeline_path, segments_count, duration_s.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
