@@ -3992,9 +3992,12 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                     .unwrap_or("");
                 if cached_path.is_empty() || cached_path == "placeholder" {
                     continue;
-                }
-                let start_s = segment.get("start_s").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let end_s = segment.get("end_s").and_then(|v| v.as_f64()).unwrap_or(start_s + 3.0);
+                }                    let start_s = segment.get("start_s")
+                        .or_else(|| segment.get("start"))
+                        .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let end_s = segment.get("end_s")
+                        .or_else(|| segment.get("end"))
+                        .and_then(|v| v.as_f64()).unwrap_or(start_s + 3.0);
                 let concept_str = result_val.get("concept")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
