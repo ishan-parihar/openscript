@@ -4006,7 +4006,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                     id: event_id.clone(),
                     asset_id: asset_id.clone(),
                     start_ms: position_ms,
-                    end_ms: (position_ms + duration_ms).min(duration_ms.max(1000)),
+                    end_ms: position_ms + duration_ms,
                     offset_ms: 0,
                     gain_db: 0.0,
                     fade_in_ms: 0,
