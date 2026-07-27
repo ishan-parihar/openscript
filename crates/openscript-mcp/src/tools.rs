@@ -5041,14 +5041,16 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
         .unwrap_or_default();
     let mut result_segments = Vec::new();
     for (idx, seg) in segments.iter().enumerate() {
-        let start_s = seg.get("start_s")
-            .or_else(|| seg.get("start_ms")).and_then(|v| v.as_f64())
-            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
-            .unwrap_or(0.0);
-        let end_s = seg.get("end_s")
-            .or_else(|| seg.get("end_ms")).and_then(|v| v.as_f64())
-            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
-            .unwrap_or(start_s + 5.0);
+    let start_s = seg.get("start_s")
+        .or_else(|| seg.get("start_ms"))
+        .or_else(|| seg.get("start")).and_then(|v| v.as_f64())
+        .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+        .unwrap_or(0.0);
+    let end_s = seg.get("end_s")
+        .or_else(|| seg.get("end_ms"))
+        .or_else(|| seg.get("end")).and_then(|v| v.as_f64())
+        .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+        .unwrap_or(start_s + 5.0);
         let caption = seg.get("caption")
             .or_else(|| seg.get("text")).and_then(|v| v.as_str())
             .unwrap_or("");
