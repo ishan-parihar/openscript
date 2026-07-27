@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (82 tools + 6 hf.* dynamic = 88 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.*)
+// Tool definitions (90 tools + 6 hf.* dynamic = 96 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.*)
 // ---------------------------------------------------------------------------
 
 /// Number of SRT entries grouped into one b-roll scene.
@@ -446,6 +446,21 @@ pub fn tool_definitions() -> serde_json::Value {
                     "gain_db": {"type": "number", "default": -10.0, "description": "Volume adjustment in decibels"}
                 },
                 "required": ["timeline_path", "editorial_role"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "sfx.auto_assign",
+            "description": "Auto-place SFX at ALL segment boundaries in ONE CALL: hook SFX at the start, transition SFX between each segment, and outro SFX at the end. Reads the timeline, finds segment boundaries, and places appropriate SFX automatically. ONE-CALL replacement for calling sfx.assign N+2 times. Returns: events_created count, positions, timeline_path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"},
+                    "gain_db": {"type": "number", "default": -10.0, "description": "Volume for all placed SFX in dB"},
+                    "skip_hook": {"type": "boolean", "default": false, "description": "Skip the opening hook SFX"},
+                    "skip_outro": {"type": "boolean", "default": false, "description": "Skip the closing outro SFX"}
+                },
+                "required": ["timeline_path"],
                 "additionalProperties": false
             }
         },
@@ -1167,6 +1182,22 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "sticker.auto_assign",
+            "description": "Auto-place stickers/GIFs at segment positions in ONE CALL. Searches GIPHY for relevant stickers based on segment captions, downloads them, and places them on the overlay track. ONE-CALL replacement for calling gif.search + gif.download + overlay.assign N times. Requires GIPHY_API_KEY. Returns: events_created count, positions, timeline_path.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"},
+                    "sticker_query": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Override query for all stickers (e.g., 'funny', 'celebration'). If omitted, derives keywords from each segment's caption."},
+                    "position": {"type": "string", "default": "bottom-right", "description": "Screen position for all stickers"},
+                    "scale": {"type": "number", "default": 0.2, "description": "Sticker scale (0.0-1.0)"},
+                    "max_stickers": {"type": "integer", "default": 10, "description": "Maximum stickers to place"}
+                },
+                "required": ["timeline_path"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "timeline.to_hyperframes",
             "description": "Compile an EDL v2 timeline JSON into a HyperFrames HTML composition. Wraps the edl_v2_to_html.ts compiler — produces an index.html with GSAP timeline animations, video layers, and b-roll crossfades. After this, call composition.render or hf.render to produce the final MP4. This is the bridge between the NLE timeline and the HyperFrames motion-graphics render engine.",
             "inputSchema": {
@@ -1314,6 +1345,7 @@ pub fn route_tool(
         "sfx.index" => Box::pin(handle_sfx_index(args)),
         "sfx.search" => Box::pin(handle_sfx_search(args)),
         "sfx.assign" => Box::pin(handle_sfx_assign(args)),
+        "sfx.auto_assign" => Box::pin(handle_sfx_auto_assign(args)),
         "music.index" => Box::pin(handle_music_index(args)),
         "music.search" => Box::pin(handle_music_search(args)),
         "music.assign" => Box::pin(handle_music_assign(args)),
@@ -1389,6 +1421,7 @@ pub fn route_tool(
         "gif.search" => Box::pin(handle_gif_search(args)),
         "gif.download" => Box::pin(handle_gif_download(args)),
         "overlay.assign" => Box::pin(handle_overlay_assign(args)),
+        "sticker.auto_assign" => Box::pin(handle_sticker_auto_assign(args)),
         "timeline.to_hyperframes" => Box::pin(handle_timeline_to_hyperframes(args)),
         "voices.list" => Box::pin(handle_voices_list(args)),
         "timeline.inspect" => Box::pin(handle_timeline_inspect(args)),
@@ -3366,16 +3399,188 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
         "status": status,
         "matched": matched,
         "message": message,
-        "event_id": event_id,
-        "position_ms": position_ms,
-        "timeline_path": timeline_path,
-        "asset_path": sfx_path,
-    }))
-}
+        "event_id": event_id,            "position_ms": position_ms,
+            "timeline_path": timeline_path,
+            "asset_path": sfx_path,
+        }))
+    }
 
-// ---------------------------------------------------------------------------
-// Handler: music.index (native via openscript-assets)
-// ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Handler: sfx.auto_assign (convenience wrapper)
+    // ---------------------------------------------------------------------------
+
+    async fn handle_sfx_auto_assign(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+        use openscript_assets::sfx::SfxIndex;
+
+        let timeline_path = extract_str(&args, "timeline_path")?;
+        let gain_db = default_f64(&args, "gain_db", -10.0);
+        let skip_hook = args.get("skip_hook").and_then(|v| v.as_bool()).unwrap_or(false);
+        let skip_outro = args.get("skip_outro").and_then(|v| v.as_bool()).unwrap_or(false);
+
+        let mut timeline = Timeline::load(timeline_path)?;
+        let segments = timeline.tracks.get(&TrackType::Dialogue).map(|t| t.clone()).unwrap_or_default();
+        if segments.is_empty() {
+            return Ok(json!({"status": "warning", "message": "No segments found — cannot auto-assign SFX", "events_created": 0}));
+        }
+
+        let index_path = std::env::var("OPENSCRIPT_SFX_INDEX")
+            .unwrap_or_else(|_| "mcp/assets/sfx_index.json".to_string());
+        let sfx_index = SfxIndex::load(Some(&index_path)).ok();
+        if sfx_index.is_none() {
+            return Ok(json!({"status": "warning", "message": "SFX index not found — run sfx.index first", "events_created": 0}));
+        }
+        let sfx_index = sfx_index.unwrap();
+
+        let mut events_created: Vec<serde_json::Value> = Vec::new();
+        let mut current_idx = track_count(&timeline, &TrackType::Sfx);
+
+        // 1) Hook SFX at the beginning
+        if !skip_hook {
+            let matched = sfx_index.search("", Some("intro"), None, 1).into_iter().next().cloned();
+            if matched.is_none() {
+                // No intro SFX in library — skip hook
+            } else {
+            current_idx += 1;
+            let event_id = format!("sfx_{:03}", current_idx);
+            let duration_ms = matched.as_ref().map(|a| a.duration_ms).unwrap_or(1000);
+            let path = matched.as_ref().map(|a| a.path.clone());
+            let event = openscript_core::timeline::TimelineEvent {
+                id: event_id.clone(),
+                asset_id: path.clone().unwrap_or_else(|| "hook".to_string()),
+                start_ms: 0,
+                end_ms: duration_ms,
+                offset_ms: 0,
+                gain_db,
+                fade_in_ms: 50,
+                fade_out_ms: 50,
+                tags: vec!["hook".to_string()],
+                provenance: Some(openscript_core::timeline::Provenance {
+                    tool: "sfx.auto_assign".into(),
+                    editorial_role: Some("hook".into()),
+                    concept: None,
+                }),
+                kind: openscript_core::timeline::EventKind::Sfx {
+                    editorial_role: "hook".to_string(),
+                    category: String::new(),
+                    subcategory: String::new(),
+                    duration_ms,
+                    sample_rate: 44100,
+                    peak_db: 0.0,
+                    loudness_lufs: -14.0,
+                    recommended_gain_db: gain_db,
+                    recommended_use: "single_hit".into(),
+                    safe_overlay: true,
+                },
+            };
+            timeline.add_track_event(TrackType::Sfx, event);
+            if let Some(ref p) = path {
+                timeline.add_asset("sfx", event_id.clone(), json!({"path": p}));
+            }
+            events_created.push(json!({"event_id": event_id, "role": "hook", "position_ms": 0}));
+            } // end if matched.is_some()
+        }
+
+        // 2) Transition SFX at each segment boundary (after each segment ends)
+        for seg in &segments {
+            let matched = sfx_index.search("", Some("transition"), None, 1).into_iter().next().cloned();
+            if matched.is_none() { continue; }
+            current_idx += 1;
+            let event_id = format!("sfx_{:03}", current_idx);
+            let position_ms = seg.end_ms;
+            let duration_ms = matched.as_ref().map(|a| a.duration_ms).unwrap_or(1000);
+            let path = matched.as_ref().map(|a| a.path.clone());
+            let event = openscript_core::timeline::TimelineEvent {
+                id: event_id.clone(),
+                asset_id: path.clone().unwrap_or_else(|| "transition".to_string()),
+                start_ms: position_ms,
+                end_ms: position_ms + duration_ms,
+                offset_ms: 0,
+                gain_db,
+                fade_in_ms: 50,
+                fade_out_ms: 50,
+                tags: vec!["transition".to_string()],
+                provenance: Some(openscript_core::timeline::Provenance {
+                    tool: "sfx.auto_assign".into(),
+                    editorial_role: Some("transition".into()),
+                    concept: None,
+                }),
+                kind: openscript_core::timeline::EventKind::Sfx {
+                    editorial_role: "transition".to_string(),
+                    category: String::new(),
+                    subcategory: String::new(),
+                    duration_ms,
+                    sample_rate: 44100,
+                    peak_db: 0.0,
+                    loudness_lufs: -14.0,
+                    recommended_gain_db: gain_db,
+                    recommended_use: "single_hit".into(),
+                    safe_overlay: true,
+                },
+            };
+            timeline.add_track_event(TrackType::Sfx, event);
+            if let Some(ref p) = path {
+                timeline.add_asset("sfx", event_id.clone(), json!({"path": p}));
+            }
+            events_created.push(json!({"event_id": event_id, "role": "transition", "position_ms": position_ms}));
+        }
+
+        // 3) Outro SFX at the end
+        if !skip_outro {
+            let last_end = segments.last().map(|s| s.end_ms).unwrap_or(0);
+            let matched = sfx_index.search("", Some("outro"), None, 1).into_iter().next().cloned();
+            if matched.is_some() {
+            current_idx += 1;
+            let event_id = format!("sfx_{:03}", current_idx);
+            let duration_ms = matched.as_ref().map(|a| a.duration_ms).unwrap_or(1000);
+            let path = matched.as_ref().map(|a| a.path.clone());
+            let event = openscript_core::timeline::TimelineEvent {
+                id: event_id.clone(),
+                asset_id: path.clone().unwrap_or_else(|| "outro".to_string()),
+                start_ms: last_end,
+                end_ms: last_end + duration_ms,
+                offset_ms: 0,
+                gain_db,
+                fade_in_ms: 50,
+                fade_out_ms: 50,
+                tags: vec!["outro".to_string()],
+                provenance: Some(openscript_core::timeline::Provenance {
+                    tool: "sfx.auto_assign".into(),
+                    editorial_role: Some("outro".into()),
+                    concept: None,
+                }),
+                kind: openscript_core::timeline::EventKind::Sfx {
+                    editorial_role: "outro".to_string(),
+                    category: String::new(),
+                    subcategory: String::new(),
+                    duration_ms,
+                    sample_rate: 44100,
+                    peak_db: 0.0,
+                    loudness_lufs: -14.0,
+                    recommended_gain_db: gain_db,
+                    recommended_use: "single_hit".into(),
+                    safe_overlay: true,
+                },
+            };
+            timeline.add_track_event(TrackType::Sfx, event);
+            if let Some(ref p) = path {
+                timeline.add_asset("sfx", event_id.clone(), json!({"path": p}));
+            }
+            events_created.push(json!({"event_id": event_id, "role": "outro", "position_ms": last_end}));
+            } // end if matched.is_some()
+        }
+
+        timeline.save(timeline_path)?;
+        Ok(json!({
+            "status": "success",
+            "events_created": events_created.len(),
+            "positions": events_created,
+            "timeline_path": timeline_path,
+        }))
+    }
+
+    // ---------------------------------------------------------------------------
+    // Handler: music.index (native via openscript-assets)
+    // ---------------------------------------------------------------------------
 
 async fn handle_music_index(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_assets::music::MusicIndex;
@@ -13715,6 +13920,148 @@ async fn handle_overlay_assign(args: serde_json::Value) -> Result<serde_json::Va
         "duration_ms": duration_ms,
         "position": position,
         "scale": scale,
+        "timeline_path": timeline_path,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: sticker.auto_assign — auto-place stickers/GIFs at segment positions
+// ---------------------------------------------------------------------------
+
+async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let timeline_path = extract_str(&args, "timeline_path")?;
+    let sticker_query: Option<String> = args.get("sticker_query").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let position = default_str(&args, "position", "bottom-right");
+    let scale = default_f64(&args, "scale", 0.2);
+    let max_stickers = default_u32(&args, "max_stickers", 10) as usize;
+
+    let mut timeline = Timeline::load(timeline_path)?;
+    let segments = timeline.tracks.get(&TrackType::Dialogue).map(|t| t.clone()).unwrap_or_default();
+    if segments.is_empty() {
+        return Ok(json!({"status": "warning", "message": "No segments found — cannot auto-assign stickers", "events_created": 0}));
+    }
+
+    // Check for GIPHY key
+    let giphy_api_key = std::env::var("GIPHY_API_KEY").ok();
+    if giphy_api_key.is_none() {
+        return Ok(json!({"status": "warning", "message": "GIPHY_API_KEY not set — cannot search for stickers. Set GIPHY_API_KEY env var.", "events_created": 0}));
+    }
+    let giphy_api_key = giphy_api_key.unwrap();
+
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| ToolError::Asset(format!("HTTP client: {}", e)))?;
+
+    let mut events_created: Vec<serde_json::Value> = Vec::new();
+    let mut current_idx = track_count(&timeline, &TrackType::Broll);
+    let stickers_dir = std::path::PathBuf::from("mcp/assets/stickers");
+    let _ = std::fs::create_dir_all(&stickers_dir);
+
+    let count = segments.len().min(max_stickers);
+    for (i, seg) in segments.iter().take(count).enumerate() {
+        // Derive query from segment provenance, tags, or fallback
+        let query = if let Some(ref q) = sticker_query {
+            q.clone()
+        } else if let Some(ref prov) = seg.provenance {
+            // Use provenance.concept if available (e.g., from broll.plan or segment.analyze)
+            prov.concept.clone().unwrap_or_else(|| "funny".to_string())
+        } else {
+            // Fallback: extract words from tags
+            let caption = seg.tags.first().cloned().unwrap_or_else(|| "funny".to_string());
+            let words: Vec<&str> = caption.split_whitespace().filter(|w: &&str| w.len() > 3).take(3).collect();
+            if words.is_empty() { "funny".to_string() } else { words.join(" ") }
+        };
+
+        // Search GIPHY for a sticker (use reqwest URL encoding)
+        let url = reqwest::Url::parse_with_params(
+            "https://api.giphy.com/v1/stickers/search",
+            &[
+                ("api_key", giphy_api_key.as_str()),
+                ("q", query.as_str()),
+                ("limit", "1"),
+                ("rating", "g"),
+                ("bundle", "sticker_layering"),
+            ],
+        ).map_err(|e| ToolError::InvalidArg(format!("URL parse: {}", e)))?;
+
+        let resp = match http.get(url).send().await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        if !resp.status().is_success() { continue; }
+        let body: serde_json::Value = match resp.json().await {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let data = body.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+        if data.is_empty() { continue; }
+
+        let item = &data[0];
+        let gif_url = item.pointer("/images/original/url").and_then(|v| v.as_str()).unwrap_or("");
+        if gif_url.is_empty() { continue; }
+
+        // Download the sticker
+        let sticker_path = stickers_dir.join(format!("sticker_auto_{}.gif", i));
+        match http.get(gif_url).send().await {
+            Ok(r) if r.status().is_success() => {
+                let bytes = r.bytes().await.unwrap_or_default();
+                if bytes.is_empty() { continue; }
+                let _ = std::fs::write(&sticker_path, &bytes);
+            }
+            _ => continue,
+        }
+
+        // Place on broll track (same pattern as handle_overlay_assign)
+        current_idx += 1;
+        let event_id = format!("sticker_{:03}", current_idx);
+        let start_ms = seg.start_ms;
+        let end_ms = seg.end_ms.min(start_ms + 5000); // Cap at 5s
+        let asset_path_str = sticker_path.to_string_lossy().to_string();
+
+        let event = openscript_core::timeline::TimelineEvent {
+            id: event_id.clone(),
+            asset_id: asset_path_str.clone(),
+            start_ms,
+            end_ms,
+            offset_ms: 0,
+            gain_db: 0.0,
+            fade_in_ms: 150,
+            fade_out_ms: 150,
+            tags: vec!["sticker".to_string(), position.clone()],
+            provenance: Some(openscript_core::timeline::Provenance {
+                tool: "sticker.auto_assign".into(),
+                editorial_role: Some("decoration".into()),
+                concept: Some(query.clone()),
+            }),
+            kind: openscript_core::timeline::EventKind::Broll {
+                concept: format!("overlay:{}", position),
+                source_provider: asset_path_str.clone(),
+                transition_style: "overlay".into(),
+                crop_mode: "none".into(),
+                orientation: "9:16".into(),
+                motion_intensity: "static".into(),
+            },
+        };
+
+        timeline.add_track_event(TrackType::Broll, event);
+        timeline.add_asset("broll", event_id.clone(), json!({
+            "path": asset_path_str,
+            "position": position,
+            "scale": scale,
+        }));
+        events_created.push(json!({
+            "event_id": event_id,
+            "position_ms": start_ms,
+            "sticker_path": sticker_path.to_string_lossy(),
+        }));
+    }
+
+    timeline.save(timeline_path)?;
+    Ok(json!({
+        "status": "success",
+        "events_created": events_created.len(),
+        "positions": events_created,
         "timeline_path": timeline_path,
     }))
 }
