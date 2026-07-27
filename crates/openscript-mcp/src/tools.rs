@@ -293,8 +293,9 @@ pub fn tool_definitions() -> serde_json::Value {
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Explicit output path for the timeline JSON. Overrides timeline_path for the save location. Auto-generated from srt_path if omitted."},
             "crossfade_ms": {"type": "integer", "default": 80, "description": "Audio crossfade between segments in ms"},
             "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio for new timelines"},
-            "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"},
-            "scene_size": {"type": "integer", "default": 1, "description": "Group N consecutive SRT entries into one segment (e.g., scene_size=4 groups 4 entries per segment). Set to 1 for one-segment-per-entry. Controls segmentation granularity for b-roll placement."}
+            "fps": {"type": "integer", "default": 30, "description": "Target framerate for new timelines"},                    "scene_size": {"type": "integer", "default": 1, "description": "Group N consecutive SRT entries into one segment (e.g., scene_size=4 groups 4 entries per segment). Set to 1 for one-segment-per-entry. Controls segmentation granularity for b-roll placement. Overridden by max_duration_s when set."},
+                    "max_duration_s": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": null, "description": "Maximum duration per segment in seconds. When set, groups SRT entries by pause detection (>300ms gaps) and splits segments exceeding this duration. Produces 2-6s segments ideal for short-form b-roll pacing. Overrides scene_size."},
+                    "min_duration_s": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": null, "description": "Minimum duration per segment in seconds. Segments shorter than this are merged with adjacent segments. Only effective when max_duration_s is set."}
                 },
                 "required": ["srt_path"],
                 "additionalProperties": false
@@ -2600,6 +2601,8 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     let aspect = default_str(&args, "aspect", "9:16");
     let fps = default_u32(&args, "fps", 30);
     let scene_size = args.get("scene_size").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+    let max_duration_s: Option<f64> = args.get("max_duration_s").and_then(|v| v.as_f64());
+    let min_duration_s: Option<f64> = args.get("min_duration_s").and_then(|v| v.as_f64());
 
     // Parse SRT file
     let entries = parse_srt(&srt_path)
@@ -2626,24 +2629,58 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         Timeline::new(source_path, &aspect, fps, None)
     };
 
-    // Add each SRT entry as a segment, grouped by scene_size
-    let mut segments_count = 0;
-    if scene_size <= 1 {
-        // One segment per SRT entry (default behavior)
+    // Add SRT entries as segments
+    let mut segments_count = 0usize;
+
+    if let Some(max_dur) = max_duration_s {
+        // === SENTENCE-AWARE MODE: duration-based grouping ===
+        // Uses pause detection (>300ms gaps) and duration caps
+        let min_dur = min_duration_s.unwrap_or(2.0);
+        let grouped = openscript_core::srt::group_entries_with_words_max_duration(
+            &entries,
+            15,    // max_words per segment
+            80,    // max_chars per segment
+            0.3,   // max_gap: 300ms pause = sentence boundary
+            max_dur,
+        );
+
+        // Convert GroupedPhrase to timeline segments
+        let mut raw_segments: Vec<(f64, f64, String)> = grouped.into_iter().map(|g| {
+            (g.start, g.end, g.text)
+        }).collect();
+
+        // Merge segments shorter than min_duration_s with next segment
+        let mut merged: Vec<(f64, f64, String)> = Vec::new();
+        for (start, end, text) in raw_segments.drain(..) {
+            if let Some(last) = merged.last_mut() {
+                let last_dur = last.1 - last.0;
+                if last_dur < min_dur {
+                    // Merge: extend last segment to include this one
+                    last.1 = end;
+                    last.2 = format!("{} {}", last.2, text);
+                    continue;
+                }
+            }
+            merged.push((start, end, text));
+        }
+
+        // Add merged segments to timeline
+        for (start, end, caption) in &merged {
+            if *end > *start {
+                timeline.add_segment(*start, *end, caption, crossfade_ms, None);
+                segments_count += 1;
+            }
+        }
+    } else if scene_size <= 1 {
+        // === LEGACY MODE: one segment per entry ===
         for entry in &entries {
             if entry.end > entry.start {
-                timeline.add_segment(
-                    entry.start,
-                    entry.end,
-                    &entry.text,
-                    crossfade_ms,
-                    None,
-                );
+                timeline.add_segment(entry.start, entry.end, &entry.text, crossfade_ms, None);
                 segments_count += 1;
             }
         }
     } else {
-        // Group scene_size consecutive entries into one segment
+        // === LEGACY MODE: fixed chunk grouping ===
         for chunk in entries.chunks(scene_size) {
             let valid: Vec<_> = chunk.iter().filter(|e| e.end > e.start).collect();
             if valid.is_empty() { continue; }
