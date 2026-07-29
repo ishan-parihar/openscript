@@ -2677,7 +2677,20 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
 
     let source_path = source_video.as_ref()
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(std::path::PathBuf::new);
+        .unwrap_or_else(|| {
+            // Derive source from SRT path — replace .srt with original media extension
+            // Try common extensions: .mp4, .mp3, .wav, .mkv, .webm
+            let srt_parent = std::path::Path::new(&srt_path).parent().unwrap_or(std::path::Path::new("."));
+            let srt_stem = std::path::Path::new(&srt_path).file_stem().unwrap_or_default();
+            for ext in &[".mp4", ".mp3", ".wav", ".mkv", ".webm", ".m4a"] {
+                let candidate = srt_parent.join(format!("{}{}", srt_stem.to_string_lossy(), ext));
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+            // Fallback: use the SRT path itself (render will handle it)
+            std::path::PathBuf::from(&srt_path)
+        });
 
     let mut timeline = if let Some(ref tp) = timeline_path_arg {
         if !tp.is_empty() && std::path::Path::new(tp).exists() {
