@@ -1962,6 +1962,8 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
             tl.assets.captions.insert("ass".to_string(), serde_json::json!({
                 "path": canonical_ass.to_string_lossy().to_string(),
             }));
+            // Register caption style in effects so verify.production can detect it
+            tl.effects.caption_style = Some(style.clone());
             tl.updated_at = chrono::Utc::now();
             let _ = tl.save(tl_path);
         }

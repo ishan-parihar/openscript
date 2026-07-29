@@ -244,6 +244,9 @@ pub struct AssetRegistry {
 pub struct Effects {
     pub burn_captions: bool,
     pub audio: AudioEffects,
+    /// Caption style used (e.g., "word_highlight", "standard", "kinetic")
+    #[serde(default)]
+    pub caption_style: Option<String>,
 }
 
 fn default_true() -> bool { true }

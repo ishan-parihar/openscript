@@ -49,6 +49,7 @@ impl Timeline {
             effects: Effects {
                 burn_captions: true,
                 audio: AudioEffects { loudnorm: true },
+                caption_style: None,
             },
         }
     }
