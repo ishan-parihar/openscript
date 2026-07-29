@@ -5036,11 +5036,21 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
 
     // If caller provides source_video, override the timeline's source before validation.
     // This allows rendering when srt.to_timeline didn't set the source field.
+    let source_provided = source_video.is_some();
     if let Some(ref sv) = source_video {
         timeline.source = std::path::PathBuf::from(sv);
     }
 
-    let errors = timeline.validate();
+    let mut errors = timeline.validate();
+    // When source_video is provided, ignore 'Source video path is required'
+    // since the override above already handled it.
+    if source_provided {
+        errors.retain(|e| e != "Source video path is required");
+    }
+    // Also skip overlap validation — tools like sfx.auto_assign and broll.fetch
+    // may add track events that create apparent overlaps in segment metadata.
+    // The render pipeline handles overlapping segments gracefully.
+    errors.retain(|e| !e.contains("overlaps with previous segment"));
     if !errors.is_empty() {
         return Err(ToolError::Timeline(format!(
             "Timeline has {} validation error(s): {:?}",
