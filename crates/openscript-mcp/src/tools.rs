@@ -567,7 +567,8 @@ pub fn tool_definitions() -> serde_json::Value {
                 "properties": {
                     "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segments array from broll.plan or segment.analyze. Each segment's caption is translated to English keywords."},
                     "video_title": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional video title for context — helps the LLM understand the overall topic and generate more relevant keywords."},
-                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions: 'hinglish', 'hindi', 'english', 'mixed'. Helps the LLM choose the right translation strategy."}
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions: 'hinglish', 'hindi', 'english', 'mixed'. Helps the LLM choose the right translation strategy."},
+                    "max_batch_size": {"type": "integer", "default": 15, "description": "Max segments per LLM call. Prevents context overflow on small local models. Default 15 works for 4B-param models."}
                 },
                 "required": ["segments"],
                 "additionalProperties": false
@@ -5153,20 +5154,9 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
         .and_then(|v| v.as_str())
         .unwrap_or("hinglish");
 
-    // Build the prompt for batch keyword extraction
-    // We send ALL segments in one LLM call for efficiency
-    let mut segment_descriptions = Vec::new();
-    for (i, seg) in segments.iter().enumerate() {
-        let caption = seg.get("caption")
-            .or_else(|| seg.get("text"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let fallback_id = format!("seg_{}", i);
-        let id = seg.get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&fallback_id);
-        segment_descriptions.push(format!("[{}] {}: \"{}\"", id, i + 1, caption));
-    }
+    let max_batch_size = args.get("max_batch_size")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(15) as usize;
 
     let title_context = if !video_title.is_empty() {
         format!("\nVideo title/context: \"{}\"\n", video_title)
@@ -5174,66 +5164,93 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
         String::new()
     };
 
-    let system_prompt = format!(
-        "You are a stock footage search keyword extractor for a video production pipeline. \
-        Your job: translate transcript captions into English visual search keywords for stock video sites (Pexels, Pixabay). \
-        \
-        Rules:
-        1. Output ONLY valid JSON — no markdown, no explanation
-        2. For each segment, output 2-3 English keywords that describe what VISUAL CONTENT should appear on screen
-        3. Translate Hinglish/Hindi to English. Use the MEANING, not literal word-for-word translation
-        4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
-        5. Avoid abstract concepts — prefer concrete, searchable visual terms
-        6. Each keyword should be 1-3 words maximum
-        7. Source language detected: {}\n{}\
-        Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
-        language, title_context
-    );
+    // Build a lookup from segment id -> keywords (across all batches)
+    let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut last_backend = String::new();
+    let mut last_model = String::new();
+    let total = segments.len();
+    let num_batches = (total + max_batch_size - 1) / max_batch_size;
 
-    let user_prompt = format!(
-        "Extract visual search keywords for each segment. Output ONLY the JSON object.\n\n{}",
-        segment_descriptions.join("\n")
-    );
+    for batch_idx in 0..num_batches {
+        let start = batch_idx * max_batch_size;
+        let end = std::cmp::min(start + max_batch_size, total);
+        let batch = &segments[start..end];
 
-    report_progress(10.0, 100.0, "Extracting keywords via LLM...").await.ok();
+        let progress_pct = 10.0 + (batch_idx as f64 / num_batches as f64) * 70.0;
+        report_progress(progress_pct, 100.0, &format!("Extracting keywords batch {}/{}...", batch_idx + 1, num_batches)).await.ok();
 
-    // Call the LLM cascade
-    let result = crate::llm::chat_complete(&system_prompt, &user_prompt, None).await
-        .map_err(|e| ToolError::InvalidArg(format!("LLM keyword extraction failed: {}. Ensure a local model (Ollama) or OPENROUTER_API_KEY is configured.", e)))?;
+        // Build segment descriptions for this batch
+        let mut segment_descriptions = Vec::new();
+        for (j, seg) in batch.iter().enumerate() {
+            let i = start + j;
+            let caption = seg.get("caption")
+                .or_else(|| seg.get("text"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let fallback_id = format!("seg_{}", i);
+            let id = seg.get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&fallback_id);
+            segment_descriptions.push(format!("[{}] {}: \"{}\"", id, i + 1, caption));
+        }
 
-    report_progress(90.0, 100.0, "Parsing keyword results...").await.ok();
+        let system_prompt = format!(
+            "You are a stock footage search keyword extractor for a video production pipeline. \
+            Your job: translate transcript captions into English visual search keywords for stock video sites (Pexels, Pixabay). \
+            \
+            Rules:
+            1. Output ONLY valid JSON — no markdown, no explanation
+            2. For each segment, output 2-3 English keywords that describe what VISUAL CONTENT should appear on screen
+            3. Translate Hinglish/Hindi to English. Use the MEANING, not literal word-for-word translation
+            4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
+            5. Avoid abstract concepts — prefer concrete, searchable visual terms
+            6. Each keyword should be 1-3 words maximum
+            7. Source language detected: {}\n{}\
+            Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
+            language, title_context
+        );
 
-    // Parse the LLM response — extract JSON from the response
-    let response_text = result.text.trim();
-    let parsed: serde_json::Value = if let Some(start) = response_text.find('{') {
-        if let Some(end) = response_text.rfind('}') {
-            serde_json::from_str(&response_text[start..=end])
-                .unwrap_or_else(|_| json!({"results": []}))
+        let user_prompt = format!(
+            "Extract visual search keywords for each segment. Output ONLY the JSON object.\n\n{}",
+            segment_descriptions.join("\n")
+        );
+
+        // Call the LLM cascade for this batch
+        let result = crate::llm::chat_complete(&system_prompt, &user_prompt, None).await
+            .map_err(|e| ToolError::InvalidArg(format!("LLM keyword extraction failed on batch {}: {}. Ensure a local model (Ollama) or OPENCODE_API/OPENROUTER_API_KEY is configured.", batch_idx + 1, e)))?;
+
+        // Parse the LLM response — extract JSON from the response
+        let response_text = result.text.trim();
+        let parsed: serde_json::Value = if let Some(start) = response_text.find('{') {
+            if let Some(end) = response_text.rfind('}') {
+                serde_json::from_str(&response_text[start..=end])
+                    .unwrap_or_else(|_| json!({"results": []}))
+            } else {
+                json!({"results": []})
+            }
         } else {
             json!({"results": []})
-        }
-    } else {
-        json!({"results": []})
-    };
+        };
 
-    // Map LLM results back to segments
-    let llm_results = parsed.get("results")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
+        last_backend = result.backend;
+        last_model = result.model;
 
-    // Build a lookup from segment id -> keywords
-    let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    for r in &llm_results {
-        if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
-            if let Some(kws) = r.get("keywords").and_then(|v| v.as_array()) {
-                let keywords: Vec<String> = kws.iter()
-                    .filter_map(|k| k.as_str().map(String::from))
-                    .collect();
-                keyword_map.insert(id.to_string(), keywords);
+        // Merge batch results into the keyword_map
+        if let Some(results) = parsed.get("results").and_then(|v| v.as_array()) {
+            for r in results {
+                if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
+                    if let Some(kws) = r.get("keywords").and_then(|v| v.as_array()) {
+                        let keywords: Vec<String> = kws.iter()
+                            .filter_map(|k| k.as_str().map(String::from))
+                            .collect();
+                        keyword_map.insert(id.to_string(), keywords);
+                    }
+                }
             }
         }
     }
+
+    report_progress(90.0, 100.0, "Assembling results...").await.ok();
 
     // Build the output: enrich each segment with LLM-generated keywords
     let mut enriched_segments = Vec::new();
@@ -5285,8 +5302,8 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
 
     Ok(json!({
         "status": "success",
-        "backend": result.backend,
-        "model": result.model,
+        "backend": last_backend,
+        "model": last_model,
         "segments_count": enriched_segments.len(),
         "segments": enriched_segments,
     }))
