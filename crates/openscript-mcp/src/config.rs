@@ -100,6 +100,8 @@ pub struct ApiKeys {
     pub pixabay: String,
     #[serde(default, alias = "openrouter_api_key")]
     pub openrouter: String,
+    #[serde(default, alias = "opencode_api_key")]
+    pub opencode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +129,12 @@ pub struct LlmConfig {
     /// Prefer openrouter for multimodal when an image is attached (default true)
     #[serde(default = "default_true")]
     pub prefer_openrouter_vision: bool,
+    /// OpenCode API base URL (opencode.ai compatible)
+    #[serde(default = "default_opencode_base_url")]
+    pub opencode_base_url: String,
+    /// OpenCode model name
+    #[serde(default = "default_opencode_model")]
+    pub opencode_model: String,
 }
 
 fn default_true() -> bool {
@@ -148,6 +156,12 @@ fn default_openrouter_models() -> Vec<String> {
         "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free".into(),
     ]
 }
+fn default_opencode_base_url() -> String {
+    "https://opencode.ai/zen/v1".into()
+}
+fn default_opencode_model() -> String {
+    "mimo-v2.5-free".into()
+}
 
 impl Default for LlmConfig {
     fn default() -> Self {
@@ -160,6 +174,8 @@ impl Default for LlmConfig {
             openrouter_base_url: default_openrouter_base_url(),
             openrouter_models: default_openrouter_models(),
             prefer_openrouter_vision: true,
+            opencode_base_url: default_opencode_base_url(),
+            opencode_model: default_opencode_model(),
         }
     }
 }
@@ -253,6 +269,11 @@ impl OpenScriptConfig {
                 self.api_keys.openrouter = v;
             }
         }
+        if self.api_keys.opencode.is_empty() {
+            if let Some(v) = take(&self.legacy, "opencode_api_key") {
+                self.api_keys.opencode = v;
+            }
+        }
         // Expand tildes in llm paths
         if let Some(ref p) = self.llm.gguf_path {
             self.llm.gguf_path = Some(expand_tilde(p));
@@ -275,6 +296,9 @@ impl OpenScriptConfig {
         }
         if self.api_keys.openrouter.is_empty() {
             self.api_keys.openrouter = other.api_keys.openrouter.clone();
+        }
+        if self.api_keys.opencode.is_empty() {
+            self.api_keys.opencode = other.api_keys.opencode.clone();
         }
         // llm: only fill missing optionals / empty model if somehow empty
         if self.llm.gguf_path.is_none() {
@@ -375,6 +399,7 @@ pub fn write_user_config(cfg: &OpenScriptConfig) -> Result<PathBuf, String> {
             "giphy": cfg.api_keys.giphy,
             "pixabay": cfg.api_keys.pixabay,
             "openrouter": cfg.api_keys.openrouter,
+            "opencode": cfg.api_keys.opencode,
         },
         "llm": {
             "local_model": cfg.llm.local_model,
@@ -385,6 +410,8 @@ pub fn write_user_config(cfg: &OpenScriptConfig) -> Result<PathBuf, String> {
             "openrouter_base_url": cfg.llm.openrouter_base_url,
             "openrouter_models": cfg.llm.openrouter_models,
             "prefer_openrouter_vision": cfg.llm.prefer_openrouter_vision,
+            "opencode_base_url": cfg.llm.opencode_base_url,
+            "opencode_model": cfg.llm.opencode_model,
         },
         "paths": cfg.paths,
         "render": cfg.render,
@@ -428,6 +455,9 @@ pub fn resolve_api_key(kind: &str) -> String {
         "openrouter" => env_nonempty("OPENROUTER_API_KEY")
             .or_else(|| env_nonempty("OPENROUTER_KEY"))
             .unwrap_or_else(|| cfg.api_keys.openrouter.clone()),
+        "opencode" => env_nonempty("OPENCODE_API")
+            .or_else(|| env_nonempty("OPENCODE_API_KEY"))
+            .unwrap_or_else(|| cfg.api_keys.opencode.clone()),
         _ => String::new(),
     }
 }
@@ -528,6 +558,22 @@ pub fn resolve_local_vision() -> bool {
 
 pub fn resolve_prefer_openrouter_vision() -> bool {
     config().llm.prefer_openrouter_vision
+}
+
+pub fn resolve_opencode_api_key() -> String {
+    env_nonempty("OPENCODE_API")
+        .or_else(|| env_nonempty("OPENCODE_API_KEY"))
+        .unwrap_or_else(|| config().api_keys.opencode.clone())
+}
+
+pub fn resolve_opencode_base_url() -> String {
+    env_nonempty("OPENCODE_BASE_URL")
+        .unwrap_or_else(|| config().llm.opencode_base_url.clone())
+}
+
+pub fn resolve_opencode_model() -> String {
+    env_nonempty("OPENCODE_MODEL")
+        .unwrap_or_else(|| config().llm.opencode_model.clone())
 }
 
 /// Redacted public view for system.capabilities / system.config.get

@@ -72,6 +72,10 @@ fn openrouter_key() -> String {
     config::resolve_api_key("openrouter")
 }
 
+fn opencode_key() -> String {
+    config::resolve_opencode_api_key()
+}
+
 /// Probe which backends are usable.
 pub async fn probe_llm_capabilities() -> Value {
     let cascade = LlmCascade::default();
@@ -114,7 +118,22 @@ pub async fn probe_llm_capabilities() -> Value {
                 )
             },
         },
+        "opencode": {
+            "available": !opencode_key().is_empty(),
+            "base_url": config::resolve_opencode_base_url(),
+            "model": config::resolve_opencode_model(),
+            "reason": if !opencode_key().is_empty() {
+                Value::Null
+            } else {
+                Value::String(
+                    "OpenCode key not set. Add api_keys.opencode in ~/.openscript/config.json \
+                     or set OPENCODE_API env var — cloud LLM fallback disabled."
+                        .into(),
+                )
+            },
+        },
         "cascade_text": [
+            format!("opencode:{}", config::resolve_opencode_model()),
             format!("local:{}", cascade.local_model),
             format!("openrouter:{}", cascade.openrouter_models.first().cloned().unwrap_or_default()),
             format!("openrouter:{}", cascade.openrouter_models.get(1).cloned().unwrap_or_default()),
@@ -235,6 +254,34 @@ pub async fn chat_complete_with_backend(
         None
     }
 
+    async fn run_opencode(
+        system: &str,
+        user: &str,
+        image_b64_jpeg: Option<&str>,
+        errors: &mut Vec<String>,
+    ) -> Option<ChatResult> {
+        let key = opencode_key();
+        let base_url = config::resolve_opencode_base_url();
+        let model = config::resolve_opencode_model();
+        if key.is_empty() {
+            errors.push(
+                "opencode: no key (set api_keys.opencode in ~/.openscript/config.json or OPENCODE_API env)".into(),
+            );
+            return None;
+        }
+        match openai_chat(&base_url, &model, Some(key.as_str()), system, user, image_b64_jpeg).await {
+            Ok(text) => Some(ChatResult {
+                text: strip_think_tags(&text),
+                backend: "opencode".into(),
+                model,
+            }),
+            Err(e) => {
+                errors.push(format!("opencode/{}: {}", model, e));
+                None
+            }
+        }
+    }
+
     async fn run_local(
         cascade: &LlmCascade,
         local_up: bool,
@@ -318,8 +365,17 @@ pub async fn chat_complete_with_backend(
                 return Ok(r);
             }
         }
+        "opencode" => {
+            if let Some(r) = run_opencode(system, user, image_b64_jpeg, &mut errors).await {
+                return Ok(r);
+            }
+        }
         _ => {
-            // auto: vision prefers OpenRouter; text prefers local
+            // auto: opencode → local → openrouter
+            // Try opencode first (cloud, fast, free tier)
+            if let Some(r) = run_opencode(system, user, image_b64_jpeg, &mut errors).await {
+                return Ok(r);
+            }
             if prefer_or_vision {
                 if let Some(r) =
                     run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
