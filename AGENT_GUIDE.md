@@ -168,7 +168,7 @@ help.tool           — Natural-language tool discovery
 | `audio.to_video` | **DELETED** | Use atomic pipeline: transcribe → srt.prepare → srt.to_timeline → segment.analyze → broll.fetch → timeline.render |
 | `reelize.timeline` | **DELETED** | Use atomic pipeline: transcribe → srt.prepare → srt.to_timeline → segment.analyze → broll.fetch → timeline.render |
 | `broll.director` | **DELETED** | Use `broll.plan` + agent keywords + `broll.fetch` |
-| `music.search` | **DEPRECATED** | Use `library.search` |
+| `music.search` | **Re-added (Phase 107)** | Queries music_index.json by mood/energy/keyword/tags, returns local paths |
 
 ---
 
