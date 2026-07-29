@@ -4029,14 +4029,28 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         resp["warnings"] = json!(warnings);
     }
 
-    // AUTO-PLACE: If timeline_path and segments provided, place each clip on timeline
+    // AUTO-PLACE: If timeline_path provided, place each clip on timeline
     let timeline_path = default_opt_str(&args, "timeline_path");
-    let segments: Vec<serde_json::Value> = args.get("segments")
+    let segments_arg: Vec<serde_json::Value> = args.get("segments")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
 
     if let Some(ref tl_path) = timeline_path {
+        // Load segments from timeline if not provided in args
+        let segments = if !segments_arg.is_empty() {
+            segments_arg
+        } else if std::path::Path::new(tl_path).exists() {
+            // Read segments directly from the timeline JSON
+            if let Ok(tl_str) = std::fs::read_to_string(tl_path) {
+                if let Ok(tl_val) = serde_json::from_str::<serde_json::Value>(&tl_str) {
+                    tl_val.get("segments")
+                        .and_then(|s| s.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                } else { Vec::new() }
+            } else { Vec::new() }
+        } else { Vec::new() };
         if !segments.is_empty() {
             let mut tl = Timeline::load(tl_path)
                 .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to load timeline: {}", e))))?;
