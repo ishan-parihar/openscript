@@ -5156,13 +5156,30 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
 
     let max_batch_size = args.get("max_batch_size")
         .and_then(|v| v.as_u64())
-        .unwrap_or(15) as usize;
+        .unwrap_or(15).max(1) as usize;
 
     let title_context = if !video_title.is_empty() {
         format!("\nVideo title/context: \"{}\"\n", video_title)
     } else {
         String::new()
     };
+
+    // Build system prompt once (only user prompt changes per batch)
+    let system_prompt = format!(
+        "You are a stock footage search keyword extractor for a video production pipeline. \
+        Your job: translate transcript captions into English visual search keywords for stock video sites (Pexels, Pixabay). \
+        \
+        Rules:
+        1. Output ONLY valid JSON — no markdown, no explanation
+        2. For each segment, output 2-3 English keywords that describe what VISUAL CONTENT should appear on screen
+        3. Translate Hinglish/Hindi to English. Use the MEANING, not literal word-for-word translation
+        4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
+        5. Avoid abstract concepts — prefer concrete, searchable visual terms
+        6. Each keyword should be 1-3 words maximum
+        7. Source language detected: {}\n{}\
+        Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
+        language, title_context
+    );
 
     // Build a lookup from segment id -> keywords (across all batches)
     let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
@@ -5194,30 +5211,19 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
             segment_descriptions.push(format!("[{}] {}: \"{}\"", id, i + 1, caption));
         }
 
-        let system_prompt = format!(
-            "You are a stock footage search keyword extractor for a video production pipeline. \
-            Your job: translate transcript captions into English visual search keywords for stock video sites (Pexels, Pixabay). \
-            \
-            Rules:
-            1. Output ONLY valid JSON — no markdown, no explanation
-            2. For each segment, output 2-3 English keywords that describe what VISUAL CONTENT should appear on screen
-            3. Translate Hinglish/Hindi to English. Use the MEANING, not literal word-for-word translation
-            4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
-            5. Avoid abstract concepts — prefer concrete, searchable visual terms
-            6. Each keyword should be 1-3 words maximum
-            7. Source language detected: {}\n{}\
-            Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
-            language, title_context
-        );
-
         let user_prompt = format!(
             "Extract visual search keywords for each segment. Output ONLY the JSON object.\n\n{}",
             segment_descriptions.join("\n")
         );
 
-        // Call the LLM cascade for this batch
-        let result = crate::llm::chat_complete(&system_prompt, &user_prompt, None).await
-            .map_err(|e| ToolError::InvalidArg(format!("LLM keyword extraction failed on batch {}: {}. Ensure a local model (Ollama) or OPENCODE_API/OPENROUTER_API_KEY is configured.", batch_idx + 1, e)))?;
+        // Call the LLM cascade for this batch — continue on failure with fallback
+        let result = match crate::llm::chat_complete(&system_prompt, &user_prompt, None).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("[broll.keywords] Batch {} LLM failed: {} — using naive fallback", batch_idx + 1, e);
+                continue;
+            }
+        };
 
         // Parse the LLM response — extract JSON from the response
         let response_text = result.text.trim();
