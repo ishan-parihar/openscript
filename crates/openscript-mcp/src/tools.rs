@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (89 tools + 6 hf.* dynamic = 96 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.*)
+// Tool definitions (90 tools + 6 hf.* dynamic = 96 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + 1 broll.keywords)
 // ---------------------------------------------------------------------------
 
 /// Number of SRT entries grouped into one b-roll scene.
@@ -556,6 +556,20 @@ pub fn tool_definitions() -> serde_json::Value {
                     "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"}
                 },
                 "required": ["timeline_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "broll.keywords",
+            "description": "Extract English visual search keywords from transcript segments using an LLM. Translates Hinglish/Hindi captions into stock-footage-friendly English keywords. Takes segments from broll.plan or segment.analyze output and returns each segment mapped to 2-3 search keywords optimized for Pexels/Pixabay. This is the AUTOMATED replacement for manual agent keyword generation. Returns: segments array with id, start_s, end_s, caption, keywords (array of strings). Use BEFORE broll.fetch to get high-quality search terms.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segments array from broll.plan or segment.analyze. Each segment's caption is translated to English keywords."},
+                    "video_title": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional video title for context — helps the LLM understand the overall topic and generate more relevant keywords."},
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions: 'hinglish', 'hindi', 'english', 'mixed'. Helps the LLM choose the right translation strategy."}
+                },
+                "required": ["segments"],
                 "additionalProperties": false
             }
         },
@@ -1339,6 +1353,7 @@ pub fn route_tool(
         "broll.suggest" => Box::pin(handle_broll_suggest(args)),
         "broll.fetch" => Box::pin(handle_broll_fetch(args)),
         "broll.assign" => Box::pin(handle_broll_assign(args)),        "broll.plan" => Box::pin(handle_broll_plan(args)),
+        "broll.keywords" => Box::pin(handle_broll_keywords(args)),
         "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
@@ -5109,6 +5124,171 @@ async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value,
         "status": "success",
         "segments_count": result_segments.len(),
         "segments": result_segments,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: broll.keywords (LLM-mediated keyword extraction from transcripts)
+// ---------------------------------------------------------------------------
+
+async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    // Extract segments from args
+    let segments = args.get("segments")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| ToolError::MissingArg("segments".to_string()))?;
+
+    if segments.is_empty() {
+        return Ok(json!({
+            "status": "warning",
+            "message": "No segments provided",
+            "segments": [],
+        }));
+    }
+
+    let video_title = args.get("video_title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let language = args.get("language")
+        .and_then(|v| v.as_str())
+        .unwrap_or("hinglish");
+
+    // Build the prompt for batch keyword extraction
+    // We send ALL segments in one LLM call for efficiency
+    let mut segment_descriptions = Vec::new();
+    for (i, seg) in segments.iter().enumerate() {
+        let caption = seg.get("caption")
+            .or_else(|| seg.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let fallback_id = format!("seg_{}", i);
+        let id = seg.get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&fallback_id);
+        segment_descriptions.push(format!("[{}] {}: \"{}\"", id, i + 1, caption));
+    }
+
+    let title_context = if !video_title.is_empty() {
+        format!("\nVideo title/context: \"{}\"\n", video_title)
+    } else {
+        String::new()
+    };
+
+    let system_prompt = format!(
+        "You are a stock footage search keyword extractor for a video production pipeline. \
+        Your job: translate transcript captions into English visual search keywords for stock video sites (Pexels, Pixabay). \
+        \
+        Rules:
+        1. Output ONLY valid JSON — no markdown, no explanation
+        2. For each segment, output 2-3 English keywords that describe what VISUAL CONTENT should appear on screen
+        3. Translate Hinglish/Hindi to English. Use the MEANING, not literal word-for-word translation
+        4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
+        5. Avoid abstract concepts — prefer concrete, searchable visual terms
+        6. Each keyword should be 1-3 words maximum
+        7. Source language detected: {}\n{}\
+        Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
+        language, title_context
+    );
+
+    let user_prompt = format!(
+        "Extract visual search keywords for each segment. Output ONLY the JSON object.\n\n{}",
+        segment_descriptions.join("\n")
+    );
+
+    report_progress(10.0, 100.0, "Extracting keywords via LLM...").await.ok();
+
+    // Call the LLM cascade
+    let result = crate::llm::chat_complete(&system_prompt, &user_prompt, None).await
+        .map_err(|e| ToolError::InvalidArg(format!("LLM keyword extraction failed: {}. Ensure a local model (Ollama) or OPENROUTER_API_KEY is configured.", e)))?;
+
+    report_progress(90.0, 100.0, "Parsing keyword results...").await.ok();
+
+    // Parse the LLM response — extract JSON from the response
+    let response_text = result.text.trim();
+    let parsed: serde_json::Value = if let Some(start) = response_text.find('{') {
+        if let Some(end) = response_text.rfind('}') {
+            serde_json::from_str(&response_text[start..=end])
+                .unwrap_or_else(|_| json!({"results": []}))
+        } else {
+            json!({"results": []})
+        }
+    } else {
+        json!({"results": []})
+    };
+
+    // Map LLM results back to segments
+    let llm_results = parsed.get("results")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Build a lookup from segment id -> keywords
+    let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for r in &llm_results {
+        if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
+            if let Some(kws) = r.get("keywords").and_then(|v| v.as_array()) {
+                let keywords: Vec<String> = kws.iter()
+                    .filter_map(|k| k.as_str().map(String::from))
+                    .collect();
+                keyword_map.insert(id.to_string(), keywords);
+            }
+        }
+    }
+
+    // Build the output: enrich each segment with LLM-generated keywords
+    let mut enriched_segments = Vec::new();
+    for (i, seg) in segments.iter().enumerate() {
+        let id = seg.get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&format!("seg_{}", i))
+            .to_string();
+        let caption = seg.get("caption")
+            .or_else(|| seg.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let start_s = seg.get("start_s")
+            .or_else(|| seg.get("start_ms"))
+            .or_else(|| seg.get("start"))
+            .and_then(|v| v.as_f64())
+            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+            .unwrap_or(0.0);
+        let end_s = seg.get("end_s")
+            .or_else(|| seg.get("end_ms"))
+            .or_else(|| seg.get("end"))
+            .and_then(|v| v.as_f64())
+            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+            .unwrap_or(start_s + 3.0);
+
+        // Get keywords from LLM, fallback to naive extraction if LLM failed
+        // Try exact ID match first, then index-based match (LLM may renumber IDs)
+        let keywords = keyword_map.get(&id)
+            .or_else(|| keyword_map.get(&format!("seg_{}", i)))
+            .or_else(|| keyword_map.get(&format!("seg_{:03}", i)))
+            .cloned()
+            .unwrap_or_else(|| {
+                // Fallback: naive keyword extraction
+                let concept = extract_broll_concept(caption);
+                concept.split_whitespace().map(String::from).collect()
+            });
+
+        enriched_segments.push(json!({
+            "id": id,
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": end_s - start_s,
+            "caption": caption,
+            "keywords": keywords,
+        }));
+    }
+
+    report_progress(100.0, 100.0, "Keyword extraction complete.").await.ok();
+
+    Ok(json!({
+        "status": "success",
+        "backend": result.backend,
+        "model": result.model,
+        "segments_count": enriched_segments.len(),
+        "segments": enriched_segments,
     }))
 }
 
