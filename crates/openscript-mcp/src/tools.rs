@@ -2688,8 +2688,9 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
                     return candidate;
                 }
             }
-            // Fallback: use the SRT path itself (render will handle it)
-            std::path::PathBuf::from(&srt_path)
+            // No media file found — leave empty so timeline.render's audio-only
+            // detection can derive source from segments or skip source validation.
+            std::path::PathBuf::new()
         });
 
     let mut timeline = if let Some(ref tp) = timeline_path_arg {
