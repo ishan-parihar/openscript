@@ -649,9 +649,10 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     // because alimiter only limits SAMPLE peaks, not true peaks.
     filters.push("[aout_raw]loudnorm=I=-16:TP=-2.5:LRA=11[aout_ln]".to_string());
 
-    // Final safety limiter as backstop — limit=0.79 (-2 dBFS sample peak)
-    // reinforces the loudnorm true-peak limit with a hard sample-peak ceiling
-    filters.push("[aout_ln]alimiter=limit=0.79:attack=5:release=50:asc=1:asc_level=0.5[aout]".to_string());
+    // Final safety limiter as backstop — limit=0.70 (-3 dBFS sample peak)
+    // reinforces the loudnorm true-peak limit with a hard sample-peak ceiling.
+    // -3 dBFS is standard broadcast headroom to prevent clipping in AAC/Ogg encode.
+    filters.push("[aout_ln]alimiter=limit=0.70:attack=5:release=50:asc=1:asc_level=0.5[aout]".to_string());
 
     let filter_complex = filters.join(";");
 
