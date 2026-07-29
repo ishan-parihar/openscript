@@ -477,6 +477,21 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "music.search",
+            "description": "Search local music index by mood, energy, genre, or keyword tags. Returns matching tracks with local file paths ready for music.assign. Use this to find background music from the indexed library ($HOME/Videos/Assets/Music). Returns: tracks array with id, title, path, mood, energy, duration_ms.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Free-text search over title, tags, genre"},
+                    "mood": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Filter by mood (neutral, upbeat, dark, epic, etc.)"},
+                    "energy": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Filter by energy level (low, medium, high)"},
+                    "limit": {"type": "integer", "default": 10, "description": "Max results to return"},
+                    "index_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Override music index path (default: mcp/assets/music_index.json)"}
+                },
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "music.assign",
             "description": "Assign background music to the timeline's music track. Requires a music file path — use library.search first to find tracks, then pass the path here. Automatically spans the full timeline duration, applies ducking (lowers music during dialogue/voiceover), and sets gain. Use after building segments — the music provides emotional context beneath the spoken content. Default: -12dB with auto-ducking enabled. Accepts both local file paths and URLs (auto-downloads if URL). Returns: event_id, start_ms, end_ms, asset_path.",
             "inputSchema": {
@@ -1350,6 +1365,7 @@ pub fn route_tool(
         "sfx.assign" => Box::pin(handle_sfx_assign(args)),
         "sfx.auto_assign" => Box::pin(handle_sfx_auto_assign(args)),
         "music.index" => Box::pin(handle_music_index(args)),
+        "music.search" => Box::pin(handle_music_search(args)),
         "music.assign" => Box::pin(handle_music_assign(args)),
         "broll.suggest" => Box::pin(handle_broll_suggest(args)),
         "broll.fetch" => Box::pin(handle_broll_fetch(args)),
@@ -3683,6 +3699,77 @@ async fn handle_music_index(args: serde_json::Value) -> Result<serde_json::Value
 }
 
 // ---------------------------------------------------------------------------
+// Handler: music.search
+// ---------------------------------------------------------------------------
+
+async fn handle_music_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let index_path = default_opt_str(&args, "index_path")
+        .unwrap_or_else(|| "mcp/assets/music_index.json".to_string());
+    let query = default_opt_str(&args, "query");
+    let mood_filter = default_opt_str(&args, "mood");
+    let energy_filter = default_opt_str(&args, "energy");
+    let limit = default_u32(&args, "limit", 10) as usize;
+
+    if !Path::new(&index_path).exists() {
+        return Ok(json!({
+            "status": "warning",
+            "message": format!("Music index not found at {}. Run music.index first.", index_path),
+            "tracks": [],
+        }));
+    }
+
+    let raw = std::fs::read_to_string(&index_path)?;
+    let index: serde_json::Value = serde_json::from_str(&raw)?;
+
+    let assets = index.get("assets")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let query_lower = query.as_deref().unwrap_or("").to_lowercase();
+
+    let mut matched: Vec<serde_json::Value> = assets.into_iter().filter(|a| {
+        // Filter by mood
+        if let Some(ref m) = mood_filter {
+            let asset_mood = a.get("mood").and_then(|v| v.as_str()).unwrap_or("");
+            if !asset_mood.eq_ignore_ascii_case(m) {
+                return false;
+            }
+        }
+        // Filter by energy
+        if let Some(ref e) = energy_filter {
+            let asset_energy = a.get("energy").and_then(|v| v.as_str()).unwrap_or("");
+            if !asset_energy.eq_ignore_ascii_case(e) {
+                return false;
+            }
+        }
+        // Filter by query (match against title, tags, genre)
+        if !query_lower.is_empty() {
+            let title = a.get("title").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+            let genre = a.get("genre").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
+            let tags = a.get("tags").and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>().join(" ").to_lowercase())
+                .unwrap_or_default();
+            if !title.contains(&query_lower) && !genre.contains(&query_lower) && !tags.contains(&query_lower) {
+                return false;
+            }
+        }
+        // Verify the file actually exists on disk
+        if let Some(p) = a.get("path").and_then(|v| v.as_str()) {
+            Path::new(p).exists()
+        } else {
+            false
+        }
+    }).collect();
+
+    matched.truncate(limit);
+
+    Ok(json!({
+        "status": "success",
+        "count": matched.len(),
+        "tracks": matched,
+    }))
+}
 
 // ---------------------------------------------------------------------------
 // Handler: music.assign
@@ -6397,9 +6484,12 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
                 .collect();
         }
     }
-    // Set caption_style from agent if provided
+    // Set caption_style: prefer agent arg, fallback to timeline.effects.caption_style
     if manifest.caption_style.is_none() {
-        manifest.caption_style = args.get("caption_style").and_then(|v| v.as_str()).map(|s| s.to_string());
+        manifest.caption_style = args.get("caption_style")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or_else(|| timeline.effects.caption_style.clone());
     }
     // Set voiceover_count based on dialogue detection
     // If the video has dialogue (original audio), count it as voiceover

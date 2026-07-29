@@ -1,23 +1,24 @@
 {
   "version": "1.0",
-  "created_at": "2026-07-22T11:47:34.954714880+00:00",
+  "created_at": "2026-07-29T21:43:55.649651342+00:00",
   "music_paths": [
-    "mcp/assets/music_cache"
+    "/home/ishanp/Videos/Assets/Music"
   ],
-  "total_assets": 3,
+  "total_assets": 16,
   "moods": {
-    "neutral": 3
+    "neutral": 15,
+    "upbeat": 1
   },
   "energy_levels": {
-    "medium": 3
+    "medium": 16
   },
   "assets": [
     {
       "id": "music_0000",
-      "path": "mcp/assets/music_cache/jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill.mp3",
-      "title": "jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill",
+      "path": "/home/ishanp/Videos/Assets/Music/Arrival On The Nature of Daylight.mp3",
+      "title": "Arrival On The Nature of Daylight",
       "artist": "Unknown",
-      "duration_ms": 172315,
+      "duration_ms": 371705,
       "sample_rate": 44100,
       "channels": 2,
       "mood": "neutral",
@@ -28,16 +29,16 @@
       "cta_friendly": false,
       "loudness_target_lufs": -14.0,
       "tags": [
-        "jellyfish_-_Tokiwave_Royalty_Free_Music_RFM_-_NCM_No_Copyright_Music_LoFi_Chill"
+        "Arrival On The Nature of Daylight"
       ],
       "genre": ""
     },
     {
       "id": "music_0001",
-      "path": "mcp/assets/music_cache/_Melodic_Lofi_Chill_Music_For_Videos_-_Alone_by_Al_-jrh3Mk8ZCA.mp3",
-      "title": "_Melodic_Lofi_Chill_Music_For_Videos_-_Alone_by_Al_-jrh3Mk8ZCA",
+      "path": "/home/ishanp/Videos/Assets/Music/Hand Covers Bruise HD From the Soundtrack to The Social Network.mp3",
+      "title": "Hand Covers Bruise HD From the Soundtrack to The Social Network",
       "artist": "Unknown",
-      "duration_ms": 140713,
+      "duration_ms": 263876,
       "sample_rate": 44100,
       "channels": 2,
       "mood": "neutral",
@@ -48,16 +49,16 @@
       "cta_friendly": false,
       "loudness_target_lufs": -14.0,
       "tags": [
-        "_Melodic_Lofi_Chill_Music_For_Videos_-_Alone_by_Al_-jrh3Mk8ZCA"
+        "Hand Covers Bruise HD From the Soundtrack to The Social Network"
       ],
       "genre": ""
     },
     {
       "id": "music_0002",
-      "path": "mcp/assets/music_cache/øneheart_x_reidenshi_-_snowfall_LlN8MPS7KQs.mp3",
-      "title": "øneheart_x_reidenshi_-_snowfall_LlN8MPS7KQs",
+      "path": "/home/ishanp/Videos/Assets/Music/Hania Rani Eden Official Video Gondwana Records.mp3",
+      "title": "Hania Rani Eden Official Video Gondwana Records",
       "artist": "Unknown",
-      "duration_ms": 123228,
+      "duration_ms": 295288,
       "sample_rate": 44100,
       "channels": 2,
       "mood": "neutral",
@@ -68,7 +69,267 @@
       "cta_friendly": false,
       "loudness_target_lufs": -14.0,
       "tags": [
-        "øneheart_x_reidenshi_-_snowfall_LlN8MPS7KQs"
+        "Hania Rani Eden Official Video Gondwana Records"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0003",
+      "path": "/home/ishanp/Videos/Assets/Music/Hans Zimmer Dream Is Collapsing Official Audio.mp3",
+      "title": "Hans Zimmer Dream Is Collapsing Official Audio",
+      "artist": "Unknown",
+      "duration_ms": 143801,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Hans Zimmer Dream Is Collapsing Official Audio"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0004",
+      "path": "/home/ishanp/Videos/Assets/Music/Hans Zimmer Time Official Audio.mp3",
+      "title": "Hans Zimmer Time Official Audio",
+      "artist": "Unknown",
+      "duration_ms": 275605,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Hans Zimmer Time Official Audio"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0005",
+      "path": "/home/ishanp/Videos/Assets/Music/Interstellar Main Theme Hans Zimmer.mp3",
+      "title": "Interstellar Main Theme Hans Zimmer",
+      "artist": "Unknown",
+      "duration_ms": 244023,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Interstellar Main Theme Hans Zimmer"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0006",
+      "path": "/home/ishanp/Videos/Assets/Music/Interstellar Official Soundtrack S.T.A.Y.– Hans Zimmer WaterTower.mp3",
+      "title": "Interstellar Official Soundtrack S.T.A.Y.– Hans Zimmer WaterTower",
+      "artist": "Unknown",
+      "duration_ms": 383517,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Interstellar Official Soundtrack S.T.A.Y.– Hans Zimmer WaterTower"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0007",
+      "path": "/home/ishanp/Videos/Assets/Music/Joy Division Atmosphere Original Instrumental.mp3",
+      "title": "Joy Division Atmosphere Original Instrumental",
+      "artist": "Unknown",
+      "duration_ms": 249522,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "upbeat",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Joy Division Atmosphere Original Instrumental"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0008",
+      "path": "/home/ishanp/Videos/Assets/Music/Ludovico Einaudi Experience Official Visualizer.mp3",
+      "title": "Ludovico Einaudi Experience Official Visualizer",
+      "artist": "Unknown",
+      "duration_ms": 315546,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Ludovico Einaudi Experience Official Visualizer"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0009",
+      "path": "/home/ishanp/Videos/Assets/Music/Marz Leon - Levitation (That's Nice Remix).mp3",
+      "title": "Marz Leon - Levitation (That's Nice Remix)",
+      "artist": "Unknown",
+      "duration_ms": 261410,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Marz Leon - Levitation (That's Nice Remix)"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0010",
+      "path": "/home/ishanp/Videos/Assets/Music/Marz Leon - Levitation (That's Nice Remix) (1).mp3",
+      "title": "Marz Leon - Levitation (That's Nice Remix) (1)",
+      "artist": "Unknown",
+      "duration_ms": 261410,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Marz Leon - Levitation (That's Nice Remix) (1)"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0011",
+      "path": "/home/ishanp/Videos/Assets/Music/Max Richter On the Nature of Daylight.mp3",
+      "title": "Max Richter On the Nature of Daylight",
+      "artist": "Unknown",
+      "duration_ms": 374844,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Max Richter On the Nature of Daylight"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0012",
+      "path": "/home/ishanp/Videos/Assets/Music/My Name Is Lincoln.mp3",
+      "title": "My Name Is Lincoln",
+      "artist": "Unknown",
+      "duration_ms": 222447,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "My Name Is Lincoln"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0013",
+      "path": "/home/ishanp/Videos/Assets/Music/Richter The Blue Notebooks.mp3",
+      "title": "Richter The Blue Notebooks",
+      "artist": "Unknown",
+      "duration_ms": 79830,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Richter The Blue Notebooks"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0014",
+      "path": "/home/ishanp/Videos/Assets/Music/Squid Game OST Pink Soldiers Extended Ver.mp3",
+      "title": "Squid Game OST Pink Soldiers Extended Ver",
+      "artist": "Unknown",
+      "duration_ms": 108391,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Squid Game OST Pink Soldiers Extended Ver"
+      ],
+      "genre": ""
+    },
+    {
+      "id": "music_0015",
+      "path": "/home/ishanp/Videos/Assets/Music/Two Steps From Hell Victory.mp3",
+      "title": "Two Steps From Hell Victory",
+      "artist": "Unknown",
+      "duration_ms": 328633,
+      "sample_rate": 44100,
+      "channels": 2,
+      "mood": "neutral",
+      "energy": "medium",
+      "bpm": null,
+      "loopability": false,
+      "intro_friendly": false,
+      "cta_friendly": false,
+      "loudness_target_lufs": -14.0,
+      "tags": [
+        "Two Steps From Hell Victory"
       ],
       "genre": ""
     }
