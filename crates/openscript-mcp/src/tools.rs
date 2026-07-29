@@ -1829,7 +1829,33 @@ async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value,
 // Handler: captions.generate_ass
 // ---------------------------------------------------------------------------
 async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let srt_path = extract_str(&args, "srt_path")?;
+    // Support auto-loading srt_path from timeline when only timeline_path is provided.
+    let srt_path = if let Some(s) = args.get("srt_path").and_then(|v| v.as_str()) {
+        s.to_string()
+    } else if let Some(tl_path) = args.get("timeline_path").and_then(|v| v.as_str()) {
+        // Derive SRT path from timeline's source field
+        let tl = Timeline::load(tl_path)?;
+        let source = tl.source.to_string_lossy().to_string();
+        if source.is_empty() {
+            return Err(ToolError::MissingArg(
+                "srt_path (or timeline_path with source set)".to_string(),
+            ));
+        }
+        // Replace video extension with .srt
+        let path = std::path::Path::new(&source);
+        let srt = path.with_extension("srt");
+        if !srt.exists() {
+            return Err(ToolError::NotFound(format!(
+                "SRT not found at {} — derived from timeline source {}",
+                srt.display(), source
+            )));
+        }
+        srt.to_string_lossy().to_string()
+    } else {
+        return Err(ToolError::MissingArg(
+            "srt_path or timeline_path".to_string(),
+        ));
+    };
     let grouped_srt_path = args.get("grouped_srt_path")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
@@ -4993,6 +5019,13 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
     }
 
     let mut timeline = Timeline::load(timeline_path)?;
+
+    // If caller provides source_video, override the timeline's source before validation.
+    // This allows rendering when srt.to_timeline didn't set the source field.
+    if let Some(ref sv) = source_video {
+        timeline.source = std::path::PathBuf::from(sv);
+    }
+
     let errors = timeline.validate();
     if !errors.is_empty() {
         return Err(ToolError::Timeline(format!(
