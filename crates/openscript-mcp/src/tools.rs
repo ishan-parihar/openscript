@@ -3544,17 +3544,19 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
 
         // 2) Transition SFX at each segment boundary (after each segment ends)
         let timeline_end = segments.last().map(|s| (s.end * 1000.0) as i64).unwrap_or(0);
-        for seg in &segments {
-            let matched = sfx_index.search("", Some("transition"), None, 1).into_iter().next().cloned();
-            if matched.is_none() { continue; }
+        let all_transitions: Vec<_> = sfx_index.search("", Some("transition"), None, 20).into_iter().cloned().collect();
+        let num_transitions = all_transitions.len().max(1);
+        for (i, seg) in segments.iter().enumerate() {
+            if all_transitions.is_empty() { continue; }
+            let matched = &all_transitions[i % num_transitions];
             current_idx += 1;
             let event_id = format!("sfx_{:03}", current_idx);
             let position_ms = (seg.end * 1000.0) as i64;
-            let duration_ms = matched.as_ref().map(|a| a.duration_ms).unwrap_or(1000);
-            let path = matched.as_ref().map(|a| a.path.clone());
+            let duration_ms = matched.duration_ms;
+            let path = matched.path.clone();
             let event = openscript_core::timeline::TimelineEvent {
                 id: event_id.clone(),
-                asset_id: path.clone().unwrap_or_else(|| "transition".to_string()),
+                asset_id: path.clone(),
                 start_ms: position_ms,
                 end_ms: (position_ms + duration_ms).min(timeline_end),
                 offset_ms: 0,
@@ -3581,9 +3583,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
                 },
             };
             timeline.add_track_event(TrackType::Sfx, event);
-            if let Some(ref p) = path {
-                timeline.add_asset("sfx", event_id.clone(), json!({"path": p}));
-            }
+            timeline.add_asset("sfx", event_id.clone(), json!({"path": &path}));
             events_created.push(json!({"event_id": event_id, "role": "transition", "position_ms": position_ms}));
         }
 
