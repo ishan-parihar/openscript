@@ -120,9 +120,9 @@ fn caption_safe_zone(canvas_h: u32, style: Option<&str>) -> (i32, i32) {
     let h = canvas_h as i32;
     // Caption styles and their approximate bottom rail heights
     let rail_ratio = match style {
-        Some(s) if s == "word_highlight" || s == "karaoke" => 0.15, // ~288px on 1920
-        Some(s) if s == "sentence_fade" => 0.12,
-        Some(s) if s == "burn_in" || s == "subtitle_rail" => 0.10,
+        Some("word_highlight" | "karaoke") => 0.15, // ~288px on 1920
+        Some("sentence_fade") => 0.12,
+        Some("burn_in" | "subtitle_rail") => 0.10,
         _ => 0.12, // default
     };
     let rail_h = (h as f64 * rail_ratio).round() as i32;
@@ -1666,8 +1666,8 @@ fn score_platform_optimization(duration_ms: i64, aspect_ratio: Option<&str>) -> 
     let mut s = 0i32;
 
     match aspect_ratio {
-        Some(ar) if ar == "9:16" => { s += 2; }
-        Some(ar) if ar == "1:1" => {
+        Some("9:16") => { s += 2; }
+        Some("1:1") => {
             s += 1;
             findings.push("1:1 aspect — 9:16 vertical preferred for Shorts/Reels/TikTok".into());
         }

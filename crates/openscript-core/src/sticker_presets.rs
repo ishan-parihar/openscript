@@ -217,9 +217,9 @@ pub fn validate_sticker_safety(
 
     // Caption safe zone based on style
     let rail_ratio = match caption_style {
-        Some(s) if s == "word_highlight" || s == "karaoke" => 0.15,
-        Some(s) if s == "sentence_fade" => 0.12,
-        Some(s) if s == "burn_in" || s == "subtitle_rail" => 0.10,
+        Some("word_highlight" | "karaoke") => 0.15,
+        Some("sentence_fade") => 0.12,
+        Some("burn_in" | "subtitle_rail") => 0.10,
         _ => 0.12, // default
     };
     let rail_h = (canvas_height as f64 * rail_ratio).round() as i32;

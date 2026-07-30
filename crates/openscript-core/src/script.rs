@@ -51,8 +51,8 @@ pub struct ScriptSpec {
     /// Accepts BOTH formats:
     /// - Map (canonical): {"narrator": {"voice": "kokoro:af_heart"}}
     /// - Array (agent-friendly): [{"id": "narrator", "voice": "kokoro:af_heart"}]
-    /// (UX audit GAP #2 fix: agents naturally write arrays.)
-    /// Array format is normalized in parse_script() before deserialization.
+    ///   (UX audit GAP #2 fix: agents naturally write arrays.)
+    ///   Array format is normalized in parse_script() before deserialization.
     pub speakers: HashMap<String, SpeakerSpec>,
 
     /// Background video configuration (gameplay, procedural, or static).
@@ -60,8 +60,8 @@ pub struct ScriptSpec {
     /// Accepts BOTH formats:
     /// - Object (canonical): {"type": "procedural", "change_cadence": "scene"}
     /// - String (agent-friendly): "procedural" (shorthand for {"type": <value>})
-    /// (UX audit GAP: agents wrote bare strings like "procedural".)
-    /// String format is normalized in parse_script() before deserialization.
+    ///   (UX audit GAP: agents wrote bare strings like "procedural".)
+    ///   String format is normalized in parse_script() before deserialization.
     #[serde(default)]
     pub background: BackgroundSpec,
 
@@ -652,11 +652,11 @@ pub struct OutputSpec {
     /// Render engine: "ffmpeg" (default, multilayer FFmpeg render) or
     /// "hyperframes" (HTML+GSAP motion graphics via hf.render).
     /// When "hyperframes", script.to_video will:
-    ///   1. Build the timeline via script.to_timeline
-    ///   2. Compile it to HF HTML via timeline.to_hyperframes
-    ///   3. Render via hf.render
-    /// This gives agents programmatic control over the render engine,
-    /// connecting HyperFrames to the golden trajectory.
+    /// 1. Build the timeline via script.to_timeline
+    ///    2. Compile it to HF HTML via timeline.to_hyperframes
+    ///    3. Render via hf.render
+    ///    This gives agents programmatic control over the render engine,
+    ///    connecting HyperFrames to the golden trajectory.
     #[serde(default = "default_render_engine")]
     pub render_engine: String,
 
@@ -1070,7 +1070,7 @@ fn apply_theme(spec: &mut ScriptSpec) {
             // stickers on). No override needed — the defaults ARE the energetic
             // theme. This branch exists for explicitness.
         }
-        "neutral" | _ => {
+        _ => {
             // No override — use fields as-is.
         }
     }
