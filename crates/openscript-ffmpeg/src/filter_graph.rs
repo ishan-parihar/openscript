@@ -366,6 +366,22 @@ impl FilterGraphBuilder {
         b.sfx_events = sfx_events;
         b.voiceover_events = voiceover_events;
         b.ducking_events = ducking_events;
+
+        // Auto-read captions ASS from timeline.assets.captions if not already set
+        if b.ass_path.is_none() {
+            if let Some(captions_asset) = timeline.assets.captions.get("ass") {
+                if let Some(path_val) = captions_asset.get("path") {
+                    if let Some(path_str) = path_val.as_str() {
+                        let ass = std::path::Path::new(path_str);
+                        if ass.exists() {
+                            b.ass_path = Some(path_str.to_string());
+                            tracing::info!("[filter_graph] Auto-read captions ASS from timeline: {}", path_str);
+                        }
+                    }
+                }
+            }
+        }
+
         b
     }
 
