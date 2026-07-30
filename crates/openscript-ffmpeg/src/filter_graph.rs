@@ -588,9 +588,16 @@ impl FilterGraphBuilder {
                     }
                 };
 
+                // Omit f=mp4 to let ffmpeg auto-detect container format.
+                // Omit si=0 to let ffmpeg auto-select first video stream.
                 parts.push(format!(
-                    "movie='{}':f=mp4:si=0[broll_src_{}]",
+                    "movie='{}'[vraw_{}]",
                     escaped_path,
+                    i
+                ));
+                parts.push(format!(
+                    "[vraw_{}]format=yuv420p[broll_src_{}]",
+                    i,
                     i
                 ));
                 parts.push(format!(
