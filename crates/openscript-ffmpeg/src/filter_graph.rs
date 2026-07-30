@@ -633,9 +633,16 @@ impl FilterGraphBuilder {
                 // Deterministic pseudo-random: golden-ratio hash gives good distribution
                 let seek_offset = ((i as f64 * 1.618033988749895) % 5.0f64)
                     .min(clip_duration_s.max(0.0) * 0.5); // don't seek past 50% of clip
+                // movie= filter does NOT support ss option — use trim= instead
                 parts.push(format!(
-                    "movie='{}':si=0:ss={:.2}[broll_src_{}]",
+                    "movie='{}':si=0[broll_raw_{}]",
                     escaped_path,
+                    i
+                ));
+                // Trim past the slow intro using seek_offset, then reset PTS
+                parts.push(format!(
+                    "[broll_raw_{}]trim=start={:.2},setpts=PTS-STARTPTS[broll_src_{}]",
+                    i,
                     seek_offset,
                     i
                 ));
