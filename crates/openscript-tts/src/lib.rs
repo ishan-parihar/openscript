@@ -114,14 +114,14 @@ mod tests {
         fs::write(dir.join("old.wav"), vec![0u8; 1024]).unwrap();
         let old_time = SystemTime::now() - std::time::Duration::from_secs(3600);
         let _ = filetime::set_file_mtime(
-            &dir.join("old.wav"),
+            dir.join("old.wav"),
             filetime::FileTime::from_system_time(old_time),
         );
 
         fs::write(dir.join("mid.wav"), vec![0u8; 1024]).unwrap();
         let mid_time = SystemTime::now() - std::time::Duration::from_secs(1800);
         let _ = filetime::set_file_mtime(
-            &dir.join("mid.wav"),
+            dir.join("mid.wav"),
             filetime::FileTime::from_system_time(mid_time),
         );
 

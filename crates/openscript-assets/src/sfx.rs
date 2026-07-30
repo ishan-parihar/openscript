@@ -35,6 +35,7 @@ pub struct SfxIndexWrapper {
     pub search_aliases: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Default)]
 pub struct SfxIndex {
     assets: Vec<SfxAsset>,
     index_path: Option<PathBuf>,
@@ -285,14 +286,6 @@ impl SfxIndex {
     }
 }
 
-impl Default for SfxIndex {
-    fn default() -> Self {
-        Self {
-            assets: Vec::new(),
-            index_path: None,
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -432,9 +425,9 @@ mod tests {
     fn test_scan_directory_finds_audio_files() {
         let dir = std::env::temp_dir().join("test_sfx_scan");
         let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("boom.wav"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("whoosh.mp3"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("readme.txt"), &[0u8; 10]).unwrap();
+        std::fs::write(dir.join("boom.wav"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("whoosh.mp3"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("readme.txt"), [0u8; 10]).unwrap();
 
         let idx = SfxIndex::scan_directory(dir.to_str().unwrap()).unwrap();
         assert_eq!(idx.len(), 2);
@@ -446,8 +439,8 @@ mod tests {
         let dir = std::env::temp_dir().join("test_sfx_recursive");
         let sub = dir.join("transitions");
         let _ = std::fs::create_dir_all(&sub);
-        std::fs::write(dir.join("intro_boom.wav"), &[0u8; 10]).unwrap();
-        std::fs::write(sub.join("whoosh.wav"), &[0u8; 10]).unwrap();
+        std::fs::write(dir.join("intro_boom.wav"), [0u8; 10]).unwrap();
+        std::fs::write(sub.join("whoosh.wav"), [0u8; 10]).unwrap();
 
         let idx = SfxIndex::scan_directory(dir.to_str().unwrap()).unwrap();
         assert_eq!(idx.len(), 2);
@@ -458,9 +451,9 @@ mod tests {
     fn test_scan_directory_editorial_role_from_path() {
         let dir = std::env::temp_dir().join("test_sfx_role");
         let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("intro_boom.wav"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("transition_whoosh.wav"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("generic_sound.wav"), &[0u8; 10]).unwrap();
+        std::fs::write(dir.join("intro_boom.wav"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("transition_whoosh.wav"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("generic_sound.wav"), [0u8; 10]).unwrap();
 
         let idx = SfxIndex::scan_directory(dir.to_str().unwrap()).unwrap();
         assert_eq!(idx.len(), 3);

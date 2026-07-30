@@ -361,13 +361,10 @@ impl PexelsClient {
             }
         } else {
             // No alias found, try the concept directly
-            match self.fetch_page(concept, orientation, 1, quality).await {
-                Ok(mut vids) => {
-                    if !vids.is_empty() {
-                        return Ok(Some(vids.remove(0)));
-                    }
+            if let Ok(mut vids) = self.fetch_page(concept, orientation, 1, quality).await {
+                if !vids.is_empty() {
+                    return Ok(Some(vids.remove(0)));
                 }
-                Err(_) => {}
             }
         }
 

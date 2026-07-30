@@ -53,6 +53,7 @@ pub struct MusicIndexWrapper {
     pub search_aliases: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Default)]
 pub struct MusicIndex {
     assets: Vec<MusicAsset>,
     _index_path: Option<PathBuf>,
@@ -354,15 +355,6 @@ impl MusicIndex {
     }
 }
 
-impl Default for MusicIndex {
-    fn default() -> Self {
-        Self {
-            assets: Vec::new(),
-            _index_path: None,
-            music_paths: vec![],
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -510,9 +502,9 @@ mod tests {
     fn test_scan_directories_finds_audio_files() {
         let dir = std::env::temp_dir().join("test_music_scan");
         let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("happy_track.mp3"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("calm_bg.wav"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("notes.txt"), &[0u8; 10]).unwrap();
+        std::fs::write(dir.join("happy_track.mp3"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("calm_bg.wav"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("notes.txt"), [0u8; 10]).unwrap();
 
         let idx = MusicIndex::scan_directories(&[dir.to_string_lossy().to_string()]).unwrap();
         assert_eq!(idx.len(), 2);
@@ -525,8 +517,8 @@ mod tests {
         let dir2 = std::env::temp_dir().join("test_music_root2");
         let _ = std::fs::create_dir_all(&dir1);
         let _ = std::fs::create_dir_all(&dir2);
-        std::fs::write(dir1.join("track1.mp3"), &[0u8; 10]).unwrap();
-        std::fs::write(dir2.join("track2.mp3"), &[0u8; 10]).unwrap();
+        std::fs::write(dir1.join("track1.mp3"), [0u8; 10]).unwrap();
+        std::fs::write(dir2.join("track2.mp3"), [0u8; 10]).unwrap();
 
         let idx = MusicIndex::scan_directories(&[
             dir1.to_string_lossy().to_string(),
@@ -542,8 +534,8 @@ mod tests {
     fn test_scan_directories_mood_from_filename() {
         let dir = std::env::temp_dir().join("test_music_mood");
         let _ = std::fs::create_dir_all(&dir);
-        std::fs::write(dir.join("happy_summer.mp3"), &[0u8; 10]).unwrap();
-        std::fs::write(dir.join("dark_tension.mp3"), &[0u8; 10]).unwrap();
+        std::fs::write(dir.join("happy_summer.mp3"), [0u8; 10]).unwrap();
+        std::fs::write(dir.join("dark_tension.mp3"), [0u8; 10]).unwrap();
 
         let idx = MusicIndex::scan_directories(&[dir.to_string_lossy().to_string()]).unwrap();
         assert_eq!(idx.len(), 2);

@@ -376,8 +376,7 @@ impl FilterGraphBuilder {
             {
                 let ass = std::path::Path::new(path_str);
                 if ass.exists() {
-                    b.ass_path = Some(path_str.to_string());
-                    tracing::info!("[filter_graph] Auto-read captions ASS from timeline: {}", path_str);
+                    b.ass_path = Some(path_str.to_string());                            tracing::debug!("[filter_graph] Auto-read captions ASS from timeline: {}", path_str);
                 } else {
                     tracing::warn!("[filter_graph] Captions ASS registered but file missing: {}", path_str);
                 }
@@ -392,8 +391,7 @@ impl FilterGraphBuilder {
             {
                 let srt = std::path::Path::new(path_str);
                 if srt.exists() {
-                    b = b.with_srt(path_str.to_string());
-                    tracing::info!("[filter_graph] Auto-read captions SRT from timeline: {}", path_str);
+                    b = b.with_srt(path_str.to_string());                                tracing::debug!("[filter_graph] Auto-read captions SRT from timeline: {}", path_str);
                 } else {
                     tracing::warn!("[filter_graph] Captions SRT registered but file missing: {}", path_str);
                 }

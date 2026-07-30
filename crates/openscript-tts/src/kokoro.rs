@@ -404,7 +404,7 @@ fn split_sentences(text: &str) -> Vec<String> {
 /// Split a too-long sentence on `,`, `;`, `、`, `，` to stay under `max_words`.
 fn split_on_punctuation(sentence: &str, max_words: usize) -> Vec<String> {
     let parts: Vec<&str> = sentence
-        .split(|c: char| matches!(c, ',' | ';' | '、' | '，'))
+        .split([',', ';', '、', '，'])
         .collect();
     let mut chunks = Vec::new();
     let mut current = String::new();

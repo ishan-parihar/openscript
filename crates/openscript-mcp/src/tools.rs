@@ -13432,11 +13432,10 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
                     if duration > 10 { return None; } // Only short clips
                     let video_files = v.get("video_files").and_then(|v| v.as_array())?;
                     let best = video_files.iter()
-                        .filter(|f| {
+                        .find(|f| {
                             let w = f.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
                             (360..=720).contains(&w)
-                        })
-                        .next()?;
+                        })?;
                     Some(json!({
                         "id": v.get("id"),
                         "title": format!("Pexels video {}", v.get("id").and_then(|v| v.as_u64()).unwrap_or(0)),
