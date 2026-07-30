@@ -42,7 +42,7 @@ impl RenderTarget {
     /// renders honour the timeline's resolution instead of a hardcoded
     /// 1080×1920.
     pub fn resolve_width(&self) -> u32 {
-        self.width.unwrap_or_else(|| match self.aspect.as_str() {
+        self.width.unwrap_or(match self.aspect.as_str() {
             "16:9" => 1920,
             "1:1" => 1080,
             _ => 1080, // "9:16" and any unknown → portrait default
@@ -52,7 +52,7 @@ impl RenderTarget {
     /// Resolve the output height, falling back to the aspect-ratio default
     /// when `height` is `None`.
     pub fn resolve_height(&self) -> u32 {
-        self.height.unwrap_or_else(|| match self.aspect.as_str() {
+        self.height.unwrap_or(match self.aspect.as_str() {
             "16:9" => 1080,
             "1:1" => 1080,
             _ => 1920, // "9:16" and any unknown → portrait default
@@ -106,7 +106,9 @@ pub struct Provenance {
 /// Defaults to Dialogue for backward-compatibility with Python timelines.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "event_type", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum EventKind {
+    #[default]
     Dialogue,
     Voiceover {
         #[serde(default)]
@@ -182,11 +184,6 @@ pub enum EventKind {
     },
 }
 
-impl Default for EventKind {
-    fn default() -> Self {
-        EventKind::Dialogue
-    }
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct WordTiming {

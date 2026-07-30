@@ -134,16 +134,16 @@ pub fn generate_ass(
 
     match spec.style.as_str() {
         "word_highlight" => {
-            generate_word_highlight(&mut out, segments, &spec, primary_color, highlight_color)
+            generate_word_highlight(&mut out, segments, spec, primary_color, highlight_color)
         }
-        "sentence_fade" => generate_sentence_fade(&mut out, segments, &spec),
+        "sentence_fade" => generate_sentence_fade(&mut out, segments, spec),
         "karaoke_fill" => {
-            generate_karaoke_fill(&mut out, segments, &spec, primary_color, highlight_color)
+            generate_karaoke_fill(&mut out, segments, spec, primary_color, highlight_color)
         }
         "subtitle_rail" => {
-            generate_subtitle_rail(&mut out, segments, &spec, canvas_width, canvas_height)
+            generate_subtitle_rail(&mut out, segments, spec, canvas_width, canvas_height)
         }
-        _ => generate_word_highlight(&mut out, segments, &spec, primary_color, highlight_color),
+        _ => generate_word_highlight(&mut out, segments, spec, primary_color, highlight_color),
     }
 
     out

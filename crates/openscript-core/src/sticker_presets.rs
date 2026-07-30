@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_validate_safety_center_overlaps_word_highlight() {
-        let (safe, warnings) = validate_sticker_safety("center", 0.30, Some("word_highlight"), 1080, 1920);
+        let (safe, _warnings) = validate_sticker_safety("center", 0.30, Some("word_highlight"), 1080, 1920);
         // center with scale 0.3 on 1080 = 324px, centered at y=798, bottom at 1122
         // word_highlight rail is bottom 15% = 288px, so top of rail at 1632
         // 1122 < 1632, so no overlap for scale 0.3 at center
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_validate_safety_center_large_overlaps() {
-        let (safe, warnings) = validate_sticker_safety("center", 0.45, Some("word_highlight"), 1080, 1920);
+        let (safe, _warnings) = validate_sticker_safety("center", 0.45, Some("word_highlight"), 1080, 1920);
         // center with scale 0.45 on 1080 = 486px, centered at y=717, bottom at 1203
         // word_highlight rail starts at 1632, so still safe
         // But with 0.50: 540px, centered at y=690, bottom at 1230 - still safe

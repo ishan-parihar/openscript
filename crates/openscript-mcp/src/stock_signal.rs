@@ -404,7 +404,7 @@ fn pick_visual_anchor(signal: &[String], video_keywords: &[String], scene_idx: u
         let mut score = 0i32;
         for k in keys {
             if set.contains(k) {
-                score += if boost.contains(&k) { 4 } else { 1 };
+                score += if boost.contains(k) { 4 } else { 1 };
             }
         }
         if score > 0 {
@@ -864,13 +864,11 @@ mod tests {
             "sunlight".into(),
             "biology".into(),
         ];
-        let scenes = vec![
-            "Photosynthesis is the process by which plants convert sunlight into chemical energy. Every breath you take depends on this ancient biological machinery.",
+        let scenes = ["Photosynthesis is the process by which plants convert sunlight into chemical energy. Every breath you take depends on this ancient biological machinery.",
             "In the chloroplasts, chlorophyll captures photons and uses them to split water molecules. The oxygen released becomes the air we breathe.",
             "Carbon dioxide enters the leaf through tiny pores called stomata. Inside, the Calvin cycle stitches carbon atoms into glucose, the fuel of life.",
             "The energy stored in glucose powers every cell in the plant. And when we eat plants, that same solar energy powers us.",
-            "Photosynthesis connects the sun to every living thing. It is the quiet engine of the biosphere, running since the dawn of life.",
-        ];
+            "Photosynthesis connects the sun to every living thing. It is the quiet engine of the biosphere, running since the dawn of life."];
         let mut anchors = Vec::new();
         for (i, scene) in scenes.iter().enumerate() {
             let q = build_scene_stock_query(scene, &video_keywords, "neutral", "9:16", i);

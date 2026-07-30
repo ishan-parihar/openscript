@@ -651,7 +651,7 @@ pub fn jpeg_to_base64(path: &str) -> Result<String, LlmError> {
 fn base64_encode(data: &[u8]) -> String {
     // Minimal base64 without extra crate dependency
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };

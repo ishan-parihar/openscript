@@ -1370,8 +1370,8 @@ mod tests {
             "background": {"type": "procedural", "loop": false}
         }"#;
         let spec = parse_script(json).unwrap();
-        assert_eq!(
-            spec.background.loop_, false,
+        assert!(
+            !spec.background.loop_,
             "JSON key 'loop' must be accepted as alias for Rust field 'loop_'"
         );
 
@@ -1382,7 +1382,7 @@ mod tests {
             "background": {"type": "procedural", "loop_": false}
         }"#;
         let spec2 = parse_script(json2).unwrap();
-        assert_eq!(spec2.background.loop_, false);
+        assert!(!spec2.background.loop_);
     }
 
     /// Verify that theme:"calm" applies warm-gold highlight, cream text,

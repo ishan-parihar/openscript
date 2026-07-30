@@ -62,6 +62,12 @@ pub struct ProgressWriter {
     stdout: Arc<Mutex<tokio::io::Stdout>>,
 }
 
+impl Default for ProgressWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProgressWriter {
     pub fn new() -> Self {
         Self {

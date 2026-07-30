@@ -53,7 +53,7 @@ fn parse_timestamp(ts: &str) -> Result<f64, SrtError> {
     let ts = ts.replace(",", ".");
     let parts: Vec<&str> = ts.split(':').collect();
     if parts.len() != 3 {
-        return Err(SrtError::InvalidTimestamp(ts.into()));
+        return Err(SrtError::InvalidTimestamp(ts));
     }
     let hh: f64 = parts[0].parse()?;
     let mm: f64 = parts[1].parse()?;

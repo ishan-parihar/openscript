@@ -123,15 +123,13 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
         // Duck music during voiceover using sidechaincompress
         let music_vol = spec.music_volume;
         let threshold = 0.001_f64.powf(1.0 - spec.ducking_depth_db / 20.0);
-        filters.push(format!("[1:a]asplit=2[vo_out][vo_sc]"));
+        filters.push("[1:a]asplit=2[vo_out][vo_sc]".to_string());
         filters.push(format!("[2:a]volume={}[music_vol]", music_vol));
         filters.push(format!(
             "[music_vol][vo_sc]sidechaincompress=threshold={}:ratio=4:attack=50:release=200:makeup=1:level_sc=1[music_ducked]",
             threshold
         ));
-        filters.push(format!(
-            "[vo_out][music_ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]"
-        ));
+        filters.push("[vo_out][music_ducked]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[aout]".to_string());
     } else {
         // Just voiceover
         filters.push("[1:a]anull[aout]".to_string());

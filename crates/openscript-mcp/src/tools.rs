@@ -1993,8 +1993,7 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
     };
 
     let ass_content = generate_ass(&caption_segments, &spec, width, height);
-    std::fs::write(&ass_path, &ass_content)
-        .map_err(|e| ToolError::Io(e))?;
+    std::fs::write(&ass_path, &ass_content)?;
 
     let canonical_ass = std::fs::canonicalize(&ass_path)
         .unwrap_or_else(|_| ass_path.clone().into());
@@ -2007,7 +2006,7 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
                 "path": canonical_ass.to_string_lossy().to_string(),
             }));
             // Register caption style in effects so verify.production can detect it
-            tl.effects.caption_style = Some(style.clone());
+            tl.effects.caption_style = Some(style);
             tl.updated_at = chrono::Utc::now();
             let _ = tl.save(tl_path);
         }
@@ -2164,8 +2163,8 @@ async fn handle_srt_apply_edit(args: serde_json::Value) -> Result<serde_json::Va
             .to_string_lossy()
             .to_string()
     };
-    let edl_json = serde_json::to_string_pretty(&edl).map_err(|e| ToolError::Json(e))?;
-    std::fs::write(&edl_path, edl_json).map_err(|e| ToolError::Io(e))?;
+    let edl_json = serde_json::to_string_pretty(&edl).map_err(ToolError::Json)?;
+    std::fs::write(&edl_path, edl_json).map_err(ToolError::Io)?;
 
     // Generate ASS subtitles if burn_captions
     let ass_path = if burn_captions {
@@ -2183,7 +2182,7 @@ async fn handle_srt_apply_edit(args: serde_json::Value) -> Result<serde_json::Va
         );
 
         let ass_out = Path::new(&edl_path).with_extension("ass");
-        let ass_path_str = ass_out.to_string_lossy().to_string();
+        let ass_path_str = ass_out.to_string_lossy().into_owned();
         srt_to_ass(&retimed, &ass_path_str, "Default")
             .map_err(|e| ToolError::Ffmpeg(e.to_string()))?;
         Some(ass_path_str)
@@ -2246,8 +2245,8 @@ async fn handle_edl_build(args: serde_json::Value) -> Result<serde_json::Value, 
 
     if let Some(ap) = &analysis_path {
         let analysis_json =
-            serde_json::to_string_pretty(&analysis).map_err(|e| ToolError::Json(e))?;
-        std::fs::write(ap, analysis_json).map_err(|e| ToolError::Io(e))?;
+            serde_json::to_string_pretty(&analysis).map_err(ToolError::Json)?;
+        std::fs::write(ap, analysis_json).map_err(ToolError::Io)?;
     }
 
     let segments = build_edl(&analysis, &strategy, max_duration, crossfade_ms);
@@ -2274,8 +2273,8 @@ async fn handle_edl_build(args: serde_json::Value) -> Result<serde_json::Value, 
             .to_string()
     };
 
-    let edl_json = serde_json::to_string_pretty(&edl).map_err(|e| ToolError::Json(e))?;
-    std::fs::write(&output_path, edl_json).map_err(|e| ToolError::Io(e))?;
+    let edl_json = serde_json::to_string_pretty(&edl).map_err(ToolError::Json)?;
+    std::fs::write(&output_path, edl_json).map_err(ToolError::Io)?;
 
     let total_duration: f64 = segments.iter().map(|(s, e, _)| e - s).sum();
 
@@ -2327,7 +2326,7 @@ async fn handle_render(args: serde_json::Value) -> Result<serde_json::Value, Too
                     .map(|e| (e.start, e.end, e.text.clone()))
                     .collect();
                 let ass_out = Path::new(srt).with_extension("ass");
-                let ass_path_str = ass_out.to_string_lossy().to_string();
+                let ass_path_str = ass_out.to_string_lossy().into_owned();
                 srt_to_ass(&flat, &ass_path_str, "Default")
                     .map_err(|e| ToolError::Ffmpeg(e.to_string()))?;
                 Some(ass_path_str)
@@ -2345,7 +2344,7 @@ async fn handle_render(args: serde_json::Value) -> Result<serde_json::Value, Too
         video_path: video_path.to_string(),
         edl_path: edl_path.to_string(),
         burn_captions,
-        srt_path: srt_path.map(String::from),
+        srt_path,
         ass_path: resolved_ass_path,
         overlay_mov: None,
         aspect,
@@ -2886,12 +2885,12 @@ async fn handle_timeline_add_track_event(
         .ok_or_else(|| ToolError::MissingArg("event".to_string()))?
         .clone();
 
-    let track_type: TrackType = track_type_str.parse().map_err(|e| ToolError::Timeline(e))?;
+    let track_type: TrackType = track_type_str.parse().map_err(ToolError::Timeline)?;
 
     let mut timeline = Timeline::load(timeline_path)?;
 
     let event_obj: openscript_core::timeline::TimelineEvent =
-        serde_json::from_value(event.clone()).map_err(|e| ToolError::Json(e))?;
+        serde_json::from_value(event.clone()).map_err(ToolError::Json)?;
 
     timeline.add_track_event(track_type, event_obj);
     timeline.save(timeline_path)?;
@@ -3440,7 +3439,7 @@ async fn handle_sfx_assign(args: serde_json::Value) -> Result<serde_json::Value,
 
     let event = openscript_core::timeline::TimelineEvent {
         id: event_id.clone(),
-        asset_id: sfx_path.clone().unwrap_or_else(|| query.to_string()),
+        asset_id: sfx_path.clone().unwrap_or_else(|| query.clone()),
         start_ms: position_ms,
         end_ms: position_ms + actual_duration_ms,
         offset_ms: 0,
@@ -3860,7 +3859,7 @@ async fn handle_music_assign(args: serde_json::Value) -> Result<serde_json::Valu
     let event = openscript_core::timeline::TimelineEvent {
         id: event_id.clone(),
         asset_id: event_id.clone(),
-        start_ms: start_ms,
+        start_ms,
         end_ms: end,
         offset_ms: 0,
         gain_db,
@@ -4225,7 +4224,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         } else { Vec::new() };
         if !segments.is_empty() {
             let mut tl = Timeline::load(tl_path)
-                .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to load timeline: {}", e))))?;
+                .map_err(|e| ToolError::Io(std::io::Error::other(format!("Failed to load timeline: {}", e))))?;
             let mut assigned_count = 0usize;
             // Match each concept's downloaded clip to the corresponding segment by index
             for (i, result_val) in all_results.iter().enumerate() {
@@ -4284,7 +4283,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
             }
             tl.updated_at = chrono::Utc::now();
             tl.save(tl_path)
-                .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("Failed to save timeline: {}", e))))?;
+                .map_err(|e| ToolError::Io(std::io::Error::other(format!("Failed to save timeline: {}", e))))?;
             resp["timeline_path"] = json!(tl_path);
             resp["auto_assigned"] = json!(assigned_count);
             if assigned_count > 0 {
@@ -5280,7 +5279,7 @@ async fn handle_timeline_render(args: serde_json::Value) -> Result<serde_json::V
 /// Generate basic keyword suggestions from a caption for Pexels search.
 async fn handle_broll_plan(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path = extract_str(&args, "timeline_path")?;
-    let timeline_str = std::fs::read_to_string(&timeline_path)
+    let timeline_str = std::fs::read_to_string(timeline_path)
         .map_err(|e| ToolError::InvalidArg(format!("Failed to read timeline {}: {}", timeline_path, e)))?;
     let timeline: serde_json::Value = serde_json::from_str(&timeline_str)
         .map_err(|e| ToolError::InvalidArg(format!("Failed to parse timeline JSON: {}", e)))?;
@@ -5390,7 +5389,7 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
     let mut last_backend = String::new();
     let mut last_model = String::new();
     let total = segments.len();
-    let num_batches = (total + max_batch_size - 1) / max_batch_size;
+    let num_batches = total.div_ceil(max_batch_size);
 
     for batch_idx in 0..num_batches {
         let start = batch_idx * max_batch_size;
@@ -5539,7 +5538,7 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
         let _ = std::fs::create_dir_all(&out_dir);
         let out_srt = out_dir.join("transcript.srt").to_string_lossy().to_string();
         let result = transcribe_with_engine(
-            &audio_path,
+            audio_path,
             &out_srt,
             openscript_transcribe::transcriber::TranscriptionEngine::HinglishGgml,
             "auto",
@@ -5669,7 +5668,7 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
     }
 
     let probe: serde_json::Value =
-        serde_json::from_slice(&output.stdout).map_err(|e| ToolError::Json(e))?;
+        serde_json::from_slice(&output.stdout).map_err(ToolError::Json)?;
 
     let streams = probe
         .get("streams")
@@ -5762,7 +5761,7 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
 
     let rms = mean_volume.unwrap_or(-99.0);
     let peak = max_volume.unwrap_or(-99.0);
-    let has_good_level = rms >= -30.0 && rms <= -12.0;
+    let has_good_level = (-30.0..=-12.0).contains(&rms);
     let has_no_clipping = peak <= 0.0;
     let no_long_silence = silence_segments.is_empty();
 
@@ -5833,7 +5832,7 @@ async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Valu
 /// (UX audit round-2 GAP #10 fix — verify.captions previously only
 /// accepted SRT, but script.to_video emits ASS.)
 fn parse_ass_captions(path: &str) -> Result<Vec<openscript_core::srt::SrtEntry>, ToolError> {
-    let content = std::fs::read_to_string(path).map_err(|e| ToolError::Io(e))?;
+    let content = std::fs::read_to_string(path).map_err(ToolError::Io)?;
     let mut entries = Vec::new();
     let mut idx = 1;
 
@@ -5942,7 +5941,7 @@ async fn handle_verify_captions(args: serde_json::Value) -> Result<serde_json::V
     }
 
     let probe: serde_json::Value =
-        serde_json::from_slice(&probe_output.stdout).map_err(|e| ToolError::Json(e))?;
+        serde_json::from_slice(&probe_output.stdout).map_err(ToolError::Json)?;
     let video_duration_s: f64 = probe
         .get("format")
         .and_then(|f| f.get("duration"))
@@ -6122,7 +6121,7 @@ async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Val
     }
 
     let probe: serde_json::Value =
-        serde_json::from_slice(&probe_output.stdout).map_err(|e| ToolError::Json(e))?;
+        serde_json::from_slice(&probe_output.stdout).map_err(ToolError::Json)?;
 
     let streams = probe
         .get("streams")
@@ -6392,7 +6391,7 @@ async fn probe_audio_metrics(video_path: &str) -> (Option<f64>, Option<f64>, Opt
             for line in s.lines() {
                 if let Some(idx) = line.find("max_volume:") {
                     let rest = &line[idx + "max_volume:".len()..];
-                    let num = rest.trim().split_whitespace().next().unwrap_or("");
+                    let num = rest.split_whitespace().next().unwrap_or("");
                     if let Ok(v) = num.parse::<f64>() {
                         return Some(v);
                     }
@@ -6437,7 +6436,7 @@ async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
         // ffmpeg prints: "[Parsed_volumedetect_0 @ 0x…] mean_volume: -16.5 dB"
         if let Some(idx) = line.find("mean_volume:") {
             let rest = &line[idx + "mean_volume:".len()..];
-            let num = rest.trim().split_whitespace().next().unwrap_or("");
+            let num = rest.split_whitespace().next().unwrap_or("");
             if let Ok(v) = num.parse::<f64>() {
                 mean_db = v;
             }
@@ -6445,7 +6444,7 @@ async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
     }
     // Dialogue typically > -45 dB mean if present; pure silence ~ -91
     let has_dialogue = mean_db > -50.0;
-    let rms_ok = mean_db >= -30.0 && mean_db <= -8.0;
+    let rms_ok = (-30.0..=-8.0).contains(&mean_db);
     (has_dialogue, rms_ok)
 }
 
@@ -6492,7 +6491,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     let mut manifest = if let Some(ref mp) = manifest_path {
         if Path::new(mp).exists() {
             let raw = std::fs::read_to_string(mp)?;
-            serde_json::from_str::<RenderManifest>(&raw).map_err(|e| ToolError::Json(e))?
+            serde_json::from_str::<RenderManifest>(&raw).map_err(ToolError::Json)?
         } else {
             RenderManifest::default()
         }
@@ -7341,19 +7340,16 @@ async fn handle_reelize_direct(args: serde_json::Value) -> Result<serde_json::Va
     let captions_enabled = default_bool(&captions_obj, "enabled", true);
     let broll_arr = args
         .get("broll")
-        .and_then(|v| v.as_array())
-        .map(|a| a.clone())
+        .and_then(|v| v.as_array()).cloned()
         .unwrap_or_default();
     let sfx_arr = args
         .get("sfx")
-        .and_then(|v| v.as_array())
-        .map(|a| a.clone())
+        .and_then(|v| v.as_array()).cloned()
         .unwrap_or_default();
     let music_obj = args.get("music").cloned();
     let voiceover_arr = args
         .get("voiceover")
-        .and_then(|v| v.as_array())
-        .map(|a| a.clone())
+        .and_then(|v| v.as_array()).cloned()
         .unwrap_or_default();
     let srt_path_opt = default_opt_str(&args, "srt_path")
         .map(|s| sanitize_input_path(&s).map(|p| p.to_string_lossy().to_string()))
@@ -7979,7 +7975,7 @@ async fn handle_script_parse(args: serde_json::Value) -> Result<serde_json::Valu
         script_input.to_string()
     } else {
         // File path
-        let path = sanitize_input_path(&script_input)?;
+        let path = sanitize_input_path(script_input)?;
         if !path.exists() {
             return Err(ToolError::NotFound(format!(
                 "Script file not found: {}",
@@ -8105,8 +8101,7 @@ async fn handle_script_generate_voices(
                     .iter()
                     .find(|p| p.model == *voice_lookup || p.model == normalized_voice)
                     .cloned()
-            })
-            .map(|p| p.clone())
+            }).cloned()
             .ok_or_else(|| {
                 ToolError::NotFound(format!(
                     "Voice profile '{}' not found in registry. Try '{}' or add it via voice.profile.add.",
@@ -8402,7 +8397,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
         let pexels_url = format!(
             "https://api.pexels.com/videos/search?query={}&per_page=15&orientation={}",
-            urlencoding::encode(&query),
+            urlencoding::encode(query),
             orientation
         );
 
@@ -8445,7 +8440,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                         {
                             let width = file.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
                             let url = file.get("link").and_then(|v| v.as_str()).unwrap_or("");
-                            if width >= 720 && width <= 1920 && !url.is_empty() {
+                            if (720..=1920).contains(&width) && !url.is_empty() {
                                 // Prefer the longest video
                                 if vid_duration > best_duration {
                                     best_video = Some((url.to_string(), vid_duration));
@@ -10792,7 +10787,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                     .get("link")
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("");
-                                                if width >= 720 && width <= 1920 && !url.is_empty() {
+                                                if (720..=1920).contains(&width) && !url.is_empty() {
                                                     let clip_path = format!(
                                                         "{}/scene_{:03}.mp4",
                                                         cache_dir,
@@ -12751,13 +12746,9 @@ async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::
 
         // Add cookies if enabled
         if use_cookies {
-            // Try browser cookies
-            for browser in &["chrome", "firefox", "edge"] {
-                yt_args.push("--cookies-from-browser".to_string());
-                yt_args.push(browser.to_string());
-                // Only try one browser — if it fails, yt-dlp will continue without cookies
-                break;
-            }
+            // Try chrome first — if it fails, yt-dlp will continue without cookies
+            yt_args.push("--cookies-from-browser".to_string());
+            yt_args.push("chrome".to_string());
         }
 
         // Add user agent to avoid bot detection
@@ -13443,7 +13434,7 @@ async fn handle_gif_search(args: serde_json::Value) -> Result<serde_json::Value,
                     let best = video_files.iter()
                         .filter(|f| {
                             let w = f.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
-                            w >= 360 && w <= 720
+                            (360..=720).contains(&w)
                         })
                         .next()?;
                     Some(json!({
@@ -14842,7 +14833,7 @@ async fn handle_system_config_set(args: serde_json::Value) -> Result<serde_json:
     }
 
     let path = crate::config::write_user_config(&cfg)
-        .map_err(|e| ToolError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| ToolError::Io(std::io::Error::other(e)))?;
 
     Ok(json!({
         "status": "success",
@@ -15552,7 +15543,7 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| !t.is_empty() && !stop.contains(t))
-        .flat_map(|t| expand_token(t))
+        .flat_map(expand_token)
         .collect();
 
     if query_tokens.is_empty() {
@@ -15625,11 +15616,10 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
                 return 0.0;
             }
         }
-        if from_scratch_intent && !nle_intent {
-            if matches!(name, "script.to_video" | "script.parse") {
+        if from_scratch_intent && !nle_intent
+            && matches!(name, "script.to_video" | "script.parse") {
                 return 0.20;
             }
-        }
         // Golden-path defaults
         if matches!(
             name,

@@ -1157,7 +1157,7 @@ fn score_sticker_design_with_duration(
         if boxes_overlap(sticker_box, caption_box) {
             findings.push(format!(
                 "HARD: sticker '{}' at position '{}' scale={:.2} overlaps caption safe zone ({}–{}px from top)",
-                st.path.split('/').last().unwrap_or(&st.path),
+                st.path.split('/').next_back().unwrap_or(&st.path),
                 st.position,
                 st.scale,
                 caption_zone.0,
@@ -1194,7 +1194,7 @@ fn score_sticker_design_with_duration(
             if span as f64 >= duration_ms as f64 * 0.90 {
                 findings.push(format!(
                     "sticker '{}' is always-on ({:.0}% of video) — dynamic placement increases engagement",
-                    st.path.split('/').last().unwrap_or(&st.path),
+                    st.path.split('/').next_back().unwrap_or(&st.path),
                     span as f64 / duration_ms as f64 * 100.0
                 ));
                 break;
@@ -1777,7 +1777,7 @@ pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
         if !repeated.is_empty() {
             let detail: Vec<_> = repeated
                 .iter()
-                .map(|(id, c)| format!("'{}' used {}x", id.split('/').last().unwrap_or(id), c))
+                .map(|(id, c)| format!("'{}' used {}x", id.split('/').next_back().unwrap_or(id), c))
                 .collect();
             findings.push(format!("repetitive sfx: {}", detail.join(", ")));
         }

@@ -72,7 +72,7 @@ async fn spawn_ffmpeg_with_progress(
                 // Best-effort kill; ignore the result because the child may have exited already.
                 let _ = child.start_kill();
                 let _ = child.wait().await;
-                std::fs::write(log_path, "Render cancelled by user\n".to_string())?;
+                std::fs::write(log_path, "Render cancelled by user\n")?;
                 return Err(FfmpegError::RenderFailed("cancelled by user".to_string()));
             }
         }

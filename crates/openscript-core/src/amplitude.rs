@@ -214,7 +214,7 @@ mod tests {
         assert!(!track.frames.is_empty());
         // Amplitudes should be normalized to 0.0–1.0
         for &amp in &track.frames {
-            assert!(amp >= 0.0 && amp <= 1.0, "Amplitude out of range: {}", amp);
+            assert!((0.0..=1.0).contains(&amp), "Amplitude out of range: {}", amp);
         }
         // A 440Hz sine wave should have non-zero amplitude
         assert!(track.frames.iter().sum::<f32>() > 0.0);
