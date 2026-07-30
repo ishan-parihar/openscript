@@ -537,8 +537,10 @@ pub fn tool_definitions() -> serde_json::Value {
                     "quality": {"type": "string", "default": "sd", "description": "Video quality: 'sd', 'hd', '4k'"},
                     "download": {"type": "boolean", "default": true, "description": "Actually download the top result to cache"},
                     "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local video file paths used when Pexels returns 0 results for a concept (or when PEXELS_API_KEY is missing)."},
-                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "When provided, automatically place each fetched clip on the timeline's broll track at the matching segment position. Requires segments parameter."},
-                    "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segment data from segment.analyze or broll.plan. Used with timeline_path for auto-placement. Each concept is matched to a segment by index (concept[0] → segment[0], etc.)."}
+                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "When provided, automatically place each fetched clip on the timeline's broll track at the matching segment position. Requires segments or enriched_segments parameter."},
+                    "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "start": {"type": "number"}, "end": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segment data from segment.analyze or broll.plan. Used with timeline_path for auto-placement. Each concept is matched to a segment by index (concept[0] → segment[0], etc.)."},
+                    "enriched_segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "start": {"type": "number"}, "end": {"type": "number"}, "caption": {"type": "string"}, "keywords": {"type": "array", "items": {"type": "string"}}}}, "description": "Enriched segments from broll.keywords output (each with a keywords array). When provided with timeline_path, broll.fetch searches Pexels using the best keywords per segment and auto-places clips. This is the PREFERRED input over concepts+segments."},
+                    "max_keywords_per_search": {"type": "integer", "default": 3, "description": "Max keywords to join into a single Pexels search query per segment. More keywords = broader results."}
                 },
                 "required": [],
                 "additionalProperties": false
@@ -3965,11 +3967,44 @@ async fn handle_broll_suggest(args: serde_json::Value) -> Result<serde_json::Val
 async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_assets::pexels::PexelsClient;
 
-    // Accept both "concepts" (array) and "keywords" (string or array) for backward compat.
-    if args.get("concepts").is_some() && args.get("keywords").is_some() {
-        tracing::warn!("[broll.fetch] Both 'concepts' and 'keywords' provided; 'concepts' will take precedence.");
-    }
-    let concepts = if args.get("concepts").is_some() {
+    // Accept enriched_segments (from broll.keywords) OR concepts/keywords (flat array).
+    let enriched_segments: Vec<serde_json::Value> = args.get("enriched_segments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let max_kw_per_search = args.get("max_keywords_per_search")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3) as usize;
+
+    // If enriched_segments provided, extract concepts from their keywords arrays.
+    // Each segment's keywords are joined into a single search query for better Pexels results.
+    let concepts_from_enriched: Vec<String> = if !enriched_segments.is_empty() {
+        enriched_segments.iter().map(|seg| {
+            let keywords = seg.get("keywords")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|k| k.as_str().map(String::from)).collect::<Vec<_>>())
+                .unwrap_or_default();
+            // Filter: keep keywords >= 3 chars (skip single-char noise like "par", "ko").
+            // Multi-word phrases with spaces ("city skyline") are great Pexels queries.
+            // Single words like "corruption", "protest" are also good — keep them.
+            let good_kws: Vec<String> = keywords.into_iter()
+                .filter(|k| k.len() >= 3)
+                .take(max_kw_per_search)
+                .collect();
+            if good_kws.is_empty() {
+                // Fallback: use first keyword >= 2 chars
+                seg.get("keywords")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|k| k.as_str())
+                    .filter(|k| k.len() >= 2)
+                    .unwrap_or("video")
+                    .to_string()
+            } else {
+                good_kws.join(" ")
+            }
+        }).collect()
+    } else if args.get("concepts").is_some() {
         extract_arr(&args, "concepts")?
     } else if let Some(s) = args.get("keywords").and_then(|v| v.as_str()) {
         vec![s.to_string()]
@@ -3977,22 +4012,25 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         extract_arr(&args, "keywords")?
     } else {
         return Err(ToolError::MissingArg(
-            "concepts (or keywords)".to_string(),
+            "concepts (or keywords) or enriched_segments".to_string(),
         ));
     };
-    if concepts.is_empty() {
+    if concepts_from_enriched.is_empty() {
         return Err(ToolError::InvalidArg(
             "concepts/keywords must not be empty".into(),
         ));
     }
+    let concepts = concepts_from_enriched;
     let asset_dir =
         default_opt_str(&args, "asset_dir").unwrap_or_else(|| "mcp/assets/broll_cache".to_string());
     let orientation = default_str(&args, "orientation", "9:16");
     let quality = default_str(&args, "quality", "sd");
-    let download = args
-        .get("download")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let download_explicit = args.get("download").and_then(|v| v.as_bool());
+    // Auto-enable download when enriched_segments + timeline_path are both
+    // provided — auto-placement requires downloaded files on disk.
+    let has_enriched = !enriched_segments.is_empty();
+    let has_timeline = default_opt_str(&args, "timeline_path").is_some();
+    let download = download_explicit.unwrap_or(has_enriched && has_timeline);
     // Local fallback clips used when Pexels returns nothing for a concept
     // (mirrors background.fetch's fallback_pool semantics).
     let fallback_pool: Vec<String> = args
@@ -4160,15 +4198,20 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
 
     // AUTO-PLACE: If timeline_path provided, place each clip on timeline
     let timeline_path = default_opt_str(&args, "timeline_path");
-    let segments_arg: Vec<serde_json::Value> = args.get("segments")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
+    // Priority: enriched_segments > segments arg > timeline segments
+    let placement_segments = if !enriched_segments.is_empty() {
+        enriched_segments
+    } else {
+        args.get("segments")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
 
     if let Some(ref tl_path) = timeline_path {
-        // Load segments from timeline if not provided in args
-        let segments = if !segments_arg.is_empty() {
-            segments_arg
+        // Load segments from timeline if not provided in args/enriched_segments
+        let segments = if !placement_segments.is_empty() {
+            placement_segments
         } else if std::path::Path::new(tl_path).exists() {
             // Read segments directly from the timeline JSON
             if let Ok(tl_str) = std::fs::read_to_string(tl_path) {
@@ -4193,12 +4236,13 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                     .unwrap_or("");
                 if cached_path.is_empty() || cached_path == "placeholder" {
                     continue;
-                }                    let start_s = segment.get("start_s")
-                        .or_else(|| segment.get("start"))
-                        .and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let end_s = segment.get("end_s")
-                        .or_else(|| segment.get("end"))
-                        .and_then(|v| v.as_f64()).unwrap_or(start_s + 3.0);
+                }
+                let start_s = segment.get("start_s")
+                    .or_else(|| segment.get("start"))
+                    .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let end_s = segment.get("end_s")
+                    .or_else(|| segment.get("end"))
+                    .and_then(|v| v.as_f64()).unwrap_or(start_s + 3.0);
                 let concept_str = result_val.get("concept")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
