@@ -623,9 +623,20 @@ impl FilterGraphBuilder {
                 // Omit f=mp4 to let ffmpeg auto-detect container format.
                 // Keep si=0 to force video stream selection (default si=-1 may
                 // select audio stream for files with audio, causing static frames).
+                //
+                // Seek offset: Stock Pexels videos often have slow/static intros
+                // (first 2-5s of fade-ins, slow pans). Without seeking, the
+                // overlay window shows only the static intro. Use a deterministic
+                // offset based on clip index to jump past intros into dynamic
+                // content. The offset wraps at 5s to keep clips within bounds.
+                let clip_duration_s = (broll.end_ms - broll.start_ms) as f64 / 1000.0;
+                // Deterministic pseudo-random: golden-ratio hash gives good distribution
+                let seek_offset = ((i as f64 * 1.618033988749895) % 5.0f64)
+                    .min(clip_duration_s.max(0.0) * 0.5); // don't seek past 50% of clip
                 parts.push(format!(
-                    "movie='{}':si=0[broll_src_{}]",
+                    "movie='{}':si=0:ss={:.2}[broll_src_{}]",
                     escaped_path,
+                    seek_offset,
                     i
                 ));
                 parts.push(format!(
