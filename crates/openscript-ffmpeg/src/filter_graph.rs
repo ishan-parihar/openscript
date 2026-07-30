@@ -367,17 +367,35 @@ impl FilterGraphBuilder {
         b.voiceover_events = voiceover_events;
         b.ducking_events = ducking_events;
 
-        // Auto-read captions ASS from timeline.assets.captions if not already set
+        // Auto-read captions from timeline.assets.captions if not already set
         if b.ass_path.is_none() {
-            if let Some(captions_asset) = timeline.assets.captions.get("ass") {
-                if let Some(path_val) = captions_asset.get("path") {
-                    if let Some(path_str) = path_val.as_str() {
-                        let ass = std::path::Path::new(path_str);
-                        if ass.exists() {
-                            b.ass_path = Some(path_str.to_string());
-                            tracing::info!("[filter_graph] Auto-read captions ASS from timeline: {}", path_str);
-                        }
-                    }
+            if let Some(path_str) = timeline.assets.captions
+                .get("ass")
+                .and_then(|a| a.get("path"))
+                .and_then(|p| p.as_str())
+            {
+                let ass = std::path::Path::new(path_str);
+                if ass.exists() {
+                    b.ass_path = Some(path_str.to_string());
+                    tracing::info!("[filter_graph] Auto-read captions ASS from timeline: {}", path_str);
+                } else {
+                    tracing::warn!("[filter_graph] Captions ASS registered but file missing: {}", path_str);
+                }
+            }
+        }
+        // Fallback to SRT if no ASS was found
+        if b.ass_path.is_none() && b.srt_path.is_none() {
+            if let Some(path_str) = timeline.assets.captions
+                .get("srt")
+                .and_then(|a| a.get("path"))
+                .and_then(|p| p.as_str())
+            {
+                let srt = std::path::Path::new(path_str);
+                if srt.exists() {
+                    b = b.with_srt(path_str.to_string());
+                    tracing::info!("[filter_graph] Auto-read captions SRT from timeline: {}", path_str);
+                } else {
+                    tracing::warn!("[filter_graph] Captions SRT registered but file missing: {}", path_str);
                 }
             }
         }
