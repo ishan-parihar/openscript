@@ -58,6 +58,71 @@ pub struct BrollEvent {
     pub end_ms: i64,
 }
 
+/// Ken Burns motion pattern cycled across b-roll clips for visual variety.
+/// Without per-clip motion, stock Pexels videos often appear static because
+/// the seek offset may land on a slow frame. zoompan guarantees continuous
+/// motion regardless of source clip behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotionStyle {
+    /// Gentle zoom toward center — the safest, most-used pattern.
+    ZoomInCenter,
+    /// Slight zoom anchored to the top-left quadrant — off-center energy.
+    ZoomInTopLeft,
+    /// Zoom out from 1.5× to 1.0× — pulls back to reveal more context.
+    ZoomOutCenter,
+    /// Constant 1.2× zoom with horizontal pan to the right — lateral motion.
+    PanRight,
+}
+
+impl MotionStyle {
+    /// Pick a deterministic but varied style per clip index. Cycles through
+    /// all four styles so consecutive clips never look identical.
+    pub fn for_clip(index: usize) -> Self {
+        match index % 4 {
+            0 => MotionStyle::ZoomInCenter,
+            1 => MotionStyle::ZoomInTopLeft,
+            2 => MotionStyle::ZoomOutCenter,
+            _ => MotionStyle::PanRight,
+        }
+    }
+
+    /// Build the three zoompan expression arguments (z, x, y).
+    /// All expressions assume `d=1` so each output frame animates one step
+    /// past the previous frame; with output fps matching the source clip's
+    /// fps (typically 25 or 30) this produces smooth 3-second Ken Burns motion.
+    pub fn expressions(&self) -> (String, String, String) {
+        match self {
+            MotionStyle::ZoomInCenter => (
+                // Grow zoom up to 1.5× while keeping the image centered.
+                "min(zoom+0.0015,1.5)".into(),
+                "iw/2-(iw/zoom/2)".into(),
+                "ih/2-(ih/zoom/2)".into(),
+            ),
+            MotionStyle::ZoomInTopLeft => (
+                "min(zoom+0.0015,1.5)".into(),
+                // Anchor toward the upper-left third so the zoom reveals
+                // a different region than the centered variant.
+                "(iw/zoom)*0.25".into(),
+                "(ih/zoom)*0.25".into(),
+            ),
+            MotionStyle::ZoomOutCenter => (
+                // Pull back from 1.5× down to 1.0× — reveals more context.
+                "if(gt(zoom,1.0),max(zoom-0.0015,1.0),1.0)".into(),
+                "iw/2-(iw/zoom/2)".into(),
+                "ih/2-(ih/zoom/2)".into(),
+            ),
+            MotionStyle::PanRight => (
+                // Hold a constant 1.2× zoom while sliding right.
+                "1.2".into(),
+                // `on*5` shifts ~5px right per output frame — at 30fps that's
+                // 150px/sec, comfortably slower than the clip width.
+                "(iw/zoom)*0.5-(iw/zoom/2)+on*5".into(),
+                "ih/2-(ih/zoom/2)".into(),
+            ),
+        }
+    }
+}
+
 pub struct MusicEvent {
     pub path: String,
     pub volume: f64,
@@ -646,8 +711,30 @@ impl FilterGraphBuilder {
                     seek_offset,
                     i
                 ));
+                // Ken Burns motion: zoompan guarantees continuous on-screen
+                // motion regardless of the source clip's intrinsic behaviour.
+                // Without this, clips whose seek_offset lands on a slow frame
+                // (or Pexels videos that are slow throughout) appear as static
+                // images for the full overlay window. The motion style is
+                // cycled per clip index for visual variety. zoompan's `d=1`
+                // means each output frame animates one step past the previous
+                // frame; with `fps=self.fps` the output frame rate matches the
+                // project's target so downstream filters see consistent timing.
+                let style = MotionStyle::for_clip(i);
+                let (zp_z, zp_x, zp_y) = style.expressions();
                 parts.push(format!(
-                    "[broll_src_{}]scale={w}:{h}[broll_scaled_{}]",
+                    "[broll_src_{}]zoompan=z='{}':x='{}':y='{}':d=1:s={w}x{h}:fps={fps}[broll_zp_{}]",
+                    i,
+                    zp_z,
+                    zp_x,
+                    zp_y,
+                    i,
+                    w = self.width,
+                    h = self.height,
+                    fps = self.fps,
+                ));
+                parts.push(format!(
+                    "[broll_zp_{}]scale={w}:{h}[broll_scaled_{}]",
                     i,
                     i,
                     w = self.width,
@@ -970,7 +1057,103 @@ mod tests {
         assert!(filter.contains("movie='/path/to/broll.mp4'"));
         assert!(filter.contains("scale=1080:1920"));
         assert!(filter.contains("overlay=0:0:enable='between(t,1,"));
+        // zoompan (Ken Burns) must be inserted between trim and scale so
+        // every b-roll clip has continuous motion even when the source is slow.
+        assert!(filter.contains("[broll_src_0]zoompan="));
+        assert!(filter.contains("d=1:s=1080x1920:fps=30"));
+        assert!(filter.contains("[broll_zp_0]"));
         assert_eq!(vout, "[vbroll_0]");
+    }
+
+    #[test]
+    fn test_broll_ken_burns_motion_cycles_through_styles() {
+        // Four consecutive clips must use four different motion styles so
+        // the rendered timeline doesn't feel monotonous.
+        let segments = vec![make_segment("seg_001", 0.0, 20.0)];
+        let broll: Vec<BrollEvent> = (0..8)
+            .map(|i| BrollEvent {
+                path: format!("/path/to/broll_{}.mp4", i),
+                start_ms: i as i64 * 2500,
+                end_ms: i as i64 * 2500 + 2000,
+            })
+            .collect();
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .build();
+
+        // Each clip index should appear once in its zoompan filter
+        for i in 0..8 {
+            assert!(
+                filter.contains(&format!("[broll_src_{}]zoompan=", i)),
+                "clip {} missing zoompan in filter chain",
+                i
+            );
+        }
+        // Clips at indices 0 and 4 share the same style (index % 4 == 0)
+        // so their zoom expressions must match. Spot-check style variation:
+        let clip0_idx = filter.find("[broll_src_0]zoompan=").unwrap();
+        let clip0_chunk = &filter[clip0_idx..filter.find("[broll_zp_0]").unwrap()];
+        let clip1_idx = filter.find("[broll_src_1]zoompan=").unwrap();
+        let clip1_chunk = &filter[clip1_idx..filter.find("[broll_zp_1]").unwrap()];
+        // Two consecutive clips must use different x expressions (different styles)
+        assert_ne!(
+            clip0_chunk, clip1_chunk,
+            "consecutive clips should not share an identical zoompan expression"
+        );
+    }
+
+    #[test]
+    fn test_motion_style_for_clip_cycles() {
+        // Verify the cycle is exactly 4 styles, no duplicates within one cycle.
+        let s0 = MotionStyle::for_clip(0);
+        let s1 = MotionStyle::for_clip(1);
+        let s2 = MotionStyle::for_clip(2);
+        let s3 = MotionStyle::for_clip(3);
+        let s4 = MotionStyle::for_clip(4);
+        assert_ne!(s0, s1);
+        assert_ne!(s1, s2);
+        assert_ne!(s2, s3);
+        assert_ne!(s0, s3);
+        // Index 4 wraps back to the same style as index 0
+        assert_eq!(s0, s4);
+    }
+
+    #[test]
+    fn test_motion_style_expressions_non_empty() {
+        // Every motion style must produce non-empty zoom/pan expressions;
+        // an empty expression would silently disable motion.
+        for style in [
+            MotionStyle::ZoomInCenter,
+            MotionStyle::ZoomInTopLeft,
+            MotionStyle::ZoomOutCenter,
+            MotionStyle::PanRight,
+        ] {
+            let (z, x, y) = style.expressions();
+            assert!(!z.is_empty(), "{:?} produced empty zoom expr", style);
+            assert!(!x.is_empty(), "{:?} produced empty x expr", style);
+            assert!(!y.is_empty(), "{:?} produced empty y expr", style);
+        }
+    }
+
+    #[test]
+    fn test_broll_zoompan_uses_target_dimensions_and_fps() {
+        // zoompan output size and fps must match the builder's target so the
+        // downstream scale filter and timing pipeline see consistent values.
+        let segments = vec![make_segment("seg_001", 0.0, 5.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 0,
+            end_ms: 3000,
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 24, "16:9", false)
+            .with_broll(broll)
+            .build();
+        // 16:9 defaults to 1920x1080 with the chosen 24 fps
+        assert!(
+            filter.contains("s=1920x1080:fps=24"),
+            "zoompan should output at target dimensions and fps: filter was\n{}",
+            filter
+        );
     }
 
     #[test]
