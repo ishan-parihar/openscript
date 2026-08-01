@@ -1,0 +1,2289 @@
+{
+  "version": "2.0",
+  "created_at": "2026-07-31T18:30:54.054783840Z",
+  "updated_at": "2026-07-31T22:23:31.280078030Z",
+  "source": "/home/ishanp/Downloads/audit_v3_render_audio.mp3",
+  "target": {
+    "aspect": "9:16",
+    "fps": 30,
+    "max_duration": null,
+    "width": null,
+    "height": null
+  },
+  "segments": [
+    {
+      "id": "seg_001",
+      "start": 0.0,
+      "end": 3.31,
+      "caption": "Bhai sarkaar ki phati badhiya. Sarkaar shuruaat isi patti",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_002",
+      "start": 3.31,
+      "end": 6.52,
+      "caption": "thi jis hisaab se inhonne media ko capture raha, aavaaz dab",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_003",
+      "start": 6.52,
+      "end": 10.16,
+      "caption": "ai and apna corruption chaaloo rakha. Lekin ab jis hisaab se",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_004",
+      "start": 10.16,
+      "end": 13.22,
+      "caption": "tum dekh rahe ho ki social media par post yah ban kar raha",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_005",
+      "start": 13.22,
+      "end": 16.46,
+      "caption": "hai logon ki account ban kar rahe hain. Kuchh nahin badal",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_006",
+      "start": 16.46,
+      "end": 19.63,
+      "caption": "sakta India mein siva ek revolution ke and ek revolution",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_007",
+      "start": 19.63,
+      "end": 22.91,
+      "caption": "mere hisaab se aana bahut zaroori hai ki bhai log aae bhai",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_008",
+      "start": 22.91,
+      "end": 25.99,
+      "caption": "tarike se protest karen kyonki freedom of speech bachi nah",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_009",
+      "start": 25.99,
+      "end": 30.0,
+      "caption": "in hai. Bhai aavaaz kisi ki bachi nahin hai ya garibi ki.",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_010",
+      "start": 30.0,
+      "end": 32.91,
+      "caption": "Saahab sun hi nahin jaati hai us par gaadiyaan loan dete ha",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_011",
+      "start": 32.91,
+      "end": 35.72,
+      "caption": "in bhai aur jo hote bane bhai aise likh ke nikal jaate hain",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_012",
+      "start": 35.72,
+      "end": 38.5,
+      "caption": "paise khila ke nikal jaate hain jis par paisa hai bhai us",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_013",
+      "start": 38.5,
+      "end": 42.08,
+      "caption": "par koi laws rules kaanoon kuchh apply hi nahin hota bhai.",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_014",
+      "start": 42.08,
+      "end": 44.65,
+      "caption": "And jis par nai bhi hai bhai vah BJP ki chaatukaarita karta",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_015",
+      "start": 44.65,
+      "end": 47.28,
+      "caption": "hai aur bhai yah pahunch jaate hain bhai saahab yah white",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_016",
+      "start": 47.28,
+      "end": 49.97,
+      "caption": "washing ho jaati hai inke oopar se saare cases hat jaate ha",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_017",
+      "start": 49.97,
+      "end": 52.78,
+      "caption": "in chaahe vah rape ke ho murder ke ho criminal cases ho sab",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_018",
+      "start": 52.78,
+      "end": 55.45,
+      "caption": "hat jaate hain. Chayan ki zindagi ji rahe hain, ash ki zind",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_019",
+      "start": 55.45,
+      "end": 58.16,
+      "caption": "agi ji rahe hain. Na bhai saahab aadmi ko hava mil rahi hai",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_020",
+      "start": 58.16,
+      "end": 62.94,
+      "caption": "na paani mil rahi hai. Ke time par gas bhi nahin mil rahi. Inhen kuchh fark thodi",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_021",
+      "start": 62.94,
+      "end": 65.88,
+      "caption": "pad raha hai, inhen kuchh to aphishon mein sab facilities",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_022",
+      "start": 65.88,
+      "end": 68.76,
+      "caption": "hai bhai baith ke sab kha rahe hain, pi rahe hain chayan se",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_023",
+      "start": 68.76,
+      "end": 71.88,
+      "caption": ". Inke loan deal apart hai, bhai sab baahar videsh mein padh",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_024",
+      "start": 71.88,
+      "end": 74.82,
+      "caption": "rahe hain. Yahaan par bhai saahab matlab thodi hai kuchh",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_025",
+      "start": 74.82,
+      "end": 77.7,
+      "caption": "education system se hi karna hai, health care se hi karni",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_026",
+      "start": 77.7,
+      "end": 80.68,
+      "caption": "hai. Inke lie to bhai bhaad mein ja bhai. Apna kaam banta",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_027",
+      "start": 80.68,
+      "end": 84.12,
+      "caption": "hai, bhaad mein ja jaanta. Bhai, revolution bhai, mere hisa",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_028",
+      "start": 84.12,
+      "end": 87.18,
+      "caption": "ab se to bhai, inka laabh zindaabaad. Revolution aana chaah",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_029",
+      "start": 87.18,
+      "end": 90.0,
+      "caption": "ie bhai aur phir chizen sahi honi chaahie kyonki,",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_030",
+      "start": 90.0,
+      "end": 93.01,
+      "caption": "Bhai kuchh nahin bachana is desh ka aur jo badal sakta hai y",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_031",
+      "start": 93.01,
+      "end": 96.32,
+      "caption": "ahi generation badal sakti hai. Abhi dekha hoga kis tarike",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_032",
+      "start": 96.32,
+      "end": 99.32,
+      "caption": "se galgoot evan New York City ka phir se abhi band bajaaya",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_033",
+      "start": 99.32,
+      "end": 102.29,
+      "caption": "inhonne. Bhai is kabhi zevar airport par dvaartan karaaya",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_034",
+      "start": 102.29,
+      "end": 105.3,
+      "caption": "inhonne yogi modi ne. Bhai kis tarike se lekar abhi samajh",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_035",
+      "start": 105.3,
+      "end": 107.96,
+      "caption": "rahe hain bhai saahab jansi aa jaenge bhai number van ja",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_036",
+      "start": 107.96,
+      "end": 111.01,
+      "caption": "enge inke. Bhai unhonne maar li tarike se inki jis tarike se",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_037",
+      "start": 111.01,
+      "end": 113.77,
+      "caption": "unhonne post daali reel bana bana ke lie ki bhai yah hai v",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_038",
+      "start": 113.77,
+      "end": 116.72,
+      "caption": "ah hai bhai nahin jhel paaya bhai inhonne baad mein post hat",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_039",
+      "start": 116.72,
+      "end": 120.0,
+      "caption": "ai hai unki bachchon ki. Desh bachaana hai apne aap ko.",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_040",
+      "start": 120.0,
+      "end": 124.23,
+      "caption": "Na apni bhai quality of life ki jara si bhi kadar hai na, b",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_041",
+      "start": 124.23,
+      "end": 128.46,
+      "caption": "hai jara asa aware ho lo bhai kya chal raha hai, mazaak se",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_042",
+      "start": 128.46,
+      "end": 132.78,
+      "caption": "hat ke bhai kyonki lagi badhiya duniya ki aur phir jo phish",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_043",
+      "start": 132.78,
+      "end": 137.01,
+      "caption": "iega na aam aadmi phishiega bhai yah to bhaiya hai aise ba",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    },
+    {
+      "id": "seg_044",
+      "start": 137.01,
+      "end": 139.4,
+      "caption": "ithe rahenge saare ke saare.",
+      "crossfade_ms": 80,
+      "semantic_role": null
+    }
+  ],
+  "tracks": {
+    "dialogue": [],
+    "broll": [
+      {
+        "id": "broll_0",
+        "asset_id": "broll_0",
+        "start_ms": 0,
+        "end_ms": 13220,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "government building corruption"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "government building corruption"
+        },
+        "event_type": "broll",
+        "concept": "government building corruption",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_1",
+        "asset_id": "broll_1",
+        "start_ms": 13220,
+        "end_ms": 25989,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "social media phone screen"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "social media phone screen"
+        },
+        "event_type": "broll",
+        "concept": "social media phone screen",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_2",
+        "asset_id": "broll_2",
+        "start_ms": 25990,
+        "end_ms": 38500,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "protest crowd poor people"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "protest crowd poor people"
+        },
+        "event_type": "broll",
+        "concept": "protest crowd poor people",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_3",
+        "asset_id": "broll_3",
+        "start_ms": 38500,
+        "end_ms": 49969,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "court justice law books"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "court justice law books"
+        },
+        "event_type": "broll",
+        "concept": "court justice law books",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_4",
+        "asset_id": "broll_4",
+        "start_ms": 49970,
+        "end_ms": 60000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "crime scene investigation"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "crime scene investigation"
+        },
+        "event_type": "broll",
+        "concept": "crime scene investigation",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_5",
+        "asset_id": "broll_5",
+        "start_ms": 60000,
+        "end_ms": 71879,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "election voting booth"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "election voting booth"
+        },
+        "event_type": "broll",
+        "concept": "election voting booth",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_6",
+        "asset_id": "broll_6",
+        "start_ms": 71880,
+        "end_ms": 84120,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "money corruption bribe"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "money corruption bribe"
+        },
+        "event_type": "broll",
+        "concept": "money corruption bribe",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_7",
+        "asset_id": "broll_7",
+        "start_ms": 84120,
+        "end_ms": 96319,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "street protest rally"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "street protest rally"
+        },
+        "event_type": "broll",
+        "concept": "street protest rally",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_8",
+        "asset_id": "broll_8",
+        "start_ms": 96320,
+        "end_ms": 107960,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "soldiers independence"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "soldiers independence"
+        },
+        "event_type": "broll",
+        "concept": "soldiers independence",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_9",
+        "asset_id": "broll_9",
+        "start_ms": 107960,
+        "end_ms": 120000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "smartphone sharing"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "smartphone sharing"
+        },
+        "event_type": "broll",
+        "concept": "smartphone sharing",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_10",
+        "asset_id": "broll_10",
+        "start_ms": 120000,
+        "end_ms": 137009,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "news broadcast megaphone"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "news broadcast megaphone"
+        },
+        "event_type": "broll",
+        "concept": "news broadcast megaphone",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      },
+      {
+        "id": "broll_11",
+        "asset_id": "broll_11",
+        "start_ms": 137010,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "sunrise hope dawn"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "sunrise hope dawn"
+        },
+        "event_type": "broll",
+        "concept": "sunrise hope dawn",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      }
+    ],
+    "captions": [],
+    "sfx": [
+      {
+        "id": "sfx_001",
+        "asset_id": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav",
+        "start_ms": 0,
+        "end_ms": 3370,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "hook"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "hook",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "hook",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 3370,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_002",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 3310,
+        "end_ms": 12621,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_003",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav",
+        "start_ms": 6520,
+        "end_ms": 16397,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9877,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_004",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav",
+        "start_ms": 10160,
+        "end_ms": 11160,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1000,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_005",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav",
+        "start_ms": 13220,
+        "end_ms": 14180,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 960,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_006",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav",
+        "start_ms": 16460,
+        "end_ms": 16900,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_007",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav",
+        "start_ms": 19630,
+        "end_ms": 26870,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 7240,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_008",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav",
+        "start_ms": 22910,
+        "end_ms": 23977,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1067,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_009",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav",
+        "start_ms": 25990,
+        "end_ms": 38740,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 12750,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_010",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav",
+        "start_ms": 30000,
+        "end_ms": 30257,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 257,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_011",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav",
+        "start_ms": 32910,
+        "end_ms": 39070,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 6160,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_012",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav",
+        "start_ms": 35720,
+        "end_ms": 37160,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_013",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 38500,
+        "end_ms": 47811,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_014",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav",
+        "start_ms": 42080,
+        "end_ms": 51957,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9877,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_015",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav",
+        "start_ms": 44650,
+        "end_ms": 45650,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1000,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_016",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav",
+        "start_ms": 47280,
+        "end_ms": 48240,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 960,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_017",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav",
+        "start_ms": 49970,
+        "end_ms": 50410,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_018",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav",
+        "start_ms": 52780,
+        "end_ms": 60020,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 7240,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_019",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav",
+        "start_ms": 55450,
+        "end_ms": 56517,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1067,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_020",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav",
+        "start_ms": 58160,
+        "end_ms": 70910,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 12750,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_021",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav",
+        "start_ms": 62940,
+        "end_ms": 63197,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 257,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_022",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav",
+        "start_ms": 65880,
+        "end_ms": 72040,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 6160,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_023",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav",
+        "start_ms": 68760,
+        "end_ms": 70200,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_024",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 71880,
+        "end_ms": 81191,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_025",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav",
+        "start_ms": 74820,
+        "end_ms": 84697,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9877,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_026",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav",
+        "start_ms": 77700,
+        "end_ms": 78700,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1000,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_027",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav",
+        "start_ms": 80680,
+        "end_ms": 81640,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 960,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_028",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav",
+        "start_ms": 84120,
+        "end_ms": 84560,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_029",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav",
+        "start_ms": 87180,
+        "end_ms": 94420,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 7240,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_030",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav",
+        "start_ms": 90000,
+        "end_ms": 91067,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1067,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_031",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav",
+        "start_ms": 93010,
+        "end_ms": 105760,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 12750,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_032",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav",
+        "start_ms": 96320,
+        "end_ms": 96577,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 257,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_033",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav",
+        "start_ms": 99320,
+        "end_ms": 105480,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 6160,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_034",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav",
+        "start_ms": 102290,
+        "end_ms": 103730,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_035",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav",
+        "start_ms": 105300,
+        "end_ms": 114611,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9311,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_036",
+        "asset_id": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav",
+        "start_ms": 107960,
+        "end_ms": 117837,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 9877,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_037",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav",
+        "start_ms": 111010,
+        "end_ms": 112010,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1000,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_038",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav",
+        "start_ms": 113770,
+        "end_ms": 114730,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 960,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_039",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav",
+        "start_ms": 116720,
+        "end_ms": 117160,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_040",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav",
+        "start_ms": 120000,
+        "end_ms": 127240,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 7240,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_041",
+        "asset_id": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav",
+        "start_ms": 124230,
+        "end_ms": 125297,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1067,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_042",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav",
+        "start_ms": 128460,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 12750,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_043",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav",
+        "start_ms": 132780,
+        "end_ms": 133037,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 257,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_044",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav",
+        "start_ms": 137010,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 6160,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_045",
+        "asset_id": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav",
+        "start_ms": 139400,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "transition"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "transition",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "transition",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 1440,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      },
+      {
+        "id": "sfx_046",
+        "asset_id": "mcp/assets/sfx_library/outros/credits_roll__COMType_Historical Typewriter Processing Steady Soft 01_B00M_ONE.wav",
+        "start_ms": 100389,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": -10.0,
+        "fade_in_ms": 50,
+        "fade_out_ms": 50,
+        "tags": [
+          "outro"
+        ],
+        "provenance": {
+          "tool": "sfx.auto_assign",
+          "editorial_role": "outro",
+          "concept": null
+        },
+        "event_type": "sfx",
+        "editorial_role": "outro",
+        "category": "",
+        "subcategory": "",
+        "duration_ms": 39011,
+        "sample_rate": 44100,
+        "peak_db": 0.0,
+        "loudness_lufs": -14.0,
+        "recommended_gain_db": -10.0,
+        "recommended_use": "single_hit",
+        "safe_overlay": true
+      }
+    ],
+    "voiceover": [],
+    "music": [
+      {
+        "id": "music_001",
+        "asset_id": "music_001",
+        "start_ms": 0,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": -14.0,
+        "fade_in_ms": 500,
+        "fade_out_ms": 500,
+        "tags": [
+          "dramatic",
+          "medium"
+        ],
+        "provenance": {
+          "tool": "music.assign",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "music",
+        "mood": "dramatic",
+        "energy": "medium",
+        "bpm": null,
+        "loopability": true,
+        "intro_friendly": true,
+        "cta_friendly": true,
+        "loudness_target_lufs": -14.0,
+        "loop_mode": "loop",
+        "ducking_policy": "auto"
+      },
+      {
+        "id": "music_002",
+        "asset_id": "music_002",
+        "start_ms": 0,
+        "end_ms": 139400,
+        "offset_ms": 0,
+        "gain_db": -14.0,
+        "fade_in_ms": 500,
+        "fade_out_ms": 500,
+        "tags": [
+          "dramatic",
+          "medium"
+        ],
+        "provenance": {
+          "tool": "music.assign",
+          "editorial_role": null,
+          "concept": null
+        },
+        "event_type": "music",
+        "mood": "dramatic",
+        "energy": "medium",
+        "bpm": null,
+        "loopability": true,
+        "intro_friendly": true,
+        "cta_friendly": true,
+        "loudness_target_lufs": -14.0,
+        "loop_mode": "loop",
+        "ducking_policy": "auto"
+      }
+    ]
+  },
+  "directives": {
+    "ducking": [],
+    "transitions": [],
+    "mix": {
+      "master_gain_db": 0.0,
+      "limiter_threshold_db": -1.0,
+      "normalize_to_lufs": -14.0
+    },
+    "render_backend": "auto"
+  },
+  "assets": {
+    "voices": {},
+    "broll": {
+      "broll_3": {
+        "concept": "court justice law books",
+        "path": "mcp/assets/broll_cache/court_justice_law_books_6101353.mp4"
+      },
+      "broll_7": {
+        "concept": "street protest rally",
+        "path": "mcp/assets/broll_cache/street_protest_rally_5524828.mp4"
+      },
+      "broll_2": {
+        "concept": "protest crowd poor people",
+        "path": "mcp/assets/broll_cache/protest_crowd_poor_people_5524828.mp4"
+      },
+      "broll_6": {
+        "concept": "money corruption bribe",
+        "path": "mcp/assets/broll_cache/money_corruption_bribe_6266653.mp4"
+      },
+      "broll_11": {
+        "concept": "sunrise hope dawn",
+        "path": "mcp/assets/broll_cache/sunrise_hope_dawn_28919337.mp4"
+      },
+      "broll_4": {
+        "concept": "crime scene investigation",
+        "path": "mcp/assets/broll_cache/crime_scene_investigation_10482312.mp4"
+      },
+      "broll_9": {
+        "concept": "smartphone sharing",
+        "path": "mcp/assets/broll_cache/smartphone_sharing_8938179.mp4"
+      },
+      "broll_5": {
+        "concept": "election voting booth",
+        "path": "mcp/assets/broll_cache/election_voting_booth_5925174.mp4"
+      },
+      "broll_0": {
+        "concept": "government building corruption",
+        "path": "mcp/assets/broll_cache/government_building_corruption_31636967.mp4"
+      },
+      "broll_10": {
+        "concept": "news broadcast megaphone",
+        "path": "mcp/assets/broll_cache/news_broadcast_megaphone_5925194.mp4"
+      },
+      "broll_1": {
+        "concept": "social media phone screen",
+        "path": "mcp/assets/broll_cache/social_media_phone_screen_38410501.mp4"
+      },
+      "broll_8": {
+        "concept": "soldiers independence",
+        "path": "mcp/assets/broll_cache/soldiers_independence_9466144.mp4"
+      }
+    },
+    "music": {
+      "music_002": {
+        "path": "mcp/assets/music_cache/Documentary_Cinematic_Inspirational_by_Infraction_Copyright_Free_Music_Freefall.mp3"
+      },
+      "music_001": {
+        "path": "mcp/assets/music_cache/Documentary_Cinematic_Inspirational_by_Infraction_Copyright_Free_Music_Freefall.mp3"
+      }
+    },
+    "sfx": {
+      "sfx_007": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav"
+      },
+      "sfx_009": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav"
+      },
+      "sfx_008": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav"
+      },
+      "sfx_022": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav"
+      },
+      "sfx_015": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav"
+      },
+      "sfx_024": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_036": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav"
+      },
+      "sfx_012": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav"
+      },
+      "sfx_040": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav"
+      },
+      "sfx_010": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav"
+      },
+      "sfx_035": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_018": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav"
+      },
+      "sfx_019": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav"
+      },
+      "sfx_016": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav"
+      },
+      "sfx_041": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav"
+      },
+      "sfx_044": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav"
+      },
+      "sfx_033": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav"
+      },
+      "sfx_003": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav"
+      },
+      "sfx_031": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav"
+      },
+      "sfx_038": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav"
+      },
+      "sfx_039": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav"
+      },
+      "sfx_029": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 1.wav"
+      },
+      "sfx_043": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav"
+      },
+      "sfx_001": {
+        "path": "mcp/assets/sfx_library/intros/cinematic_rise__rise 1.wav"
+      },
+      "sfx_030": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__vhs 2.wav"
+      },
+      "sfx_037": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav"
+      },
+      "sfx_025": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav"
+      },
+      "sfx_021": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav"
+      },
+      "sfx_020": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav"
+      },
+      "sfx_023": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav"
+      },
+      "sfx_034": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav"
+      },
+      "sfx_002": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_045": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__simple whoosh 1.wav"
+      },
+      "sfx_011": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__long whoosh 1.wav"
+      },
+      "sfx_013": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Fabric Knot Foley 01_B00M_ONE.wav"
+      },
+      "sfx_014": {
+        "path": "mcp/assets/sfx_library/transitions/cloth_foley__CLOTHMvmt_Sail Open Soft 01_B00M_ONE.wav"
+      },
+      "sfx_027": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav"
+      },
+      "sfx_032": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Swoosh 01 - 01.wav"
+      },
+      "sfx_005": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 2.wav"
+      },
+      "sfx_017": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav"
+      },
+      "sfx_004": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav"
+      },
+      "sfx_006": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav"
+      },
+      "sfx_026": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 1.wav"
+      },
+      "sfx_028": {
+        "path": "mcp/assets/sfx_library/transitions/digital_glitch__glitch 3.wav"
+      },
+      "sfx_042": {
+        "path": "mcp/assets/sfx_library/transitions/swish_sweep__Smooth Woosh.wav"
+      },
+      "sfx_046": {
+        "path": "mcp/assets/sfx_library/outros/credits_roll__COMType_Historical Typewriter Processing Steady Soft 01_B00M_ONE.wav"
+      }
+    },
+    "captions": {}
+  },
+  "effects": {
+    "burn_captions": true,
+    "audio": {
+      "loudnorm": true
+    },
+    "caption_style": null
+  }
+}

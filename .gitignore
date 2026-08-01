@@ -9,6 +9,7 @@ mcp/assets/kokoro/voices/*.bin
 **/background_cache/
 **/broll_cache/
 artifacts/
+!test_fixtures/
 
 # Generated JSON indices — regenerable at runtime via library.build / sfx.index.
 # music_library_index.json is fully regenerable and not used by any test, so
