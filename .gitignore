@@ -10,6 +10,9 @@ mcp/assets/kokoro/voices/*.bin
 **/broll_cache/
 artifacts/
 !test_fixtures/
+# Ignore auto-generated WAV pre-decodes from audio-only renders
+test_fixtures/*.wav
+test_fixtures/*.hinglish.wav
 
 # Generated JSON indices — regenerable at runtime via library.build / sfx.index.
 # music_library_index.json is fully regenerable and not used by any test, so
