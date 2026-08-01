@@ -474,21 +474,42 @@ impl PexelsClient {
         self.download(best_file, &dest_str).await
     }
 
-    /// Pick the best video file for 9:16 output: prefer portrait orientation, highest quality.
+    /// Pick the best video file for 9:16 output: prefer portrait orientation.
+    ///
+    /// Resolution policy: target 1080p (1080x1920) since the output render is
+    /// 1080x1920 vertical and 4K sources (2160x3840) are ~3x larger on disk
+    /// AND ~4x slower to zoompan-process (zoompan is the bottleneck in
+    /// b-roll rendering). Among all 1080p candidates we still pick the
+    /// portrait one with the largest size as a proxy for higher bitrate.
+    /// Fall back to the smallest portrait file if no 1080p option exists.
     fn pick_best_video_file<'a>(&self, video: &'a PexelsVideo) -> Option<&'a PexelsVideoFile> {
         if video.video_files.is_empty() {
             return None;
         }
 
+        let portrait_1080p: Vec<&PexelsVideoFile> = video
+            .video_files
+            .iter()
+            .filter(|f| !f.link.is_empty() && f.height > f.width && f.height == 1920 && f.width == 1080)
+            .collect();
+
+        if let Some(best) = portrait_1080p.iter().max_by_key(|f| f.size) {
+            return Some(*best);
+        }
+
+        // No 1080p available — fall back to the smallest portrait (least
+        // decode overhead) to avoid the prior 4K-decode bottleneck.
         video
             .video_files
             .iter()
-            .filter(|f| !f.link.is_empty())
-            .max_by_key(|f| {
-                let is_portrait = f.height > f.width;
-                let is_hd = f.height >= 1920 || f.width >= 1920;
-                let size_bonus = f.size;
-                (is_portrait as i64) * 10_000_000 + (is_hd as i64) * 1_000_000 + size_bonus
+            .filter(|f| !f.link.is_empty() && f.height > f.width)
+            .min_by_key(|f| f.size)
+            .or_else(|| {
+                video
+                    .video_files
+                    .iter()
+                    .filter(|f| !f.link.is_empty())
+                    .max_by_key(|f| f.size)
             })
     }
 

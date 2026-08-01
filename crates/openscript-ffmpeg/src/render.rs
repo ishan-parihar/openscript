@@ -206,6 +206,7 @@ pub async fn render_with_cancel(
     cmd.arg("-r").arg(config.fps.to_string());
     cmd.arg("-c:a").arg("aac");
     cmd.arg("-b:a").arg("160k");
+    cmd.arg("-movflags").arg("+faststart");
     cmd.arg(&out_path);
 
     // Execute with progress parsing
@@ -256,6 +257,51 @@ pub async fn render_from_timeline_with_cancel(
                 "[render] Source has no video stream — using audio-only filter path with solid-color background"
             );
             builder = builder.with_audio_only(true);
+
+            // MP3 (and other sequential codecs) lack a seek index, so 44
+            // `[0:a]atrim` filters force ffmpeg to decode the audio
+            // sequentially from time 0 each time — total decode wall time is
+            // O(n × duration). Pre-decoding to WAV in a single fast pass
+            // gives random access and turns the atrim cost into O(duration)
+            // total. The WAV is written next to the source as `.decoded.wav`
+            // and reused if already present. ~140s of audio at 44.1kHz mono
+            // is ~12 MB — small enough to keep on disk.
+            let decoded_wav = format!("{}.decoded.wav", source_video);
+            if !std::path::Path::new(&decoded_wav).exists() {
+                let status = Command::new("ffmpeg")
+                    .args([
+                        "-y",
+                        "-i",
+                        source_video,
+                        "-c:a",
+                        "pcm_s16le",
+                        "-ar",
+                        "44100",
+                        &decoded_wav,
+                    ])
+                    .status()
+                    .await;
+                match status {
+                    Ok(s) if s.success() => {
+                        tracing::info!(
+                            "[render] Pre-decoded audio to {} for fast atrim access",
+                            decoded_wav
+                        );
+                    }
+                    Ok(s) => {
+                        return Err(FfmpegError::RenderFailed(format!(
+                            "pre-decode failed with exit {:?}",
+                            s.code()
+                        )));
+                    }
+                    Err(e) => {
+                        return Err(FfmpegError::RenderFailed(format!(
+                            "pre-decode spawn failed: {}",
+                            e
+                        )));
+                    }
+                }
+            }
         }
     }
 
@@ -347,6 +393,9 @@ pub async fn render_from_timeline_with_cancel(
 
     let (filter_complex, vout, aout) = builder.build();
 
+    // DEBUG: dump filter graph for b-roll investigation
+    std::fs::write("/tmp/debug_filter_graph.txt", format!("VOUT={}\nAOUT={}\n\nFILTER_COMPLEX:\n{}", vout, aout, filter_complex)).ok();
+
     // Determine output path
     let out_path = match output_path {
         Some(p) => p.to_string(),
@@ -371,9 +420,17 @@ pub async fn render_from_timeline_with_cancel(
         .map(|s| ((s.end - s.start) * 1000.0) as i64)
         .sum();
 
-    // Build ffmpeg command
+    // Build ffmpeg command. When audio-only pre-decode ran, the decoded WAV
+    // (which has random access) is the faster input — atrim cost drops from
+    // O(n × duration) to O(duration).
+    let decoded_wav = format!("{}.decoded.wav", source_video);
+    let ffmpeg_input = if std::path::Path::new(&decoded_wav).exists() {
+        decoded_wav.as_str()
+    } else {
+        source_video
+    };
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-y").arg("-i").arg(source_video);
+    cmd.arg("-y").arg("-i").arg(ffmpeg_input);
     cmd.arg("-filter_complex").arg(&filter_complex);
     cmd.arg("-map").arg(&vout);
     cmd.arg("-map").arg(&aout);

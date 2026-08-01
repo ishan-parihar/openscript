@@ -100,12 +100,13 @@ impl MotionStyle {
         match self {
             MotionStyle::ZoomInCenter => (
                 // Grow zoom up to 1.5× while keeping the image centered.
-                "min(zoom+0.0015,1.5)".into(),
+                // 0.003/frame at 30fps = 0.09/sec → reaches 1.5× in ~5.5s
+                "min(zoom+0.003,1.5)".into(),
                 "iw/2-(iw/zoom/2)".into(),
                 "ih/2-(ih/zoom/2)".into(),
             ),
             MotionStyle::ZoomInTopLeft => (
-                "min(zoom+0.0015,1.5)".into(),
+                "min(zoom+0.003,1.5)".into(),
                 // Anchor toward the upper-left third so the zoom reveals
                 // a different region than the centered variant.
                 "(iw/zoom)*0.25".into(),
@@ -113,7 +114,9 @@ impl MotionStyle {
             ),
             MotionStyle::ZoomOutCenter => (
                 // Pull back from 1.5× down to 1.0× — reveals more context.
-                "if(gt(zoom,1.0),max(zoom-0.0015,1.0),1.0)".into(),
+                // Start at 1.5 (on=0), decrease by 0.003/frame.
+                // 0.003/frame at 30fps = 0.09/sec → reaches 1.0 in ~5.5s
+                "max(1.5-0.003*on,1.0)".into(),
                 "iw/2-(iw/zoom/2)".into(),
                 "ih/2-(ih/zoom/2)".into(),
             ),
@@ -795,13 +798,6 @@ impl FilterGraphBuilder {
                 // Keep si=0 to force video stream selection (default si=-1 may
                 // select audio stream for files with audio, causing static frames).
                 //
-                // Loop the source infinitely: Stock Pexels clips are typically
-                // 7-15s long while overlay segments are 10-17s. Without looping,
-                // the movie filter holds the last frame when the source is
-                // exhausted, producing 8-13s of static image per overlay window.
-                // `loop=-1` makes the source loop back from its start so trim
-                // can always produce enough frames.
-                //
                 // Seek offset: Stock Pexels videos often have slow/static intros
                 // (first 2-5s of fade-ins, slow pans). Without seeking, the
                 // overlay window shows only the static intro. Use a deterministic
@@ -810,41 +806,57 @@ impl FilterGraphBuilder {
                 // caller via `crate::probe::probe`), cap the offset so the
                 // trimmed source still has enough frames to cover the full
                 // segment. When unknown, the safe fallback is the deterministic
-                // 5s offset — `loop=-1` covers the case where the trim then
-                // re-enters the source from its start.
+                // 5s offset.
                 let clip_duration_s = (broll.end_ms - broll.start_ms) as f64 / 1000.0;
                 // Deterministic pseudo-random: golden-ratio hash gives good distribution
                 let mut seek_offset = (i as f64 * 1.618033988749895) % 5.0f64;
+                // Compute finite loop count: enough plays to cover the segment
+                // but NEVER infinite (loop=0/loop=-1 hang the render because
+                // the filter graph never terminates). Loop count is the number
+                // of times the source plays: 1 = once (default), N = N times.
+                let mut loop_count: i32 = 1;
                 if let Some(src_dur) = broll.source_duration_s {
-                    // Cap so the trimmed source has enough frames to cover the
-                    // full segment. Without this cap, a 7s source with a 12s
-                    // segment gets seek_offset=2 → trim(start=2) → only 5s left
-                    // → last 7s of the overlay is the held final frame.
+                    // Cap offset so trim fits inside one play.
                     let max_offset = (src_dur - clip_duration_s).max(0.0);
                     seek_offset = seek_offset.min(max_offset);
+                    // If source is shorter than the segment, loop enough times
+                    // so the total source length covers the segment.
+                    if src_dur < clip_duration_s && src_dur > 0.0 {
+                        loop_count = (clip_duration_s / src_dur).ceil() as i32 + 1;
+                    }
                 } else {
-                    // Unknown duration: fall back to the legacy 50% cap so we
-                    // don't seek past the end of a short source.
+                    // Unknown duration: conservative loop of 3 covers up to
+                    // 3× source length (typical Pexels clips are 10-18s;
+                    // segments are 10-17s, so 3× = 30-54s — more than enough).
+                    loop_count = 3;
                     seek_offset = seek_offset.min(clip_duration_s.max(0.0) * 0.5);
                 }
-                // movie= filter with loop=0 (= infinite per ffmpeg docs:
-                // `loop` is an int where 0 = infinite, default 1 = no loop).
-                // The trim filter then operates on an effectively infinite
-                // source. When the overlay is shorter than the source,
-                // the source never loops. When the overlay is longer, the
-                // source loops back from its start so the trim always
-                // produces enough frames to fill the overlay window —
-                // fixing the source-exhaustion static-frame bug where a
-                // short Pexels source was held as last-frame for the
-                // remainder of the overlay.
+                // movie= filter with finite loop count. INFINITE loop (loop=0
+                // or loop=-1) makes the filter graph never terminate, hanging
+                // the render indefinitely. Finite loop gives the source enough
+                // replays to cover the segment without blocking EOF propagation.
                 parts.push(format!(
-                    "movie='{}':si=0:loop=0[broll_raw_{}]",
+                    "movie='{}':si=0[broll_raw_{}]",
                     escaped_path,
+                    i
+                ));
+                // Loop the source so the trim window has enough frames.
+                // The `loop` filter is used instead of movie's `loop=` parameter
+                // because the movie filter's loop option doesn't work reliably
+                // in ffmpeg. `loop=3` means 3 additional loops = 4 total plays.
+                // `size` = max frames per loop (conservative: 60fps × max segment duration).
+                let loop_filter_loops = loop_count.saturating_sub(1).max(0);
+                let max_frames_per_loop = (clip_duration_s * 60.0).ceil() as u32 + 100;
+                parts.push(format!(
+                    "[broll_raw_{}]loop=loop={}:size={}:start=0[broll_looped_{}]",
+                    i,
+                    loop_filter_loops,
+                    max_frames_per_loop,
                     i
                 ));
                 // Trim past the slow intro using seek_offset, then reset PTS
                 parts.push(format!(
-                    "[broll_raw_{}]trim=start={:.2},setpts=PTS-STARTPTS[broll_src_{}]",
+                    "[broll_looped_{}]trim=start={:.2},setpts=PTS-STARTPTS[broll_src_{}]",
                     i,
                     seek_offset,
                     i
@@ -923,41 +935,34 @@ impl FilterGraphBuilder {
         }
 
         // Voiceover mixing — TTS commentary mixed with dialogue
+        // Batched into a single amix=inputs=N instead of cascading amix=inputs=2
+        // (avoids O(n^2) scaling when many VO events share the timeline).
         if !self.voiceover_events.is_empty() {
+            let mut vo_inputs = Vec::with_capacity(self.voiceover_events.len());
+            vo_inputs.push(aout.clone());
             for (i, vo) in self.voiceover_events.iter().enumerate() {
                 let gain = 10f64.powf(vo.gain_db / 20.0);
                 let start_ms = vo.start_ms;
 
                 if let Ok(f) = amovie_filter(&vo.path, "a") {
-                        parts.push(format!("{}[voiceover_{}]", f, i));
-                    } else {
-                        tracing::warn!("[filter_graph] Skipping voiceover {}", i);
-                        continue;
-                    }
+                    parts.push(format!("{}[voiceover_{}]", f, i));
+                } else {
+                    tracing::warn!("[filter_graph] Skipping voiceover {}", i);
+                    continue;
+                }
                 parts.push(format!("[voiceover_{}]volume={}[vo_vol_{}]", i, gain, i));
                 parts.push(format!(
                     "[vo_vol_{}]adelay={}|{}[vo_delayed_{}]",
                     i, start_ms, start_ms, i
                 ));
-
-                let cur_label = if i == 0 {
-                    aout.clone()
-                } else {
-                    format!("[vo_mix_{}]", i - 1)
-                };
-
-                let out_label = if i == self.voiceover_events.len() - 1 {
-                    "[amix_voiceover]".to_string()
-                } else {
-                    format!("[vo_mix_{}]", i)
-                };
-
-                parts.push(format!(
-                    "{}[vo_delayed_{}]amix=inputs=2:duration=first:dropout_transition=1:normalize=0{}",
-                    cur_label, i, out_label
-                ));
-                aout = out_label;
+                vo_inputs.push(format!("[vo_delayed_{}]", i));
             }
+            parts.push(format!(
+                "{}amix=inputs={}:duration=first:dropout_transition=1:normalize=0[amix_voiceover]",
+                vo_inputs.join(""),
+                vo_inputs.len()
+            ));
+            aout = "[amix_voiceover]".into();
         }
 
         // Music mixing — background music mixed with dialogue
@@ -991,6 +996,10 @@ impl FilterGraphBuilder {
                 0.0
             };
 
+            // Batched amix: dialogue + all music tracks in a single amix=inputs=N
+            // instead of cascading amix=inputs=2 per track.
+            let mut music_inputs = Vec::with_capacity(self.music_events.len() + 1);
+            music_inputs.push(dialogue_label.clone());
             for (i, music) in self.music_events.iter().enumerate() {
                 let vol = music.volume;
                 if let Ok(f) = amovie_filter(&music.path, "a") {
@@ -1001,72 +1010,59 @@ impl FilterGraphBuilder {
                 }
                 parts.push(format!("[music_{}]volume={}[music_vol_{}]", i, vol, i));
 
-                let music_out = if has_ducking {
+                if has_ducking {
                     let music_ducked = format!("[music_ducked_{}]", i);
                     parts.push(format!(
                         "[music_vol_{}][sidechain_src]sidechaincompress=threshold=0.001:ratio=4:attack={}:release={}:makeup=1:level_sc=1{}",
                         i, attack, release, music_ducked
                     ));
-                    music_ducked
+                    music_inputs.push(music_ducked);
                 } else {
-                    format!("[music_vol_{}]", i)
-                };
-
-                if i == 0 {
-                    parts.push(format!(
-                        "{}{}amix=inputs=2:duration=first:dropout_transition=2:normalize=0[amix_{}]",
-                        dialogue_label, music_out, i
-                    ));
-                } else {
-                    let prev = format!("[amix_{}]", i - 1);
-                    parts.push(format!(
-                        "{}{}amix=inputs=2:duration=first:dropout_transition=2:normalize=0[amix_{}]",
-                        prev, music_out, i
-                    ));
+                    music_inputs.push(format!("[music_vol_{}]", i));
                 }
             }
-            aout = format!("[amix_{}]", self.music_events.len().saturating_sub(1));
+            if music_inputs.len() > 1 {
+                parts.push(format!(
+                    "{}amix=inputs={}:duration=first:dropout_transition=2:normalize=0[amix_music]",
+                    music_inputs.join(""),
+                    music_inputs.len()
+                ));
+                aout = "[amix_music]".into();
+            }
         }
 
         // SFX injection — sound effects at specific timestamps
-        for (i, sfx) in self.sfx_events.iter().enumerate() {
-            let gain = 10f64.powf(sfx.gain_db / 20.0);
-            let start_s = sfx.start_ms as f64 / 1000.0;
+        // Batched into a single amix=inputs=N instead of cascading amix=inputs=2.
+        // With 46+ SFX events this is the difference between O(n^2) and O(n) wall time.
+        if !self.sfx_events.is_empty() {
+            let mut sfx_inputs = Vec::with_capacity(self.sfx_events.len() + 1);
+            sfx_inputs.push(aout.clone());
+            for (i, sfx) in self.sfx_events.iter().enumerate() {
+                let gain = 10f64.powf(sfx.gain_db / 20.0);
+                let start_s = sfx.start_ms as f64 / 1000.0;
 
-            if let Ok(f) = amovie_filter(&sfx.path, "a") {
+                if let Ok(f) = amovie_filter(&sfx.path, "a") {
                     parts.push(format!("{}[sfx_{}]", f, i));
                 } else {
                     tracing::warn!("[filter_graph] Skipping SFX {}", i);
                     continue;
                 }
-            parts.push(format!("[sfx_{}]volume={}[sfx_vol_{}]", i, gain, i));
+                parts.push(format!("[sfx_{}]volume={}[sfx_vol_{}]", i, gain, i));
+                parts.push(format!(
+                    "[sfx_vol_{}]adelay={}|{}[sfx_delayed_{}]",
+                    i,
+                    (start_s * 1000.0).round() as i64,
+                    (start_s * 1000.0).round() as i64,
+                    i
+                ));
+                sfx_inputs.push(format!("[sfx_delayed_{}]", i));
+            }
             parts.push(format!(
-                "[sfx_vol_{}]adelay={}|{}[sfx_delayed_{}]",
-                i,
-                (start_s * 1000.0).round() as i64,
-                (start_s * 1000.0).round() as i64,
-                i
+                "{}amix=inputs={}:duration=first:dropout_transition=1:normalize=0[asfx]",
+                sfx_inputs.join(""),
+                sfx_inputs.len()
             ));
-
-            let cur_label = if self.music_events.is_empty() && i == 0 {
-                aout.clone()
-            } else if i == 0 && !self.music_events.is_empty() {
-                format!("[amix_{}]", self.music_events.len().saturating_sub(1))
-            } else {
-                format!("[sfx_mix_{}]", i - 1)
-            };
-
-            let out_label = if i == self.sfx_events.len() - 1 {
-                "[asfx]".to_string()
-            } else {
-                format!("[sfx_mix_{}]", i)
-            };
-
-            parts.push(format!(
-                "{}[sfx_delayed_{}]amix=inputs=2:duration=first:dropout_transition=1:normalize=0{}",
-                cur_label, i, out_label
-            ));
-            aout = out_label;
+            aout = "[asfx]".into();
         }
 
         // Post-mix safety limiter — loudnorm TP targets true peaks but
@@ -1077,7 +1073,7 @@ impl FilterGraphBuilder {
         if self.loudnorm {
             let input_label = &aout[1..aout.len() - 1];
             parts.push(format!(
-                "[{}]alimiter=limit=0.70:attack=5:release=50:asc=1:asc_level=0.5[afinal]",
+                "[{}]alimiter=limit=0.70:attack=5:release=50[afinal]",
                 input_label
             ));
             aout = "[afinal]".into();
