@@ -325,6 +325,23 @@ pub struct RenderManifest {
     /// Measured music gain in dB from rendered video.
     #[serde(default)]
     pub measured_music_gain_db: Option<f64>,
+    /// Fraction of frames with non-zero motion (scene_score > 0.001),
+    /// measured from the rendered video via ffmpeg `metadata=print`.
+    /// 0.0 = entirely static, 1.0 = motion in every frame.
+    /// `None` = not probed (verifier was not run on rendered output).
+    /// Targets: >= 0.50 for videos with b-roll (otherwise perceived as
+    /// static images during the static stretches — the bug fixed in
+    /// Phase 129 where short Pexels sources were held as last-frame
+    /// after `seek_offset` exhausted the source mid-segment).
+    #[serde(default)]
+    pub broll_motion_ratio: Option<f64>,
+    /// Longest consecutive static run (in seconds) measured from the
+    /// rendered video. A run is a sequence of consecutive frames whose
+    /// `scene_score < 0.001`. Targets: <= 1.5s for videos with b-roll
+    /// — a 9-12s static stretch is the signature of the source-exhaustion
+    /// bug.
+    #[serde(default)]
+    pub longest_static_run_s: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -454,11 +471,13 @@ pub fn procedural_ratio(bgs: &[BackgroundLayerInfo]) -> f64 {
 }
 
 pub fn production_grade(score: i32) -> &'static str {
+    // v4.1: dimensions now sum to 108 (added broll_motion at 8 pts).
+    // Grade thresholds rescaled proportionally: 85/100 -> 92/108, etc.
     match score {
-        85..=100 => "A",
-        70..=84 => "B",
-        55..=69 => "C",
-        40..=54 => "D",
+        92..=108 => "A",
+        76..=91 => "B",
+        59..=75 => "C",
+        43..=58 => "D",
         _ => "F",
     }
 }
@@ -717,6 +736,97 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
             "max_consecutive_same": max_run,
             "dominant_share": (dominant_share * 1000.0).round() / 1000.0,
             "identities": identities,
+        }),
+        findings,
+    }
+}
+
+/// Weight 8 — b-roll motion: fraction of frames with non-zero motion
+/// and longest static run in the rendered video. Catches the
+/// source-exhaustion bug where `movie= ... :si=0` holds the last frame
+/// of a short Pexels source for the remainder of the overlay window
+/// (typically 8–13s of static image per b-roll clip).
+///
+/// Inputs are pre-computed by the caller via ffmpeg `metadata=print`
+/// (one ffmpeg pass, no per-frame PSNR). When `broll_motion_ratio` is
+/// `None` (verifier never probed the rendered output, or video has no
+/// b-roll), this dimension returns `score=max` so it never punishes a
+/// non-b-roll video.
+fn score_broll_motion(
+    broll_motion_ratio: Option<f64>,
+    longest_static_run_s: Option<f64>,
+    has_broll: bool,
+) -> DimensionScore {
+    let mut findings = Vec::new();
+    // If the caller didn't probe motion, return neutral — don't punish
+    // a video that wasn't verified.
+    let (Some(ratio), Some(longest_run)) = (broll_motion_ratio, longest_static_run_s) else {
+        return DimensionScore {
+            id: "broll_motion".into(),
+            label: "B-roll motion / anti-static".into(),
+            score: 8,
+            max: 8,
+            detail: serde_json::json!({
+                "probed": false,
+                "reason": "no motion probe on rendered output",
+            }),
+            findings,
+        };
+    };
+    // Pure-dialogue or static-only videos (no b-roll in the manifest)
+    // should also pass with full score.
+    if !has_broll {
+        return DimensionScore {
+            id: "broll_motion".into(),
+            label: "B-roll motion / anti-static".into(),
+            score: 8,
+            max: 8,
+            detail: serde_json::json!({
+                "probed": true,
+                "has_broll": false,
+                "motion_ratio": ratio,
+                "longest_static_run_s": longest_run,
+            }),
+            findings,
+        };
+    }
+    // Score formula: linearly reward high motion ratio, linearly
+    // penalize long static runs.
+    //
+    //   ratio_pts  = clamp01(ratio / 0.50) * 4          // up to 4 pts
+    //   run_pts    = clamp01((3.0 - longest_run) / 1.5) * 4  // up to 4 pts
+    //
+    // ratio_pts reaches max when >= 50% of frames have non-zero motion.
+    // run_pts reaches max when longest static run <= 1.5s. The signature
+    // of the source-exhaustion bug is a static run of 8–13s, which
+    // collapses run_pts to 0.
+    let ratio_pts = ((ratio / 0.50).clamp(0.0, 1.0) * 4.0) as i32;
+    let run_pts = (((3.0 - longest_run) / 1.5).clamp(0.0, 1.0) * 4.0) as i32;
+    let score = (ratio_pts + run_pts).min(8);
+    if ratio < 0.30 {
+        findings.push(format!(
+            "MOTION HARD: only {}% of frames have non-zero motion (target >= 50%)",
+            (ratio * 100.0).round() as i32
+        ));
+    }
+    if longest_run > 3.0 {
+        findings.push(format!(
+            "STATIC HARD: longest static run {}s (target <= 1.5s) — likely source exhaustion",
+            (longest_run * 10.0).round() as i32 / 10
+        ));
+    }
+    DimensionScore {
+        id: "broll_motion".into(),
+        label: "B-roll motion / anti-static".into(),
+        score,
+        max: 8,
+        detail: serde_json::json!({
+            "probed": true,
+            "has_broll": has_broll,
+            "motion_ratio": (ratio * 1000.0).round() / 1000.0,
+            "longest_static_run_s": (longest_run * 100.0).round() / 100.0,
+            "ratio_pts": ratio_pts,
+            "run_pts": run_pts,
         }),
         findings,
     }
@@ -2042,15 +2152,26 @@ pub fn evaluate_production_quality(
         findings: timeline_editor.findings.clone(),
     };
 
-    // v4.0: 10+8+8+8+5+8+6+8+6+6+5+8+5+5+4 = 100
+    // Compute broll_motion dimension using the manifest's pre-probed
+    // motion ratio + longest static run. When the manifest was not
+    // motion-probed (caller did not run probe_broll_motion), this
+    // dimension returns score=max so it never punishes.
+    let d_motion = score_broll_motion(
+        manifest.broll_motion_ratio,
+        manifest.longest_static_run_s,
+        !backgrounds.is_empty(),
+    );
+
+    // v4.1: 10+8+8+8+5+8+6+8+6+6+5+8+5+5+4+8 = 108
     let dimensions = vec![
         d_source, d_hooks, d_repeat, d_context, d_cuts,
         d_music, d_sfx, d_sticker, d_cap, d_vo,
         d_audio, d_section, d_hier, d_plat, d_editor,
+        d_motion,
     ];
 
     let mut production_score: i32 =
-        dimensions.iter().map(|d| d.score).sum::<i32>().clamp(0, 100);
+        dimensions.iter().map(|d| d.score).sum::<i32>().clamp(0, 108);
 
     let mut hard_fails = Vec::new();
     let mut next_actions = Vec::new();
@@ -2185,7 +2306,7 @@ pub fn evaluate_production_quality(
         timeline_editor,
         cuts_per_second: (cps * 1000.0).round() / 1000.0,
         video_source_mix: serde_json::Value::Object(mix),
-        kpi_version: "4.0.0".into(),
+        kpi_version: "4.1.0".into(),
     }
 }
 
@@ -2854,6 +2975,43 @@ mod tests {
         assert!(d.findings.iter().any(|f| f.contains("9:16") || f.contains("aspect")));
         assert!(d.findings.iter().any(|f| f.contains("duration") || f.contains("long") || f.contains("90s")));
         assert!(d.score <= 2, "landscape+too-long should score <=2, got {}", d.score);
+    }
+
+    #[test]
+    fn broll_motion_unprobed_scores_max() {
+        // No probed data + no b-roll — should return score=max so it never
+        // punishes a video that wasn't motion-verified.
+        let d = score_broll_motion(None, None, false);
+        assert_eq!(d.id, "broll_motion");
+        assert_eq!(d.score, 8);
+        assert_eq!(d.max, 8);
+    }
+
+    #[test]
+    fn broll_motion_healthy_clip_scores_high() {
+        // 70% of frames have motion, longest static run is 0.5s — both
+        // signals are well within healthy range.
+        let d = score_broll_motion(Some(0.70), Some(0.5), true);
+        assert_eq!(d.score, 8, "70% motion + 0.5s static run should score 8/8, got {} ({:?})", d.score, d.findings);
+        assert!(d.findings.is_empty(), "healthy clip should have no findings, got {:?}", d.findings);
+    }
+
+    #[test]
+    fn broll_motion_source_exhaustion_hard_fails() {
+        // 20% of frames have motion + 9s longest static run — the exact
+        // signature of the source-exhaustion bug (Phase 129 fix).
+        let d = score_broll_motion(Some(0.20), Some(9.0), true);
+        assert!(d.score <= 2, "20% motion + 9s static run should hard-fail, got {}", d.score);
+        assert!(d.findings.iter().any(|f| f.contains("MOTION HARD")), "expected MOTION HARD finding, got {:?}", d.findings);
+        assert!(d.findings.iter().any(|f| f.contains("STATIC HARD")), "expected STATIC HARD finding, got {:?}", d.findings);
+    }
+
+    #[test]
+    fn broll_motion_no_broll_passes_even_when_static() {
+        // Pure-dialogue video (no b-roll in manifest) with poor motion
+        // should still pass — the dimension is gated on has_broll.
+        let d = score_broll_motion(Some(0.10), Some(8.0), false);
+        assert_eq!(d.score, 8);
     }
 }
 

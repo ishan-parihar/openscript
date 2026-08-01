@@ -242,6 +242,23 @@ pub async fn render_from_timeline_with_cancel(
     // Build filter graph from timeline — extracts all track events automatically
     let mut builder = FilterGraphBuilder::from_timeline(timeline);
 
+    // Probe the source so we can detect audio-only inputs. Without this
+    // detection, an mp3/wav source causes the filter graph to reference
+    // `[0:v]` (which doesn't exist) and ffmpeg fails with
+    // "Stream specifier ':v' in filtergraph description ... matches no
+    // streams". The builder's `with_audio_only(true)` path synthesizes a
+    // solid-color video background via `color=` so b-roll + captions still
+    // render normally. Probe failures fall back to the legacy path (which
+    // works for any video+audio source — only audio-only is the failure mode).
+    if let Ok(metrics) = crate::probe::probe(source_video).await {
+        if metrics.width.is_none() || metrics.height.is_none() {
+            tracing::info!(
+                "[render] Source has no video stream — using audio-only filter path with solid-color background"
+            );
+            builder = builder.with_audio_only(true);
+        }
+    }
+
     // Add subtitle/caption sources
     let burn_captions = timeline.effects.burn_captions;
     if burn_captions {
@@ -293,6 +310,38 @@ pub async fn render_from_timeline_with_cancel(
             if overlay_asset.ends_with(".mov") || overlay_asset.ends_with(".mp4") {
                 builder = builder.with_overlay_mov(overlay_asset.to_string());
             }
+        }
+    }
+
+    // Probe each b-roll source so the filter graph can cap seek_offset at
+    // `src_dur - seg_dur`. Without this, a short source (e.g. 7s) with a
+    // long overlay (e.g. 12s) gets a seek_offset that exhausts the source
+    // mid-segment, and the movie= filter holds the last frame for the
+    // remaining seconds (visible as a static image on the rendered video).
+    // Probe failures are non-fatal — the builder falls back to the legacy
+    // 50% cap and the new `loop=-1` source replay still covers the gap.
+    if let Some(broll_track) = timeline.tracks.get(&openscript_core::types::TrackType::Broll) {
+        let mut probed = std::collections::HashMap::new();
+        for evt in broll_track.iter() {
+            if let openscript_core::timeline::EventKind::Broll { .. } = &evt.kind {
+                let path = timeline
+                    .assets
+                    .broll
+                    .get(&evt.id)
+                    .and_then(|v| v.get("path").and_then(|p| p.as_str()))
+                    .unwrap_or("")
+                    .to_string();
+                if !path.is_empty() && path != "placeholder" && !probed.contains_key(&path) {
+                    if let Ok(metrics) = crate::probe::probe(&path).await {
+                        if metrics.duration > 0.0 {
+                            probed.insert(path.clone(), metrics.duration);
+                        }
+                    }
+                }
+            }
+        }
+        if !probed.is_empty() {
+            builder = builder.with_broll_durations(probed);
         }
     }
 

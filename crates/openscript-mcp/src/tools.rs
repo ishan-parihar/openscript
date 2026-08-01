@@ -6448,6 +6448,107 @@ async fn probe_dialogue_rms(video_path: &str) -> (bool, bool) {
     (has_dialogue, rms_ok)
 }
 
+/// Probe b-roll motion in the rendered video via ffmpeg's `scene` filter.
+/// Returns (motion_ratio, longest_static_run_s):
+/// - `motion_ratio`: fraction of frames with non-zero motion (scene_score > 0.001)
+/// - `longest_static_run_s`: longest consecutive sequence of static frames, in seconds
+///
+/// Used by `handle_verify_production` to populate
+/// `RenderManifest::broll_motion_ratio` and `RenderManifest::longest_static_run_s`,
+/// which feed into the `score_broll_motion` dimension. This catches the
+/// source-exhaustion bug where short Pexels sources are held as last-frame
+/// after `seek_offset` exhausts the source mid-segment (produces 8-13s
+/// static-image stretches on rendered output).
+///
+/// Cost: one ffmpeg pass, ~1s for a 30s video at 30fps. Returns (None, None)
+/// on ffmpeg failure or zero frames so the verifier degrades gracefully.
+async fn probe_broll_motion(video_path: &str) -> (Option<f64>, Option<f64>) {
+    use std::process::Stdio;
+
+    let out = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-nostdin",
+            "-loglevel", "info",
+            "-i", video_path,
+            "-vf", "select='gte(scene\\,0)',metadata=print:file=-",
+            "-an", "-f", "null", "-",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .await;
+
+    let buf = String::from_utf8_lossy(&out.as_ref().map(|o| &o.stderr).unwrap_or(&Vec::new())).to_string();
+
+    // Also probe fps to convert frame counts to seconds.
+    let fps_str = tokio::process::Command::new("ffprobe")
+        .args([
+            "-v", "error",
+            "-select_streams", "v",
+            "-show_entries", "stream=avg_frame_rate",
+            "-of", "csv=p=0",
+            video_path,
+        ])
+        .output()
+        .await
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+    let fps: f64 = fps_str
+        .trim()
+        .split('/')
+        .collect::<Vec<_>>()
+        .get(1)
+        .and_then(|d| d.parse::<f64>().ok())
+        .map(|d| {
+            fps_str
+                .trim()
+                .split('/')
+                .next()
+                .and_then(|n| n.parse::<f64>().ok())
+                .map(|n| n / d)
+                .unwrap_or(30.0)
+        })
+        .unwrap_or(30.0)
+        .max(1.0);
+
+    use std::sync::OnceLock;
+    use regex::Regex;
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"scene_score=([0-9.]+)").unwrap());
+
+    let mut scores: Vec<f64> = Vec::new();
+    for line in buf.lines() {
+        if let Some(c) = re.captures(line) {
+            if let Ok(v) = c[1].parse::<f64>() {
+                scores.push(v);
+            }
+        }
+    }
+    if scores.is_empty() {
+        return (None, None);
+    }
+    let n = scores.len();
+    let motion_frames = scores.iter().filter(|s| **s > 0.001).count();
+    let ratio = motion_frames as f64 / n as f64;
+
+    // Longest consecutive run of static frames
+    let mut longest_run: usize = 0;
+    let mut cur_run: usize = 0;
+    for s in &scores {
+        if *s <= 0.001 {
+            cur_run += 1;
+            longest_run = longest_run.max(cur_run);
+        } else {
+            cur_run = 0;
+        }
+    }
+    let run_s = longest_run as f64 / fps;
+
+    (Some(ratio), Some(run_s))
+}
+
 async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_core::production_quality::{
         evaluate_production_quality, grade_rank, BackgroundLayerInfo, MemeLayerInfo, MusicLayerInfo,
@@ -6486,6 +6587,11 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     // Probe actual audio metrics from the rendered video
     let (measured_lufs, measured_peak_dbfs, measured_ducking_depth_db, measured_music_gain_db) =
         probe_audio_metrics(&video_path).await;
+
+    // Probe b-roll motion: fraction of frames with non-zero motion and
+    // longest static run. Feeds the broll_motion dimension so static
+    // b-roll (from source-exhaustion bug) surfaces as a hard fail.
+    let (motion_ratio, longest_static_run_s) = probe_broll_motion(&video_path).await;
 
     // Prefer authoritative render_manifest.json from script.to_video
     let mut manifest = if let Some(ref mp) = manifest_path {
@@ -6616,6 +6722,14 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         if manifest.music.is_some() {
             manifest.music.as_mut().unwrap().gain_db = g;
         }
+    }
+    // Update manifest with measured b-roll motion (catches source-exhaustion
+    // bug — static frames after seek_offset lands past source end).
+    if let Some(r) = motion_ratio {
+        manifest.broll_motion_ratio = Some(r);
+    }
+    if let Some(s) = longest_static_run_s {
+        manifest.longest_static_run_s = Some(s);
     }
 
     let report = evaluate_production_quality(&timeline, &manifest);

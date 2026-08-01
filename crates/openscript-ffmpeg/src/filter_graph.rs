@@ -56,6 +56,12 @@ pub struct BrollEvent {
     pub path: String,
     pub start_ms: i64,
     pub end_ms: i64,
+    /// Source duration in seconds. When known, used to cap `seek_offset` so
+    /// the trimmed source has enough frames to fill the entire overlay window.
+    /// When `None`, the filter graph assumes the source is long enough and
+    /// falls back to the 5s deterministic offset. Callers should probe the
+    /// source with `crate::probe::probe` to populate this.
+    pub source_duration_s: Option<f64>,
 }
 
 /// Ken Burns motion pattern cycled across b-roll clips for visual variety.
@@ -174,6 +180,11 @@ pub struct FilterGraphBuilder {
     voiceover_events: Vec<VoiceoverEvent>,
     ducking_events: Vec<DuckingEvent>,
     fonts_dir: Option<String>,
+    /// When true, the source has no video stream — synthesize a solid-color
+    /// background video from the `color=` filter instead of trimming `[0:v]`.
+    /// Audio is still trimmed via `[0:a]` and mixed normally. Set by callers
+    /// that probe the source via `crate::probe::probe` and see no video stream.
+    audio_only: bool,
 }
 
 impl FilterGraphBuilder {
@@ -203,7 +214,17 @@ impl FilterGraphBuilder {
             voiceover_events: Vec::new(),
             ducking_events: Vec::new(),
             fonts_dir: None,
+            audio_only: false,
         }
+    }
+
+    /// Mark the source as audio-only. Skips `[0:v]` trim and synthesizes a
+    /// solid-color background video via the `color=` filter so the timeline
+    /// can still render b-roll + captions onto a video surface. Audio trim
+    /// (`[0:a]`) and the rest of the post-trim pipeline are unchanged.
+    pub fn with_audio_only(mut self, audio_only: bool) -> Self {
+        self.audio_only = audio_only;
+        self
     }
 
     /// Override the output width/height. Read from
@@ -260,6 +281,24 @@ impl FilterGraphBuilder {
                 }
             })
             .collect();
+        self
+    }
+
+    /// Populate `source_duration_s` on each b-roll event from a path→duration map
+    /// produced by `crate::probe::probe`. Used by `render_from_timeline` so the
+    /// filter graph can cap `seek_offset` at `src_dur - seg_dur` and avoid
+    /// the "source exhausted → held last frame" static-image bug. Events whose
+    /// path is not in the map keep `source_duration_s = None` and fall back
+    /// to the legacy 50%-of-segment cap (which combined with `loop=-1` on
+    /// the movie filter still produces continuous motion).
+    pub fn with_broll_durations(mut self, durations: std::collections::HashMap<String, f64>) -> Self {
+        for ev in &mut self.broll_events {
+            if ev.source_duration_s.is_none() {
+                if let Some(d) = durations.get(&ev.path) {
+                    ev.source_duration_s = Some(*d);
+                }
+            }
+        }
         self
     }
 
@@ -336,6 +375,7 @@ impl FilterGraphBuilder {
                             path,
                             start_ms: evt.start_ms,
                             end_ms: evt.end_ms,
+                            source_duration_s: None,
                         });
                     }
                 }
@@ -482,11 +522,77 @@ impl FilterGraphBuilder {
             return (String::new(), "[0:v]".into(), "[0:a]".into());
         }
 
+        if self.audio_only {
+            return self.build_audio_only();
+        }
+
         if self.segments.len() == 1 {
             return self.build_single();
         }
 
         self.build_xfade()
+    }
+
+    /// Build a filter graph for an audio-only source.
+    ///
+    /// Synthesizes a solid-color video background via the `color=` filter so
+    /// the timeline can still burn captions and overlay b-roll onto a video
+    /// surface. Audio is trimmed from `[0:a]` exactly like the video path —
+    /// xfade transitions between segments are computed the same way, but
+    /// applied to audio only (the video background is a single continuous
+    /// stream that we crossfade via opacity, OR we just hold solid color
+    /// since the video carries no semantic content here).
+    ///
+    /// Background color is intentionally black (0x000000) because the
+    /// captions and b-roll are the only visual content; b-roll overlays cover
+    /// the full frame during their enable windows.
+    fn build_audio_only(mut self) -> (String, String, String) {
+        let total_duration_s: f64 = self
+            .segments
+            .iter()
+            .map(|s| (s.end - s.start).max(0.0))
+            .sum::<f64>()
+            + 0.5; // small margin for the final frame
+
+        // Synthesize a solid-color video background at the target W/H and FPS.
+        // The `color=` filter produces a continuous video stream of the exact
+        // duration, eliminating the need to trim `[0:v]` (which doesn't exist
+        // on audio-only sources). Output label is `[vbg]` so post-trim stages
+        // (subtitles, b-roll, overlay MOV) can chain off it the same way they
+        // would chain off a trimmed source video.
+        self.parts.push(format!(
+            "color=size={w}x{h}:rate={fps}:duration={dur}:color=black[vbg]",
+            w = self.width,
+            h = self.height,
+            fps = self.fps,
+            dur = total_duration_s,
+        ));
+
+        // Audio trim + concat (no xfade — audio-only sources benefit less from
+        // xfade because the source is one continuous recording and segment
+        // boundaries are already matched in the timeline).
+        let n = self.segments.len();
+        for (i, seg) in self.segments.iter().enumerate() {
+            let s = seg.start.max(0.0);
+            let e = seg.end.max(s + 0.001);
+            self.parts.push(format!(
+                "[0:a]atrim=start={}:end={},asetpts=PTS-STARTPTS[a{}]",
+                s, e, i
+            ));
+        }
+        let mut concat_inputs = String::new();
+        for i in 0..n {
+            concat_inputs.push_str(&format!("[a{}]", i));
+        }
+        self.parts.push(format!(
+            "{}concat=n={}:v=0:a=1[acat]",
+            concat_inputs, n
+        ));
+
+        // Start post-trim from [vbg] (solid background) and [acat] (concatenated audio).
+        // The rest of build_post_trim is unchanged — b-roll, subtitles, overlay
+        // MOV, voiceover, music, SFX, loudnorm, alimiter all chain off these labels.
+        self.build_post_trim("[vbg]", "[acat]")
     }
 
     /// Build filter graph for a single segment (no crossfade needed).
@@ -689,18 +795,50 @@ impl FilterGraphBuilder {
                 // Keep si=0 to force video stream selection (default si=-1 may
                 // select audio stream for files with audio, causing static frames).
                 //
+                // Loop the source infinitely: Stock Pexels clips are typically
+                // 7-15s long while overlay segments are 10-17s. Without looping,
+                // the movie filter holds the last frame when the source is
+                // exhausted, producing 8-13s of static image per overlay window.
+                // `loop=-1` makes the source loop back from its start so trim
+                // can always produce enough frames.
+                //
                 // Seek offset: Stock Pexels videos often have slow/static intros
                 // (first 2-5s of fade-ins, slow pans). Without seeking, the
                 // overlay window shows only the static intro. Use a deterministic
                 // offset based on clip index to jump past intros into dynamic
-                // content. The offset wraps at 5s to keep clips within bounds.
+                // content. When the source duration is known (probed by the
+                // caller via `crate::probe::probe`), cap the offset so the
+                // trimmed source still has enough frames to cover the full
+                // segment. When unknown, the safe fallback is the deterministic
+                // 5s offset — `loop=-1` covers the case where the trim then
+                // re-enters the source from its start.
                 let clip_duration_s = (broll.end_ms - broll.start_ms) as f64 / 1000.0;
                 // Deterministic pseudo-random: golden-ratio hash gives good distribution
-                let seek_offset = ((i as f64 * 1.618033988749895) % 5.0f64)
-                    .min(clip_duration_s.max(0.0) * 0.5); // don't seek past 50% of clip
-                // movie= filter does NOT support ss option — use trim= instead
+                let mut seek_offset = (i as f64 * 1.618033988749895) % 5.0f64;
+                if let Some(src_dur) = broll.source_duration_s {
+                    // Cap so the trimmed source has enough frames to cover the
+                    // full segment. Without this cap, a 7s source with a 12s
+                    // segment gets seek_offset=2 → trim(start=2) → only 5s left
+                    // → last 7s of the overlay is the held final frame.
+                    let max_offset = (src_dur - clip_duration_s).max(0.0);
+                    seek_offset = seek_offset.min(max_offset);
+                } else {
+                    // Unknown duration: fall back to the legacy 50% cap so we
+                    // don't seek past the end of a short source.
+                    seek_offset = seek_offset.min(clip_duration_s.max(0.0) * 0.5);
+                }
+                // movie= filter with loop=0 (= infinite per ffmpeg docs:
+                // `loop` is an int where 0 = infinite, default 1 = no loop).
+                // The trim filter then operates on an effectively infinite
+                // source. When the overlay is shorter than the source,
+                // the source never loops. When the overlay is longer, the
+                // source loops back from its start so the trim always
+                // produces enough frames to fill the overlay window —
+                // fixing the source-exhaustion static-frame bug where a
+                // short Pexels source was held as last-frame for the
+                // remainder of the overlay.
                 parts.push(format!(
-                    "movie='{}':si=0[broll_raw_{}]",
+                    "movie='{}':si=0:loop=0[broll_raw_{}]",
                     escaped_path,
                     i
                 ));
@@ -1049,6 +1187,7 @@ mod tests {
             path: "/path/to/broll.mp4".into(),
             start_ms: 1000,
             end_ms: 3000,
+            source_duration_s: None,
         }];
         let (filter, vout, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
             .with_broll(broll)
@@ -1075,6 +1214,7 @@ mod tests {
                 path: format!("/path/to/broll_{}.mp4", i),
                 start_ms: i as i64 * 2500,
                 end_ms: i as i64 * 2500 + 2000,
+                source_duration_s: None,
             })
             .collect();
         let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
@@ -1144,6 +1284,7 @@ mod tests {
             path: "/p/b.mp4".into(),
             start_ms: 0,
             end_ms: 3000,
+            source_duration_s: None,
         }];
         let (filter, _, _) = FilterGraphBuilder::new(segments, 24, "16:9", false)
             .with_broll(broll)
@@ -1227,6 +1368,79 @@ mod tests {
 
         assert!(filter.contains("concat=n=11:v=1:a=1[concat_v][concat_a]"));
         assert!(!filter.contains("xfade="));
+    }
+
+    #[test]
+    fn test_audio_only_uses_color_background() {
+        // When the source is audio-only (mp3/wav), the filter graph must NOT
+        // reference `[0:v]` — it should synthesize a solid-color video via
+        // the `color=` filter at the target W/H and FPS, with a duration that
+        // covers the full timeline. The audio chain still uses `[0:a]` so the
+        // dialogue + SFX mix works normally.
+        let segments = vec![make_segment("seg_001", 0.0, 5.0)];
+        let (filter, vout, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_audio_only(true)
+            .build();
+
+        // Background video synthesized via color=
+        assert!(
+            filter.contains("color=size=1080x1920:rate=30:duration=5.5:color=black[vbg]"),
+            "audio-only path must synthesize a solid-color background: filter was\n{}",
+            filter
+        );
+        // Must NOT reference [0:v] — that stream doesn't exist on audio-only sources
+        assert!(
+            !filter.contains("[0:v]"),
+            "audio-only filter graph must not reference [0:v]: filter was\n{}",
+            filter
+        );
+        // Audio still trimmed from [0:a]
+        assert!(filter.contains("[0:a]atrim="));
+        // Video output label is still a valid video stream for post-trim chaining
+        assert_eq!(vout, "[vcrop]");
+    }
+
+    #[test]
+    fn test_audio_only_preserves_broll_and_subtitles() {
+        // B-roll overlays and subtitle burn-in must work on the audio-only path
+        // exactly like the video path — they chain off the synthesized background.
+        let segments = vec![make_segment("seg_001", 0.0, 5.0)];
+        let broll = vec![BrollEvent {
+            path: "/path/to/broll.mp4".into(),
+            start_ms: 1000,
+            end_ms: 3000,
+            source_duration_s: None,
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", true)
+            .with_audio_only(true)
+            .with_ass("/path/to/captions.ass".into())
+            .with_broll(broll)
+            .build();
+
+        // Background synthesized
+        assert!(filter.contains("color="));
+        // B-roll chain still present (movie + zoompan + scale + overlay)
+        assert!(filter.contains("movie='/path/to/broll.mp4'"));
+        assert!(filter.contains("zoompan="));
+        assert!(filter.contains("overlay=0:0:enable='between(t,1,"));
+        // ASS subtitle burn-in still applied
+        assert!(filter.contains("subtitles='/path/to/captions.ass'"));
+        // Loudnorm + alimiter audio chain still applied
+        assert!(filter.contains("loudnorm=I=-16"));
+        assert!(filter.contains("alimiter="));
+    }
+
+    #[test]
+    fn test_audio_only_disabled_keeps_video_path() {
+        // Sanity check: when audio_only=false (the default), the video path
+        // is used and [0:v] is referenced. This guards against the audio-only
+        // path accidentally leaking into the default code path.
+        let segments = vec![make_segment("seg_001", 0.0, 5.0)];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false).build();
+
+        assert!(filter.contains("[0:v]trim="));
+        assert!(filter.contains("[0:a]atrim="));
+        assert!(!filter.contains("color="));
     }
 
     #[test]
