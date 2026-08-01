@@ -6471,15 +6471,15 @@ async fn probe_broll_motion(video_path: &str) -> (Option<f64>, Option<f64>) {
             "-loglevel", "info",
             "-i", video_path,
             "-vf", "select='gte(scene\\,0)',metadata=print:file=-",
-            "-an", "-f", "null", "-",
+            "-an", "-f", "null", "/dev/null",
         ])
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .output()
         .await;
 
-    let buf = String::from_utf8_lossy(&out.as_ref().map(|o| &o.stderr).unwrap_or(&Vec::new())).to_string();
+    let buf = String::from_utf8_lossy(&out.as_ref().map(|o| &o.stdout).unwrap_or(&Vec::new())).to_string();
 
     // Also probe fps to convert frame counts to seconds.
     let fps_str = tokio::process::Command::new("ffprobe")
@@ -6547,6 +6547,101 @@ async fn probe_broll_motion(video_path: &str) -> (Option<f64>, Option<f64>) {
     let run_s = longest_run as f64 / fps;
 
     (Some(ratio), Some(run_s))
+}
+
+/// Per-clip b-roll motion analysis using frame-hash comparison.
+/// Extracts one JPEG frame per second from each clip's time window,
+/// computes MD5 hashes, and measures uniqueness. A clip where all
+/// frames hash identically is genuinely static (held frame). A clip
+/// where hashes vary has inter-frame motion regardless of how subtle
+/// the zoompan effect is.
+///
+/// Returns per-clip (motion_ratio, longest_static_run_s) where:
+/// - motion_ratio = unique_hash_count / total_sampled_frames
+/// - longest_static_run_s = longest consecutive run of identical hashes in seconds
+async fn probe_broll_motion_per_clip(
+    video_path: &str,
+    clip_ranges: &[(f64, f64)],
+) -> Vec<(usize, Option<f64>, Option<f64>)> {
+    use std::process::Stdio;
+
+    if clip_ranges.is_empty() {
+        return Vec::new();
+    }
+
+    // For each clip, extract one frame per second at its center timestamps
+    // and compute MD5 hashes. This directly tests whether the rendered
+    // pixels change between frames (zoompan, motion, transitions) or are
+    // held identically (static frame bug).
+    let mut results: Vec<(usize, Option<f64>, Option<f64>)> = Vec::new();
+
+    for (idx, &(start_s, end_s)) in clip_ranges.iter().enumerate() {
+        let duration = end_s - start_s;
+        if duration <= 0.0 {
+            results.push((idx, Some(0.0), Some(0.0)));
+            continue;
+        }
+        // Sample up to 10 frames per clip (1fps, capped)
+        let sample_count = (duration.ceil() as usize).min(10).max(2);
+        let interval = duration / sample_count as f64;
+
+        // Extract each frame individually via ffmpeg -ss (fast seek)
+        let mut hashes: Vec<u64> = Vec::new();
+        for s in 0..sample_count {
+            let ts = start_s + (s as f64 + 0.5) * interval; // center of each sub-window
+            let path_str = format!("/tmp/broll_probe_{}_{}.jpg", idx, s);
+            let _ = tokio::process::Command::new("ffmpeg")
+                .args([
+                    "-nostdin", "-loglevel", "error",
+                    "-ss", &format!("{:.3}", ts),
+                    "-i", video_path,
+                    "-vframes", "1", "-q:v", "5", // low quality JPEG for speed
+                    &path_str,
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .output()
+                .await;
+            // Hash the JPEG file content using stdlib DefaultHasher
+            if let Ok(data) = tokio::fs::read(&path_str).await {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut hasher = DefaultHasher::new();
+                data.hash(&mut hasher);
+                let hash = hasher.finish();
+                hashes.push(hash);
+            }
+            let _ = tokio::fs::remove_file(&path_str).await;
+        }
+
+        if hashes.is_empty() {
+            results.push((idx, None, None));
+            continue;
+        }
+
+        // Motion ratio: fraction of unique hashes (0.0 = all same = fully static)
+        let unique_count = hashes.iter().collect::<std::collections::HashSet<_>>().len();
+        let motion_ratio = unique_count as f64 / hashes.len() as f64;
+
+        // Longest consecutive run of identical hashes
+        let mut longest_run: usize = 1;
+        let mut cur_run: usize = 1;
+        for w in hashes.windows(2) {
+            if w[0] == w[1] {
+                cur_run += 1;
+                longest_run = longest_run.max(cur_run);
+            } else {
+                cur_run = 1;
+            }
+        }
+        // Convert run count to seconds (each sample covers `interval` seconds)
+        let longest_run_s = longest_run as f64 * interval;
+
+        results.push((idx, Some(motion_ratio), Some(longest_run_s)));
+    }
+
+    results
 }
 
 async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
@@ -6732,6 +6827,60 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         manifest.longest_static_run_s = Some(s);
     }
 
+    // Per-clip b-roll motion analysis: detect static frames at the
+    // individual clip intersection level, not just globally.
+    let mut per_clip_motion: Vec<serde_json::Value> = Vec::new();
+    if let Some(broll_track) = timeline.tracks.get(&TrackType::Broll) {
+        let clip_ranges: Vec<(f64, f64)> = broll_track
+            .iter()
+            .filter(|ev| !ev.asset_id.is_empty() && ev.asset_id != "placeholder")
+            .map(|ev| (ev.start_ms as f64 / 1000.0, ev.end_ms as f64 / 1000.0))
+            .collect();
+        if !clip_ranges.is_empty() {
+            let clip_results = probe_broll_motion_per_clip(&video_path, &clip_ranges).await;
+            let static_clips: Vec<usize> = clip_results
+                .iter()
+                .filter(|(_, ratio, _)| ratio.map_or(false, |r| r < 0.30))
+                .map(|(idx, _, _)| *idx)
+                .collect();
+            for (idx, ratio, run_s) in &clip_results {
+                per_clip_motion.push(json!({
+                    "clip_index": idx,
+                    "motion_ratio": ratio.map(|r| (r * 1000.0).round() / 1000.0),
+                    "longest_static_run_s": run_s.map(|s| (s * 100.0).round() / 100.0),
+                    "static": ratio.map_or(true, |r| r < 0.30),
+                }));
+            }
+            if !static_clips.is_empty() {
+                tracing::warn!(
+                    "PER-CLIP STATIC DETECTED: {} clip(s) with < 30% motion: {:?}",
+                    static_clips.len(),
+                    static_clips
+                );
+            }
+        }
+    }
+
+    // Override global broll_motion metrics with per-clip frame-hash data
+    // when available — frame-hash detection is more accurate than scene
+    // scores for gradual zoompan motion.
+    if !per_clip_motion.is_empty() {
+        let valid_ratios: Vec<f64> = per_clip_motion.iter()
+            .filter_map(|c| c.get("motion_ratio").and_then(|r| r.as_f64()))
+            .collect();
+        let valid_runs: Vec<f64> = per_clip_motion.iter()
+            .filter_map(|c| c.get("longest_static_run_s").and_then(|r| r.as_f64()))
+            .collect();
+        if !valid_ratios.is_empty() {
+            let avg_ratio = valid_ratios.iter().sum::<f64>() / valid_ratios.len() as f64;
+            manifest.broll_motion_ratio = Some(avg_ratio);
+        }
+        if !valid_runs.is_empty() {
+            let max_run = valid_runs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            manifest.longest_static_run_s = Some(max_run);
+        }
+    }
+
     let report = evaluate_production_quality(&timeline, &manifest);
     let meets_min = grade_rank(&report.grade) >= grade_rank(&min_grade);
 
@@ -6807,6 +6956,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         "video_source_mix": report.video_source_mix,
         "timeline_editor": report.timeline_editor,
         "layer_order": layer_report,
+        "per_clip_motion": per_clip_motion,
         "kpi_version": report.kpi_version,
         "kpi_note": "verify.render is technical-only. Production v3 hard-fails majority procedural, missing visual hooks, and parade music on calm/focus. Use real stock + topic-tagged music.",
         "vision_rescore": vision_rescore,

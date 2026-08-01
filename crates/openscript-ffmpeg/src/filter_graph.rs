@@ -831,32 +831,23 @@ impl FilterGraphBuilder {
                     loop_count = 3;
                     seek_offset = seek_offset.min(clip_duration_s.max(0.0) * 0.5);
                 }
-                // movie= filter with finite loop count. INFINITE loop (loop=0
-                // or loop=-1) makes the filter graph never terminate, hanging
-                // the render indefinitely. Finite loop gives the source enough
-                // replays to cover the segment without blocking EOF propagation.
+                // Use movie= filter's built-in loop parameter instead of a
+                // separate `loop` filter. The `loop` filter has unreliable
+                // buffering when fed by `movie=` sources — it may pass through
+                // without looping, causing source exhaustion (held last frame).
+                // movie=loop=N means N additional plays (N+1 total).
+                // si=-1 auto-selects the first VIDEO stream; si=0 picks the
+                // literal first stream which may be audio in some MP4 files.
+                let movie_loop = loop_count.saturating_sub(1).max(0);
                 parts.push(format!(
-                    "movie='{}':si=0[broll_raw_{}]",
+                    "movie='{}':loop={}:si=-1[broll_raw{}]",
                     escaped_path,
-                    i
-                ));
-                // Loop the source so the trim window has enough frames.
-                // The `loop` filter is used instead of movie's `loop=` parameter
-                // because the movie filter's loop option doesn't work reliably
-                // in ffmpeg. `loop=3` means 3 additional loops = 4 total plays.
-                // `size` = max frames per loop (conservative: 60fps × max segment duration).
-                let loop_filter_loops = loop_count.saturating_sub(1).max(0);
-                let max_frames_per_loop = (clip_duration_s * 60.0).ceil() as u32 + 100;
-                parts.push(format!(
-                    "[broll_raw_{}]loop=loop={}:size={}:start=0[broll_looped_{}]",
-                    i,
-                    loop_filter_loops,
-                    max_frames_per_loop,
+                    movie_loop,
                     i
                 ));
                 // Trim past the slow intro using seek_offset, then reset PTS
                 parts.push(format!(
-                    "[broll_looped_{}]trim=start={:.2},setpts=PTS-STARTPTS[broll_src_{}]",
+                    "[broll_raw{}]trim=start={:.2},setpts=PTS-STARTPTS[broll_src_{}]",
                     i,
                     seek_offset,
                     i
