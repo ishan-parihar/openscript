@@ -156,7 +156,27 @@ segment, the required vs available duration, and an action directive:
 `re-run broll.keywords + broll.fetch for segment <id> — need clip >= Ns`. Act on it:
 1. Re-run `broll.keywords` for that segment's caption (fresh visual keywords).
 2. Re-run `broll.fetch` with those keywords — prefer clips ≥ the segment duration.
+   When segments outnumber concepts, set `download_n >= ceil(segments/concepts)` so
+   the auto-placer cycles DISTINCT clips — never accept the same clip re-styled
+   with a different zoom/pan as "new" footage.
 3. Re-validate / re-render until `broll_gaps` is empty.
+
+**Composition audit + segmentation enforcement (Phase 134):**
+`verify.production` now returns a `composition` block — the post-generation
+meta-cognitive audit: every layer (background_broll, meme_overlay, captions,
+stickers, voiceover, music, sfx) with its z-order, event count, and time range,
+plus `present_order` and `missing`. Read it before judging a render: a video
+whose `missing` lists `captions` or `music` is diagnosable in one step.
+Segmentation is enforced per docs/SEGMENTATION_ARCHITECTURE.md:
+- `timeline.validate` returns `SEGMENTATION:` errors when any segment is outside
+  [2.0s, 6.0s] — the short-form retention bounds.
+- `verify.production` scores `segmentation_pacing` (max 8): long cuts (>6s)
+  bleed attention and are penalized with a "split at the longest internal pause"
+  directive; sub-min cuts (<2s) are penalized with a "merge with adjacent"
+  directive.
+- `visual_repetition` emits an `ANTI-REPEAT:` finding with the distinct-clip
+  ratio and a `broll.fetch download_n` directive when the same clip pool is
+  stretched over too many cuts.
 
 ---
 

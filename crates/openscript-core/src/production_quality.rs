@@ -19,7 +19,9 @@
 //! - platform_optimization (5 pts, new)
 //! - hard gates: no-SFX->C, CPS>25->C, LUFS out-of-range->C, clipping->D
 
-use crate::timeline::{EventKind, Timeline};
+use crate::timeline::{
+    EventKind, MAX_SEGMENT_DURATION_S, MIN_SEGMENT_DURATION_S, Timeline,
+};
 use crate::types::TrackType;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -743,8 +745,19 @@ fn score_visual_repetition(bgs: &[BackgroundLayerInfo]) -> DimensionScore {
     }
     if uniqueness < 0.5 && n >= 3 {
         findings.push(format!(
-            "unique visual identities only {:.0}% (want ≥80% for multi-scene shorts)",
-            uniqueness * 100.0
+            "unique visual identities only {:.0}% — {} distinct clips reused across {} cuts (want ≥80% for multi-scene shorts)",
+            uniqueness * 100.0, unique.len(), n
+        ));
+    }
+    // Actionable anti-repeat directive: when the same clip pool is stretched
+    // over far more cuts than there are distinct clips, tell the agent to
+    // re-fetch MORE distinct footage (broll.fetch download_n) rather than
+    // accept re-styled reuse. This is the loop-closure signal for the
+    // "same clip, different zoom/pan" failure mode.
+    if unique.len() < n && n >= 3 {
+        findings.push(format!(
+            "ANTI-REPEAT: {n} cuts draw from only {} distinct clip(s) (ratio {:.0}%). Re-run broll.fetch with download_n >= {} (or more concepts) so each segment gets its own footage — same clip re-styled with different zoom/pan is not new content.",
+            unique.len(), uniqueness * 100.0, ((n as f64 / unique.len().max(1) as f64).ceil() as usize).max(2)
         ));
     }
     if unique.len() == 1 && n > 1 {
@@ -1055,6 +1068,93 @@ fn score_cuts_pacing(bgs: &[BackgroundLayerInfo], duration_ms: i64) -> (Dimensio
         },
         cps,
     )
+}
+
+/// SEGMENTATION_ARCHITECTURE.md §3 enforcement dimension: scores how well the
+/// timeline's segment durations respect the short-form bounds
+/// (MIN_SEGMENT_DURATION_S=2.0s … MAX_SEGMENT_DURATION_S=6.0s). Long cuts
+/// bleed viewer attention; sub-min cuts flicker. Full marks when every
+/// segment is inside [2.0s, 6.0s] and the mean sits near the 4.0s target.
+pub fn score_segmentation_pacing(timeline: &Timeline) -> DimensionScore {
+    let mut findings = Vec::new();
+    let segs = &timeline.segments;
+    if segs.is_empty() {
+        return DimensionScore {
+            id: "segmentation_pacing".into(),
+            label: "Segment duration pacing".into(),
+            score: 0,
+            max: 8,
+            detail: serde_json::json!({}),
+            findings: vec!["no segments — segmentation missing".into()],
+        };
+    }
+
+    let mut over_max = 0usize;
+    let mut under_min = 0usize;
+    let mut sum_s = 0.0f64;
+    let mut max_dur = 0.0f64;
+    for seg in segs {
+        let d = seg.end - seg.start;
+        sum_s += d;
+        max_dur = max_dur.max(d);
+        if d > MAX_SEGMENT_DURATION_S + 1e-9 {
+            over_max += 1;
+        } else if d < MIN_SEGMENT_DURATION_S - 1e-9 {
+            under_min += 1;
+        }
+    }
+    let mean_s = sum_s / segs.len() as f64;
+
+    // Base score: 8 pts, minus 2 per out-of-bounds segment (capped at 0), and
+    // minus 2 when the mean drifts >1s from the 4.0s target.
+    let mut score = 8i32 - 2 * (over_max + under_min) as i32;
+    if !(3.0..=5.0).contains(&mean_s) {
+        score -= 2;
+    }
+    let score = score.max(0);
+
+    if over_max > 0 {
+        findings.push(format!(
+            "SEGMENTATION: {over_max} segment(s) exceed the {:.0}s short-form maximum (longest {:.1}s) — long cuts bleed attention; split at the longest internal pause",
+            MAX_SEGMENT_DURATION_S, max_dur
+        ));
+    }
+    if under_min > 0 {
+        findings.push(format!(
+            "SEGMENTATION: {under_min} segment(s) below the {:.0}s minimum — flicker risk; merge with adjacent",
+            MIN_SEGMENT_DURATION_S
+        ));
+    }
+    if over_max == 0 && under_min == 0 && !(3.0..=5.0).contains(&mean_s) {
+        findings.push(format!(
+            "segments within bounds but mean {:.1}s drifts from the 4.0s short-form target",
+            mean_s
+        ));
+    }
+    if over_max == 0 && under_min == 0 && score == 8 {
+        findings.push(format!(
+            "all {} segments within [{:.0}s, {:.0}s], mean {:.1}s — ideal short-form pacing",
+            segs.len(), MIN_SEGMENT_DURATION_S, MAX_SEGMENT_DURATION_S, mean_s
+        ));
+    }
+
+    DimensionScore {
+        id: "segmentation_pacing".into(),
+        label: "Segment duration pacing".into(),
+        score,
+        max: 8,
+        detail: serde_json::json!({
+            "segment_count": segs.len(),
+            "mean_duration_s": (mean_s * 100.0).round() / 100.0,
+            "longest_duration_s": (max_dur * 100.0).round() / 100.0,
+            "over_max_count": over_max,
+            "under_min_count": under_min,
+            "min_duration_s": MIN_SEGMENT_DURATION_S,
+            "max_duration_s": MAX_SEGMENT_DURATION_S,
+            "target_duration_s": 4.0,
+        }),
+        findings,
+    }
 }
 
 /// Weight 8 — music bed quality: presence, non-synthetic, topic fit,
@@ -2183,6 +2283,7 @@ pub fn evaluate_production_quality(
         captions_present,
     );
     let d_plat    = score_platform_optimization(duration_ms, manifest.aspect_ratio.as_deref());
+    let d_seg     = score_segmentation_pacing(timeline);
     let timeline_editor = score_timeline_editor(timeline);
 
     // Verify layer composition order
@@ -2213,16 +2314,16 @@ pub fn evaluate_production_quality(
         &manifest.broll_gaps,
     );
 
-    // v4.1: 10+8+8+8+5+8+6+8+6+6+5+8+5+5+4+8 = 108
+    // v4.2: 10+8+8+8+5+8+6+8+6+6+5+8+5+5+4+8+8 = 116
     let dimensions = vec![
         d_source, d_hooks, d_repeat, d_context, d_cuts,
         d_music, d_sfx, d_sticker, d_cap, d_vo,
         d_audio, d_section, d_hier, d_plat, d_editor,
-        d_motion,
+        d_motion, d_seg,
     ];
 
     let mut production_score: i32 =
-        dimensions.iter().map(|d| d.score).sum::<i32>().clamp(0, 108);
+        dimensions.iter().map(|d| d.score).sum::<i32>().clamp(0, 116);
 
     let mut hard_fails = Vec::new();
     let mut next_actions = Vec::new();
@@ -2357,7 +2458,7 @@ pub fn evaluate_production_quality(
         timeline_editor,
         cuts_per_second: (cps * 1000.0).round() / 1000.0,
         video_source_mix: serde_json::Value::Object(mix),
-        kpi_version: "4.1.0".into(),
+        kpi_version: "4.2.0".into(),
     }
 }
 
@@ -2578,6 +2679,85 @@ mod tests {
         assert!(
             d.findings.iter().any(|f| f.contains("REPETITION") || f.contains("HARD")),
             "must flag repetition: {:?}",
+            d.findings
+        );
+    }
+
+    #[test]
+    fn segmentation_pacing_penalizes_long_and_short_cuts() {
+        let mut tl = empty_timeline();
+        // 12s cut — way over the 6s short-form max
+        tl.segments.push(crate::timeline::Segment {
+            id: "seg_001".into(),
+            start: 0.0,
+            end: 12.0,
+            caption: "long".into(),
+            crossfade_ms: 0,
+            semantic_role: None,
+        });
+        // 0.5s cut — under the 2s min
+        tl.segments.push(crate::timeline::Segment {
+            id: "seg_002".into(),
+            start: 12.0,
+            end: 12.5,
+            caption: "flicker".into(),
+            crossfade_ms: 0,
+            semantic_role: None,
+        });
+        let d = score_segmentation_pacing(&tl);
+        assert!(d.score < 8, "long cuts must be penalized, got {}", d.score);
+        assert!(
+            d.findings.iter().any(|f| f.contains("SEGMENTATION") && f.contains("exceed")),
+            "must flag the long cut: {:?}",
+            d.findings
+        );
+        assert!(
+            d.findings.iter().any(|f| f.contains("SEGMENTATION") && f.contains("below")),
+            "must flag the short cut: {:?}",
+            d.findings
+        );
+    }
+
+    #[test]
+    fn segmentation_pacing_full_marks_in_bounds() {
+        let mut tl = empty_timeline();
+        for (i, (s, e)) in [(0.0, 3.5), (3.5, 7.5), (7.5, 12.0)].iter().enumerate() {
+            tl.segments.push(crate::timeline::Segment {
+                id: format!("seg_{:03}", i + 1),
+                start: *s,
+                end: *e,
+                caption: "ok".into(),
+                crossfade_ms: 0,
+                semantic_role: None,
+            });
+        }
+        let d = score_segmentation_pacing(&tl);
+        assert_eq!(d.score, 8, "in-bounds segments with 4s-ish mean get full marks, got {}", d.score);
+        assert_eq!(d.max, 8);
+    }
+
+    #[test]
+    fn anti_repeat_directive_mentions_refetch() {
+        // 5 cuts drawn from only 2 distinct clips — the "same clip, different
+        // zoom/pan" failure mode the agent must break by re-fetching distinct
+        // footage (broll.fetch download_n).
+        let bgs: Vec<BackgroundLayerInfo> = (0..5)
+            .map(|i| BackgroundLayerInfo {
+                path: format!("cache/clip_{}.mp4", i % 2),
+                start_ms: i * 3000,
+                end_ms: (i + 1) * 3000,
+                source_hint: Some("pexels".into()),
+                content_hash: Some(format!("hash_{}", i % 2)),
+                video_id: Some(format!("vid{}", i % 2)),
+                search_query: Some("query".into()),
+                lexical_score: None,
+                source_title: None,
+            })
+            .collect();
+        let d = score_visual_repetition(&bgs);
+        assert!(
+            d.findings.iter().any(|f| f.contains("ANTI-REPEAT") && f.contains("download_n")),
+            "must emit actionable ANTI-REPEAT with download_n directive: {:?}",
             d.findings
         );
     }

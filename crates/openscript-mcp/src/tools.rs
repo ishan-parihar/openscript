@@ -521,7 +521,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "broll.fetch",
-            "description": "Search Pexels for b-roll videos matching given concepts or keywords. Set download=true to download videos. When timeline_path and segments are provided, automatically places each downloaded clip on the timeline at the correct position/duration — no manual broll.assign needed. Returns: results with concept, videos, cached_path. When auto-placed, returns timeline_path and assigned count.",
+            "description": "Search Pexels for b-roll videos matching given concepts or keywords. Set download=true to download videos. download_n controls how many DISTINCT clips are downloaded per concept (default 1) — when you have more segments than concepts, use download_n >= ceil(segments/concepts) so the auto-placer cycles distinct footage and segments never reuse the same clip (the \"same clip, different zoom/pan\" anti-pattern). When timeline_path and segments are provided, automatically places each downloaded clip on the timeline at the correct position/duration — no manual broll.assign needed. Returns: results with concept, videos, cached_path, cached_paths, source_duration_s. When auto-placed, returns timeline_path and assigned count.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -535,7 +535,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "When provided, automatically place each fetched clip on the timeline's broll track at the matching segment position. Requires segments or enriched_segments parameter."},
                     "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "start": {"type": "number"}, "end": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segment data from segment.analyze or broll.plan. Used with timeline_path for auto-placement. Each concept is matched to a segment by index (concept[0] → segment[0], etc.)."},
                     "enriched_segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "start": {"type": "number"}, "end": {"type": "number"}, "caption": {"type": "string"}, "keywords": {"type": "array", "items": {"type": "string"}}}}, "description": "Enriched segments from broll.keywords output (each with a keywords array). When provided with timeline_path, broll.fetch searches Pexels using the best keywords per segment and auto-places clips. This is the PREFERRED input over concepts+segments."},
-                    "max_keywords_per_search": {"type": "integer", "default": 3, "description": "Max keywords to join into a single Pexels search query per segment. More keywords = broader results."}
+                    "max_keywords_per_search": {"type": "integer", "default": 3, "description": "Max keywords to join into a single Pexels search query per segment. More keywords = broader results."},
+                    "download_n": {"type": "integer", "default": 1, "description": "Number of DISTINCT clips to download per concept. Set >1 when segments outnumber concepts so each segment gets its own footage (breaks clip reuse)."}
                 },
                 "required": [],
                 "additionalProperties": false
@@ -2783,6 +2784,10 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
         .to_string();
     let timeline = Timeline::load(&timeline_path)?;
     let mut errors = timeline.validate();
+    // SEGMENTATION_ARCHITECTURE.md §3: every segment must fall within
+    // [MIN_SEGMENT_DURATION_S, MAX_SEGMENT_DURATION_S] (2.0s–6.0s) for
+    // short-form retention. Long cuts bleed attention; sub-min cuts flicker.
+    errors.extend(timeline.validate_segmentation());
     // Phase 54: Reject empty timelines
     if timeline.segments.is_empty() {
         errors.push("Timeline has no segments. Call timeline.add_segment to populate it with segments.".to_string());
@@ -4020,6 +4025,15 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         default_opt_str(&args, "asset_dir").unwrap_or_else(|| "mcp/assets/broll_cache".to_string());
     let orientation = default_str(&args, "orientation", "9:16");
     let quality = default_str(&args, "quality", "sd");
+    // Number of DISTINCT clips to download per concept. When the agent has
+    // more segments than concepts (e.g. 44 segments / 12 concepts), downloading
+    // several distinct clips per concept lets the auto-placer cycle through
+    // them so consecutive segments don't reuse the same footage.
+    let download_n = args
+        .get("download_n")
+        .and_then(|v| v.as_u64())
+        .map(|n| n.max(1) as usize)
+        .unwrap_or(1);
     let download_explicit = args.get("download").and_then(|v| v.as_bool());
     // Auto-enable download when enriched_segments + timeline_path are both
     // provided — auto-placement requires downloaded files on disk.
@@ -4108,13 +4122,29 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
             .await
             .map_err(|e| ToolError::Asset(e.to_string()))?;
 
-        let first = videos.first();
-        let mut cached_path = None;
+        // Download up to `download_n` DISTINCT clips per concept (not just the
+        // top hit). Distinct footage per segment is what breaks the "same clip,
+        // different zoom/pan" illusion — reuse is only acceptable when the
+        // source library is genuinely exhausted, and the verifier flags that.
+        let mut cached_paths: Vec<String> = Vec::new();
+        // path → real duration (Pexels metadata) for EACH downloaded clip, so
+        // auto-place records the duration of the clip actually placed, not the
+        // first result's. Without this, probe_broll_gaps compares the segment
+        // window against the wrong clip's duration whenever the cursor cycles
+        // to a different distinct clip (missed or false gaps).
+        let mut path_durations: std::collections::HashMap<String, f64> =
+            std::collections::HashMap::new();
         if download {
-            if let Some(v) = first {
+            let mut seen_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+            for v in videos.iter().take(download_n) {
+                if !seen_ids.insert(v.id) {
+                    continue;
+                }
+                let v_duration = v.duration as f64;
                 match client.download_best(v, concept).await {
                     Ok(path) => {
-                        cached_path = Some(path.clone());
+                        path_durations.insert(path.clone(), v_duration);
+                        cached_paths.push(path.clone());
                         downloaded.push((concept.clone(), path));
                     }
                     Err(e) => {
@@ -4123,6 +4153,7 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                 }
             }
         }
+        let cached_path = cached_paths.first().cloned();
 
         let video_json: Vec<serde_json::Value> = videos
             .iter()
@@ -4146,6 +4177,22 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         });
         if let Some(path) = &cached_path {
             result["cached_path"] = json!(path);
+        }
+        if !cached_paths.is_empty() {
+            // Distinct clips downloaded for this concept. The auto-placer
+            // cycles through them so consecutive segments sharing a concept
+            // still get different footage.
+            result["cached_paths"] = json!(cached_paths);
+        }
+        if !path_durations.is_empty() {
+            // Per-path durations so auto-place can store the duration of the
+            // clip it actually placed (see path_durations in the download
+            // loop above).
+            let dur_map: serde_json::Map<String, serde_json::Value> = path_durations
+                .iter()
+                .map(|(p, d)| (p.clone(), json!(d)))
+                .collect();
+            result["cached_path_durations"] = json!(dur_map);
         }
         // Record the source clip's real duration (from Pexels metadata) so
         // timeline.validate / verify.production can compare it against the
@@ -4229,16 +4276,38 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
             let mut tl = Timeline::load(tl_path)
                 .map_err(|e| ToolError::Io(std::io::Error::other(format!("Failed to load timeline: {}", e))))?;
             let mut assigned_count = 0usize;
-            // Match each concept's downloaded clip to the corresponding segment by index
-            for (i, result_val) in all_results.iter().enumerate() {
-                if i >= segments.len() { break; }
-                let segment = &segments[i];
-                let cached_path = result_val.get("cached_path")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if cached_path.is_empty() || cached_path == "placeholder" {
+            // Distribute clips to segments. When there are MORE segments than
+            // concepts (the common 44-seg/12-concept case), cycle through each
+            // concept's DISTINCT downloaded clips (`cached_paths`) so adjacent
+            // segments reuse the same footage only when the pool is exhausted.
+            let mut concept_cursor: std::collections::HashMap<usize, usize> =
+                std::collections::HashMap::new();
+            for (i, segment) in segments.iter().enumerate() {
+                let result_val = &all_results[i % all_results.len()];
+                let concept_idx = i % all_results.len();
+                // Advance a per-concept cursor through the distinct clip pool.
+                let pool: Vec<String> = result_val
+                    .get("cached_paths")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|p| p.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| {
+                        result_val
+                            .get("cached_path")
+                            .and_then(|v| v.as_str())
+                            .filter(|p| !p.is_empty() && *p != "placeholder")
+                            .map(|p| vec![p.to_string()])
+                            .unwrap_or_default()
+                    });
+                if pool.is_empty() {
                     continue;
                 }
+                let cursor = concept_cursor.entry(concept_idx).or_insert(0);
+                let cached_path = pool[*cursor % pool.len()].clone();
+                *cursor += 1;
                 let start_s = segment.get("start_s")
                     .or_else(|| segment.get("start"))
                     .and_then(|v| v.as_f64()).unwrap_or(0.0);
@@ -4283,11 +4352,24 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                 // so verify.production / timeline.validate can compare it
                 // against the segment window without re-probing — short clips
                 // become coverage gaps (broll_gaps) instead of silently looping.
+                // Use the duration of the clip ACTUALLY placed (per-path map
+                // from the download loop), falling back to the result-wide
+                // first-video hint only when the placed clip is the first one.
                 let mut asset_record = serde_json::json!({
                     "path": cached_path,
                     "concept": concept_str,
                 });
-                if let Some(d) = result_val.get("source_duration_s").and_then(|v| v.as_f64()) {
+                let placed_duration = result_val
+                    .get("cached_path_durations")
+                    .and_then(|v| v.as_object())
+                    .and_then(|m| m.get(&cached_path))
+                    .and_then(|v| v.as_f64());
+                if let Some(d) = placed_duration {
+                    asset_record["source_duration_s"] = json!(d);
+                } else if let Some(d) = result_val
+                    .get("source_duration_s")
+                    .and_then(|v| v.as_f64())
+                {
                     asset_record["source_duration_s"] = json!(d);
                 }
                 tl.assets.broll.insert(asset_id.clone(), asset_record);
@@ -6727,7 +6809,7 @@ async fn probe_broll_gaps(timeline: &Timeline) -> Vec<openscript_core::productio
         };
         // Tolerance: 0.25s — clip may end a hair early without a visible gap.
         // available_s == 0.0 (unprobeable) is ALWAYS a gap.
-        if (available_s <= 0.0 || available_s < segment_dur_s - 0.25) {
+        if available_s <= 0.0 || available_s < segment_dur_s - 0.25 {
             // Unprobeable clip: report available_s = 0.0 (unknown).
             let available = if available_s > 0.0 { available_s } else { 0.0 };
             let gap_s = (segment_dur_s - available).max(0.0);
@@ -6751,6 +6833,152 @@ async fn probe_broll_gaps(timeline: &Timeline) -> Vec<openscript_core::productio
         }
     }
     gaps
+}
+
+/// Post-generation COMPOSITION AUDIT — the meta-cognitive layer the agent
+/// needs to reason about its own render. Enumerates every layer that is
+/// present in the composition, in bottom-to-top z-order, with per-layer event
+/// counts and time ranges. Without this, an agent in an iterative loop cannot
+/// tell whether the render it is judging actually contains the layers it
+/// thinks it placed (e.g. captions that never burned, a music track that was
+/// never mixed, stickers that silently dropped).
+fn build_composition_audit(
+    timeline: &Timeline,
+    manifest: &openscript_core::production_quality::RenderManifest,
+) -> serde_json::Value {
+    use openscript_core::types::TrackType;
+
+    // Bottom-to-top z-order of the render pipeline (multilayer_render.rs):
+    // 1. Background concat [vbg]
+    // 2. Meme b-roll overlays [vmb*]
+    // 3. Captions burned on top [vcap]
+    // 4. Sticker overlays on top [vst*]
+    // Audio layers (voiceover, music, sfx) sit below/alongside in the mix.
+    let mut layers: Vec<serde_json::Value> = Vec::new();
+
+    // 1. B-roll / background bed (bottom-most video layer)
+    let broll_events = timeline.tracks.get(&TrackType::Broll).cloned().unwrap_or_default();
+    let broll_start = broll_events.first().map(|e| e.start_ms).unwrap_or(0);
+    let broll_end = broll_events.iter().map(|e| e.end_ms).max().unwrap_or(0);
+    layers.push(json!({
+        "z": 1,
+        "layer": "background_broll",
+        "present": !broll_events.is_empty(),
+        "count": broll_events.len(),
+        "range_ms": [broll_start, broll_end],
+        "note": if broll_events.is_empty() { "no b-roll bed — empty visual background".to_string() } else { format!("{} b-roll clips, bottom of video stack", broll_events.len()) },
+    }));
+
+    // 2. Meme overlays (if configured)
+    let meme_start = manifest.memes.first().map(|m| m.start_ms).unwrap_or(0);
+    let meme_end = manifest.memes.iter().map(|m| m.end_ms).max().unwrap_or(0);
+    layers.push(json!({
+        "z": 2,
+        "layer": "meme_overlay",
+        "present": !manifest.memes.is_empty(),
+        "count": manifest.memes.len(),
+        "range_ms": [meme_start, meme_end],
+        "note": if manifest.memes.is_empty() { "no meme overlays".to_string() } else { format!("{} meme overlays above b-roll", manifest.memes.len()) },
+    }));
+
+    // 3. Captions
+    let captions_present = manifest
+        .captions_path
+        .as_deref()
+        .map(|p| !p.is_empty())
+        .unwrap_or(false);
+    let caption_events = timeline.tracks.get(&TrackType::Captions).cloned().unwrap_or_default();
+    let cap_start = caption_events.first().map(|e| e.start_ms).unwrap_or(0);
+    let cap_end = caption_events.iter().map(|e| e.end_ms).max().unwrap_or(0);
+    layers.push(json!({
+        "z": 3,
+        "layer": "captions",
+        "present": captions_present || !caption_events.is_empty(),
+        "count": caption_events.len(),
+        "range_ms": [cap_start, cap_end],
+        "path": manifest.captions_path.clone().unwrap_or_default(),
+        "style": manifest.caption_style.clone().unwrap_or_else(|| "default".into()),
+        "note": if !captions_present && caption_events.is_empty() { "NO captions configured or on timeline — dialogue will be un-captioned".to_string() } else { format!("{} caption events, style: {}", caption_events.len(), manifest.caption_style.as_deref().unwrap_or("default")) },
+    }));
+
+    // 4. Stickers (topmost video layer)
+    let sticker_start = manifest.stickers.first().map(|s| s.start_ms).unwrap_or(0);
+    let sticker_end = manifest.stickers.iter().map(|s| s.end_ms).max().unwrap_or(0);
+    layers.push(json!({
+        "z": 4,
+        "layer": "stickers",
+        "present": !manifest.stickers.is_empty(),
+        "count": manifest.stickers.len(),
+        "range_ms": [sticker_start, sticker_end],
+        "note": if manifest.stickers.is_empty() { "no sticker overlays".to_string() } else { format!("{} stickers, topmost video layer", manifest.stickers.len()) },
+    }));
+
+    // Audio layers (mix, not z-order — listed after video stack)
+    let voiceover_events = timeline.tracks.get(&TrackType::Voiceover).cloned().unwrap_or_default();
+    let dialogue_events = timeline.tracks.get(&TrackType::Dialogue).cloned().unwrap_or_default();
+    let music_events = timeline.tracks.get(&TrackType::Music).cloned().unwrap_or_default();
+    let sfx_events = timeline.tracks.get(&TrackType::Sfx).cloned().unwrap_or_default();
+    let vo_start = voiceover_events.first().map(|e| e.start_ms).or_else(|| dialogue_events.first().map(|e| e.start_ms)).unwrap_or(0);
+    let vo_end = voiceover_events.iter().chain(dialogue_events.iter()).map(|e| e.end_ms).max().unwrap_or(0);
+    layers.push(json!({
+        "z": 5,
+        "layer": "voiceover",
+        "present": !voiceover_events.is_empty() || !dialogue_events.is_empty(),
+        "count": voiceover_events.len() + dialogue_events.len(),
+        "range_ms": [vo_start, vo_end],
+        "note": if voiceover_events.is_empty() && dialogue_events.is_empty() { "NO voiceover/dialogue events — silent video".to_string() } else { format!("{} voiceover + {} dialogue events", voiceover_events.len(), dialogue_events.len()) },
+    }));
+    let music_start = music_events.first().map(|e| e.start_ms).unwrap_or(0);
+    let music_end = music_events.iter().map(|e| e.end_ms).max().unwrap_or(0);
+    let music_present = !music_events.is_empty() || manifest.music.is_some();
+    layers.push(json!({
+        "z": 6,
+        "layer": "music",
+        "present": music_present,
+        "count": music_events.len(),
+        "range_ms": [music_start, music_end],
+        "path": manifest.music.as_ref().map(|m| m.path.clone()).unwrap_or_default(),
+        "note": if !music_present { "NO music layer — bed is silent".to_string() } else { format!("{} music events{}", music_events.len(), if manifest.music.is_some() { " + manifest music".to_string() } else { String::new() }) },
+    }));
+    let sfx_start = sfx_events.first().map(|e| e.start_ms).unwrap_or(0);
+    let sfx_end = sfx_events.iter().map(|e| e.end_ms).max().unwrap_or(0);
+    layers.push(json!({
+        "z": 7,
+        "layer": "sfx",
+        "present": !sfx_events.is_empty(),
+        "count": sfx_events.len(),
+        "range_ms": [sfx_start, sfx_end],
+        "note": if sfx_events.is_empty() { "no SFX events".to_string() } else { format!("{} SFX events", sfx_events.len()) },
+    }));
+
+    // Convenience summary: present layer names in z-order, and any MISSING
+    // layers that the production model would expect for this video.
+    let present: Vec<String> = layers
+        .iter()
+        .filter(|l| l.get("present").and_then(|v| v.as_bool()).unwrap_or(false))
+        .map(|l| l.get("layer").and_then(|v| v.as_str()).unwrap_or("").to_string())
+        .collect();
+    let mut missing: Vec<String> = Vec::new();
+    if broll_events.is_empty() {
+        missing.push("background_broll".into());
+    }
+    if !captions_present && caption_events.is_empty() {
+        missing.push("captions".into());
+    }
+    if !music_present {
+        missing.push("music".into());
+    }
+    if voiceover_events.is_empty() && dialogue_events.is_empty() && manifest.voiceover_count == 0 {
+        missing.push("voiceover".into());
+    }
+
+    json!({
+        "layer_count": layers.len(),
+        "layers": layers,
+        "present_order": present,
+        "missing": missing,
+        "source": "composition audit — z-order per multilayer_render.rs; derived from the timeline + render manifest (planned composition), NOT frame-level inspection. Combine with per_clip_motion / broll_gaps to confirm what actually rendered.",
+    })
 }
 
 async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
@@ -7006,6 +7234,13 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     // Verify layer composition order
     let layer_report = verify_layer_order(&manifest);
 
+    // Post-generation COMPOSITION AUDIT — which layers are present, in which
+    // z-order, with counts and ranges. This is the meta-cognitive layer the
+    // agent needs to reason about its own render (and to hand to a human or a
+    // follow-up iteration): a render whose composition is missing captions or
+    // music is immediately diagnosable from this block alone.
+    let composition = build_composition_audit(&timeline, &manifest);
+
     // Optional vision re-score of background clips (local Qwen → OpenRouter free).
     let vision_rescore = default_bool(&args, "vision_rescore", false);
     let mut vision_scores: Vec<serde_json::Value> = Vec::new();
@@ -7082,6 +7317,7 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         "video_source_mix": report.video_source_mix,
         "timeline_editor": report.timeline_editor,
         "layer_order": layer_report,
+        "composition": composition,
         "per_clip_motion": per_clip_motion,
         "kpi_version": report.kpi_version,
         "kpi_note": "verify.render is technical-only. Production v3 hard-fails majority procedural, missing visual hooks, and parade music on calm/focus. Use real stock + topic-tagged music.",

@@ -92,6 +92,31 @@ impl MotionStyle {
         }
     }
 
+    /// Pick a style deterministically from an asset identity (path hash).
+    ///
+    /// Unlike `for_clip(index)` (which varies by EVENT index), this maps the
+    /// SAME asset to the SAME style every time it appears. The "same clip,
+    /// different zoom/pan" illusion happens when one clip is reused across
+    /// several segments and each event gets a different Ken Burns style — the
+    /// viewer perceives repeated footage disguised as new content. Keying the
+    /// style off the asset keeps reuse visually consistent (and therefore
+    /// detectable by the verifier's content-hash repetition check) instead of
+    /// camouflaging it.
+    pub fn for_asset(path: &str) -> Self {
+        // Stable FNV-1a hash of the path → 0..3
+        let mut hash: u32 = 0x811c_9dc5;
+        for b in path.bytes() {
+            hash ^= u32::from(b);
+            hash = hash.wrapping_mul(0x0100_0193);
+        }
+        match hash % 4 {
+            0 => MotionStyle::ZoomInCenter,
+            1 => MotionStyle::ZoomInTopLeft,
+            2 => MotionStyle::ZoomOutCenter,
+            _ => MotionStyle::PanRight,
+        }
+    }
+
     /// Build the three zoompan expression arguments (z, x, y).
     /// All expressions assume `d=1` so each output frame animates one step
     /// past the previous frame; with output fps matching the source clip's
@@ -902,7 +927,11 @@ impl FilterGraphBuilder {
                 let broll_final_label = if self.enable_zoompan {
                     // Ken Burns motion: zoompan guarantees continuous on-screen
                     // motion regardless of the source clip's intrinsic behaviour.
-                    let style = MotionStyle::for_clip(i);
+                    // Key the style off the ASSET path (not the event index) so
+                    // the same clip always gets the same style — reused footage
+                    // is visually consistent and detectable, never camouflaged
+                    // as "new" content via a different zoom/pan per occurrence.
+                    let style = MotionStyle::for_asset(&broll.path);
                     let (zp_z, zp_x, zp_y) = style.expressions();
                     parts.push(format!(
                         "[broll_src_{}]zoompan=z='{}':x='{}':y='{}':d=1:s={w}x{h}:fps={fps}[broll_zp_{}]",

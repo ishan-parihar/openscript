@@ -5,6 +5,14 @@ pub use schema::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// SEGMENTATION_ARCHITECTURE.md §3.2–3.3 short-form bounds. Segments shorter
+/// than MIN are merged with a neighbor; segments longer than MAX are split at
+/// the longest internal pause. Enforced by `timeline.validate` (as
+/// SEGMENTATION errors) and scored by the `segmentation_pacing` dimension in
+/// `verify.production`.
+pub const MIN_SEGMENT_DURATION_S: f64 = 2.0;
+pub const MAX_SEGMENT_DURATION_S: f64 = 6.0;
+
 impl Timeline {
     /// Create a new empty timeline for a source video.
     pub fn new(source: PathBuf, aspect: &str, fps: u32, max_duration: Option<u32>) -> Self {
@@ -244,6 +252,38 @@ impl Timeline {
         }
         errors
     }
+
+    /// SEGMENTATION_ARCHITECTURE.md compliance check: every segment must be
+    /// within [min_duration_s, max_duration_s] seconds. Long cuts bleed viewer
+    /// attention on short-form; sub-min cuts flicker. Defaults match the doc
+    /// (2.0s min / 6.0s max). Used by `timeline.validate` and surfaced as the
+    /// `segmentation_pacing` dimension in `verify.production`.
+    ///
+    /// Deliberately NOT folded into `validate()`: the render path calls
+    /// `validate()` and must not hard-fail on duration bounds (a long cut can
+    /// still render; it is a quality issue, not an integrity error).
+    /// Enforcement lives in the validator tool; scoring lives in
+    /// `verify.production`'s `segmentation_pacing` dimension.
+    pub fn validate_segmentation(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        for seg in &self.segments {
+            let dur = seg.end - seg.start;
+            if dur < MIN_SEGMENT_DURATION_S - 1e-9 {
+                errors.push(format!(
+                    "SEGMENTATION: segment {} is {:.1}s — below the {:.1}s minimum (merge with adjacent segment or re-run segment.analyze)",
+                    seg.id, dur, MIN_SEGMENT_DURATION_S
+                ));
+            }
+            if dur > MAX_SEGMENT_DURATION_S + 1e-9 {
+                errors.push(format!(
+                    "SEGMENTATION: segment {} is {:.1}s — exceeds the {:.1}s maximum for short-form (split at the longest internal pause or re-run segment.analyze)",
+                    seg.id, dur, MAX_SEGMENT_DURATION_S
+                ));
+            }
+        }
+        errors
+    }
+
 
     /// Add a ducking directive.
     pub fn add_ducking_directive(
@@ -587,6 +627,61 @@ mod tests {
         // (not a newline, as the prior inline parser did). This is the
         // standard SRT behavior — the prior inline parser was the outlier.
         assert_eq!(timeline.segments[0].caption, "Line one Line two");
+    }
+
+    #[test]
+    fn validate_segmentation_flags_out_of_bounds_durations() {
+        let mut timeline = Timeline::new("test.mp4".into(), "9:16", 30, None);
+        // 1.0s — below MIN_SEGMENT_DURATION_S (2.0)
+        timeline.segments.push(Segment {
+            id: "seg_001".into(),
+            start: 0.0,
+            end: 1.0,
+            caption: "too short".into(),
+            crossfade_ms: 0,
+            semantic_role: None,
+        });
+        // 8.0s — above MAX_SEGMENT_DURATION_S (6.0)
+        timeline.segments.push(Segment {
+            id: "seg_002".into(),
+            start: 2.0,
+            end: 10.0,
+            caption: "too long".into(),
+            crossfade_ms: 0,
+            semantic_role: None,
+        });
+        // 4.0s — within bounds
+        timeline.segments.push(Segment {
+            id: "seg_003".into(),
+            start: 12.0,
+            end: 16.0,
+            caption: "just right".into(),
+            crossfade_ms: 0,
+            semantic_role: None,
+        });
+
+        let errors = timeline.validate_segmentation();
+        assert_eq!(errors.len(), 2, "expected 2 segmentation errors, got: {:?}", errors);
+        assert!(errors.iter().any(|e| e.contains("seg_001") && e.contains("minimum")));
+        assert!(errors.iter().any(|e| e.contains("seg_002") && e.contains("maximum")));
+        assert!(!errors.iter().any(|e| e.contains("seg_003")));
+    }
+
+    #[test]
+    fn validate_segmentation_passes_in_bounds_timeline() {
+        let mut timeline = Timeline::new("test.mp4".into(), "9:16", 30, None);
+        for (i, (s, e)) in [(0.0, 3.0), (3.0, 6.0), (6.0, 10.0)].iter().enumerate() {
+            timeline.segments.push(Segment {
+                id: format!("seg_{:03}", i + 1),
+                start: *s,
+                end: *e,
+                caption: "ok".into(),
+                crossfade_ms: 0,
+                semantic_role: None,
+            });
+        }
+        let errors = timeline.validate_segmentation();
+        assert!(errors.is_empty(), "expected clean segmentation, got: {:?}", errors);
     }
 
     #[test]
