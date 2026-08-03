@@ -364,8 +364,14 @@ pub async fn render_from_timeline_with_cancel(
     // long overlay (e.g. 12s) gets a seek_offset that exhausts the source
     // mid-segment, and the movie= filter holds the last frame for the
     // remaining seconds (visible as a static image on the rendered video).
-    // Probe failures are non-fatal — the builder falls back to the legacy
-    // 50% cap and the new `loop=-1` source replay still covers the gap.
+    // Probe failures are non-fatal — the builder falls back to the
+    // conservative 3-play loop + small seek cap.
+    //
+    // NOTE: assets are keyed by `asset_id` (e.g. `broll_0`), NOT by the
+    // event's `id` (e.g. `broll_001`). Looking up by `evt.id` silently
+    // misses every asset, leaving `source_duration_s` unset for all events
+    // and defeating the whole probe. (Phase 128 fixed the same bug in
+    // FilterGraphBuilder::from_timeline but missed this probe loop.)
     if let Some(broll_track) = timeline.tracks.get(&openscript_core::types::TrackType::Broll) {
         let mut probed = std::collections::HashMap::new();
         for evt in broll_track.iter() {
@@ -373,14 +379,29 @@ pub async fn render_from_timeline_with_cancel(
                 let path = timeline
                     .assets
                     .broll
-                    .get(&evt.id)
+                    .get(&evt.asset_id)
                     .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                     .unwrap_or("")
                     .to_string();
                 if !path.is_empty() && path != "placeholder" && !probed.contains_key(&path) {
-                    if let Ok(metrics) = crate::probe::probe(&path).await {
-                        if metrics.duration > 0.0 {
+                    match crate::probe::probe(&path).await {
+                        Ok(metrics) if metrics.duration > 0.0 => {
+                            tracing::debug!(
+                                "[render] broll probe ok: {} ({:.2}s)",
+                                path,
+                                metrics.duration
+                            );
                             probed.insert(path.clone(), metrics.duration);
+                        }
+                        Ok(metrics) => {
+                            tracing::debug!(
+                                "[render] broll probe duration<=0 ({:.2}s): {}",
+                                metrics.duration,
+                                path
+                            );
+                        }
+                        Err(e) => {
+                            tracing::debug!("[render] broll probe failed for {}: {}", path, e);
                         }
                     }
                 }

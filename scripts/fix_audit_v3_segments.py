@@ -34,8 +34,11 @@ for i, seg in enumerate(segments):
     new_broll.append(evt)
 
 tl["tracks"]["broll"] = new_broll
-# Enable raw_render for the verify pass
-tl["raw_render"] = True
+# Production mode: zoompan + looping + PTS alignment are what the render
+# pipeline must exercise. Raw render mode (raw_render=true) is only for
+# segmentation-correctness audits and strips the very post-processing the
+# user wants back — do not force it on the regression fixture.
+tl["raw_render"] = False
 
 # Also update assets mapping — the existing ones are fine
 # because we kept the asset_id.
@@ -43,4 +46,4 @@ tl["raw_render"] = True
 with open(path, "w") as f:
     json.dump(tl, f, indent=2)
 
-print(f"Fixed {len(new_broll)} b-roll events (one per segment). Enabled raw_render.")
+print(f"Fixed {len(new_broll)} b-roll events (one per segment). Production mode (raw_render=false).")

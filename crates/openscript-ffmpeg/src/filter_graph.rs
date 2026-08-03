@@ -306,8 +306,7 @@ impl FilterGraphBuilder {
     /// filter graph can cap `seek_offset` at `src_dur - seg_dur` and avoid
     /// the "source exhausted → held last frame" static-image bug. Events whose
     /// path is not in the map keep `source_duration_s = None` and fall back
-    /// to the legacy 50%-of-segment cap (which combined with `loop=-1` on
-    /// the movie filter still produces continuous motion).
+    /// to the conservative 3-play loop + small seek cap.
     pub fn with_broll_durations(mut self, durations: std::collections::HashMap<String, f64>) -> Self {
         for ev in &mut self.broll_events {
             if ev.source_duration_s.is_none() {
@@ -824,8 +823,10 @@ impl FilterGraphBuilder {
                 };
 
                 // Omit f=mp4 to let ffmpeg auto-detect container format.
-                // Keep si=0 to force video stream selection (default si=-1 may
-                // select audio stream for files with audio, causing static frames).
+                // si=-1 auto-selects the first VIDEO stream (verified
+                // empirically: with a file whose stream 0 is audio and stream
+                // 1 is video, si=-1 plays the video, while si=0 selects the
+                // audio stream and fails the filter graph). Do NOT use si=0.
                 //
                 // Seek offset: Stock Pexels videos often have slow/static intros
                 // (first 2-5s of fade-ins, slow pans). Without seeking, the
@@ -834,48 +835,60 @@ impl FilterGraphBuilder {
                 // content. When the source duration is known (probed by the
                 // caller via `crate::probe::probe`), cap the offset so the
                 // trimmed source still has enough frames to cover the full
-                // segment. When unknown, the safe fallback is the deterministic
-                // 5s offset.
+                // segment. When unknown, the safe fallback is a small
+                // deterministic offset.
                 let clip_duration_s = (broll.end_ms - broll.start_ms) as f64 / 1000.0;
 
                 // Deterministic pseudo-random: golden-ratio hash gives good distribution
                 let mut seek_offset = (i as f64 * 1.618033988749895) % 5.0f64;
 
                 // Compute finite loop count: enough plays to cover the segment
-                // but NEVER infinite (loop=0/loop=-1 hang the render because
-                // the filter graph never terminates). Loop count is the number
-                // of times the source plays: 1 = once (default), N = N times.
+                // but NEVER infinite (loop=0 hangs the render because the
+                // filter graph never terminates). Loop count is the total
+                // number of plays: 1 = once, N = N times.
                 let mut loop_count: i32 = 1;
                 if let Some(src_dur) = broll.source_duration_s {
                     // Cap offset so trim fits inside one play.
                     let max_offset = (src_dur - clip_duration_s).max(0.0);
                     seek_offset = seek_offset.min(max_offset);
                     // If source is shorter than the segment, loop enough times
-                    // so the total source length covers the segment.
+                    // so the total source length covers the segment. Clamp to a
+                    // sane ceiling: a pathological near-zero source duration
+                    // (corrupt file) would otherwise overflow i32 via the `as
+                    // i32` cast + 1 and could wrap negative → movie filter with
+                    // a negative loop count = infinite → render hang. 8 plays
+                    // (≈ a full minute of typical stock footage) is far beyond
+                    // any real segment need.
                     if src_dur < clip_duration_s && src_dur > 0.0 {
-                        loop_count = (clip_duration_s / src_dur).ceil() as i32 + 1;
+                        loop_count = ((clip_duration_s / src_dur).ceil() as i64 + 1).min(8) as i32;
                     }
                 } else {
                     // Unknown duration: conservative loop of 3 covers up to
                     // 3× source length (typical Pexels clips are 10-18s;
-                    // segments are 10-17s, so 3× = 30-54s — more than enough).
+                    // segments are 2-17s, so 3× = 30-54s — more than enough).
                     loop_count = 3;
-                    seek_offset = seek_offset.min(clip_duration_s.max(0.0) * 0.5);
+                    // Cap the unknown-duration seek small: we don't know how
+                    // long the source is, so a large offset could land past the
+                    // source end and trim to an empty stream (black/static).
+                    // 3s jumps past the typical 1-2s stock intro while staying
+                    // inside even a short 5s clip.
+                    seek_offset = seek_offset
+                        .min(clip_duration_s.max(0.0) * 0.5)
+                        .min(3.0);
                 }
 
-                // movie=loop=N means N additional plays (N+1 total).
-                // loop=0 or loop=-1 means infinite loop (hangs the render).
-                // To disable loop, we omit the loop parameter entirely.
+                // movie=loop=N plays the source N times TOTAL (N=1 = once, the
+                // default). loop=0 means infinite and hangs the render — never
+                // emit it. Raw mode omits the parameter entirely (single play).
                 if self.disable_loop {
                     parts.push(format!(
                         "movie='{}':si=-1[broll_raw{}]",
                         escaped_path, i
                     ));
                 } else {
-                    let movie_loop = loop_count.saturating_sub(1).max(0);
                     parts.push(format!(
                         "movie='{}':loop={}:si=-1[broll_raw{}]",
-                        escaped_path, movie_loop, i
+                        escaped_path, loop_count, i
                     ));
                 }
 
@@ -922,6 +935,31 @@ impl FilterGraphBuilder {
                     ));
                     format!("[broll_scaled_{}]", i)
                 };
+
+                // CRITICAL — PTS alignment with the overlay window.
+                // The `trim`+`setpts=PTS-STARTPTS` (and zoompan, which
+                // regenerates PTS from 0) restart the broll stream's PTS at 0,
+                // but the overlay window is at absolute timeline time
+                // `between(t, start_s, end_s)`. ffmpeg's overlay filter matches
+                // the overlay input frame to the main input frame by PTS: at
+                // main t=T it blends the broll frame whose PTS is closest to T.
+                // For a window late in the timeline (e.g. t=30s) the broll
+                // stream's PTS 0..N range is already exhausted, so
+                // `eof_action=repeat` holds the LAST frame → the whole window
+                // renders as a STATIC IMAGE (the A2V regression: segments deep
+                // in the timeline showed no motion while early ones did).
+                //
+                // Fix: shift the broll stream's PTS forward so its frame 0
+                // lands exactly at the window start. Then at main t=start_s+k
+                // the overlay picks broll frame k → the clip plays in sync with
+                // its window. Verified empirically: with the shift, every frame
+                // in the window changes (motion); without it, frames repeat
+                // (static).
+                parts.push(format!(
+                    "{}setpts=PTS-STARTPTS+{:.3}/TB[broll_pts_{}]",
+                    broll_final_label, start_s, i
+                ));
+                let broll_final_label = format!("[broll_pts_{}]", i);
 
                 parts.push(format!(
                     "[{}]{}overlay=0:0:enable='between(t,{},{})'[{}]",
@@ -1538,5 +1576,150 @@ mod tests {
         // Audio chain: voiceover mixed → then music mixed
         assert!(filter.contains("[amix_voiceover][music_vol_0]amix"));
         assert_eq!(aout, "[afinal]");
+    }
+
+    #[test]
+    fn test_broll_known_duration_emits_finite_loop_not_zero() {
+        // Regression: movie=loop=0 means INFINITE loop in ffmpeg — it hangs
+        // the render forever. The old code computed `loop_count-1`, so when
+        // source duration was known and >= the clip (the common case),
+        // loop_count=1 → movie_loop=0 → infinite hang. This was the A2V
+        // regression that forced the raw-render (no-loop) workaround.
+        // movie=loop=N plays the source N times TOTAL, so loop_count=1 must
+        // emit loop=1, never loop=0.
+        let segments = vec![make_segment("seg_001", 0.0, 10.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 1000,
+            end_ms: 4000, // 3s clip
+            source_duration_s: Some(15.0), // source longer than clip
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .build();
+
+        assert!(
+            filter.contains("movie='/p/b.mp4':loop=1:si=-1"),
+            "known-duration long source must emit loop=1 (single play), got: {}",
+            filter
+        );
+        assert!(
+            !filter.contains("loop=0"),
+            "loop=0 is an infinite loop that hangs the render — must never be emitted: {}",
+            filter
+        );
+    }
+
+    #[test]
+    fn test_broll_unknown_duration_emits_finite_loop_three() {
+        // Unknown source duration: conservative 3-play loop. loop=3 plays the
+        // source 3 times total — finite, never hangs.
+        let segments = vec![make_segment("seg_001", 0.0, 10.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 0,
+            end_ms: 3000,
+            source_duration_s: None, // unknown
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .build();
+
+        assert!(filter.contains("movie='/p/b.mp4':loop=3:si=-1"));
+        assert!(!filter.contains("loop=0"));
+    }
+
+    #[test]
+    fn test_broll_short_source_loops_to_cover_clip() {
+        // Source shorter than the clip: loop enough times that total source
+        // length covers the segment. ceil(clip/src)+1 plays total.
+        let segments = vec![make_segment("seg_001", 0.0, 10.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 0,
+            end_ms: 10000, // 10s clip
+            source_duration_s: Some(4.0), // 4s source → ceil(10/4)+1 = 3+1 = 4 plays
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .build();
+
+        assert!(
+            filter.contains("movie='/p/b.mp4':loop=4:si=-1"),
+            "short source must loop to cover clip: {}",
+            filter
+        );
+        assert!(!filter.contains("loop=0"));
+    }
+
+    #[test]
+    fn test_broll_pts_shifted_to_window_start() {
+        // Regression: broll streams were PTS-anchored at 0 (trim + setpts +
+        // zoompan all restart PTS), but the overlay window is at absolute
+        // timeline time `between(t,start,end)`. ffmpeg's overlay matches
+        // frames by PTS, so for windows late in the timeline the broll stream
+        // was exhausted and eof_action=repeat held the last frame → static
+        // image. The fix shifts the stream PTS so frame 0 lands at the window
+        // start: setpts=PTS-STARTPTS+{start_s}/TB.
+        let segments = vec![make_segment("seg_001", 0.0, 40.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 30_000, // window at 30s — deep in the timeline
+            end_ms: 33_300,
+            source_duration_s: Some(15.0),
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .build();
+
+        // The shifted label must feed the overlay, and the shift must equal
+        // the window start (30.000s).
+        assert!(
+            filter.contains("setpts=PTS-STARTPTS+30.000/TB[broll_pts_0]"),
+            "broll must be PTS-shifted to its window start: {}",
+            filter
+        );
+        assert!(filter.contains("[broll_pts_0]overlay=0:0:enable='between(t,30,33.3)'"));
+    }
+
+    #[test]
+    fn test_broll_pts_shifted_in_raw_mode_too() {
+        // Raw mode (no zoompan) must ALSO shift PTS — the static-frame bug
+        // is independent of zoompan. The shift is the fix for late windows.
+        let segments = vec![make_segment("seg_001", 0.0, 40.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 30_000,
+            end_ms: 33_300,
+            source_duration_s: Some(15.0),
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_raw_render(true)
+            .with_broll(broll)
+            .build();
+
+        // Raw mode: no loop param, no zoompan, but PTS shift still applied.
+        assert!(filter.contains("movie='/p/b.mp4':si=-1[broll_raw0]"));
+        assert!(!filter.contains("zoompan="));
+        assert!(filter.contains("setpts=PTS-STARTPTS+30.000/TB[broll_pts_0]"));
+    }
+
+    #[test]
+    fn test_broll_first_window_zero_shift_is_harmless() {
+        // A window starting at 0s gets setpts=PTS-STARTPTS+0.000/TB — a
+        // no-op shift that must still parse and not break the chain.
+        let segments = vec![make_segment("seg_001", 0.0, 10.0)];
+        let broll = vec![BrollEvent {
+            path: "/p/b.mp4".into(),
+            start_ms: 0,
+            end_ms: 3000,
+            source_duration_s: Some(15.0),
+        }];
+        let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .build();
+
+        assert!(filter.contains("setpts=PTS-STARTPTS+0.000/TB[broll_pts_0]"));
+        assert!(filter.contains("[broll_pts_0]overlay=0:0:enable='between(t,0,3)'"));
     }
 }
