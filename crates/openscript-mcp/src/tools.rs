@@ -581,9 +581,45 @@ pub fn tool_definitions() -> serde_json::Value {
                     "segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "caption": {"type": "string"}}}, "description": "Segments array from broll.plan or segment.analyze. Each segment's caption is translated to English keywords."},
                     "video_title": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional video title for context — helps the LLM understand the overall topic and generate more relevant keywords."},
                     "language": {"type": "string", "default": "hinglish", "description": "Source language of captions: 'hinglish', 'hindi', 'english', 'mixed'. Helps the LLM choose the right translation strategy."},
-                    "max_batch_size": {"type": "integer", "default": 15, "description": "Max segments per LLM call. Prevents context overflow on small local models. Default 15 works for 4B-param models."}
+                    "max_batch_size": {"type": "integer", "default": 15, "description": "Max segments per LLM call. Prevents context overflow on small local models. Default 15 works for 4B-param models."},
+                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional timeline path. When provided, the already-covered b-roll concepts are passed to the agent so drafts AVOID repeating them (non-redundant single-shot keyword pass)."}
                 },
                 "required": ["segments"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "broll.validate_keywords",
+            "description": "STAGE 2 of the agentic b-roll keyword pipeline (run AFTER broll.keywords). Searches Pexels with each segment's draft keywords, presents the REAL candidate videos (name/slug, duration, resolution) to the agent, and the agent validates each candidate against the spoken caption — returning final_keywords + the best video id per segment. This is the relevance-validation/alignment stage: drafts that Pexels can't serve (or that return irrelevant footage) are corrected here BEFORE any download. Non-looping: candidates shorter than the segment window are filtered out. Returns: segments with final_keywords, best_video, relevance, reason, candidates; skipped entries for segments with no searchable keywords.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "enriched_segments": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "start_s": {"type": "number"}, "end_s": {"type": "number"}, "caption": {"type": "string"}, "keywords": {"type": "array", "items": {"type": "string"}}}}, "description": "Output of broll.keywords: segments each with a keywords array. Each segment's keywords are searched on Pexels and the candidates are validated by the agent."},
+                    "max_candidates": {"type": "integer", "default": 6, "description": "Max candidate videos to present to the validation agent per segment."},
+                    "max_keywords_per_search": {"type": "integer", "default": 2, "description": "Max draft keywords to search per segment."},
+                    "orientation": {"type": "string", "default": "9:16", "description": "Video orientation: '9:16', '16:9', '1:1'."},
+                    "quality": {"type": "string", "default": "sd", "description": "Video quality: 'sd', 'hd', '4k'."},
+                    "asset_dir": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pexels cache dir (default mcp/assets/broll_cache)."},
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions: 'hinglish', 'hindi', 'english', 'mixed'."}
+                },
+                "required": ["enriched_segments"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "broll.repair",
+            "description": "Gap-triggered re-pipeline that heals BROLL_GAP coverage errors. Loads the timeline, probes which b-roll clips are shorter than their segment window, and for each gap re-runs the FULL agentic loop with the entire timeline as context (layer stack, all segments, already-covered concepts, already-used clips, gap timestamps): agent drafts fresh keywords → Pexels search → agent validates candidates → download → replace the event + asset. Non-looping (clip must cover the window + slack) and non-redundant (already-used Pexels ids excluded). Call after timeline.validate reports BROLL_GAP errors, then re-validate. Returns: repaired count, per-segment decisions, remaining_gaps.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to the timeline JSON with BROLL_GAP errors."},
+                    "max_segments": {"type": "integer", "default": 10, "description": "Max gap segments to repair per pass. Re-run the tool to heal more."},
+                    "orientation": {"type": "string", "default": "9:16", "description": "Video orientation: '9:16', '16:9', '1:1'."},
+                    "quality": {"type": "string", "default": "sd", "description": "Video quality: 'sd', 'hd', '4k'."},
+                    "asset_dir": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pexels cache dir (default mcp/assets/broll_cache)."},
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions: 'hinglish', 'hindi', 'english', 'mixed'."}
+                },
+                "required": ["timeline_path"],
                 "additionalProperties": false
             }
         },
@@ -1371,6 +1407,8 @@ pub fn route_tool(
         "broll.fetch" => Box::pin(handle_broll_fetch(args)),
         "broll.assign" => Box::pin(handle_broll_assign(args)),        "broll.plan" => Box::pin(handle_broll_plan(args)),
         "broll.keywords" => Box::pin(handle_broll_keywords(args)),
+        "broll.validate_keywords" => Box::pin(handle_broll_validate_keywords(args)),
+        "broll.repair" => Box::pin(handle_broll_repair(args)),
         "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
@@ -5019,7 +5057,28 @@ async fn handle_timeline_preview(args: serde_json::Value) -> Result<serde_json::
     if timeline.segments.is_empty() {
         errors.push("Timeline has no segments. Call timeline.add_segment to populate it.".to_string());
     }
+    // Segmentation bounds (SEGMENTATION_ARCHITECTURE.md) — same as validate.
+    errors.extend(timeline.validate_segmentation());
+    // B-roll coverage gaps (async probe) — same as validate, so preview is the
+    // single-call viewer an agent uses to reason about the whole operation.
+    let broll_gaps = probe_broll_gaps(&timeline).await;
+    for g in &broll_gaps {
+        errors.push(format!(
+            "BROLL_GAP: segment {} needs {:.1}s but clip {} provides {:.1}s (gap {:.1}s) — {}",
+            g.segment_id, g.required_s, g.asset_id, g.available_s, g.gap_s, g.action
+        ));
+    }
     let render_ready = errors.is_empty() && !timeline.segments.is_empty();
+
+    // Phase 136: the composition layer stack (bottom→top, with per-event
+    // concept/asset/timing) + used-clip ids — the timeline-viewer context
+    // that lets an agent see the full operational flow in one call.
+    let viewer = build_timeline_viewer_context(&timeline);
+    let used_ids: Vec<i64> = {
+        let mut ids: Vec<i64> = used_broll_video_ids(&timeline).into_iter().collect();
+        ids.sort_unstable();
+        ids
+    };
 
     Ok(json!({
         "status": "success",
@@ -5029,6 +5088,9 @@ async fn handle_timeline_preview(args: serde_json::Value) -> Result<serde_json::
         "segments_count": timeline.segments.len(),
         "segments": segments_info,
         "tracks": tracks_info,
+        "composition": viewer,
+        "broll_gaps": broll_gaps,
+        "used_broll_video_ids": used_ids,
         "render_ready": render_ready,
         "validation_errors": errors,
     }))
@@ -5510,6 +5572,38 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
         String::new()
     };
 
+    // Phase 136: when a timeline is provided, pass the already-covered b-roll
+    // concepts so the single-shot draft pass is NON-REDUNDANT across the video
+    // (each segment must get distinct, relevant footage).
+    let timeline_context = if let Some(tl_path) = default_opt_str(&args, "timeline_path") {
+        match Timeline::load(&tl_path) {
+            Ok(tl) => {
+                let mut concepts: Vec<String> = Vec::new();
+                if let Some(broll) = tl.tracks.get(&TrackType::Broll) {
+                    for ev in broll {
+                        if let openscript_core::timeline::EventKind::Broll { concept, .. } = &ev.kind
+                        {
+                            if !concept.is_empty() && !concepts.contains(concept) {
+                                concepts.push(concept.clone());
+                            }
+                        }
+                    }
+                }
+                if concepts.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\nB-roll concepts ALREADY COVERED in this timeline (AVOID repeating them — each segment needs DISTINCT relevant footage): {}\n",
+                        concepts.join(", ")
+                    )
+                }
+            }
+            Err(_) => String::new(),
+        }
+    } else {
+        String::new()
+    };
+
     // Build system prompt once (only user prompt changes per batch)
     let system_prompt = format!(
         "You are a stock footage search keyword extractor for a video production pipeline. \
@@ -5522,9 +5616,9 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
         4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
         5. Avoid abstract concepts — prefer concrete, searchable visual terms
         6. Each keyword should be 1-3 words maximum
-        7. Source language detected: {}\n{}\
+        7. Source language detected: {}\n{}{}\
         Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
-        language, title_context
+        language, title_context, timeline_context
     );
 
     // Build a lookup from segment id -> keywords (across all batches)
@@ -5664,6 +5758,522 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
         "model": last_model,
         "segments_count": enriched_segments.len(),
         "segments": enriched_segments,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: broll.validate_keywords — Stage 2 relevance-validation/alignment
+// ---------------------------------------------------------------------------
+// Stage 1 (broll.keywords) drafts English keywords from the transcript. This
+// stage closes the loop: it searches Pexels with those drafts, presents the
+// REAL candidate videos (name/slug, duration, resolution) to the agent, and
+// the agent validates each candidate against the spoken caption — producing
+// final_keywords + the best video per segment. Drafts that Pexels can't
+// serve (or that return irrelevant footage) are corrected HERE, before any
+// download, instead of surfacing as mismatched b-roll in the render.
+
+async fn handle_broll_validate_keywords(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    use openscript_assets::pexels::PexelsClient;
+
+    let enriched_segments: Vec<serde_json::Value> = args
+        .get("enriched_segments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if enriched_segments.is_empty() {
+        return Err(ToolError::MissingArg(
+            "enriched_segments (from broll.keywords)".to_string(),
+        ));
+    }
+    let max_candidates = args
+        .get("max_candidates")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(6)
+        .max(2) as usize;
+    let max_keywords = args
+        .get("max_keywords_per_search")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(2)
+        .max(1) as usize;
+    let orientation = default_str(&args, "orientation", "9:16");
+    let quality = default_str(&args, "quality", "sd");
+    let asset_dir = default_opt_str(&args, "asset_dir")
+        .unwrap_or_else(|| "mcp/assets/broll_cache".to_string());
+    let language = default_str(&args, "language", "hinglish");
+
+    let api_key = pexels_key();
+    if api_key.is_empty() {
+        return Ok(json!({
+            "status": "warning",
+            "message": "PEXELS_API_KEY not set — cannot search candidates for relevance validation. Draft keywords are returned unchanged; set the key or run broll.fetch with a fallback_pool.",
+            "validated": false,
+            "segments": enriched_segments,
+        }));
+    }
+
+    let mut client = PexelsClient::new(&api_key, &asset_dir);
+    let mut validated: Vec<serde_json::Value> = Vec::new();
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
+    let mut last_backend = String::new();
+    let mut last_model = String::new();
+
+    for (i, seg) in enriched_segments.iter().enumerate() {
+        let id = seg
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&format!("seg_{}", i))
+            .to_string();
+        let caption = seg
+            .get("caption")
+            .or_else(|| seg.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let start_s = seg
+            .get("start_s")
+            .or_else(|| seg.get("start"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let end_s = seg
+            .get("end_s")
+            .or_else(|| seg.get("end"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(start_s + 3.0);
+        let window_s = (end_s - start_s).max(1.0);
+        let draft: Vec<String> = seg
+            .get("keywords")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|k| k.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // If a segment arrived without draft keywords, draft them agentically.
+        let (draft, backend, model) = if draft.is_empty() {
+            let (kws, b, m) = llm_draft_keywords(&caption, &[], &language).await;
+            (kws, b, m)
+        } else {
+            (draft, String::new(), String::new())
+        };
+        if !backend.is_empty() {
+            last_backend = backend;
+        }
+        if !model.is_empty() {
+            last_model = model;
+        }
+
+        // Search Pexels with the draft keywords (dedup across queries).
+        let queries: Vec<String> = draft
+            .iter()
+            .filter(|k| k.len() >= 3)
+            .take(max_keywords)
+            .cloned()
+            .collect();
+        if queries.is_empty() {
+            skipped.push(json!({"id": id, "reason": "no usable draft keywords"}));
+            continue;
+        }
+        let mut candidates: Vec<openscript_assets::pexels::PexelsVideo> = Vec::new();
+        let mut seen: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        for q in &queries {
+            match client.search(q, &orientation, &quality).await {
+                Ok(vids) => {
+                    for v in vids {
+                        if v.duration > 0 && seen.insert(v.id) && candidates.len() < max_candidates
+                        {
+                            candidates.push(v);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[broll.validate_keywords] search '{}' failed: {}",
+                        q,
+                        e
+                    )
+                }
+            }
+        }
+        // Non-looping gate: only candidates that cover the segment window qualify.
+        // When NO candidate covers the window, the pool still shows the results
+        // but each is tagged `covers_window: false` so the consumer knows a
+        // download of it would flag BROLL_GAP (and trigger broll.repair) — the
+        // agent must not treat it as a safe pick.
+        let covering: Vec<openscript_assets::pexels::PexelsVideo> = candidates_covering_window(
+            &candidates,
+            window_s,
+            0.5,
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        let covers_ids: std::collections::HashSet<i64> =
+            covering.iter().map(|v| v.id).collect();
+        let pool: Vec<openscript_assets::pexels::PexelsVideo> = if covering.is_empty() {
+            candidates
+        } else {
+            covering
+        };
+        if pool.is_empty() {
+            skipped.push(json!({
+                "id": id,
+                "reason": format!(
+                    "no Pexels results for draft keywords [{}]",
+                    queries.join(", ")
+                )
+            }));
+            continue;
+        }
+
+        // Agent validates the real candidates against the spoken caption.
+        let avoid = std::collections::HashSet::new();
+        let (best_id, final_kws, relevance, reason, backend, model) =
+            llm_validate_candidates(&caption, &draft, &pool, window_s, &avoid).await;
+        if !backend.is_empty() {
+            last_backend = backend;
+        }
+        if !model.is_empty() {
+            last_model = model;
+        }
+
+        let best_video = best_id.and_then(|bid| {
+            pool.iter()
+                .find(|v| v.id == bid)
+                .map(|v| {
+                    json!({
+                        "id": v.id,
+                        "name": pexels_url_slug(&v.url),
+                        "duration_s": v.duration,
+                        "url": v.url,
+                        "covers_window": covers_ids.contains(&v.id),
+                    })
+                })
+        });
+        let candidates_json: Vec<serde_json::Value> = pool
+            .iter()
+            .map(|v| {
+                json!({
+                    "id": v.id,
+                    "name": pexels_url_slug(&v.url),
+                    "duration_s": v.duration,
+                    "size": format!("{}x{}", v.width, v.height),
+                    "url": v.url,
+                    "covers_window": covers_ids.contains(&v.id),
+                })
+            })
+            .collect();
+        validated.push(json!({
+            "id": id,
+            "start_s": start_s,
+            "end_s": end_s,
+            "duration_s": end_s - start_s,
+            "caption": caption,
+            "draft_keywords": draft,
+            "final_keywords": final_kws,
+            "best_video": best_video,
+            "relevance": relevance,
+            "reason": reason,
+            "candidates": candidates_json,
+        }));
+    }
+
+    Ok(json!({
+        "status": "validated",
+        "backend": last_backend,
+        "model": last_model,
+        "validated_count": validated.len(),
+        "skipped_count": skipped.len(),
+        "skipped": skipped,
+        "segments": validated,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: broll.repair — gap-triggered re-pipeline with full timeline context
+// ---------------------------------------------------------------------------
+// The BROLL_GAP validator (timeline.validate / verify.production) flags any
+// segment whose clip is shorter than its window. This tool re-triggers the
+// whole agentic pipeline FOR EXACTLY THOSE GAPS, with the entire timeline as
+// context (layer stack, all segments, already-covered concepts, already-used
+// clips + the gap timestamps):
+//   draft (agent) → search Pexels → validate candidates (agent) → download →
+//   replace the event+asset. Non-looping: a clip is only placed when its
+// source duration covers the window (+slack); non-redundant: already-used
+// Pexels ids are excluded. Remaining gaps are returned for another pass.
+
+async fn handle_broll_repair(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    use openscript_assets::pexels::PexelsClient;
+
+    let timeline_path = extract_str(&args, "timeline_path")?;
+    let max_segments = args
+        .get("max_segments")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10)
+        .max(1) as usize;
+    let orientation = default_str(&args, "orientation", "9:16");
+    let quality = default_str(&args, "quality", "sd");
+    let asset_dir = default_opt_str(&args, "asset_dir")
+        .unwrap_or_else(|| "mcp/assets/broll_cache".to_string());
+    let language = default_str(&args, "language", "hinglish");
+
+    let mut tl = Timeline::load(&timeline_path)
+        .map_err(|e| ToolError::Io(std::io::Error::other(format!("Failed to load timeline: {}", e))))?;
+    let gaps = probe_broll_gaps(&tl).await;
+    if gaps.is_empty() {
+        return Ok(json!({
+            "status": "ok",
+            "message": "No b-roll coverage gaps — every clip covers its segment window.",
+            "repaired": 0,
+            "remaining_gaps": [],
+            "timeline_path": timeline_path,
+        }));
+    }
+
+    let api_key = pexels_key();
+    if api_key.is_empty() {
+        return Ok(json!({
+            "status": "warning",
+            "message": format!(
+                "{} b-roll gap(s) exist but PEXELS_API_KEY is not set — cannot repair.",
+                gaps.len()
+            ),
+            "repaired": 0,
+            "gaps": gaps,
+            "remaining_gaps": gaps,
+        }));
+    }
+
+    let mut client = PexelsClient::new(&api_key, &asset_dir);
+    let used_ids = used_broll_video_ids(&tl);
+    let context_text = render_timeline_context_text(&tl);
+
+    let mut decisions: Vec<serde_json::Value> = Vec::new();
+    let mut repaired = 0usize;
+    let mut last_backend = String::new();
+    let mut last_model = String::new();
+
+    for gap in gaps.iter().take(max_segments) {
+        let window_s = gap.required_s.max(1.0);
+        let caption = find_segment_for_window(&tl, &gap.segment_id)
+            .map(|s| s.caption.clone())
+            .unwrap_or_default();
+        // No matching segment caption? Seed the draft from the existing concept
+        // tag instead of burning an LLM call on an empty string.
+        if caption.trim().is_empty() && gap.concept.trim().is_empty() {
+            decisions.push(json!({
+                "segment_id": gap.segment_id,
+                "window_s": window_s,
+                "status": "unrepairable_this_pass",
+                "reason": "no caption or concept available to search for this segment",
+            }));
+            continue;
+        }
+
+        // Existing concepts across the timeline (non-redundant drafts).
+        let avoid_concepts: Vec<String> = tl
+            .tracks
+            .get(&TrackType::Broll)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|e| match &e.kind {
+                openscript_core::timeline::EventKind::Broll { concept, .. } => {
+                    Some(concept.clone())
+                }
+                _ => None,
+            })
+            .collect();
+
+        // Stage 1: agent drafts fresh keywords from the spoken caption,
+        // avoiding concepts already covered elsewhere in the timeline.
+        let (draft, backend, model) = if caption.trim().is_empty() {
+            // Seed from the existing concept tag (no caption to translate).
+            (vec![gap.concept.clone()], "seed".into(), "existing-concept".into())
+        } else {
+            llm_draft_keywords(&caption, &avoid_concepts, &language).await
+        };
+        if !backend.is_empty() {
+            last_backend = backend;
+        }
+        if !model.is_empty() {
+            last_model = model;
+        }
+
+        // Search Pexels with the draft keywords.
+        let queries: Vec<String> = draft
+            .iter()
+            .filter(|k| k.len() >= 3)
+            .take(2)
+            .cloned()
+            .collect();
+        let mut candidates: Vec<openscript_assets::pexels::PexelsVideo> = Vec::new();
+        let mut seen: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        for q in &queries {
+            match client.search(q, &orientation, &quality).await {
+                Ok(vids) => {
+                    for v in vids {
+                        if v.duration > 0 && seen.insert(v.id) {
+                            candidates.push(v);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("[broll.repair] search '{}' failed: {}", q, e)
+                }
+            }
+        }
+
+        // Non-looping gate: the window MUST be covered (+0.5s trim slack).
+        let covering: Vec<openscript_assets::pexels::PexelsVideo> = candidates_covering_window(
+            &candidates,
+            window_s,
+            0.5,
+        )
+        .into_iter()
+        .cloned()
+        .collect();
+        if covering.is_empty() {
+            decisions.push(json!({
+                "segment_id": gap.segment_id,
+                "caption": caption,
+                "window_s": window_s,
+                "draft_keywords": queries,
+                "status": "unrepairable_this_pass",
+                "reason": format!(
+                    "no Pexels candidate covers the {:.1}s window (non-looping gate) — widen keywords or accept the held-frame",
+                    window_s
+                ),
+            }));
+            continue;
+        }
+
+        // Stage 2: agent validates the covering candidates against the speech.
+        let (best_id, final_kws, relevance, reason, backend, model) =
+            llm_validate_candidates(&caption, &queries, &covering, window_s, &used_ids).await;
+        if !backend.is_empty() {
+            last_backend = backend;
+        }
+        if !model.is_empty() {
+            last_model = model;
+        }
+
+        // The LLM never sees the used-id blocklist, so its pick must be
+        // cross-checked: an already-used clip (or a hallucinated id) falls
+        // back to the longest covering UNUSED clip — the non-redundancy rule.
+        let chosen = best_id
+            .and_then(|bid| covering.iter().find(|v| v.id == bid && !used_ids.contains(&v.id)))
+            .or_else(|| {
+                covering
+                    .iter()
+                    .filter(|v| !used_ids.contains(&v.id))
+                    .max_by_key(|v| v.duration)
+            })
+            .unwrap_or_else(|| covering.iter().max_by_key(|v| v.duration).unwrap());
+        let concept = final_kws.first().cloned().unwrap_or_else(|| queries.first().cloned().unwrap_or("b-roll".into()));
+        match client.download_best(chosen, &concept).await {
+            Ok(path) => {
+                // Replace the event's asset + the asset record.
+                let new_asset_id = format!("broll_gap_{}", gap.segment_id);
+                let old_asset_id = tl
+                    .tracks
+                    .get(&TrackType::Broll)
+                    .and_then(|evts| evts.iter().find(|e| e.id == gap.segment_id))
+                    .map(|e| e.asset_id.clone());
+                if let Some(evts) = tl.tracks.get_mut(&TrackType::Broll) {
+                    if let Some(evt) = evts.iter_mut().find(|e| e.id == gap.segment_id) {
+                        evt.asset_id = new_asset_id.clone();
+                        evt.tags = vec![concept.clone()];
+                        if let openscript_core::timeline::EventKind::Broll {
+                            concept: c,
+                            source_provider: sp,
+                            ..
+                        } = &mut evt.kind
+                        {
+                            *c = concept.clone();
+                            *sp = "pexels".to_string();
+                        }
+                        if let Some(prov) = &mut evt.provenance {
+                            prov.concept = Some(concept.clone());
+                            prov.tool = "broll.repair".to_string();
+                        }
+                    }
+                }
+                tl.assets.broll.insert(
+                    new_asset_id.clone(),
+                    serde_json::json!({
+                        "path": path,
+                        "concept": concept,
+                        "source_duration_s": chosen.duration,
+                    }),
+                );
+                // Drop the stale asset record for the swapped-out clip (the
+                // cached file stays on disk — only the registry entry is removed).
+                if let Some(old) = old_asset_id {
+                    if old != new_asset_id {
+                        tl.assets.broll.remove(&old);
+                    }
+                }
+                decisions.push(json!({
+                    "segment_id": gap.segment_id,
+                    "caption": caption,
+                    "window_s": window_s,
+                    "draft_keywords": queries,
+                    "final_keywords": final_kws,
+                    "chosen_video": {
+                        "id": chosen.id,
+                        "name": pexels_url_slug(&chosen.url),
+                        "duration_s": chosen.duration,
+                    },
+                    "relevance": relevance,
+                    "reason": reason,
+                    "asset_id": new_asset_id,
+                    "path": path,
+                    "status": "repaired",
+                }));
+                repaired += 1;
+            }
+            Err(e) => {
+                decisions.push(json!({
+                    "segment_id": gap.segment_id,
+                    "caption": caption,
+                    "window_s": window_s,
+                    "draft_keywords": queries,
+                    "status": "download_failed",
+                    "reason": e.to_string(),
+                }));
+            }
+        }
+    }
+
+    tl.updated_at = chrono::Utc::now();
+    tl.save(&timeline_path).map_err(|e| {
+        ToolError::Io(std::io::Error::other(format!("Failed to save timeline: {}", e)))
+    })?;
+
+    let remaining = probe_broll_gaps(&tl).await;
+    let ok = remaining.is_empty();
+    Ok(json!({
+        "status": if ok { "healed" } else { "partial" },
+        "message": if ok {
+            "All flagged b-roll gaps repaired — timeline is fully covered.".to_string()
+        } else {
+            format!(
+                "{} gap(s) repaired; {} gap(s) remain (run broll.repair again or widen keywords).",
+                repaired,
+                remaining.len()
+            )
+        },
+        "backend": last_backend,
+        "model": last_model,
+        "repaired": repaired,
+        "context_used": context_text.lines().count(),
+        "decisions": decisions,
+        "remaining_gaps": remaining,
+        "timeline_path": timeline_path,
     }))
 }
 
@@ -6864,6 +7474,446 @@ fn clamp_segments_to_duration(
         }
     }
     (dropped, clamped)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers: agentic b-roll relevance pipeline (Phase 136)
+// ---------------------------------------------------------------------------
+
+/// Extract the human-readable video slug from a Pexels video URL
+/// (`https://www.pexels.com/video/government-building-crowd-12345/` →
+/// "Government Building Crowd"). The Pexels API returns no separate title
+/// field — this slug IS the stock video's name/description, and it is the
+/// primary signal the relevance-validation agent scores candidates on.
+fn pexels_url_slug(url: &str) -> String {
+    let trimmed = url.trim().trim_end_matches('/');
+    let slug = trimmed.rsplit('/').next().unwrap_or("");
+    let mut words: Vec<&str> = slug.split('-').collect();
+    if let Some(last) = words.last() {
+        if !last.is_empty() && last.chars().all(|c| c.is_ascii_digit()) {
+            words.pop();
+        }
+    }
+    let name = words
+        .iter()
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(first) => {
+                    let mut word = first.to_uppercase().collect::<String>();
+                    word.push_str(&w[first.len_utf8()..]);
+                    word
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if name.is_empty() {
+        "stock footage".to_string()
+    } else {
+        name
+    }
+}
+
+/// Extract the Pexels video id embedded in a cache path like
+/// `mcp/assets/broll_cache/<concept>_<id>.mp4`. Used to exclude already-used
+/// clips from the next fetch/repair pass (non-redundant footage rule).
+fn cache_path_video_id(path: &str) -> Option<i64> {
+    let stem = Path::new(path).file_stem()?.to_str()?;
+    let last = stem.rsplit('_').next()?;
+    last.parse::<i64>().ok()
+}
+
+/// Non-looping duration gate: a candidate is only eligible for a segment
+/// window when its full source duration covers the window plus a small trim
+/// slack. Selecting a shorter clip would force loop/held-frame rendering —
+/// the exact static-tail defect the validator flags as BROLL_GAP.
+fn candidates_covering_window<'a>(
+    videos: &'a [openscript_assets::pexels::PexelsVideo],
+    window_s: f64,
+    slack_s: f64,
+) -> Vec<&'a openscript_assets::pexels::PexelsVideo> {
+    videos
+        .iter()
+        .filter(|v| v.duration as f64 >= window_s + slack_s)
+        .collect()
+}
+
+/// Find the timeline segment whose window contains (or best overlaps) the
+/// b-roll event `evt_id`. broll.fetch places one event per enriched segment,
+/// but ids may drift — window matching is the robust key.
+fn find_segment_for_window<'a>(
+    timeline: &'a Timeline,
+    evt_id: &str,
+) -> Option<&'a openscript_core::timeline::Segment> {
+    let broll_evt = timeline
+        .tracks
+        .get(&TrackType::Broll)
+        .and_then(|evs| evs.iter().find(|e| e.id == evt_id))?;
+    let start_ms = broll_evt.start_ms as f64;
+    let end_ms = broll_evt.end_ms as f64;
+    timeline
+        .segments
+        .iter()
+        .find(|s| {
+            let s_start = s.start * 1000.0;
+            let s_end = s.end * 1000.0;
+            start_ms >= s_start - 60.0 && end_ms <= s_end + 60.0
+        })
+        .or_else(|| {
+            timeline.segments.iter().find(|s| {
+                let s_start = s.start * 1000.0;
+                let s_end = s.end * 1000.0;
+                start_ms < s_end && end_ms > s_start
+            })
+        })
+}
+
+/// Collect the Pexels video ids already in use across the timeline's broll
+/// assets — the non-redundancy blocklist for the next fetch/repair pass.
+fn used_broll_video_ids(timeline: &Timeline) -> std::collections::HashSet<i64> {
+    let mut used = std::collections::HashSet::new();
+    for (_, asset) in timeline.assets.broll.iter() {
+        if let Some(p) = asset.get("path").and_then(|v| v.as_str()) {
+            if let Some(id) = cache_path_video_id(p) {
+                used.insert(id);
+            }
+        }
+    }
+    used
+}
+
+/// Structured timeline-viewer context: the composition layer stack (bottom →
+/// top as rendered), every track's events with asset/concept/timing, and the
+/// b-roll coverage gaps. This is the meta-cognitive layer an agent in the
+/// keyword→fetch→repair loop reasons over — it shows what is present, in what
+/// order, and exactly where the holes are.
+fn build_timeline_viewer_context(timeline: &Timeline) -> serde_json::Value {
+    let layer_names = ["broll", "captions", "voiceover", "music", "sfx"];
+    let layers: Vec<serde_json::Value> = layer_names
+        .iter()
+        .enumerate()
+        .map(|(z, name)| {
+            let events = timeline
+                .tracks
+                .iter()
+                .find(|(t, _)| t.to_string() == *name)
+                .map(|(_, e)| e.clone())
+                .unwrap_or_default();
+            let event_json: Vec<serde_json::Value> = events
+                .iter()
+                .map(|e| {
+                    let (concept, path, src_dur) = match &e.kind {
+                        openscript_core::timeline::EventKind::Broll { concept, .. } => {
+                            let asset = timeline.assets.broll.get(&e.asset_id);
+                            let p = asset
+                                .and_then(|a| a.get("path"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let d = asset
+                                .and_then(|a| a.get("source_duration_s"))
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+                            (concept.clone(), p, d)
+                        }
+                        _ => (String::new(), String::new(), 0.0),
+                    };
+                    json!({
+                        "id": e.id,
+                        "asset_id": e.asset_id,
+                        "start_ms": e.start_ms,
+                        "end_ms": e.end_ms,
+                        "duration_ms": e.end_ms - e.start_ms,
+                        "concept": concept,
+                        "path": path,
+                        "source_duration_s": src_dur,
+                    })
+                })
+                .collect();
+            json!({
+                "layer": name,
+                "z_index": z + 1,
+                "event_count": events.len(),
+                "events": event_json,
+            })
+        })
+        .collect();
+    json!({
+        "layer_order_bottom_to_top": layer_names,
+        "layers": layers,
+    })
+}
+
+/// Render the timeline-viewer context as compact prompt text for the agentic
+/// stages (broll.repair). Keeps tokens low while preserving the operational
+/// flow: layer stack, per-segment captions/windows, covered concepts, clips.
+fn render_timeline_context_text(timeline: &Timeline) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "TIMELINE CONTEXT (source: {})",
+        timeline.source.to_string_lossy()
+    );
+    let _ = writeln!(out, "--- LAYERS (bottom→top) ---");
+    for (z, name) in ["broll", "captions", "voiceover", "music", "sfx"]
+        .iter()
+        .enumerate()
+    {
+        let events = timeline
+            .tracks
+            .iter()
+            .find(|(t, _)| t.to_string() == *name)
+            .map(|(_, e)| e.len())
+            .unwrap_or(0);
+        let _ = writeln!(out, "{}. {} ({} events)", z + 1, name, events);
+    }
+    let _ = writeln!(out, "--- SEGMENTS ({}) ---", timeline.segments.len());
+    for s in &timeline.segments {
+        let _ = writeln!(
+            out,
+            "[{}] {:.1}s–{:.1}s ({}s): {}",
+            s.id,
+            s.start,
+            s.end,
+            s.end - s.start,
+            s.caption
+        );
+    }
+    let _ = writeln!(out, "--- BROLL COVERAGE ---");
+    for evt in timeline.tracks.get(&TrackType::Broll).cloned().unwrap_or_default() {
+        let (concept, path, src_dur) = match &evt.kind {
+            openscript_core::timeline::EventKind::Broll { concept, .. } => {
+                let asset = timeline.assets.broll.get(&evt.asset_id);
+                let p = asset
+                    .and_then(|a| a.get("path"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let d = asset
+                    .and_then(|a| a.get("source_duration_s"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                (concept.clone(), p, d)
+            }
+            _ => (String::new(), String::new(), 0.0),
+        };
+        let _ = writeln!(
+            out,
+            "[{}] {:.1}s–{:.1}s concept='{}' clip_dur={:.1}s {}",
+            evt.id,
+            evt.start_ms as f64 / 1000.0,
+            evt.end_ms as f64 / 1000.0,
+            concept,
+            src_dur,
+            path
+        );
+    }
+    out
+}
+
+/// Loose JSON-object parser for LLM responses (tolerant of markdown prose
+/// around the object) — same pattern used by broll.keywords.
+fn parse_loose_json_obj(s: &str) -> serde_json::Value {
+    let trimmed = s.trim();
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        return v;
+    }
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            if end > start {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) {
+                    return v;
+                }
+            }
+        }
+    }
+    serde_json::json!({})
+}
+
+/// Stage 1 — agentic keyword draft: translate the spoken caption into English
+/// visual search keywords, avoiding the concepts already covered in the
+/// timeline (non-redundancy). Falls back to the Hinglish→English visual map +
+/// stopword extraction when the LLM cascade is down.
+async fn llm_draft_keywords(
+    caption: &str,
+    avoid_concepts: &[String],
+    language: &str,
+) -> (Vec<String>, String, String) {
+    let avoid = if avoid_concepts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nAVOID repeating these already-covered visual concepts: {}\n",
+            avoid_concepts.join(", ")
+        )
+    };
+    let system = format!(
+        "You are a stock footage keyword drafter for a short-form video. \
+         Translate the spoken caption into 2-3 English VISUAL search keywords \
+         for Pexels (things a camera can film: objects, people, places, actions). \
+         Translate Hinglish/Hindi by MEANING, not word-for-word.{} \
+         Rules: keywords 1-3 words each; concrete and searchable; no abstractions. \
+         Output ONLY compact JSON: {{\"keywords\":[\"k1\",\"k2\",\"k3\"]}}",
+        avoid
+    );
+    let user = format!("Caption: \"{}\"\nSource language: {}", caption, language);
+    match crate::llm::chat_complete(&system, &user, None).await {
+        Ok(r) => {
+            let parsed = parse_loose_json_obj(&r.text);
+            let kws: Vec<String> = parsed
+                .get("keywords")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|k| k.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let kws: Vec<String> = kws.into_iter().filter(|k| k.len() >= 3).collect();
+            if kws.is_empty() {
+                let translated = crate::stock_signal::translate_hinglish_visuals(caption);
+                let concept = extract_broll_concept(&translated);
+                (
+                    concept.split_whitespace().map(String::from).collect(),
+                    r.backend,
+                    r.model,
+                )
+            } else {
+                (kws, r.backend, r.model)
+            }
+        }
+        Err(e) => {
+            tracing::warn!("[broll.repair] draft LLM failed: {} — using Hinglish-map fallback", e);
+            let translated = crate::stock_signal::translate_hinglish_visuals(caption);
+            let concept = extract_broll_concept(&translated);
+            (
+                concept.split_whitespace().map(String::from).collect(),
+                "fallback".into(),
+                "hinglish-map".into(),
+            )
+        }
+    }
+}
+
+/// Stage 2 — relevance-validation/alignment: the agent scores real Pexels
+/// candidates (video names/slugs, durations, resolution) against the spoken
+/// caption + draft keywords and returns final keywords + the best video id.
+/// Heuristic fallback (LLM down): keyword-token overlap with the slug, then
+/// longest clip that covers the window. Returns
+/// (best_id, final_keywords, relevance, reason, backend, model).
+async fn llm_validate_candidates(
+    caption: &str,
+    draft_keywords: &[String],
+    candidates: &[openscript_assets::pexels::PexelsVideo],
+    window_s: f64,
+    avoid_video_ids: &std::collections::HashSet<i64>,
+) -> (Option<i64>, Vec<String>, f64, String, String, String) {
+    let candidate_lines: Vec<String> = candidates
+        .iter()
+        .filter(|v| !avoid_video_ids.contains(&v.id))
+        .take(6)
+        .map(|v| {
+            format!(
+                "  id={} name=\"{}\" duration={}s size={}x{}",
+                v.id,
+                pexels_url_slug(&v.url),
+                v.duration,
+                v.width,
+                v.height
+            )
+        })
+        .collect();
+    let system = "You are a short-form video director's relevance validator. \
+        Given a spoken segment and candidate stock videos (Pexels name + duration + resolution), \
+        decide which candidate best ILLUSTRATES the speech, and refine the search keywords. \
+        Rules: prefer a concrete visual match to the speech MEANING; prefer duration >= the segment \
+        window (never pick a clip that would loop); relevance 0.0-1.0. \
+        Output ONLY compact JSON: \
+        {\"best_video_id\":123,\"final_keywords\":[\"k1\"],\"relevance\":0.9,\"reason\":\"one sentence\"}";
+    let user = format!(
+        "Segment caption (spoken): \"{}\"\nSegment window: {:.1}s\nDraft keywords: [{}]\nCandidates:\n{}\n\
+         Pick the single best video id (or null if none match). JSON only.",
+        caption,
+        window_s,
+        draft_keywords.join(", "),
+        candidate_lines.join("\n")
+    );
+    match crate::llm::chat_complete(system, &user, None).await {
+        Ok(r) => {
+            let parsed = parse_loose_json_obj(&r.text);
+            let best_id = parsed
+                .get("best_video_id")
+                .and_then(|v| v.as_i64())
+                .or_else(|| {
+                    parsed
+                        .get("best_video_id")
+                        .and_then(|v| v.as_u64())
+                        .map(|u| u as i64)
+                });
+            let kws: Vec<String> = parsed
+                .get("final_keywords")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|k| k.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_else(|| draft_keywords.to_vec());
+            let kws: Vec<String> = kws.into_iter().filter(|k| k.len() >= 3).collect();
+            let rel = parsed.get("relevance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let reason = parsed
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            (
+                best_id,
+                if kws.is_empty() { draft_keywords.to_vec() } else { kws },
+                rel,
+                reason,
+                r.backend,
+                r.model,
+            )
+        }
+        Err(e) => {
+            tracing::warn!(
+                "[broll.repair] validation LLM failed: {} — heuristic pick",
+                e
+            );
+            let eligible: Vec<&openscript_assets::pexels::PexelsVideo> = candidates
+                .iter()
+                .filter(|v| !avoid_video_ids.contains(&v.id))
+                .collect();
+            let mut best: Option<(i64, usize, i64)> = None;
+            for v in eligible {
+                let slug_lower = pexels_url_slug(&v.url).to_lowercase();
+                let overlap = draft_keywords
+                    .iter()
+                    .filter(|k| slug_lower.contains(&k.to_lowercase()))
+                    .count();
+                let better = match &best {
+                    Some((_, bo, bd)) => *bo < overlap || (*bo == overlap && *bd < v.duration),
+                    None => true,
+                };
+                if better {
+                    best = Some((v.id, overlap, v.duration));
+                }
+            }
+            let chosen = best.map(|(id, _, _)| id);
+            (
+                chosen,
+                draft_keywords.to_vec(),
+                if chosen.is_some() { 0.7 } else { 0.0 },
+                "heuristic fallback (LLM unavailable)".into(),
+                "fallback".into(),
+                "heuristic".into(),
+            )
+        }
+    }
 }
 
 async fn probe_broll_gaps(timeline: &Timeline) -> Vec<openscript_core::production_quality::BrollGap> {
@@ -16929,6 +17979,56 @@ Third and final segment
             segs.iter().all(|s| s.end <= 135.4 + SOURCE_DUR_TOLERANCE_S),
             "all segments within source duration"
         );
+    }
+
+    #[test]
+    fn test_pexels_url_slug_extracts_video_name() {
+        let url = "https://www.pexels.com/video/government-building-crowd-protest-1234567/";
+        assert_eq!(pexels_url_slug(url), "Government Building Crowd Protest");
+        // Trailing id must be dropped even without a trailing slash.
+        let url2 = "https://www.pexels.com/video/court-justice-law-books-6101694";
+        assert_eq!(pexels_url_slug(url2), "Court Justice Law Books");
+        // Empty / degenerate URLs fall back to a searchable default.
+        assert_eq!(pexels_url_slug(""), "stock footage");
+    }
+
+    #[test]
+    fn test_cache_path_video_id_parses_pexels_id() {
+        assert_eq!(
+            cache_path_video_id("mcp/assets/broll_cache/court_justice_law_books_6101694.mp4"),
+            Some(6101694)
+        );
+        assert_eq!(cache_path_video_id("no_id_here.mp4"), None);
+        assert_eq!(cache_path_video_id(""), None);
+    }
+
+    #[test]
+    fn test_candidates_covering_window_filters_short_clips() {
+        use openscript_assets::pexels::PexelsVideo;
+        use openscript_assets::pexels::PexelsVideoFile;
+        let mk = |id: i64, dur: i64| PexelsVideo {
+            id,
+            width: 1080,
+            height: 1920,
+            url: format!("https://www.pexels.com/video/clip-{}", id),
+            image: String::new(),
+            video_files: vec![PexelsVideoFile {
+                id,
+                quality: "hd".into(),
+                width: 1080,
+                height: 1920,
+                link: format!("https://files.example/{}.mp4", id),
+                size: 1000,
+            }],
+            duration: dur,
+        };
+        let vids = vec![mk(1, 3), mk(2, 6), mk(3, 12)];
+        // Window 5.0s + 0.5s slack → only 6s and 12s qualify.
+        let covering = candidates_covering_window(&vids, 5.0, 0.5);
+        let ids: Vec<i64> = covering.iter().map(|v| v.id).collect();
+        assert_eq!(ids, vec![2, 3], "short clip must be rejected (non-looping rule)");
+        // Larger window → nothing qualifies.
+        assert!(candidates_covering_window(&vids, 20.0, 0.5).is_empty());
     }
 }
 

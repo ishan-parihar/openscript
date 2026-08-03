@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 91 tools: music.search re-added (queries music_index.json)
+    // 93 tools: + broll.validate_keywords (Stage 2 relevance validation) + broll.repair (gap-healing loop)
     assert_eq!(
         tools.len(),
-        91,
-        "Expected 91 MCP tools, got {}",
+        93,
+        "Expected 93 MCP tools, got {}",
         tools.len()
     );
 
@@ -192,6 +192,9 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"llm.complete"));
     assert!(tool_names.contains(&"vision.analyze_clip"));
     assert!(tool_names.contains(&"vision.score_clip"));
+    assert!(tool_names.contains(&"broll.keywords"));
+    assert!(tool_names.contains(&"broll.validate_keywords"));
+    assert!(tool_names.contains(&"broll.repair"));
     assert!(tool_names.contains(&"system.config.get"));
     assert!(tool_names.contains(&"system.config.set"));
     assert!(tool_names.contains(&"director.run"));

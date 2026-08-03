@@ -77,17 +77,26 @@ script.generate_voices → script.build_captions → background.fetch → script
 ```
 1. transcribe             — Hinglish SRT from audio
 2. srt.prepare            — Group words into caption segments
-3. srt.to_timeline        — Create timeline with segments
-4. segment.analyze        — Get clean segment data (text + timestamps + duration)
-5. [AGENT generates English keywords from Hinglish content]
-6. broll.fetch            — Search Pexels with agent-generated English keywords
+3. segment.analyze        — Sentence-aware segments (2–6s, docs/SEGMENTATION_ARCHITECTURE.md)
+4. broll.keywords         — STAGE 1 (draft): agent translates Hinglish → English visual keywords
+5. broll.validate_keywords— STAGE 2 (relevance-validation): agent scores REAL Pexels candidates
+                           (video names/durations) against the spoken caption → final keywords + best video
+6. broll.fetch            — Download + auto-place the validated clips on the timeline
 7. music.assign           — Add background music
 8. captions.generate_ass  — Generate styled captions
-9. timeline.validate      — Check for errors
-10. timeline.render       — Render final video
+9. timeline.validate      — Check for errors (segmentation bounds + BROLL_GAP coverage)
+10. broll.repair          — ONLY if BROLL_GAP errors: heals gaps by re-running the agentic
+                            keyword→validate→fetch loop for those segments, with full timeline context
+11. timeline.render       — Render final video
 ```
 
-**Key:** The AI agent is the translation layer between Hinglish content and English stock footage. The pipeline provides segmented transcript data; the agent generates English visual keywords; the pipeline executes search with those keywords.
+**Key:** The keyword generation is AGENTIC, not deterministic — it never relies on a hardcoded
+Hinglish dictionary. Stage 1 drafts keywords from the spoken meaning; Stage 2 validates those
+drafts against the stock footage that actually exists (video names + durations), so a draft that
+Pexels can't serve is corrected before download. `timeline.preview` is the timeline-viewer context
+layer: it returns the full composition layer stack (bottom→top with per-event concept/asset/timing),
+the b-roll coverage gaps, and the used clip ids — call it to understand the whole operational flow
+before and after repair.
 
 ---
 
@@ -121,7 +130,7 @@ script.generate_voices → script.build_captions → background.fetch → script
 
 | Type | Search | Download | Assign |
 |------|--------|----------|--------|
-| B-roll | `broll.fetch` | `broll.fetch(download=true)` | `broll.assign` |
+| B-roll | `broll.keywords` → `broll.validate_keywords` → `broll.fetch` | `broll.fetch(download=true)` | `broll.assign` / `broll.repair` (gap healing) |
 | Images | `media.search` | `media.download` | `overlay.assign` |
 | GIFs | `gif.search` | `gif.download` | `overlay.assign` |
 | Music | `library.search` | `library.download` | `music.assign` |
@@ -152,14 +161,19 @@ verify.production  — Full production quality (stock, music, captions)
 **B-roll coverage loop-closure (Phase A+B of docs/SEGMENTATION_UPGRADE_PLAN.md):**
 Clips now play exactly ONCE — the renderer never loops to fill a short clip's window.
 If `verify.production` (or `timeline.validate`) returns `broll_gaps`, each entry names the
-segment, the required vs available duration, and an action directive:
-`re-run broll.keywords + broll.fetch for segment <id> — need clip >= Ns`. Act on it:
-1. Re-run `broll.keywords` for that segment's caption (fresh visual keywords).
-2. Re-run `broll.fetch` with those keywords — prefer clips ≥ the segment duration.
-   When segments outnumber concepts, set `download_n >= ceil(segments/concepts)` so
-   the auto-placer cycles DISTINCT clips — never accept the same clip re-styled
-   with a different zoom/pan as "new" footage.
-3. Re-validate / re-render until `broll_gaps` is empty.
+segment, the required vs available duration, and an action directive. The preferred closure is
+**`broll.repair`** — one call that re-runs the whole agentic loop for exactly those gaps, with the
+entire timeline as context (layer stack, all segments, already-covered concepts, already-used
+clips + gap timestamps):
+1. Call `broll.repair(timeline_path, max_segments=N)` — it drafts fresh keywords (agent),
+   searches Pexels, validates candidates against the spoken caption (agent), downloads the
+   chosen clip, and replaces the event + asset. Non-looping (clip must cover the window) and
+   non-redundant (already-used Pexels ids are excluded).
+2. Re-run `timeline.preview` / `timeline.validate` — re-check `broll_gaps` is empty.
+3. Repeat `broll.repair` for any remaining gaps (limit `max_segments` per pass), then re-render.
+   Manual fallback: re-run `broll.keywords` for that segment's caption, then `broll.fetch` with
+   those keywords, `download_n >= ceil(segments/concepts)` for distinct clips — never accept
+   the same clip re-styled with a different zoom/pan as "new" footage.
 
 **Composition audit + segmentation enforcement (Phase 134):**
 `verify.production` now returns a `composition` block — the post-generation
