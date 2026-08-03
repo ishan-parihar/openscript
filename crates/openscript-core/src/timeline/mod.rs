@@ -51,6 +51,7 @@ impl Timeline {
                 audio: AudioEffects { loudnorm: true },
                 caption_style: None,
             },
+            raw_render: false,
         }
     }
 
@@ -199,6 +200,7 @@ impl Timeline {
             "directives": serde_json::to_value(&self.directives).unwrap_or_default(),
             "assets": serde_json::to_value(&self.assets).unwrap_or_default(),
             "effects": serde_json::to_value(&self.effects).unwrap_or_default(),
+            "raw_render": self.raw_render,
         })
     }
 
@@ -337,6 +339,7 @@ impl Timeline {
                 captions: std::collections::HashMap::new(),
             },
             effects,
+            raw_render: false,
         })
     }
 

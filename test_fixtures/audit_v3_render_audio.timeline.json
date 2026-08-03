@@ -368,9 +368,87 @@
     "dialogue": [],
     "broll": [
       {
-        "id": "broll_0",
+        "id": "broll_001",
         "asset_id": "broll_0",
         "start_ms": 0,
+        "end_ms": 3310,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "government building corruption"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "government building corruption"
+        },
+        "event_type": "broll",
+        "concept": "government building corruption",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3310
+      },
+      {
+        "id": "broll_002",
+        "asset_id": "broll_0",
+        "start_ms": 3310,
+        "end_ms": 6520,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "government building corruption"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "government building corruption"
+        },
+        "event_type": "broll",
+        "concept": "government building corruption",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3210
+      },
+      {
+        "id": "broll_003",
+        "asset_id": "broll_0",
+        "start_ms": 6520,
+        "end_ms": 10160,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "government building corruption"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "government building corruption"
+        },
+        "event_type": "broll",
+        "concept": "government building corruption",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3640
+      },
+      {
+        "id": "broll_004",
+        "asset_id": "broll_0",
+        "start_ms": 10160,
         "end_ms": 13220,
         "offset_ms": 0,
         "gain_db": 0.0,
@@ -390,13 +468,14 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 3060
       },
       {
-        "id": "broll_1",
+        "id": "broll_005",
         "asset_id": "broll_1",
         "start_ms": 13220,
-        "end_ms": 25989,
+        "end_ms": 16460,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -415,12 +494,169 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 3240
       },
       {
-        "id": "broll_2",
+        "id": "broll_006",
+        "asset_id": "broll_1",
+        "start_ms": 16460,
+        "end_ms": 19630,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "social media phone screen"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "social media phone screen"
+        },
+        "event_type": "broll",
+        "concept": "social media phone screen",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3170
+      },
+      {
+        "id": "broll_007",
+        "asset_id": "broll_1",
+        "start_ms": 19630,
+        "end_ms": 22910,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "social media phone screen"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "social media phone screen"
+        },
+        "event_type": "broll",
+        "concept": "social media phone screen",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3280
+      },
+      {
+        "id": "broll_008",
+        "asset_id": "broll_1",
+        "start_ms": 22910,
+        "end_ms": 25990,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "social media phone screen"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "social media phone screen"
+        },
+        "event_type": "broll",
+        "concept": "social media phone screen",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3080
+      },
+      {
+        "id": "broll_009",
         "asset_id": "broll_2",
         "start_ms": 25990,
+        "end_ms": 30000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "protest crowd poor people"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "protest crowd poor people"
+        },
+        "event_type": "broll",
+        "concept": "protest crowd poor people",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 4010
+      },
+      {
+        "id": "broll_010",
+        "asset_id": "broll_2",
+        "start_ms": 30000,
+        "end_ms": 32910,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "protest crowd poor people"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "protest crowd poor people"
+        },
+        "event_type": "broll",
+        "concept": "protest crowd poor people",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2910
+      },
+      {
+        "id": "broll_011",
+        "asset_id": "broll_2",
+        "start_ms": 32910,
+        "end_ms": 35720,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "protest crowd poor people"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "protest crowd poor people"
+        },
+        "event_type": "broll",
+        "concept": "protest crowd poor people",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2810
+      },
+      {
+        "id": "broll_012",
+        "asset_id": "broll_2",
+        "start_ms": 35720,
         "end_ms": 38500,
         "offset_ms": 0,
         "gain_db": 0.0,
@@ -440,13 +676,14 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 2780
       },
       {
-        "id": "broll_3",
+        "id": "broll_013",
         "asset_id": "broll_3",
         "start_ms": 38500,
-        "end_ms": 49969,
+        "end_ms": 42080,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -465,13 +702,92 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 3580
       },
       {
-        "id": "broll_4",
+        "id": "broll_014",
+        "asset_id": "broll_3",
+        "start_ms": 42080,
+        "end_ms": 44650,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "court justice law books"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "court justice law books"
+        },
+        "event_type": "broll",
+        "concept": "court justice law books",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2570
+      },
+      {
+        "id": "broll_015",
+        "asset_id": "broll_3",
+        "start_ms": 44650,
+        "end_ms": 47280,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "court justice law books"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "court justice law books"
+        },
+        "event_type": "broll",
+        "concept": "court justice law books",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2630
+      },
+      {
+        "id": "broll_016",
+        "asset_id": "broll_3",
+        "start_ms": 47280,
+        "end_ms": 49970,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "court justice law books"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "court justice law books"
+        },
+        "event_type": "broll",
+        "concept": "court justice law books",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2690
+      },
+      {
+        "id": "broll_017",
         "asset_id": "broll_4",
         "start_ms": 49970,
-        "end_ms": 60000,
+        "end_ms": 52780,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -490,13 +806,66 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 2810
       },
       {
-        "id": "broll_5",
+        "id": "broll_018",
+        "asset_id": "broll_4",
+        "start_ms": 52780,
+        "end_ms": 55450,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "crime scene investigation"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "crime scene investigation"
+        },
+        "event_type": "broll",
+        "concept": "crime scene investigation",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2670
+      },
+      {
+        "id": "broll_019",
+        "asset_id": "broll_4",
+        "start_ms": 55450,
+        "end_ms": 58160,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "crime scene investigation"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "crime scene investigation"
+        },
+        "event_type": "broll",
+        "concept": "crime scene investigation",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2710
+      },
+      {
+        "id": "broll_020",
         "asset_id": "broll_5",
-        "start_ms": 60000,
-        "end_ms": 71879,
+        "start_ms": 58160,
+        "end_ms": 62940,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -515,12 +884,169 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 4780
       },
       {
-        "id": "broll_6",
+        "id": "broll_021",
+        "asset_id": "broll_5",
+        "start_ms": 62940,
+        "end_ms": 65880,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "election voting booth"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "election voting booth"
+        },
+        "event_type": "broll",
+        "concept": "election voting booth",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2940
+      },
+      {
+        "id": "broll_022",
+        "asset_id": "broll_5",
+        "start_ms": 65880,
+        "end_ms": 68760,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "election voting booth"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "election voting booth"
+        },
+        "event_type": "broll",
+        "concept": "election voting booth",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2880
+      },
+      {
+        "id": "broll_023",
+        "asset_id": "broll_5",
+        "start_ms": 68760,
+        "end_ms": 71880,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "election voting booth"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "election voting booth"
+        },
+        "event_type": "broll",
+        "concept": "election voting booth",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3120
+      },
+      {
+        "id": "broll_024",
         "asset_id": "broll_6",
         "start_ms": 71880,
+        "end_ms": 74820,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "money corruption bribe"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "money corruption bribe"
+        },
+        "event_type": "broll",
+        "concept": "money corruption bribe",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2940
+      },
+      {
+        "id": "broll_025",
+        "asset_id": "broll_6",
+        "start_ms": 74820,
+        "end_ms": 77700,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "money corruption bribe"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "money corruption bribe"
+        },
+        "event_type": "broll",
+        "concept": "money corruption bribe",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2880
+      },
+      {
+        "id": "broll_026",
+        "asset_id": "broll_6",
+        "start_ms": 77700,
+        "end_ms": 80680,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "money corruption bribe"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "money corruption bribe"
+        },
+        "event_type": "broll",
+        "concept": "money corruption bribe",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2980
+      },
+      {
+        "id": "broll_027",
+        "asset_id": "broll_6",
+        "start_ms": 80680,
         "end_ms": 84120,
         "offset_ms": 0,
         "gain_db": 0.0,
@@ -540,13 +1066,14 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 3440
       },
       {
-        "id": "broll_7",
+        "id": "broll_028",
         "asset_id": "broll_7",
         "start_ms": 84120,
-        "end_ms": 96319,
+        "end_ms": 87180,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -565,12 +1092,169 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 3060
       },
       {
-        "id": "broll_8",
+        "id": "broll_029",
+        "asset_id": "broll_7",
+        "start_ms": 87180,
+        "end_ms": 90000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "street protest rally"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "street protest rally"
+        },
+        "event_type": "broll",
+        "concept": "street protest rally",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2820
+      },
+      {
+        "id": "broll_030",
+        "asset_id": "broll_7",
+        "start_ms": 90000,
+        "end_ms": 93010,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "street protest rally"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "street protest rally"
+        },
+        "event_type": "broll",
+        "concept": "street protest rally",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3010
+      },
+      {
+        "id": "broll_031",
+        "asset_id": "broll_7",
+        "start_ms": 93010,
+        "end_ms": 96320,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "street protest rally"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "street protest rally"
+        },
+        "event_type": "broll",
+        "concept": "street protest rally",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3310
+      },
+      {
+        "id": "broll_032",
         "asset_id": "broll_8",
         "start_ms": 96320,
+        "end_ms": 99320,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "soldiers independence"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "soldiers independence"
+        },
+        "event_type": "broll",
+        "concept": "soldiers independence",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3000
+      },
+      {
+        "id": "broll_033",
+        "asset_id": "broll_8",
+        "start_ms": 99320,
+        "end_ms": 102290,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "soldiers independence"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "soldiers independence"
+        },
+        "event_type": "broll",
+        "concept": "soldiers independence",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2970
+      },
+      {
+        "id": "broll_034",
+        "asset_id": "broll_8",
+        "start_ms": 102290,
+        "end_ms": 105300,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "soldiers independence"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "soldiers independence"
+        },
+        "event_type": "broll",
+        "concept": "soldiers independence",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3010
+      },
+      {
+        "id": "broll_035",
+        "asset_id": "broll_8",
+        "start_ms": 105300,
         "end_ms": 107960,
         "offset_ms": 0,
         "gain_db": 0.0,
@@ -590,12 +1274,91 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 2660
       },
       {
-        "id": "broll_9",
+        "id": "broll_036",
         "asset_id": "broll_9",
         "start_ms": 107960,
+        "end_ms": 111010,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "smartphone sharing"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "smartphone sharing"
+        },
+        "event_type": "broll",
+        "concept": "smartphone sharing",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 3050
+      },
+      {
+        "id": "broll_037",
+        "asset_id": "broll_9",
+        "start_ms": 111010,
+        "end_ms": 113770,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "smartphone sharing"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "smartphone sharing"
+        },
+        "event_type": "broll",
+        "concept": "smartphone sharing",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2760
+      },
+      {
+        "id": "broll_038",
+        "asset_id": "broll_9",
+        "start_ms": 113770,
+        "end_ms": 116720,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "smartphone sharing"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "smartphone sharing"
+        },
+        "event_type": "broll",
+        "concept": "smartphone sharing",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 2950
+      },
+      {
+        "id": "broll_039",
+        "asset_id": "broll_9",
+        "start_ms": 116720,
         "end_ms": 120000,
         "offset_ms": 0,
         "gain_db": 0.0,
@@ -615,13 +1378,14 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 3280
       },
       {
-        "id": "broll_10",
+        "id": "broll_040",
         "asset_id": "broll_10",
         "start_ms": 120000,
-        "end_ms": 137009,
+        "end_ms": 124230,
         "offset_ms": 0,
         "gain_db": 0.0,
         "fade_in_ms": 0,
@@ -640,10 +1404,89 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 4230
       },
       {
-        "id": "broll_11",
+        "id": "broll_041",
+        "asset_id": "broll_10",
+        "start_ms": 124230,
+        "end_ms": 128460,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "news broadcast megaphone"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "news broadcast megaphone"
+        },
+        "event_type": "broll",
+        "concept": "news broadcast megaphone",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 4230
+      },
+      {
+        "id": "broll_042",
+        "asset_id": "broll_10",
+        "start_ms": 128460,
+        "end_ms": 132780,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "news broadcast megaphone"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "news broadcast megaphone"
+        },
+        "event_type": "broll",
+        "concept": "news broadcast megaphone",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 4320
+      },
+      {
+        "id": "broll_043",
+        "asset_id": "broll_10",
+        "start_ms": 132780,
+        "end_ms": 137010,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": [
+          "news broadcast megaphone"
+        ],
+        "provenance": {
+          "tool": "broll.fetch",
+          "editorial_role": null,
+          "concept": "news broadcast megaphone"
+        },
+        "event_type": "broll",
+        "concept": "news broadcast megaphone",
+        "source_provider": "pexels",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium",
+        "duration_ms": 4230
+      },
+      {
+        "id": "broll_044",
         "asset_id": "broll_11",
         "start_ms": 137010,
         "end_ms": 139400,
@@ -665,7 +1508,8 @@
         "transition_style": "cut",
         "crop_mode": "center",
         "orientation": "9:16",
-        "motion_intensity": "medium"
+        "motion_intensity": "medium",
+        "duration_ms": 2390
       }
     ],
     "captions": [],
@@ -2285,5 +3129,6 @@
       "loudnorm": true
     },
     "caption_style": null
-  }
+  },
+  "raw_render": true
 }

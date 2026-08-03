@@ -188,6 +188,18 @@ pub struct FilterGraphBuilder {
     /// Audio is still trimmed via `[0:a]` and mixed normally. Set by callers
     /// that probe the source via `crate::probe::probe` and see no video stream.
     audio_only: bool,
+    /// When false (raw mode), the b-roll filter chain strips zoompan and the
+    /// `loop` parameter so the source clip plays once and is overlaid as-is.
+    /// Used for segmentation-correctness audits where the goal is to verify
+    /// that one b-roll per segment produces motion without post-processing.
+    /// Defaults to true to preserve existing behavior. See SEGMENTATION_ARCHITECTURE.md.
+    enable_zoompan: bool,
+    /// When true (raw mode), the b-roll `movie=` filter omits the `loop`
+    /// parameter so the source clip plays exactly once. Source exhaustion
+    /// (held last frame) is the expected raw behavior — segmentation must
+    /// ensure each b-roll event's duration ≤ source clip duration. Defaults
+    /// to false to preserve existing behavior.
+    disable_loop: bool,
 }
 
 impl FilterGraphBuilder {
@@ -218,6 +230,8 @@ impl FilterGraphBuilder {
             ducking_events: Vec::new(),
             fonts_dir: None,
             audio_only: false,
+            enable_zoompan: true,
+            disable_loop: false,
         }
     }
 
@@ -330,6 +344,20 @@ impl FilterGraphBuilder {
         self
     }
 
+    /// Switch the b-roll chain to raw mode: skip zoompan and the `loop` param.
+    /// The source clip plays once and is overlaid as-is (held last frame after
+    /// source exhaustion, per ffmpeg default — segmentation correctness must
+    /// ensure b-roll duration ≤ source clip duration in this mode).
+    ///
+    /// Per SEGMENTATION_ARCHITECTURE.md: this is the audit mode that verifies
+    /// "rendered correctly as they are downloaded" before re-introducing
+    /// post-processing (zoompan, looping).
+    pub fn with_raw_render(mut self, raw: bool) -> Self {
+        self.enable_zoompan = !raw;
+        self.disable_loop = raw;
+        self
+    }
+
     pub fn from_timeline(timeline: &Timeline) -> Self {
         let segments = timeline.segments.clone();
         let fps = timeline.target.fps;
@@ -345,7 +373,8 @@ impl FilterGraphBuilder {
 
         let mut b = FilterGraphBuilder::new(segments, fps, &aspect, loudnorm)
             .with_normalize_lufs(normalize_lufs)
-            .with_dimensions(width, height);
+            .with_dimensions(width, height)
+            .with_raw_render(timeline.raw_render);
 
         let mut broll_events = Vec::new();
         let mut music_events = Vec::new();
@@ -369,7 +398,7 @@ impl FilterGraphBuilder {
                     let path = timeline
                         .assets
                         .broll
-                        .get(&evt.id)
+                        .get(&evt.asset_id)
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                         .unwrap_or("")
                         .to_string();
@@ -391,7 +420,7 @@ impl FilterGraphBuilder {
                     let path = timeline
                         .assets
                         .music
-                        .get(&evt.id)
+                        .get(&evt.asset_id)
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                         .unwrap_or("")
                         .to_string();
@@ -418,7 +447,7 @@ impl FilterGraphBuilder {
                     let path = timeline
                         .assets
                         .sfx
-                        .get(&evt.id)
+                        .get(&evt.asset_id)
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                         .unwrap_or("")
                         .to_string();
@@ -439,7 +468,7 @@ impl FilterGraphBuilder {
                     let path = timeline
                         .assets
                         .voices
-                        .get(&evt.id)
+                        .get(&evt.asset_id)
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                         .unwrap_or("")
                         .to_string();
@@ -808,8 +837,10 @@ impl FilterGraphBuilder {
                 // segment. When unknown, the safe fallback is the deterministic
                 // 5s offset.
                 let clip_duration_s = (broll.end_ms - broll.start_ms) as f64 / 1000.0;
+
                 // Deterministic pseudo-random: golden-ratio hash gives good distribution
                 let mut seek_offset = (i as f64 * 1.618033988749895) % 5.0f64;
+
                 // Compute finite loop count: enough plays to cover the segment
                 // but NEVER infinite (loop=0/loop=-1 hang the render because
                 // the filter graph never terminates). Loop count is the number
@@ -831,20 +862,23 @@ impl FilterGraphBuilder {
                     loop_count = 3;
                     seek_offset = seek_offset.min(clip_duration_s.max(0.0) * 0.5);
                 }
-                // Use movie= filter's built-in loop parameter instead of a
-                // separate `loop` filter. The `loop` filter has unreliable
-                // buffering when fed by `movie=` sources — it may pass through
-                // without looping, causing source exhaustion (held last frame).
+
                 // movie=loop=N means N additional plays (N+1 total).
-                // si=-1 auto-selects the first VIDEO stream; si=0 picks the
-                // literal first stream which may be audio in some MP4 files.
-                let movie_loop = loop_count.saturating_sub(1).max(0);
-                parts.push(format!(
-                    "movie='{}':loop={}:si=-1[broll_raw{}]",
-                    escaped_path,
-                    movie_loop,
-                    i
-                ));
+                // loop=0 or loop=-1 means infinite loop (hangs the render).
+                // To disable loop, we omit the loop parameter entirely.
+                if self.disable_loop {
+                    parts.push(format!(
+                        "movie='{}':si=-1[broll_raw{}]",
+                        escaped_path, i
+                    ));
+                } else {
+                    let movie_loop = loop_count.saturating_sub(1).max(0);
+                    parts.push(format!(
+                        "movie='{}':loop={}:si=-1[broll_raw{}]",
+                        escaped_path, movie_loop, i
+                    ));
+                }
+
                 // Trim past the slow intro using seek_offset, then reset PTS
                 parts.push(format!(
                     "[broll_raw{}]trim=start={:.2},setpts=PTS-STARTPTS[broll_src_{}]",
@@ -852,39 +886,47 @@ impl FilterGraphBuilder {
                     seek_offset,
                     i
                 ));
-                // Ken Burns motion: zoompan guarantees continuous on-screen
-                // motion regardless of the source clip's intrinsic behaviour.
-                // Without this, clips whose seek_offset lands on a slow frame
-                // (or Pexels videos that are slow throughout) appear as static
-                // images for the full overlay window. The motion style is
-                // cycled per clip index for visual variety. zoompan's `d=1`
-                // means each output frame animates one step past the previous
-                // frame; with `fps=self.fps` the output frame rate matches the
-                // project's target so downstream filters see consistent timing.
-                let style = MotionStyle::for_clip(i);
-                let (zp_z, zp_x, zp_y) = style.expressions();
+
+                let broll_final_label = if self.enable_zoompan {
+                    // Ken Burns motion: zoompan guarantees continuous on-screen
+                    // motion regardless of the source clip's intrinsic behaviour.
+                    let style = MotionStyle::for_clip(i);
+                    let (zp_z, zp_x, zp_y) = style.expressions();
+                    parts.push(format!(
+                        "[broll_src_{}]zoompan=z='{}':x='{}':y='{}':d=1:s={w}x{h}:fps={fps}[broll_zp_{}]",
+                        i,
+                        zp_z,
+                        zp_x,
+                        zp_y,
+                        i,
+                        w = self.width,
+                        h = self.height,
+                        fps = self.fps,
+                    ));
+                    parts.push(format!(
+                        "[broll_zp_{}]scale={w}:{h}[broll_scaled_{}]",
+                        i,
+                        i,
+                        w = self.width,
+                        h = self.height,
+                    ));
+                    format!("[broll_scaled_{}]", i)
+                } else {
+                    // Raw mode: just scale the trimmed source to output dimensions
+                    parts.push(format!(
+                        "[broll_src_{}]scale={w}:{h}[broll_scaled_{}]",
+                        i,
+                        i,
+                        w = self.width,
+                        h = self.height,
+                    ));
+                    format!("[broll_scaled_{}]", i)
+                };
+
                 parts.push(format!(
-                    "[broll_src_{}]zoompan=z='{}':x='{}':y='{}':d=1:s={w}x{h}:fps={fps}[broll_zp_{}]",
-                    i,
-                    zp_z,
-                    zp_x,
-                    zp_y,
-                    i,
-                    w = self.width,
-                    h = self.height,
-                    fps = self.fps,
-                ));
-                parts.push(format!(
-                    "[broll_zp_{}]scale={w}:{h}[broll_scaled_{}]",
-                    i,
-                    i,
-                    w = self.width,
-                    h = self.height,
-                ));
-                parts.push(format!(
-                    "[{}][broll_scaled_{}]overlay=0:0:enable='between(t,{},{})'[{}]",
+                    "[{}]{}overlay=0:0:enable='between(t,{},{})'[{}]",
                     &current_v[1..current_v.len() - 1],
-                    i,
+                    broll_final_label,
                     start_s,
                     broll.end_ms as f64 / 1000.0,
                     out_label

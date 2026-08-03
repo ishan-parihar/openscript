@@ -19,6 +19,10 @@ pub struct Timeline {
     pub directives: Directives,
     pub assets: AssetRegistry,
     pub effects: Effects,
+    /// When true, renders in raw mode: strips zoompan and looping from b-roll.
+    /// Used for segmentation-correctness audits per SEGMENTATION_ARCHITECTURE.md.
+    #[serde(default)]
+    pub raw_render: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
