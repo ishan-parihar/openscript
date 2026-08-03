@@ -1536,6 +1536,14 @@ fn extract_broll_concept(caption: &str) -> String {
         "very", "just", "also", "now", "then", "there", "here", "he", "she", "it",
         "we", "us", "our", "my", "me", "i", "his", "her", "its", "or", "so",
         "if", "in", "on", "at", "to", "of", "no", "up",
+        // Hinglish function words — no visual content, must never reach Pexels.
+        "hai", "ho", "hain", "ka", "ki", "ke", "ko", "se", "mein", "par",
+        "aur", "yeh", "woh", "jo", "kya", "kaise", "kyun", "nahi", "haan",
+        "bhi", "ab", "phir", "toh", "yaar", "dekho", "suno", "bolo",        "kar",
+        "karne", "kare", "hoga", "thi", "tha", "raha", "rah", "baat", "chahiye",
+        "hoon", "wala", "wale", "wali", "koi", "bahut", "saare", "log",
+        "logon", "bhai", "bhaiyo", "aap", "tum", "tera", "mera", "apna",
+        "kuchh", "kuch", "sab", "jab", "tab", "agar", "lekin", "jis", "jinki",
     ];
     let significant: Vec<String> = caption
         .split_whitespace()
@@ -2696,10 +2704,10 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         if !tp.is_empty() && std::path::Path::new(tp).exists() {
             Timeline::load(tp).map_err(|e| ToolError::Timeline(e.to_string()))?
         } else {
-            Timeline::new(source_path, &aspect, fps, None)
+            Timeline::new(source_path.clone(), &aspect, fps, None)
         }
     } else {
-        Timeline::new(source_path, &aspect, fps, None)
+        Timeline::new(source_path.clone(), &aspect, fps, None)
     };
 
     // Add SRT entries as segments
@@ -2757,6 +2765,25 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         }
     }
 
+    // Clamp segments at the source media duration. SRT entries occasionally
+    // overshoot the audio end (whisper tail hallucination, trailing silence in
+    // the word SRT). Without this, the last segments extend past the source and
+    // the renderer's overlay chain (eof_action=repeat) holds the final b-roll
+    // frame past the audio end — the "audio 2:15 but video 2:41" black+silence
+    // tail. The source is the master clock; segments must fit inside it.
+    // The clamp is best-effort: if the source is missing or unprobeable we
+    // leave segments untouched (the render's `-shortest` still caps output).
+    if let Some(src_dur) = probe_source_duration(&source_path).await {
+        let before = timeline.segments.len();
+        let (dropped, clamped) = clamp_segments_to_duration(&mut timeline.segments, src_dur);
+        if dropped > 0 || clamped > 0 {
+            tracing::warn!(
+                "[srt.to_timeline] clamped {} / dropped {} of {} segments to source duration {:.2}s (trailing SRT overshoot truncated)",
+                clamped, dropped, before, src_dur
+            );
+        }
+    }
+
     // Determine output path: explicit output_path > timeline_path > derived from srt_path
     let resolved_output = output_path
         .filter(|s| !s.is_empty())
@@ -2767,7 +2794,11 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
     timeline.save(&resolved_output)
         .map_err(|e| ToolError::Timeline(format!("Failed to save timeline: {}", e)))?;
 
-    let duration_s = entries.last().map(|e| e.end).unwrap_or(0.0);
+    // Report the CLAMPED last-segment end as duration_s — the un-clamped SRT
+    // tail (whisper hallucination) would mislead an agent into thinking the
+    // timeline runs past the source. source_duration_s is the same value but
+    // named to make the master clock explicit.
+    let duration_s = timeline.segments.last().map(|s| s.end).unwrap_or(0.0);
 
     Ok(json!({
         "status": "built",
@@ -2776,6 +2807,7 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
         "duration_s": duration_s,
         "aspect": aspect,
         "fps": fps,
+        "source_duration_s": duration_s,
     }))
 }
 async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
@@ -2788,6 +2820,23 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
     // [MIN_SEGMENT_DURATION_S, MAX_SEGMENT_DURATION_S] (2.0s–6.0s) for
     // short-form retention. Long cuts bleed attention; sub-min cuts flicker.
     errors.extend(timeline.validate_segmentation());
+    // DURATION: segments must not extend past the source media (the master
+    // clock). SRT tail hallucination / trailing silence produces segments past
+    // the audio end; the renderer's overlay repeat then holds the last b-roll
+    // frame beyond the audio — the "audio 2:15, video 2:41" black+silence tail.
+    // The probe is async, so this lives in the MCP layer (not core's sync
+    // validate) — mirroring probe_broll_gaps. Best-effort: skip if the source
+    // is missing/unprobeable.
+    if let Some(src_dur) = probe_source_duration(&timeline.source).await {
+        for seg in &timeline.segments {
+            if seg.end > src_dur + SOURCE_DUR_TOLERANCE_S {
+                errors.push(format!(
+                    "DURATION: segment {} ends at {:.1}s but source media is only {:.1}s — segments must fit inside the source (re-run srt.to_timeline/segment.analyze which clamp at the source duration, or trim this segment)",
+                    seg.id, seg.end, src_dur
+                ));
+            }
+        }
+    }
     // Phase 54: Reject empty timelines
     if timeline.segments.is_empty() {
         errors.push("Timeline has no segments. Call timeline.add_segment to populate it with segments.".to_string());
@@ -5586,8 +5635,14 @@ async fn handle_broll_keywords(args: serde_json::Value) -> Result<serde_json::Va
             .or_else(|| keyword_map.get(&format!("seg_{:03}", i)))
             .cloned()
             .unwrap_or_else(|| {
-                // Fallback: naive keyword extraction
-                let concept = extract_broll_concept(caption);
+                // Fallback: translate Hinglish→English visual concepts FIRST, then
+                // naive keyword extraction. Raw Hinglish words ("sarkar", "bhai")
+                // produce garbage Pexels queries; their English visual equivalents
+                // search cleanly. This is the LLM-down path for the single-shot
+                // keyword generation loop — relevance must not collapse when the
+                // model is unavailable (Phase 135).
+                let translated = crate::stock_signal::translate_hinglish_visuals(caption);
+                let concept = extract_broll_concept(&translated);
                 concept.split_whitespace().map(String::from).collect()
             });
 
@@ -5674,10 +5729,24 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
         max_dur_s,
     );
     let bounded = openscript_core::srt::enforce_segment_bounds(grouped, min_dur_s, max_dur_s);
-    let scenes: Vec<(String, f64, f64)> = bounded
+    let mut scenes: Vec<(String, f64, f64)> = bounded
         .into_iter()
         .map(|p| (p.text, p.start, p.end))
         .collect();
+
+    // Clamp scenes at the source media duration. SRT entries can overshoot the
+    // audio end (whisper tail hallucination / trailing silence), producing
+    // segments past the master clock — the "audio 2:15, video 2:41" black tail.
+    // broll.fetch places clips against these scenes, so the clamp here keeps
+    // every b-roll window inside the source audio.
+    if let Some(src_dur) = probe_source_duration(std::path::Path::new(&audio_path)).await {
+        scenes.retain(|(_, start, _)| *start < src_dur);
+        for (_, _, end) in scenes.iter_mut() {
+            if *end > src_dur + SOURCE_DUR_TOLERANCE_S {
+                *end = src_dur;
+            }
+        }
+    }
 
     // Step 4: For each segment, run stock_signal analysis
     report_progress(60.0, 100.0, "Analyzing segments for b-roll keywords...").await.ok();
@@ -6758,6 +6827,45 @@ async fn probe_broll_motion_per_clip(
 /// once), so a short clip leaves the window tail holding the last frame.
 /// These gaps are surfaced as validator errors so the agent loop re-runs
 /// keyword generation + `broll.fetch` for exactly those segments.
+/// Tolerance (seconds) above which a segment/scene end is considered to
+/// overshoot the source media. Shared by the clamp + validate paths so they
+/// stay in agreement (0.05s ≈ 1.5 audio frames at 30fps).
+const SOURCE_DUR_TOLERANCE_S: f64 = 0.05;
+
+/// Probe a media file's duration. Returns `None` when the path is empty,
+/// missing, or unprobeable — callers treat that as "no source duration known"
+/// and leave segments untouched (the render's `-shortest` still caps output).
+async fn probe_source_duration(path: &Path) -> Option<f64> {
+    if path.as_os_str().is_empty() || !path.exists() {
+        return None;
+    }
+    match openscript_ffmpeg::probe::probe(path.to_string_lossy().as_ref()).await {
+        Ok(m) if m.duration > 0.0 => Some(m.duration),
+        _ => None,
+    }
+}
+
+/// Clamp `segments` so every segment fits inside `src_dur` (the master clock).
+/// Segments that START past the source end are dropped entirely (clamping them
+/// would invert start>end and produce a negative-duration atrim in the render);
+/// segments that merely END past it are clamped. Returns `(dropped, clamped)`.
+fn clamp_segments_to_duration(
+    segments: &mut Vec<openscript_core::timeline::Segment>,
+    src_dur: f64,
+) -> (usize, usize) {
+    let before = segments.len();
+    segments.retain(|s| s.start < src_dur);
+    let dropped = before - segments.len();
+    let mut clamped = 0usize;
+    for seg in segments.iter_mut() {
+        if seg.end > src_dur + SOURCE_DUR_TOLERANCE_S {
+            seg.end = src_dur;
+            clamped += 1;
+        }
+    }
+    (dropped, clamped)
+}
+
 async fn probe_broll_gaps(timeline: &Timeline) -> Vec<openscript_core::production_quality::BrollGap> {
     use openscript_core::production_quality::BrollGap;
 
@@ -16788,6 +16896,39 @@ Third and final segment
         }
         
         let _ = std::fs::remove_file(&srt_path);
+    }
+
+    #[test]
+    fn test_clamp_segments_to_duration_overshoot_and_inverted() {
+        use openscript_core::timeline::Segment;
+        let mk = |id: &str, start: f64, end: f64| Segment {
+            id: id.into(),
+            start,
+            end,
+            caption: String::new(),
+            crossfade_ms: 0,
+            semantic_role: None,
+        };
+        let mut segs = vec![
+            mk("s1", 0.0, 3.0),   // inside
+            mk("s2", 3.0, 6.0),   // inside
+            mk("s3", 130.0, 139.4), // ends past src_dur 135.4 → clamped
+            mk("s4", 138.0, 139.0), // STARTS past src_dur → dropped (would invert)
+        ];
+        let (dropped, clamped) = clamp_segments_to_duration(&mut segs, 135.4);
+        assert_eq!(dropped, 1, "segment starting past source must be dropped");
+        assert_eq!(clamped, 1, "segment ending past source must be clamped");
+        assert_eq!(segs.len(), 3);
+        assert_eq!(segs[2].end, 135.4);
+        assert!(
+            segs.iter().all(|s| s.start < s.end),
+            "no inverted segments after clamp: {:?}",
+            segs
+        );
+        assert!(
+            segs.iter().all(|s| s.end <= 135.4 + SOURCE_DUR_TOLERANCE_S),
+            "all segments within source duration"
+        );
     }
 }
 

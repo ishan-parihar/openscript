@@ -63,12 +63,99 @@ const NOISE_TOKENS: &[&str] = &[
 // Hinglish -> English visual concept mapping
 // ---------------------------------------------------------------------------
 
-/// Maps Hindi/Hinglish visual nouns to English equivalents for stock footage search.
-/// When the agent processes Hindi audio transcripts, scene_text may contain
-/// Hindi words like "samundar" (ocean), "pahad" (mountain), etc.
-/// This mapping ensures stock footage search returns relevant results.
+/// High-frequency Hinglish/Hindi nouns → English VISUAL concepts for stock
+/// footage search. Used by `broll.keywords`' fallback when the LLM call fails
+/// or returns nothing: raw Hinglish words ("sarkar", "bhai") produce garbage
+/// Pexels results, but their English visual equivalents search cleanly.
+///
+/// The map targets political/social commentary vocabulary (the dominant
+/// Hinglish content class) plus everyday life nouns. Words not in the map are
+/// passed through unchanged; the caller's stopword filter drops noise tokens.
+const HINGLISH_VISUAL_MAP: &[(&str, &str)] = &[
+    // politics / government
+    ("sarkar", "government building"),
+    ("sarkaar", "government building"),
+    ("sarkari", "government"),
+    ("neta", "political leader"),
+    ("chunav", "election"),
+    ("vote", "voting"),
+    ("kanoon", "law justice"),
+    ("police", "police"),
+    ("media", "news media"),
+    ("samachar", "news broadcast"),
+    ("patrakar", "journalist"),
+    ("andolan", "protest"),
+    ("inqilab", "revolution"),
+    ("zindabad", "celebration crowd"),
+    ("virodh", "opposition protest"),
+    ("bhrashtachar", "corruption"),
+    ("ghotala", "scandal"),
+    ("paise", "money"),
+    ("paisa", "money"),
+    ("dhan", "wealth"),
+    ("property", "property building"),
+    // economy / daily life
+    ("majdoor", "construction worker"),
+    ("kisan", "farmer field"),
+    ("gareeb", "poverty"),
+    ("gareebi", "poverty"),
+    ("mehngai", "rising prices market"),
+    ("kharcha", "spending shopping"),
+    ("roti", "bread food"),
+    ("naukri", "office job"),
+    ("padhai", "student studying"),
+    ("school", "school"),
+    ("college", "college campus"),
+    ("bachche", "children"),
+    ("parivaar", "family"),
+    ("sheher", "city skyline"),
+    ("gaon", "village"),
+    ("sadak", "road traffic"),
+    ("pani", "water"),
+    ("bijli", "electricity power lines"),
+    ("kachra", "garbage"),
+    ("pradushan", "pollution smog"),
+    ("hawai", "airplane"),
+    // people / emotion
+    ("bhai", "crowd of people"),
+    ("bhaiyo", "crowd of people"),
+    ("logon", "crowd of people"),
+    ("log", "crowd of people"),
+    ("aawaaz", "speaking microphone"),
+    ("aavaz", "speaking microphone"),
+    ("sach", "truth news"),
+    ("jhuth", "lying"),
+    ("darr", "fear"),
+    ("khushi", "happy celebration"),
+    ("gussa", "angry"),
+    ("gusse", "angry"),
+    ("dukh", "sadness"),
+];
+
 /// Translate Hindi/Hinglish visual nouns in a scene to English equivalents.
-/// Returns the scene text with Hindi words replaced by their English translations.
+/// Returns the scene text with known Hindi words replaced by their English
+/// visual translations; unknown words are passed through unchanged. Whole-word
+/// matching only (tokenized) so "media" isn't matched inside "immediate".
+///
+/// This is the fallback path for `broll.keywords` when the LLM is
+/// unavailable — it guarantees the naive keyword extractor never feeds raw
+/// Hinglish words to Pexels (the "single-video-on-loop" garbage-query bug).
+pub fn translate_hinglish_visuals(scene_text: &str) -> String {
+    scene_text
+        .split_whitespace()
+        .map(|w| {
+            let clean: String = w.chars().filter(|c| c.is_alphanumeric()).collect();
+            let lower = clean.to_lowercase();
+            HINGLISH_VISUAL_MAP
+                .iter()
+                .find(|(hing, _)| *hing == lower.as_str())
+                .map(|(_, eng)| (*eng).to_string())
+                .unwrap_or(clean)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 // Topic detection + topic-aware visual boost + anchor banks
 // ---------------------------------------------------------------------------
 
@@ -909,5 +996,36 @@ mod tests {
         let video_keywords = vec!["science".into(), "black".into(), "holes".into()];
         let topic = detect_topic(&video_keywords);
         assert_eq!(topic, TopicCategory::Space, "Expected Space, got {:?}", topic);
+    }
+
+    #[test]
+    fn translate_hinglish_visuals_known_nouns() {
+        // Political vocabulary — the dominant Hinglish content class.
+        assert_eq!(
+            translate_hinglish_visuals("sarkar ne bhrashtachar kiya"),
+            "government building ne corruption kiya"
+        );
+        assert_eq!(
+            translate_hinglish_visuals("bhai logon ko sunna"),
+            "crowd of people crowd of people ko sunna"
+        );
+    }
+
+    #[test]
+    fn translate_hinglish_visuals_unknown_passthrough() {
+        // Words not in the map pass through unchanged.
+        assert_eq!(translate_hinglish_visuals("galgoate enge saare"), "galgoate enge saare");
+    }
+
+    #[test]
+    fn translate_hinglish_visuals_whole_word_only() {
+        // "media" inside "immediate" must not be replaced.
+        assert_eq!(translate_hinglish_visuals("immediate action"), "immediate action");
+        assert_eq!(translate_hinglish_visuals("media bias"), "news media bias");
+    }
+
+    #[test]
+    fn translate_hinglish_visuals_case_insensitive() {
+        assert_eq!(translate_hinglish_visuals("SARKAR ka paisa"), "government building ka money");
     }
 }

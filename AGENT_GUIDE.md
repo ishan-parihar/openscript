@@ -168,6 +168,12 @@ stickers, voiceover, music, sfx) with its z-order, event count, and time range,
 plus `present_order` and `missing`. Read it before judging a render: a video
 whose `missing` lists `captions` or `music` is diagnosable in one step.
 Segmentation is enforced per docs/SEGMENTATION_ARCHITECTURE.md:
+- `timeline.validate` returns `DURATION:` errors when any segment ends past the
+  source media (the master clock) — SRT tail hallucination / trailing silence
+  must never produce b-roll windows past the audio end (the "audio 2:15, video
+  2:41" black-tail regression). `srt.to_timeline` and `segment.analyze` clamp
+  segments/scenes at the source duration automatically; the render's `-shortest`
+  caps output at the audio end as a final backstop.
 - `timeline.validate` returns `SEGMENTATION:` errors when any segment is outside
   [2.0s, 6.0s] — the short-form retention bounds.
 - `verify.production` scores `segmentation_pacing` (max 8): long cuts (>6s)

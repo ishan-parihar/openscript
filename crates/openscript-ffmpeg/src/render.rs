@@ -207,6 +207,9 @@ pub async fn render_with_cancel(
     cmd.arg("-c:a").arg("aac");
     cmd.arg("-b:a").arg("160k");
     cmd.arg("-movflags").arg("+faststart");
+    // Same shortest-stream cap as render_from_timeline: the audio is the master
+    // clock; the video must never run past it (black/silent tail regression).
+    cmd.arg("-shortest");
     cmd.arg(&out_path);
 
     // Execute with progress parsing
@@ -462,6 +465,12 @@ pub async fn render_from_timeline_with_cancel(
     cmd.arg("-r").arg(timeline.target.fps.to_string());
     cmd.arg("-c:a").arg("aac");
     cmd.arg("-b:a").arg("160k");
+    // `-shortest` caps the output at the end of the SHORTEST stream. Without it,
+    // an overlay with eof_action=repeat (b-roll, caption overlays) extends the
+    // video stream past the source audio end, producing a black/silent tail
+    // (regression: A2V renders ran 2:41 for a 2:15 source). The audio is the
+    // master clock — video must never outlive it.
+    cmd.arg("-shortest");
     cmd.arg(&out_path);
 
     // Execute with progress parsing
