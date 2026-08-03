@@ -1,0 +1,59 @@
+{
+  "version": "2.0",
+  "created_at": "2026-08-04T00:00:00Z",
+  "updated_at": "2026-08-04T00:00:00Z",
+  "source": "test_fixtures/broll_gap_clip.mp4",
+  "raw_render": false,
+  "target": { "fps": 30, "aspect": "9:16", "max_duration": null, "width": null, "height": null },
+  "effects": { "burn_captions": true, "audio": { "loudnorm": false }, "caption_style": null },
+  "directives": {
+    "ducking": [],
+    "transitions": [],
+    "mix": { "master_gain_db": 0.0, "limiter_threshold_db": -1.0, "normalize_to_lufs": -16.0 },
+    "render_backend": "auto"
+  },
+  "segments": [
+    { "id": "seg_001", "start": 0.0, "end": 4.0, "caption": "gap test segment", "crossfade_ms": 80, "semantic_role": "hook" }
+  ],
+  "tracks": {
+    "dialogue": [],
+    "voiceover": [],
+    "broll": [
+      {
+        "id": "broll_001",
+        "asset_id": "broll_0",
+        "start_ms": 0,
+        "end_ms": 4000,
+        "offset_ms": 0,
+        "gain_db": 0.0,
+        "fade_in_ms": 0,
+        "fade_out_ms": 0,
+        "tags": ["gap test"],
+        "provenance": { "tool": "broll.fetch", "concept": "gap test" },
+        "event_type": "broll",
+        "concept": "gap test",
+        "source_provider": "fallback_pool",
+        "transition_style": "cut",
+        "crop_mode": "center",
+        "orientation": "9:16",
+        "motion_intensity": "medium"
+      }
+    ],
+    "music": [],
+    "sfx": [],
+    "captions": []
+  },
+  "assets": {
+    "broll": {
+      "broll_0": {
+        "path": "test_fixtures/broll_gap_clip.mp4",
+        "concept": "gap test",
+        "source_duration_s": 2.0
+      }
+    },
+    "music": {},
+    "sfx": {},
+    "voices": {},
+    "captions": {}
+  }
+}

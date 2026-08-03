@@ -64,6 +64,7 @@ fn parse_timestamp(ts: &str) -> Result<f64, SrtError> {
 /// A grouped phrase with its constituent word timings.
 /// Used by `group_entries_with_words` to preserve per-word timestamps
 /// from Whisper transcription through to ASS caption generation.
+#[derive(Debug)]
 pub struct GroupedPhrase {
     pub text: String,
     pub start: f64,
@@ -168,6 +169,135 @@ pub fn group_entries_with_words_max_duration(
         });
     }
     groups
+}
+
+/// Split a phrase at its longest internal word gap (breath pause).
+///
+/// Returns two phrases when a split point exists; `None` when the phrase
+/// has <2 words or no gap produces two non-degenerate halves (each side at
+/// least 25% of the phrase duration). This is the "split long segments at
+/// the longest internal pause" step from docs/SEGMENTATION_ARCHITECTURE.md
+/// §3.3 Step 4.
+fn split_phrase_at_longest_gap(g: &GroupedPhrase) -> Option<(GroupedPhrase, GroupedPhrase)> {
+    if g.words.len() < 2 {
+        return None;
+    }
+    let total_dur = (g.end - g.start).max(0.001);
+    let mut best_idx: Option<usize> = None;
+    let mut best_gap = 0.0f64;
+    for i in 0..g.words.len() - 1 {
+        // Gap = next word's start minus this word's end (breath/pause).
+        let gap = g.words[i + 1].1 - g.words[i].2;
+        if gap > best_gap && gap >= 0.15 {
+            let first_dur = g.words[i].2 - g.start;
+            let second_dur = g.end - g.words[i + 1].1;
+            // Avoid degenerate halves: each side >= 15% of the phrase.
+            // (15%, not 25%: Hinglish/whisper output often has pauses
+            // clustered near one end; a strict 25% guard rejected those and
+            // silently kept an over-max segment. 15% still prevents a
+            // 0.3s-fragment + 9.7s-tail degenerate split.)
+            if first_dur >= 0.15 * total_dur && second_dur >= 0.15 * total_dur {
+                best_gap = gap;
+                best_idx = Some(i);
+            }
+        }
+    }
+    let split_at = best_idx?;
+    let (w1, w2) = g.words.split_at(split_at + 1);
+    if w1.is_empty() || w2.is_empty() {
+        return None;
+    }
+    let join = |ws: &[(String, f64, f64)]| {
+        ws.iter()
+            .map(|w| w.0.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let p1 = GroupedPhrase {
+        text: join(w1),
+        start: w1.first().map(|w| w.1).unwrap_or(g.start),
+        end: w1.last().map(|w| w.2).unwrap_or(g.start),
+        words: w1.to_vec(),
+    };
+    let p2 = GroupedPhrase {
+        text: join(w2),
+        start: w2.first().map(|w| w.1).unwrap_or(g.start),
+        end: w2.last().map(|w| w.2).unwrap_or(g.end),
+        words: w2.to_vec(),
+    };
+    Some((p1, p2))
+}
+
+/// Enforce min/max duration bounds on grouped phrases (segments) per
+/// docs/SEGMENTATION_ARCHITECTURE.md §3.2–3.3:
+///
+/// - **Merge:** segments shorter than `min_duration_s` (default 2.0s) are
+///   merged into their successor (concatenating captions and word timings).
+/// - **Split:** segments longer than `max_duration_s` (default 6.0s) are
+///   split at their longest internal word gap, recursively, until within
+///   bounds. A long segment with no usable pause is kept as-is.
+///
+/// The merge-then-split order guarantees the merged result can never exceed
+/// `max_duration_s` (the split pass re-checks every merged segment).
+pub fn enforce_segment_bounds(
+    groups: Vec<GroupedPhrase>,
+    min_duration_s: f64,
+    max_duration_s: f64,
+) -> Vec<GroupedPhrase> {
+    let min_duration_s = min_duration_s.max(0.5);
+    let max_duration_s = max_duration_s.max(min_duration_s);
+
+    // Pass 1: merge segments shorter than min into their successor.
+    let mut merged: Vec<GroupedPhrase> = Vec::new();
+    for g in groups {
+        if let Some(last) = merged.last_mut() {
+            let last_dur = last.end - last.start;
+            if last_dur < min_duration_s {
+                last.end = g.end;
+                last.text = format!("{} {}", last.text, g.text).trim().to_string();
+                last.words.extend(g.words);
+                continue;
+            }
+        }
+        merged.push(g);
+    }
+    // Trailing short segment: fold into its predecessor.
+    if merged.len() >= 2 {
+        let n = merged.len();
+        if merged[n - 1].end - merged[n - 1].start < min_duration_s {
+            let tail = merged.pop().unwrap();
+            let last = merged.last_mut().unwrap();
+            last.end = tail.end;
+            last.text = format!("{} {}", last.text, tail.text).trim().to_string();
+            last.words.extend(tail.words);
+        }
+    }
+
+    // Pass 2: split segments longer than max at their longest internal gap.
+    let mut out: Vec<GroupedPhrase> = Vec::new();
+    for g in merged {
+        let mut queue = vec![g];
+        while let Some(cur) = queue.pop() {
+            let dur = cur.end - cur.start;
+            if dur <= max_duration_s || cur.words.len() < 2 {
+                out.push(cur);
+                continue;
+            }
+            match split_phrase_at_longest_gap(&cur) {
+                Some((p1, p2)) => {
+                    // p2 may still exceed max — re-queue both halves.
+                    queue.push(p1);
+                    queue.push(p2);
+                }
+                // No usable pause — keep as-is (doc: agent can handle via
+                // broll pacing rather than forcing a bad split).
+                None => out.push(cur),
+            }
+        }
+    }
+    // Queue is LIFO — restore chronological order.
+    out.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    out
 }
 
 /// Write grouped entries back to SRT format.
@@ -705,6 +835,66 @@ mod tests {
             assert_eq!(tuple.1, phrase.start);
             assert_eq!(tuple.2, phrase.end);
         }
+    }
+
+    #[test]
+    fn test_enforce_segment_bounds_merges_short_segments() {
+        // A 1.2s segment is below the 2.0s minimum → merged into the next.
+        let g1 = GroupedPhrase {
+            text: "hello".into(),
+            start: 0.0,
+            end: 1.2,
+            words: vec![("hello".into(), 0.0, 1.2)],
+        };
+        let g2 = GroupedPhrase {
+            text: "world".into(),
+            start: 1.5,
+            end: 4.0,
+            words: vec![("world".into(), 1.5, 4.0)],
+        };
+        let out = enforce_segment_bounds(vec![g1, g2], 2.0, 6.0);
+        assert_eq!(out.len(), 1, "short segment should be merged: {:?}", out);
+        assert!((out[0].end - out[0].start - 4.0).abs() < 0.01);
+        assert_eq!(out[0].text, "hello world");
+    }
+
+    #[test]
+    fn test_enforce_segment_bounds_splits_long_segment_at_pause() {
+        // A 9s phrase with a 1.0s internal pause must split into two halves
+        // (the gap is the split point), each within the 6.0s max.
+        let g = GroupedPhrase {
+            text: "one two three four".into(),
+            start: 0.0,
+            end: 10.0,
+            words: vec![
+                ("one".into(), 0.0, 1.0),
+                ("two".into(), 1.0, 2.5),
+                ("three".into(), 5.0, 6.0), // 2.5s gap after "two"
+                ("four".into(), 6.0, 10.0),
+            ],
+        };
+        let out = enforce_segment_bounds(vec![g], 2.0, 6.0);
+        assert!(out.len() >= 2, "long phrase should split at pause: {:?}", out);
+        for s in &out {
+            let dur = s.end - s.start;
+            assert!(dur <= 6.5, "segment {} exceeds max: {}s", s.text, dur);
+        }
+        // First half should be "one two" (before the 2.5s pause)
+        assert_eq!(out[0].text, "one two");
+    }
+
+    #[test]
+    fn test_enforce_segment_bounds_keeps_short_without_merge_target() {
+        // A single short segment has no successor — kept as-is.
+        let g = GroupedPhrase {
+            text: "lone".into(),
+            start: 0.0,
+            end: 1.0,
+            words: vec![("lone".into(), 0.0, 1.0)],
+        };
+        let out = enforce_segment_bounds(vec![g], 2.0, 6.0);
+        assert_eq!(out.len(), 1);
+        assert!((out[0].end - out[0].start - 1.0).abs() < 0.01);
     }
 
     #[test]

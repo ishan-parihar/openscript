@@ -842,44 +842,43 @@ impl FilterGraphBuilder {
                 // Deterministic pseudo-random: golden-ratio hash gives good distribution
                 let mut seek_offset = (i as f64 * 1.618033988749895) % 5.0f64;
 
-                // Compute finite loop count: enough plays to cover the segment
-                // but NEVER infinite (loop=0 hangs the render because the
-                // filter graph never terminates). Loop count is the total
-                // number of plays: 1 = once, N = N times.
-                let mut loop_count: i32 = 1;
+                // ALWAYS play the source exactly ONCE. Per the segmentation
+                // upgrade (docs/SEGMENTATION_UPGRADE_PLAN.md Phase A), clips
+                // must never loop to fill their overlay window:
+                //   - a short clip ends early and the overlay holds its last
+                //     frame (ffmpeg eof_action=repeat) — a visible gap that
+                //     the validator (verify.production broll_gaps) flags so
+                //     the agent re-runs keyword generation for a longer clip;
+                //   - masking the gap by looping (the old loop=3 fallback for
+                //     unknown durations, or loop=ceil(seg/clip)+1 for short
+                //     sources) is exactly the "videos are looping" bug.
+                // loop=1 is also ffmpeg's default; we keep it explicit for
+                // clarity. loop=0 means infinite and hangs the render — never
+                // emit it. Raw mode omits the parameter entirely (single play).
                 if let Some(src_dur) = broll.source_duration_s {
                     // Cap offset so trim fits inside one play.
                     let max_offset = (src_dur - clip_duration_s).max(0.0);
                     seek_offset = seek_offset.min(max_offset);
-                    // If source is shorter than the segment, loop enough times
-                    // so the total source length covers the segment. Clamp to a
-                    // sane ceiling: a pathological near-zero source duration
-                    // (corrupt file) would otherwise overflow i32 via the `as
-                    // i32` cast + 1 and could wrap negative → movie filter with
-                    // a negative loop count = infinite → render hang. 8 plays
-                    // (≈ a full minute of typical stock footage) is far beyond
-                    // any real segment need.
-                    if src_dur < clip_duration_s && src_dur > 0.0 {
-                        loop_count = ((clip_duration_s / src_dur).ceil() as i64 + 1).min(8) as i32;
+                    // Tolerance matches the validator's (0.25s): a clip ending
+                    // a hair early isn't a visible gap, so don't warn on it —
+                    // keeps render logs aligned with verify.production output.
+                    if src_dur > 0.0 && src_dur < clip_duration_s - 0.25 {
+                        tracing::warn!(
+                            "[filter_graph] broll clip {:.1}s shorter than segment {:.1}s (gap {:.1}s) — plays once, tail will hold last frame. Re-run keyword generation + broll.fetch for a clip >= {:.1}s",
+                            src_dur, clip_duration_s, clip_duration_s - src_dur, clip_duration_s
+                        );
                     }
                 } else {
-                    // Unknown duration: conservative loop of 3 covers up to
-                    // 3× source length (typical Pexels clips are 10-18s;
-                    // segments are 2-17s, so 3× = 30-54s — more than enough).
-                    loop_count = 3;
-                    // Cap the unknown-duration seek small: we don't know how
-                    // long the source is, so a large offset could land past the
-                    // source end and trim to an empty stream (black/static).
-                    // 3s jumps past the typical 1-2s stock intro while staying
-                    // inside even a short 5s clip.
+                    // Unknown duration: keep the seek small — we don't know
+                    // how long the source is, so a large offset could land
+                    // past the source end and trim to an empty stream
+                    // (black/static). 3s jumps past the typical 1-2s stock
+                    // intro while staying inside even a short 5s clip.
                     seek_offset = seek_offset
                         .min(clip_duration_s.max(0.0) * 0.5)
                         .min(3.0);
                 }
 
-                // movie=loop=N plays the source N times TOTAL (N=1 = once, the
-                // default). loop=0 means infinite and hangs the render — never
-                // emit it. Raw mode omits the parameter entirely (single play).
                 if self.disable_loop {
                     parts.push(format!(
                         "movie='{}':si=-1[broll_raw{}]",
@@ -887,8 +886,8 @@ impl FilterGraphBuilder {
                     ));
                 } else {
                     parts.push(format!(
-                        "movie='{}':loop={}:si=-1[broll_raw{}]",
-                        escaped_path, loop_count, i
+                        "movie='{}':loop=1:si=-1[broll_raw{}]",
+                        escaped_path, i
                     ));
                 }
 
@@ -1611,9 +1610,10 @@ mod tests {
     }
 
     #[test]
-    fn test_broll_unknown_duration_emits_finite_loop_three() {
-        // Unknown source duration: conservative 3-play loop. loop=3 plays the
-        // source 3 times total — finite, never hangs.
+    fn test_broll_unknown_duration_emits_single_play() {
+        // Unknown source duration must STILL play once — never the old
+        // conservative loop=3 fallback (which made every clip visibly loop
+        // 3×). loop=1 is the only legal non-raw emission.
         let segments = vec![make_segment("seg_001", 0.0, 10.0)];
         let broll = vec![BrollEvent {
             path: "/p/b.mp4".into(),
@@ -1625,30 +1625,38 @@ mod tests {
             .with_broll(broll)
             .build();
 
-        assert!(filter.contains("movie='/p/b.mp4':loop=3:si=-1"));
+        assert!(
+            filter.contains("movie='/p/b.mp4':loop=1:si=-1"),
+            "unknown-duration source must emit loop=1 (single play), got: {}",
+            filter
+        );
+        assert!(!filter.contains("loop=3"));
         assert!(!filter.contains("loop=0"));
     }
 
     #[test]
-    fn test_broll_short_source_loops_to_cover_clip() {
-        // Source shorter than the clip: loop enough times that total source
-        // length covers the segment. ceil(clip/src)+1 plays total.
+    fn test_broll_short_source_plays_once_no_loop() {
+        // Source shorter than the clip must play ONCE, not loop to cover the
+        // segment. The gap (clip end → segment end) is intentional: the
+        // validator flags it via broll_gaps so the agent re-runs keyword
+        // generation for a longer clip. Looping was the bug.
         let segments = vec![make_segment("seg_001", 0.0, 10.0)];
         let broll = vec![BrollEvent {
             path: "/p/b.mp4".into(),
             start_ms: 0,
             end_ms: 10000, // 10s clip
-            source_duration_s: Some(4.0), // 4s source → ceil(10/4)+1 = 3+1 = 4 plays
+            source_duration_s: Some(4.0), // 4s source — shorter than clip
         }];
         let (filter, _, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
             .with_broll(broll)
             .build();
 
         assert!(
-            filter.contains("movie='/p/b.mp4':loop=4:si=-1"),
-            "short source must loop to cover clip: {}",
+            filter.contains("movie='/p/b.mp4':loop=1:si=-1"),
+            "short source must still emit loop=1 (single play, no fill loop): {}",
             filter
         );
+        assert!(!filter.contains("loop=4"));
         assert!(!filter.contains("loop=0"));
     }
 

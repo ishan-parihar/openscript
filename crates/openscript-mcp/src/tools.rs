@@ -19,11 +19,6 @@ use crate::server::report_progress;
 // Tool definitions (90 tools + 6 hf.* dynamic = 96 total): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + 1 broll.keywords)
 // ---------------------------------------------------------------------------
 
-/// Number of SRT entries grouped into one b-roll scene.
-/// Scene chunk size for segment.analyze.
-const SCENE_SIZE: usize = 4;
-
-
 /// Resolve the fonts directory for ASS subtitle rendering.
 /// Checks OPENSCRIPT_FONTS_DIR env var, then falls back to $CWD/mcp/fonts.
 fn resolve_fonts_dir() -> Option<String> {
@@ -596,12 +591,14 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "segment.analyze",
-            "description": "Analyze a transcript or audio file and return structured segments with captions and timing. This is a PURE ANALYSIS tool — it does NOT fetch any broll or render any video. The agent reads the returned segments, generates English visual keywords from Hinglish content using its LLM capabilities, then calls broll.fetch with those agent-generated keywords. Returns: segments array with id, start_s, end_s, duration_s, caption.",
+            "description": "Analyze a transcript or audio file and return structured segments with captions and timing. Uses sentence-aware segmentation (pause >300ms detection) with min/max duration enforcement per docs/SEGMENTATION_ARCHITECTURE.md: segments shorter than min_duration_s (default 2.0s) are merged, segments longer than max_duration_s (default 6.0s) are split at the longest internal pause — ideal for short-form b-roll pacing. This is a PURE ANALYSIS tool — it does NOT fetch any broll or render any video. The agent reads the returned segments, generates English visual keywords from Hinglish content using its LLM capabilities, then calls broll.fetch with those agent-generated keywords. Returns: segments array with id, start_s, end_s, duration_s, caption.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "audio_path": {"type": "string", "description": "Path to audio/video file to analyze"},
-                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT (skip transcription)"}
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Pre-existing SRT (skip transcription)"},
+                    "min_duration_s": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": 2.0, "description": "Minimum segment duration in seconds. Shorter segments are merged with their successor."},
+                    "max_duration_s": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": 6.0, "description": "Maximum segment duration in seconds. Longer segments are split at the longest internal pause."}
                 },
                 "required": ["audio_path"],
                 "additionalProperties": false
@@ -2724,30 +2721,17 @@ async fn handle_srt_to_timeline(args: serde_json::Value) -> Result<serde_json::V
             max_dur,
         );
 
-        // Convert GroupedPhrase to timeline segments
-        let mut raw_segments: Vec<(f64, f64, String)> = grouped.into_iter().map(|g| {
-            (g.start, g.end, g.text)
-        }).collect();
+        // Convert GroupedPhrase to timeline segments.
+        // enforce_segment_bounds merges segments shorter than min_duration_s
+        // into their successor AND splits segments longer than max_duration_s
+        // at their longest internal pause. (The old inline merge only handled
+        // the min side and could produce a merged segment that exceeded max.)
+        let bounded = openscript_core::srt::enforce_segment_bounds(grouped, min_dur, max_dur);
 
-        // Merge segments shorter than min_duration_s with next segment
-        let mut merged: Vec<(f64, f64, String)> = Vec::new();
-        for (start, end, text) in raw_segments.drain(..) {
-            if let Some(last) = merged.last_mut() {
-                let last_dur = last.1 - last.0;
-                if last_dur < min_dur {
-                    // Merge: extend last segment to include this one
-                    last.1 = end;
-                    last.2 = format!("{} {}", last.2, text);
-                    continue;
-                }
-            }
-            merged.push((start, end, text));
-        }
-
-        // Add merged segments to timeline
-        for (start, end, caption) in &merged {
-            if *end > *start {
-                timeline.add_segment(*start, *end, caption, crossfade_ms, None);
+        // Add bounded segments to timeline
+        for g in bounded {
+            if g.end > g.start {
+                timeline.add_segment(g.start, g.end, &g.text, crossfade_ms, None);
                 segments_count += 1;
             }
         }
@@ -2803,6 +2787,17 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
     if timeline.segments.is_empty() {
         errors.push("Timeline has no segments. Call timeline.add_segment to populate it with segments.".to_string());
     }
+    // B-roll coverage: flag segments whose assigned clip is shorter than the
+    // segment window. The renderer plays clips exactly once (no loop fill),
+    // so these gaps render as a held frame — the agent must re-run keyword
+    // generation + broll.fetch for a longer clip.
+    let broll_gaps = probe_broll_gaps(&timeline).await;
+    for g in &broll_gaps {
+        errors.push(format!(
+            "BROLL_GAP: segment {} needs {:.1}s but clip {} provides {:.1}s (gap {:.1}s) — {}",
+            g.segment_id, g.required_s, g.asset_id, g.available_s, g.gap_s, g.action
+        ));
+    }
     let valid = errors.is_empty();
 
     Ok(json!({
@@ -2810,6 +2805,7 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
         "timeline_path": timeline_path,
         "valid": valid,
         "errors": errors,
+        "broll_gaps": broll_gaps,
     }))
 }
 
@@ -4151,6 +4147,13 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         if let Some(path) = &cached_path {
             result["cached_path"] = json!(path);
         }
+        // Record the source clip's real duration (from Pexels metadata) so
+        // timeline.validate / verify.production can compare it against the
+        // segment window without re-probing. Short clips become coverage
+        // gaps (broll_gaps) instead of silently looping.
+        if let Some(first) = videos.first() {
+            result["source_duration_s"] = json!(first.duration);
+        }
 
         // Per-concept fallback: if Pexels returned nothing, try fallback_pool
         // so downstream tools (broll.assign) still have a path to use.
@@ -4275,10 +4278,19 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
                 };
                 tl.tracks.entry(openscript_core::types::TrackType::Broll)
                     .or_default()
-                    .push(broll_event);tl.assets.broll.insert(asset_id.clone(), serde_json::json!({
-                        "path": cached_path,
-                        "concept": concept_str,
-                    }));
+                    .push(broll_event);
+                // Persist the source clip's real duration (from Pexels metadata)
+                // so verify.production / timeline.validate can compare it
+                // against the segment window without re-probing — short clips
+                // become coverage gaps (broll_gaps) instead of silently looping.
+                let mut asset_record = serde_json::json!({
+                    "path": cached_path,
+                    "concept": concept_str,
+                });
+                if let Some(d) = result_val.get("source_duration_s").and_then(|v| v.as_f64()) {
+                    asset_record["source_duration_s"] = json!(d);
+                }
+                tl.assets.broll.insert(asset_id.clone(), asset_record);
                 assigned_count += 1;
             }
             tl.updated_at = chrono::Utc::now();
@@ -5562,16 +5574,27 @@ async fn handle_segment_analyze(args: serde_json::Value) -> Result<serde_json::V
         }));
     }
 
-    // Step 3: Group into segments (4 entries per segment)
-    report_progress(50.0, 100.0, "Grouping into segments...").await.ok();
-    let scene_size = SCENE_SIZE;
-    let scenes: Vec<(String, f64, f64)> = entries.chunks(scene_size)
-        .map(|chunk| {
-            let text: String = chunk.iter().map(|e| e.text.as_str()).collect::<Vec<_>>().join(" ");
-            let start = chunk.first().map(|e| e.start).unwrap_or(0.0);
-            let end = chunk.last().map(|e| e.end).unwrap_or(0.0);
-            (text, start, end)
-        })
+    // Step 3: Group into segments using sentence-aware segmentation with
+    // min/max duration enforcement (docs/SEGMENTATION_ARCHITECTURE.md).
+    // Replaces the old fixed `SCENE_SIZE=4` chunking, which produced
+    // unbounded 10–27s segments and broke mid-sentence. Pause detection
+    // (>300ms gaps) groups at sentence boundaries; enforce_segment_bounds
+    // then merges segments < min (2.0s) and splits segments > max (6.0s)
+    // at the longest internal pause — the short-form retention target.
+    report_progress(50.0, 100.0, "Grouping into segments (sentence-aware)...").await.ok();
+    let min_dur_s = args.get("min_duration_s").and_then(|v| v.as_f64()).unwrap_or(2.0);
+    let max_dur_s = args.get("max_duration_s").and_then(|v| v.as_f64()).unwrap_or(6.0);
+    let grouped = openscript_core::srt::group_entries_with_words_max_duration(
+        &entries,
+        15,   // ~4s at 2.5 words/s
+        80,   // ~2 caption lines
+        0.3,  // 300ms breath pause boundary
+        max_dur_s,
+    );
+    let bounded = openscript_core::srt::enforce_segment_bounds(grouped, min_dur_s, max_dur_s);
+    let scenes: Vec<(String, f64, f64)> = bounded
+        .into_iter()
+        .map(|p| (p.text, p.start, p.end))
         .collect();
 
     // Step 4: For each segment, run stock_signal analysis
@@ -6644,6 +6667,92 @@ async fn probe_broll_motion_per_clip(
     results
 }
 
+/// Probe every b-roll asset's real duration and compare it against the
+/// segment window it is assigned to. Returns actionable coverage gaps —
+/// segments whose clip is shorter than the window.
+///
+/// Per docs/SEGMENTATION_UPGRADE_PLAN.md Phase B: the renderer no longer
+/// loops short clips to fill their window (Phase A — clips play exactly
+/// once), so a short clip leaves the window tail holding the last frame.
+/// These gaps are surfaced as validator errors so the agent loop re-runs
+/// keyword generation + `broll.fetch` for exactly those segments.
+async fn probe_broll_gaps(timeline: &Timeline) -> Vec<openscript_core::production_quality::BrollGap> {
+    use openscript_core::production_quality::BrollGap;
+
+    let mut gaps = Vec::new();
+    let Some(broll_track) = timeline.tracks.get(&TrackType::Broll) else {
+        return gaps;
+    };
+    for evt in broll_track {
+        let segment_dur_s = (evt.end_ms - evt.start_ms) as f64 / 1000.0;
+        if segment_dur_s <= 0.0 {
+            continue;
+        }
+        let path = timeline
+            .assets
+            .broll
+            .get(&evt.asset_id)
+            .and_then(|v| v.get("path").and_then(|p| p.as_str()))
+            .unwrap_or("")
+            .to_string();
+        if path.is_empty() || path == "placeholder" {
+            continue;
+        }
+        // Prefer the source_duration_s hint stored by broll.fetch (from Pexels
+        // metadata) — no ffprobe round-trip. Fall back to probing the file.
+        let hinted = timeline
+            .assets
+            .broll
+            .get(&evt.asset_id)
+            .and_then(|v| v.get("source_duration_s"))
+            .and_then(|v| v.as_f64())
+            .filter(|d| *d > 0.0);
+        let available_s = if let Some(d) = hinted {
+            d
+        } else {
+            match openscript_ffmpeg::probe::probe(&path).await {
+                Ok(m) => m.duration,
+                Err(e) => {
+                    // Unprobeable clip (missing file / corrupt): report it as a
+                    // 0s gap instead of silently passing — the renderer would
+                    // emit loop=1, exhaust mid-window and hold the last frame,
+                    // exactly the static-tail the validator must catch.
+                    tracing::warn!(
+                        "[broll_gaps] could not probe asset {} ({}): {} — flagging as uncovered",
+                        evt.asset_id, path, e
+                    );
+                    0.0
+                }
+            }
+        };
+        // Tolerance: 0.25s — clip may end a hair early without a visible gap.
+        // available_s == 0.0 (unprobeable) is ALWAYS a gap.
+        if (available_s <= 0.0 || available_s < segment_dur_s - 0.25) {
+            // Unprobeable clip: report available_s = 0.0 (unknown).
+            let available = if available_s > 0.0 { available_s } else { 0.0 };
+            let gap_s = (segment_dur_s - available).max(0.0);
+            let concept = match &evt.kind {
+                openscript_core::timeline::EventKind::Broll { concept, .. } => concept.clone(),
+                _ => String::new(),
+            };
+            gaps.push(BrollGap {
+                segment_id: evt.id.clone(),
+                concept,
+                asset_id: evt.asset_id.clone(),
+                asset_path: path,
+                required_s: (segment_dur_s * 100.0).round() / 100.0,
+                available_s: (available * 100.0).round() / 100.0,
+                gap_s: (gap_s * 100.0).round() / 100.0,
+                action: format!(
+                    "re-run broll.keywords + broll.fetch for segment {} — need clip >= {:.1}s",
+                    evt.id, segment_dur_s
+                ),
+            });
+        }
+    }
+    gaps
+}
+
 async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_core::production_quality::{
         evaluate_production_quality, grade_rank, BackgroundLayerInfo, MemeLayerInfo, MusicLayerInfo,
@@ -6881,6 +6990,16 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         }
     }
 
+    // Probe b-roll coverage: clip duration vs segment window. The renderer
+    // plays clips exactly once (Phase A — no loop fill), so any segment
+    // whose clip is shorter than its window leaves a visible gap. Surfacing
+    // these as errors is the loop-closure signal: the agent re-runs keyword
+    // generation + broll.fetch for a longer clip.
+    let broll_gaps = probe_broll_gaps(&timeline).await;
+    if !broll_gaps.is_empty() {
+        manifest.broll_gaps = broll_gaps.clone();
+    }
+
     let report = evaluate_production_quality(&timeline, &manifest);
     let meets_min = grade_rank(&report.grade) >= grade_rank(&min_grade);
 
@@ -6943,6 +7062,12 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
     } else {
         "fail"
     };
+    // Coverage-gap directives join the agent's next_actions so the audit
+    // loop knows exactly which segments need a longer clip.
+    let mut next_actions = report.next_actions.clone();
+    for g in &manifest.broll_gaps {
+        next_actions.push(g.action.clone());
+    }
     Ok(json!({
         "status": status,
         "production_score": report.production_score,
@@ -6951,7 +7076,8 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
         "meets_min_grade": meets_min && report.hard_fails.is_empty(),
         "hard_fails": report.hard_fails,
         "dimensions": report.dimensions,
-        "next_actions": report.next_actions,
+        "next_actions": next_actions,
+        "broll_gaps": manifest.broll_gaps,
         "cuts_per_second": report.cuts_per_second,
         "video_source_mix": report.video_source_mix,
         "timeline_editor": report.timeline_editor,

@@ -149,6 +149,15 @@ verify.render      — Technical integrity (duration, aspect, file size)
 verify.production  — Full production quality (stock, music, captions)
 ```
 
+**B-roll coverage loop-closure (Phase A+B of docs/SEGMENTATION_UPGRADE_PLAN.md):**
+Clips now play exactly ONCE — the renderer never loops to fill a short clip's window.
+If `verify.production` (or `timeline.validate`) returns `broll_gaps`, each entry names the
+segment, the required vs available duration, and an action directive:
+`re-run broll.keywords + broll.fetch for segment <id> — need clip >= Ns`. Act on it:
+1. Re-run `broll.keywords` for that segment's caption (fresh visual keywords).
+2. Re-run `broll.fetch` with those keywords — prefer clips ≥ the segment duration.
+3. Re-validate / re-render until `broll_gaps` is empty.
+
 ---
 
 ## Discovery Tools

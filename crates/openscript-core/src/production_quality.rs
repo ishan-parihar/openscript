@@ -248,6 +248,31 @@ pub struct SectionInfo {
     pub title_text: Option<String>,
 }
 
+/// A b-roll coverage gap: the assigned clip is shorter than its segment
+/// window. Previously the renderer silently looped such clips to fill the
+/// window (the "videos are looping" bug). Per docs/SEGMENTATION_UPGRADE_PLAN.md
+/// Phase B, the validator now surfaces these as actionable errors so the
+/// agent re-runs keyword generation + broll.fetch for a longer clip.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BrollGap {
+    /// Timeline event id of the b-roll placement (e.g. "broll_001").
+    pub segment_id: String,
+    /// Visual concept the clip was fetched for (from the event kind).
+    pub concept: String,
+    /// Asset id the clip is registered under (e.g. "broll_0").
+    pub asset_id: String,
+    /// Local path of the fetched clip.
+    pub asset_path: String,
+    /// Segment window duration in seconds.
+    pub required_s: f64,
+    /// Actual source clip duration in seconds (probed via ffprobe).
+    pub available_s: f64,
+    /// `required_s - available_s` — how many seconds are uncovered.
+    pub gap_s: f64,
+    /// Directive for the agent loop, e.g. "re-run broll.keywords + broll.fetch…".
+    pub action: String,
+}
+
 /// Full render-side truth for quality scoring.
 /// Timeline alone is insufficient: multi-broll/stickers/memes may live only here.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -342,6 +367,12 @@ pub struct RenderManifest {
     /// bug.
     #[serde(default)]
     pub longest_static_run_s: Option<f64>,
+    /// B-roll coverage gaps: segments whose assigned clip is shorter than
+    /// the segment window. Populated by the verifier probing each asset
+    /// duration; feeds `score_broll_motion` hard-fail findings so the
+    /// agent knows exactly which segments need a longer clip.
+    #[serde(default)]
+    pub broll_gaps: Vec<BrollGap>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -756,26 +787,40 @@ fn score_broll_motion(
     broll_motion_ratio: Option<f64>,
     longest_static_run_s: Option<f64>,
     has_broll: bool,
+    broll_gaps: &[BrollGap],
 ) -> DimensionScore {
     let mut findings = Vec::new();
+    // Coverage gaps (clip shorter than segment window) are always a hard
+    // fail regardless of motion probing: the renderer no longer loops to
+    // fill them, so the tail of the window holds the last frame. The agent
+    // must re-run keyword generation for a longer clip.
+    for g in broll_gaps {
+        findings.push(format!(
+            "COVERAGE HARD: segment {} needs {:.1}s but clip {} provides {:.1}s (gap {:.1}s) — {}",
+            g.segment_id, g.required_s, g.asset_id, g.available_s, g.gap_s, g.action
+        ));
+    }
     // If the caller didn't probe motion, return neutral — don't punish
     // a video that wasn't verified.
     let (Some(ratio), Some(longest_run)) = (broll_motion_ratio, longest_static_run_s) else {
+        let score = 8i32.saturating_sub(2 * broll_gaps.len() as i32).max(0);
         return DimensionScore {
             id: "broll_motion".into(),
             label: "B-roll motion / anti-static".into(),
-            score: 8,
+            score,
             max: 8,
             detail: serde_json::json!({
                 "probed": false,
                 "reason": "no motion probe on rendered output",
+                "broll_gap_count": broll_gaps.len(),
             }),
             findings,
         };
     };
     // Pure-dialogue or static-only videos (no b-roll in the manifest)
-    // should also pass with full score.
-    if !has_broll {
+    // should also pass with full score, unless coverage gaps exist (gaps
+    // imply b-roll is present but too short).
+    if !has_broll && broll_gaps.is_empty() {
         return DimensionScore {
             id: "broll_motion".into(),
             label: "B-roll motion / anti-static".into(),
@@ -802,7 +847,11 @@ fn score_broll_motion(
     // collapses run_pts to 0.
     let ratio_pts = ((ratio / 0.50).clamp(0.0, 1.0) * 4.0) as i32;
     let run_pts = (((3.0 - longest_run) / 1.5).clamp(0.0, 1.0) * 4.0) as i32;
-    let score = (ratio_pts + run_pts).min(8);
+    // Each coverage gap subtracts 2 points (a segment whose clip ended early
+    // holds the last frame — a visible quality break the agent must fix).
+    let score = ((ratio_pts + run_pts).min(8))
+        .saturating_sub(2 * broll_gaps.len() as i32)
+        .max(0);
     if ratio < 0.30 {
         findings.push(format!(
             "MOTION HARD: only {}% of frames have non-zero motion (target >= 50%)",
@@ -827,6 +876,7 @@ fn score_broll_motion(
             "longest_static_run_s": (longest_run * 100.0).round() / 100.0,
             "ratio_pts": ratio_pts,
             "run_pts": run_pts,
+            "broll_gap_count": broll_gaps.len(),
         }),
         findings,
     }
@@ -2160,6 +2210,7 @@ pub fn evaluate_production_quality(
         manifest.broll_motion_ratio,
         manifest.longest_static_run_s,
         !backgrounds.is_empty(),
+        &manifest.broll_gaps,
     );
 
     // v4.1: 10+8+8+8+5+8+6+8+6+6+5+8+5+5+4+8 = 108
@@ -2981,17 +3032,46 @@ mod tests {
     fn broll_motion_unprobed_scores_max() {
         // No probed data + no b-roll — should return score=max so it never
         // punishes a video that wasn't motion-verified.
-        let d = score_broll_motion(None, None, false);
+        let d = score_broll_motion(None, None, false, &[]);
         assert_eq!(d.id, "broll_motion");
         assert_eq!(d.score, 8);
         assert_eq!(d.max, 8);
     }
 
     #[test]
+    fn broll_motion_coverage_gap_is_hard_fail() {
+        // A segment whose clip is shorter than the window must emit an
+        // actionable COVERAGE HARD finding (the loop-closure signal), and
+        // the score must drop even when motion probing looks healthy.
+        let gap = BrollGap {
+            segment_id: "broll_012".into(),
+            concept: "city skyline".into(),
+            asset_id: "broll_4".into(),
+            asset_path: "/cache/x.mp4".into(),
+            required_s: 4.0,
+            available_s: 2.1,
+            gap_s: 1.9,
+            action: "re-run broll.keywords + broll.fetch for segment broll_012 — need clip >= 4.0s".into(),
+        };
+        let d = score_broll_motion(Some(0.80), Some(0.5), true, &[gap]);
+        assert!(
+            d.findings.iter().any(|f| f.contains("COVERAGE HARD") && f.contains("broll_012")),
+            "gap must produce actionable finding: {:?}",
+            d.findings
+        );
+        assert!(
+            d.findings.iter().any(|f| f.contains("re-run broll.keywords")),
+            "finding must include the re-run directive: {:?}",
+            d.findings
+        );
+        assert!(d.score < 8, "coverage gap must reduce score, got {}", d.score);
+    }
+
+    #[test]
     fn broll_motion_healthy_clip_scores_high() {
         // 70% of frames have motion, longest static run is 0.5s — both
         // signals are well within healthy range.
-        let d = score_broll_motion(Some(0.70), Some(0.5), true);
+        let d = score_broll_motion(Some(0.70), Some(0.5), true, &[]);
         assert_eq!(d.score, 8, "70% motion + 0.5s static run should score 8/8, got {} ({:?})", d.score, d.findings);
         assert!(d.findings.is_empty(), "healthy clip should have no findings, got {:?}", d.findings);
     }
@@ -3000,7 +3080,7 @@ mod tests {
     fn broll_motion_source_exhaustion_hard_fails() {
         // 20% of frames have motion + 9s longest static run — the exact
         // signature of the source-exhaustion bug (Phase 129 fix).
-        let d = score_broll_motion(Some(0.20), Some(9.0), true);
+        let d = score_broll_motion(Some(0.20), Some(9.0), true, &[]);
         assert!(d.score <= 2, "20% motion + 9s static run should hard-fail, got {}", d.score);
         assert!(d.findings.iter().any(|f| f.contains("MOTION HARD")), "expected MOTION HARD finding, got {:?}", d.findings);
         assert!(d.findings.iter().any(|f| f.contains("STATIC HARD")), "expected STATIC HARD finding, got {:?}", d.findings);
@@ -3010,7 +3090,7 @@ mod tests {
     fn broll_motion_no_broll_passes_even_when_static() {
         // Pure-dialogue video (no b-roll in manifest) with poor motion
         // should still pass — the dimension is gated on has_broll.
-        let d = score_broll_motion(Some(0.10), Some(8.0), false);
+        let d = score_broll_motion(Some(0.10), Some(8.0), false, &[]);
         assert_eq!(d.score, 8);
     }
 }
