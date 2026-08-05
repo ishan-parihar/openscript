@@ -1,50 +1,60 @@
 {
-  "kokoro_af_heart": {
-    "id": "kokoro_af_heart",
-    "provider": "kokoro",
-    "mode": "preset",
-    "model": "kokoro:af_heart",
-    "ref_audio": "",
-    "ref_text": "",
-    "language": "en",
-    "description": "Kokoro af_heart — warm American female",
-    "sample_rate": 24000,
-    "created_at": "2026-07-04T00:00:00Z"
-  },
-  "kokoro_am_michael": {
-    "id": "kokoro_am_michael",
-    "provider": "kokoro",
-    "mode": "preset",
-    "model": "kokoro:am_michael",
-    "ref_audio": "",
-    "ref_text": "",
-    "language": "en",
-    "description": "Kokoro am_michael — American male",
-    "sample_rate": 24000,
-    "created_at": "2026-07-04T00:00:00Z"
+  "ishan": {
+    "description": "Ishan English — Audio8 zero-shot voice clone",
+    "language": "English",
+    "mode": "clone",
+    "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "profile_id": "ishan",
+    "provider": "audio8",
+    "ref_audio": "mcp/assets/audio8/ref_ishan.wav",
+    "ref_text": "Society didn't just neatly evolve. Human culture is a spiral. Real villains are not men or women. Real villains are the broken pathological stages of society that rewards our worst primal instincts."
   },
   "kokoro_af_bella": {
+    "created_at": "2026-07-04T00:00:00Z",
+    "description": "Kokoro af_bella — soft American female",
     "id": "kokoro_af_bella",
-    "provider": "kokoro",
+    "language": "en",
     "mode": "preset",
     "model": "kokoro:af_bella",
+    "provider": "kokoro",
     "ref_audio": "",
     "ref_text": "",
+    "sample_rate": 24000
+  },
+  "kokoro_af_heart": {
+    "created_at": "2026-07-04T00:00:00Z",
+    "description": "Kokoro af_heart — warm American female",
+    "id": "kokoro_af_heart",
     "language": "en",
-    "description": "Kokoro af_bella — soft American female",
-    "sample_rate": 24000,
-    "created_at": "2026-07-04T00:00:00Z"
+    "mode": "preset",
+    "model": "kokoro:af_heart",
+    "provider": "kokoro",
+    "ref_audio": "",
+    "ref_text": "",
+    "sample_rate": 24000
+  },
+  "kokoro_am_michael": {
+    "created_at": "2026-07-04T00:00:00Z",
+    "description": "Kokoro am_michael — American male",
+    "id": "kokoro_am_michael",
+    "language": "en",
+    "mode": "preset",
+    "model": "kokoro:am_michael",
+    "provider": "kokoro",
+    "ref_audio": "",
+    "ref_text": "",
+    "sample_rate": 24000
   },
   "kokoro_bf_emma": {
+    "created_at": "2026-07-04T00:00:00Z",
+    "description": "Kokoro bf_emma — British female",
     "id": "kokoro_bf_emma",
-    "provider": "kokoro",
+    "language": "en",
     "mode": "preset",
     "model": "kokoro:bf_emma",
+    "provider": "kokoro",
     "ref_audio": "",
     "ref_text": "",
-    "language": "en",
-    "description": "Kokoro bf_emma — British female",
-    "sample_rate": 24000,
-    "created_at": "2026-07-04T00:00:00Z"
+    "sample_rate": 24000
   }
 }

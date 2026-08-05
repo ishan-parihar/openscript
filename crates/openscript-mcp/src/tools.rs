@@ -350,7 +350,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "profile_id": {"type": "string", "description": "Unique identifier for this voice profile"},
                     "ref_audio": {"type": "string", "description": "Path to reference audio file (clean speech sample)"},
                     "ref_text": {"type": "string", "description": "Transcript of the reference audio"},
-                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine"},
+                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
                     "mode": {"type": "string", "default": "clone", "description": "Voice mode: 'clone' for voice cloning, 'preset' for built-in voices"},
                     "model": {"type": "string", "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "description": "TTS model identifier"},
                     "language": {"type": "string", "default": "English", "description": "Voice language"},
@@ -377,7 +377,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "tts.generate",
-            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Requires TTS sidecar server running (OPENSCRIPT_TTS_URL). Returns: output_path, duration_ms, cached flag.",
+            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -3135,9 +3135,37 @@ async fn handle_voice_profile_add(args: serde_json::Value) -> Result<serde_json:
     profiles[profile_id] = obj;
     save_voice_profiles(&profiles)?;
 
+    // Audio8 (zero-shot cloning): register the reference voice with the
+    // sidecar so synthesis can use it. Registration failure is NOT fatal —
+    // the profile is saved and can be re-registered later (e.g. via
+    // voice.profile.add with the same id + overwrite).
+    let mut registered_audio8 = false;
+    let mut audio8_warning: Option<String> = None;
+    if provider == "audio8" {
+        if ref_audio.is_empty() || ref_text.is_empty() {
+            audio8_warning = Some(
+                "audio8 profile needs ref_audio + ref_text for voice cloning; \
+                 registration skipped until both are provided."
+                    .into(),
+            );
+        } else {
+            match openscript_tts::audio8::audio8_register(&profile_id, &ref_audio, &ref_text) {
+                Ok(()) => registered_audio8 = true,
+                Err(e) => {
+                    audio8_warning = Some(format!(
+                        "audio8 voice registration failed (profile saved; retry later): {}",
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(json!({
         "status": "profile_added",
         "profile_id": profile_id,
+        "audio8_registered": registered_audio8,
+        "audio8_warning": audio8_warning,
     }))
 }
 
@@ -3281,6 +3309,22 @@ async fn tts_generate_routed(
         ));
     }
 
+    // Audio8 path (zero-shot voice cloning — default cloned-voice engine).
+    if profile.provider == "audio8" {
+        let (duration_ms, sample_rate) = openscript_tts::audio8::audio8_synthesize(
+            text,
+            &profile.id,
+            output_path,
+        )
+        .map_err(|e| ToolError::Tts(e))?;
+        return Ok(TtsGenResult {
+            output_path: output_path.to_string(),
+            duration_ms,
+            cached: false,
+            backend: format!("audio8:{}hz", sample_rate),
+        });
+    }
+
     // Sidecar path (faster-qwen3-tts)
     use openscript_tts::client::TtsClient;
     let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
@@ -3326,7 +3370,6 @@ async fn tts_generate_routed(
 // ---------------------------------------------------------------------------
 
 async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    use openscript_tts::client::TtsClient;
     use openscript_tts::profiles::VoiceProfileRegistry;
     use std::path::Path;
 
@@ -3360,103 +3403,28 @@ async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Valu
         })?
         .clone();
 
-    let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
-    let cache_dir =
-        std::env::var("OPENSCRIPT_TTS_CACHE").unwrap_or_else(|_| "artifacts/tts".to_string());
-
     if let Some(parent) = Path::new(output_path).parent() {
         std::fs::create_dir_all(parent).ok();
     }
 
-    // Route to Kokoro backend if the profile's provider is "kokoro" and the
-    // feature is enabled. Otherwise fall through to the sidecar (faster-qwen3-tts).
-    #[cfg(feature = "kokoro")]
-    if profile.provider == "kokoro" {
-        use openscript_tts::kokoro::{KokoroClient, KokoroConfig};
-
-        let model_dir =
-            std::env::var("KOKORO_MODEL_DIR").unwrap_or_else(|_| "mcp/assets/kokoro".to_string());
-        let default_voice =
-            std::env::var("KOKORO_DEFAULT_VOICE").unwrap_or_else(|_| "af_heart".to_string());
-
-        let cfg = KokoroConfig {
-            model_dir: std::path::PathBuf::from(&model_dir),
-            default_voice,
-            cache_dir: std::path::PathBuf::from(&cache_dir),
-        };
-        let kokoro_client = KokoroClient::new(cfg);
-
-        let result = kokoro_client
-            .generate(
-                voice_profile_id,
-                text,
-                output_path,
-                speed,
-                pitch,
-                volume,
-                &format,
-                &profile,
-            )
-            .await
-            .map_err(|e| ToolError::Tts(e.to_string()))?;
-
-        report_progress(100.0, 100.0, "Speech generated (Kokoro)")
-            .await
-            .ok();
-
-        return Ok(json!({
-            "status": "generated",
-            "backend": "kokoro",
-            "output_path": result.output_path,
-            "duration_ms": result.duration_ms,
-            "cached": result.cached,
-        }));
-    }
-
-    #[cfg(not(feature = "kokoro"))]
-    if profile.provider == "kokoro" {
-        return Err(ToolError::Tts(
-            "Voice profile uses Kokoro backend but the kokoro feature is not enabled. \
-             Rebuild openscript-mcp with --features kokoro."
-                .to_string(),
-        ));
-    }
-
-    let client = TtsClient::new(&tts_url, &cache_dir);
-
-    // Health check — fail fast if TTS sidecar is not running
-    if !client
-        .health_check()
-        .await
-        .map_err(|e| ToolError::Tts(e.to_string()))?
-    {
-        return Err(ToolError::Tts(format!(
-            "TTS sidecar server is not reachable at {}. \
-             Start the faster-qwen3-tts server or set OPENSCRIPT_TTS_URL.",
-            tts_url
-        )));
-    }
-
-    let result = client
-        .generate(
-            voice_profile_id,
-            text,
-            output_path,
-            speed,
-            pitch,
-            volume,
-            &format,
-            &profile,
-        )
-        .await
-        .map_err(|e| ToolError::Tts(e.to_string()))?;
+    // Delegate to the shared provider router (audio8 / kokoro / faster-qwen3-tts).
+    let result = tts_generate_routed(
+        &voice_profile_id,
+        &text,
+        &output_path,
+        speed,
+        pitch,
+        volume,
+        &format,
+        &profile,
+    )
+    .await?;
 
     report_progress(100.0, 100.0, "Speech generated").await.ok();
 
     Ok(json!({
         "status": "generated",
-        "backend": "sidecar",
+        "backend": result.backend,
         "output_path": result.output_path,
         "duration_ms": result.duration_ms,
         "cached": result.cached,
@@ -10394,7 +10362,12 @@ async fn handle_script_generate_voices(
         // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
         // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
         let voice_lookup = &speaker.voice;
-        let normalized_voice = if !voice_lookup.starts_with("kokoro:") && !voice_lookup.starts_with("faster-qwen") {
+        // Bare IDs resolve as-is first (audio8 clones are stored by bare name);
+        // only kokoro presets fall back to the "kokoro:" prefix form.
+        let normalized_voice = if !voice_lookup.starts_with("kokoro:")
+            && !voice_lookup.starts_with("faster-qwen")
+            && !voice_lookup.starts_with("audio8:")
+        {
             format!("kokoro:{}", voice_lookup)
         } else {
             voice_lookup.clone()
@@ -18356,6 +18329,27 @@ async fn handle_system_capabilities(
         "path": presets_dir,
     });
 
+    // Audio8 TTS (zero-shot voice cloning, ONNX INT4)
+    let audio8_model_present = std::path::Path::new("mcp/assets/audio8/model/runtime_manifest.json").exists();
+    let audio8_voices_dir = std::path::Path::new("mcp/assets/audio8/voices");
+    let audio8_voice_count = if audio8_voices_dir.exists() {
+        std::fs::read_dir(audio8_voices_dir)
+            .map(|d| d.filter_map(|e| e.ok()).filter(|e| e.path().is_dir()).count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let audio8 = json!({
+        "available": audio8_model_present && openscript_tts::audio8::audio8_available(),
+        "model_present": audio8_model_present,
+        "voice_count": audio8_voice_count,
+        "model_dir": "mcp/assets/audio8/model",
+        "voices_dir": "mcp/assets/audio8/voices",
+        "sample_rate": 44100,
+        "languages": ["en", "es", "fr", "de", "it", "nl", "pl", "ja", "ko", "zh", "yue"],
+        "note": "Zero-shot voice cloning via Audio8 TTS Preview 0.6B (ONNX INT4). English default for the script-to-video workflow.",
+    });
+
     // LLM / vision cascade: OpenCode zen + OpenRouter free multimodal
     let llm = crate::llm::probe_llm_capabilities().await;
     let openscript_config = crate::config::config_public_view();
@@ -18364,6 +18358,7 @@ async fn handle_system_capabilities(
         "status": "success",
         "voicebox": voicebox,
         "kokoro": kokoro,
+        "audio8": audio8,
         "transcription": transcription,
         "parakeet_align": parakeet_align,
         "pexels": pexels,

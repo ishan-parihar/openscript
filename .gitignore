@@ -58,6 +58,7 @@ mcp/assets/.openscript_config.json
 mcp/assets/kokoro/
 mcp/assets/parakeet/
 mcp/assets/omnivoice/
+mcp/assets/audio8/
 
 # Large binary assets (regenerated at runtime)
 models/nemotron-onnx/

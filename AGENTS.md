@@ -22,7 +22,7 @@ openscript/
 ├── crates/                     # Rust workspace (8 crates)
 │   ├── openscript-core/        #   types, timeline schema, SRT, captions, amplitude, transcript analysis
 │   ├── openscript-ffmpeg/      #   ffmpeg filter graph, render, multilayer render, subtitles
-│   ├── openscript-tts/         #   Kokoro TTS client + voice profile registry
+│   ├── openscript-tts/         #   TTS clients: Audio8 (clone sidecar), Kokoro (presets), voicebox HTTP + voice profile registry
 │   ├── openscript-transcribe/  #   Apex transcription (whisper_timestamped wrapper (Apex transcription — stays))
 │   ├── openscript-assets/      #   Pexels client, music index, SFX index
 │   ├── openscript-mcp/         #   MCP server + 70 tool handlers (tools.rs + hf.rs)
@@ -30,7 +30,7 @@ openscript/
 │   ├── openscript-tauri/       #   Tauri desktop app (Rust commands + React frontend)
 │   └── openscript-ui/          #   Legacy TUI (ratatui) — minimal maintenance
 ├── mcp/
-│   ├── scripts/                # Python ML sidecars (Kokoro, Whisper, Apex, music indexer)
+│   ├── scripts/                # Python ML sidecars (Audio8, Kokoro, Whisper, Apex, music indexer)
 │   ├── assets/                 # Committed binary assets + generated JSON indices
 │   └── styles/                 # PupCaps caption CSS
 ├── hyperframes/                # Default render engine (HTML + GSAP) + interop template
@@ -674,8 +674,15 @@ Until then, `main` is the release. Keep it green.
   from-scratch video creation, it's `script.parse` → `script.to_video`.
 - **HyperFrames (HF)** — Default render engine. HTML + GSAP, rendered via
   headless Chromium. The `hf.*` tools operate on HF projects.
-- **Kokoro** — Default TTS engine. 24kHz, 54 voices, ONNX-based. Runs as a
-  Python sidecar (`mcp/scripts/kokoro_tts_sidecar.py`).
+- **Audio8** — Default TTS engine for cloned voices (zero-shot voice
+  cloning, ONNX INT4, 44.1kHz). Runs as a long-lived Python sidecar
+  (`mcp/scripts/audio8_tts_sidecar.py`) over the vendored official runtime
+  (`third_party/Audio8_TTS`). 11 languages; English is the default for the
+  script-to-video workflow. Register clones via `voice.profile.add` with
+  `provider: "audio8"` (reference WAV + exact transcript).
+- **Kokoro** — Preset-voice TTS engine (no cloning). 24kHz, 54 voices,
+  ONNX-based. Runs as a Python sidecar (`mcp/scripts/kokoro_tts_sidecar.py`);
+  kept as a fallback for preset voices.
 - **MCP** — Model Context Protocol. JSON-RPC over stdio. The server is
   `crates/openscript-mcp/src/bin/mcp-server.rs`.
 - **NLE** — Non-Linear Editing. Editing existing footage (cut, caption,
@@ -687,7 +694,7 @@ Until then, `main` is the release. Keep it green.
   JSON or one-shot process spawn with file I/O.
 - **Voicebox** — Optional TTS sidecar (faster-qwen3-tts) running at
   `OPENSCRIPT_TTS_URL` (default `http://127.0.0.1:17493`). Not required for
-  Kokoro (the default).
+  Audio8 (the default) or Kokoro.
 
 ---
 

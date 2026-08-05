@@ -18,7 +18,7 @@
 | Input | Output |
 |-------|--------|
 | Markdown script | MP4 video (1080p/4K) |
-| Sections → scenes | AI narration (Kokoro/Edge/OpenAI TTS) |
+| Sections → scenes | AI narration (Audio8 cloned voice / Kokoro / Edge / OpenAI TTS) |
 | Code blocks → syntax highlights | Auto-generated subtitles (SRT/VTT) |
 | Image refs → B-roll | Background music (Suno/UDIO) |
 | Metadata → chapters | YouTube-ready chapters + description |
@@ -95,7 +95,7 @@ Executors drive futures to completion. `tokio::spawn` polls until `Ready`.
 
 | Category | Details |
 |----------|---------|
-| **TTS** | Kokoro (local), Edge TTS, OpenAI, ElevenLabs |
+| **TTS** | Audio8 (local zero-shot voice clone), Kokoro (local presets), Edge TTS, OpenAI, ElevenLabs |
 | **Subtitles** | Word-level timing, style presets, multi-language |
 | **B-roll** | Auto-fetch from Pexels/Unsplash, local images, code animations |
 | **Music** | Suno, UDIO, local files, ducking under narration |

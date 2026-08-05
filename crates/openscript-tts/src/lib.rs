@@ -1,3 +1,4 @@
+pub mod audio8;
 pub mod client;
 pub mod profiles;
 
