@@ -75,6 +75,10 @@ script.generate_voices → script.build_captions → background.fetch → script
 
 **Agentic pipeline (RECOMMENDED):**
 ```
+0. broll.auto             — ONE-CALL: runs steps 3–6 + 9–10 for you (segment.analyze →
+                           broll.keywords → broll.validate_keywords → broll.fetch →
+                           timeline.validate → broll.repair loop until 0 gaps remain).
+                           Feed it an SRT + audio; get back a fully covered timeline.
 1. transcribe             — Hinglish SRT from audio
 2. srt.prepare            — Group words into caption segments
 3. segment.analyze        — Sentence-aware segments (2–6s, docs/SEGMENTATION_ARCHITECTURE.md)
@@ -130,7 +134,7 @@ before and after repair.
 
 | Type | Search | Download | Assign |
 |------|--------|----------|--------|
-| B-roll | `broll.keywords` → `broll.validate_keywords` → `broll.fetch` | `broll.fetch(download=true)` | `broll.assign` / `broll.repair` (gap healing) |
+| B-roll | `broll.auto` (one-call) or `broll.keywords` → `broll.validate_keywords` → `broll.fetch` | `broll.fetch(download=true)` | `broll.assign` / `broll.repair` (gap healing) |
 | Images | `media.search` | `media.download` | `overlay.assign` |
 | GIFs | `gif.search` | `gif.download` | `overlay.assign` |
 | Music | `library.search` | `library.download` | `music.assign` |

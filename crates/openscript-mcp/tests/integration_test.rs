@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 93 tools: + broll.validate_keywords (Stage 2 relevance validation) + broll.repair (gap-healing loop)
+    // 94 tools: + broll.validate_keywords (Stage 2 relevance validation) + broll.repair (gap-healing loop) + broll.auto (one-call A2V orchestrator)
     assert_eq!(
         tools.len(),
-        93,
-        "Expected 93 MCP tools, got {}",
+        94,
+        "Expected 94 MCP tools, got {}",
         tools.len()
     );
 
@@ -195,6 +195,7 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"broll.keywords"));
     assert!(tool_names.contains(&"broll.validate_keywords"));
     assert!(tool_names.contains(&"broll.repair"));
+    assert!(tool_names.contains(&"broll.auto"));
     assert!(tool_names.contains(&"system.config.get"));
     assert!(tool_names.contains(&"system.config.set"));
     assert!(tool_names.contains(&"director.run"));

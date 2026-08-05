@@ -641,6 +641,30 @@ pub fn tool_definitions() -> serde_json::Value {
                 "additionalProperties": false
             }
         },
+        {
+            "name": "broll.auto",
+            "description": "ONE-CALL A2V b-roll orchestrator: runs the full agentic b-roll pipeline end-to-end and loops until zero gaps remain. Pipeline: segment.analyze (sentence-aware 2-6s) → broll.keywords (agentic draft) → broll.validate_keywords (agent validates real Pexels candidates vs the spoken caption) → srt.to_timeline → broll.fetch (download + auto-place) → timeline.validate → broll.repair loop (re-drafts keywords for any BROLL_GAP with full timeline context) until no gaps remain or max_repair_iterations is hit. Feed it an SRT + audio and get back a fully covered timeline ready for timeline.render. Returns: timeline_path, segments_count, auto_assigned, initial_gaps, repair_passes, repaired_total, remaining_gaps, valid.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "SRT transcript (required unless timeline_path is given)."},
+                    "audio_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Source audio/video (required unless timeline_path is given)."},
+                    "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Existing timeline to fill (skips analyze/build)."},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Where to save the produced timeline (default derived from srt_path)."},
+                    "min_duration_s": {"type": "number", "default": 2.0, "description": "Minimum segment duration (SEGMENTATION_ARCHITECTURE)."},
+                    "max_duration_s": {"type": "number", "default": 6.0, "description": "Maximum segment duration (short-form retention cap)."},
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions."},
+                    "quality": {"type": "string", "default": "sd", "description": "Pexels quality: sd/hd/4k."},
+                    "orientation": {"type": "string", "default": "9:16", "description": "Video orientation."},
+                    "max_batch_size": {"type": "integer", "default": 15, "description": "Segments per keyword-draft LLM call."},
+                    "max_candidates": {"type": "integer", "default": 6, "description": "Candidates per segment shown to the validation agent."},
+                    "max_keywords_per_search": {"type": "integer", "default": 2, "description": "Draft keywords per Pexels search."},
+                    "max_repair_iterations": {"type": "integer", "default": 3, "description": "Max repair-loop passes (stops early if a pass repairs 0 gaps)."}
+                },
+                "required": [],
+                "additionalProperties": false
+            }
+        },
         // ===================================================================
         // GROUP 3: VOICEOVER & TTS — Commentary, narration, and voice production
         // ===================================================================
@@ -1409,6 +1433,7 @@ pub fn route_tool(
         "broll.keywords" => Box::pin(handle_broll_keywords(args)),
         "broll.validate_keywords" => Box::pin(handle_broll_validate_keywords(args)),
         "broll.repair" => Box::pin(handle_broll_repair(args)),
+        "broll.auto" => Box::pin(handle_broll_auto(args)),
         "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
@@ -6274,6 +6299,249 @@ async fn handle_broll_repair(args: serde_json::Value) -> Result<serde_json::Valu
         "decisions": decisions,
         "remaining_gaps": remaining,
         "timeline_path": timeline_path,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: broll.auto (one-call A2V b-roll orchestrator — analyze → draft →
+// validate → fetch → validate → repair loop until zero gaps remain)
+// ---------------------------------------------------------------------------
+
+async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let srt_path = args.get("srt_path").and_then(|v| v.as_str()).map(String::from);
+    let audio_path = args.get("audio_path").and_then(|v| v.as_str()).map(String::from);
+    let timeline_path_arg = args.get("timeline_path").and_then(|v| v.as_str()).map(String::from);
+
+    let min_duration_s = default_f64(&args, "min_duration_s", 2.0);
+    let max_duration_s = default_f64(&args, "max_duration_s", 6.0);
+    let language = default_str(&args, "language", "hinglish");
+    let quality = default_str(&args, "quality", "sd");
+    let orientation = default_str(&args, "orientation", "9:16");
+    let max_batch_size = default_u32(&args, "max_batch_size", 15);
+    let max_candidates = default_u32(&args, "max_candidates", 6);
+    let max_keywords_per_search = default_u32(&args, "max_keywords_per_search", 2);
+    let max_repair_iterations = default_u32(&args, "max_repair_iterations", 3);
+
+    // ---- Stage A: resolve timeline + segments ----
+    let (timeline_path, segments) = if let Some(tl) = &timeline_path_arg {
+        let timeline = Timeline::load(tl)?;
+        let segs: Vec<serde_json::Value> = timeline
+            .segments
+            .iter()
+            .map(|s| {
+                json!({
+                    "id": s.id.clone(),
+                    "start_s": s.start,
+                    "end_s": s.end,
+                    "duration_s": s.end - s.start,
+                    "caption": s.caption.clone(),
+                })
+            })
+            .collect();
+        (tl.clone(), segs)
+    } else {
+        let srt = srt_path.clone().ok_or_else(|| {
+            ToolError::MissingArg(
+                "broll.auto requires srt_path + audio_path (or timeline_path)".into(),
+            )
+        })?;
+        let audio = audio_path.clone().ok_or_else(|| {
+            ToolError::MissingArg("broll.auto requires audio_path (or timeline_path)".into())
+        })?;
+
+        // 1. segment.analyze — sentence-aware 2-6s segmentation
+        report_progress(5.0, 100.0, "1/6 segment.analyze").await.ok();
+        let analyzed = handle_segment_analyze(json!({
+            "audio_path": audio,
+            "srt_path": srt,
+            "min_duration_s": min_duration_s,
+            "max_duration_s": max_duration_s,
+        }))
+        .await?;
+        let segments: Vec<serde_json::Value> = analyzed
+            .get("segments")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        // 2. srt.to_timeline — build the timeline with identical segmentation
+        let out_path = args
+            .get("output_path")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| {
+                let stem = Path::new(&srt)
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "broll_auto".to_string());
+                format!("artifacts/{}.timeline.json", stem)
+            });
+        report_progress(20.0, 100.0, "2/6 srt.to_timeline").await.ok();
+        let built = handle_srt_to_timeline(json!({
+            "srt_path": srt,
+            "source_video": audio,
+            "output_path": out_path,
+            "aspect": orientation,
+            "fps": 30,
+            "min_duration_s": min_duration_s,
+            "max_duration_s": max_duration_s,
+        }))
+        .await?;
+        let tl = built
+            .get("timeline_path")
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .unwrap_or(out_path);
+        (tl, segments)
+    };
+
+    let segments_arr = segments.clone();
+    if segments_arr.is_empty() {
+        return Err(ToolError::InvalidArg(
+            "broll.auto: no segments found — check SRT/timeline".into(),
+        ));
+    }
+
+    // ---- Stage B: draft keywords (agentic) ----
+    report_progress(35.0, 100.0, "3/6 broll.keywords (draft)").await.ok();
+    let drafts = handle_broll_keywords(json!({
+        "segments": segments,
+        "language": language,
+        "max_batch_size": max_batch_size,
+        "timeline_path": timeline_path,
+    }))
+    .await?;
+    let draft_segments = drafts.get("segments").cloned().unwrap_or_else(|| json!([]));
+
+    // ---- Stage C: relevance validation (agent picks best real video) ----
+    report_progress(50.0, 100.0, "4/6 broll.validate_keywords (relevance)").await.ok();
+    let validated = handle_broll_validate_keywords(json!({
+        "enriched_segments": draft_segments,
+        "max_candidates": max_candidates,
+        "max_keywords_per_search": max_keywords_per_search,
+        "orientation": orientation,
+        "quality": quality,
+        "language": language,
+    }))
+    .await?;
+    let validated_segments = validated.get("segments").cloned().unwrap_or_else(|| json!([]));
+
+    // ---- Stage D: fetch + auto-place ----
+    report_progress(65.0, 100.0, "5/6 broll.fetch (download + place)").await.ok();
+    let fetch_segments: Vec<serde_json::Value> = validated_segments
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|v| {
+                    let mut seg = json!({
+                        "id": v.get("id").cloned().unwrap_or_else(|| json!("")),
+                        "start_s": v.get("start_s").cloned().unwrap_or_else(|| json!(0)),
+                        "end_s": v.get("end_s").cloned().unwrap_or_else(|| json!(0)),
+                        "caption": v.get("caption").cloned().unwrap_or_else(|| json!("")),
+                    });
+                    let kw = v
+                        .get("final_keywords")
+                        .cloned()
+                        .or_else(|| v.get("draft_keywords").cloned())
+                        .unwrap_or_else(|| json!([]));
+                    seg["keywords"] = kw;
+                    seg
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let fetched = handle_broll_fetch(json!({
+        "enriched_segments": fetch_segments,
+        "timeline_path": timeline_path,
+        "download_n": 1,
+        "quality": quality,
+        "orientation": orientation,
+    }))
+    .await?;
+    let auto_assigned = fetched.get("auto_assigned").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    // ---- Stage E: validate + repair loop until zero gaps ----
+    report_progress(80.0, 100.0, "6/6 timeline.validate + repair loop").await.ok();
+    let mut repair_passes = 0u32;
+    let mut repaired_total = 0u64;
+    let mut remaining_gaps: Vec<serde_json::Value> = Vec::new();
+    let mut initial_gaps = 0usize;
+    let mut final_valid = false;
+
+    for pass in 0..max_repair_iterations {
+        let vres = handle_timeline_validate(json!({"timeline_path": timeline_path})).await?;
+        let gaps = vres
+            .get("broll_gaps")
+            .and_then(|g| g.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if pass == 0 {
+            initial_gaps = gaps.len();
+        }
+        if gaps.is_empty() {
+            final_valid = vres.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
+            remaining_gaps = vec![];
+            break;
+        }
+        repair_passes = pass + 1;
+        let repair = handle_broll_repair(json!({
+            "timeline_path": timeline_path,
+            "max_segments": gaps.len(),
+            "language": language,
+            "quality": quality,
+            "orientation": orientation,
+        }))
+        .await?;
+        let repaired_this = repair.get("repaired").and_then(|v| v.as_u64()).unwrap_or(0);
+        repaired_total += repaired_this;
+        remaining_gaps = repair
+            .get("remaining_gaps")
+            .and_then(|g| g.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if repaired_this == 0 {
+            break; // no progress — avoid infinite loop
+        }
+    }
+    if remaining_gaps.is_empty() {
+        let vres = handle_timeline_validate(json!({"timeline_path": timeline_path})).await?;
+        final_valid = vres.get("valid").and_then(|v| v.as_bool()).unwrap_or(false);
+    }
+
+    report_progress(100.0, 100.0, "broll.auto complete").await.ok();
+
+    Ok(json!({
+        "status": if final_valid { "success" } else { "partial" },
+        "message": if final_valid {
+            format!(
+                "A2V b-roll complete: {} segments fully covered with validated, non-looping clips ({} placed, {} repair pass(es)).",
+                segments_arr.len(),
+                auto_assigned,
+                repair_passes
+            )
+        } else {
+            format!(
+                "{} gap(s) remain after {} repair pass(es) — rerun broll.repair with wider keywords.",
+                remaining_gaps.len(),
+                repair_passes
+            )
+        },
+        "timeline_path": timeline_path,
+        "segments_count": segments_arr.len(),
+        "auto_assigned": auto_assigned,
+        "initial_gaps": initial_gaps,
+        "repair_passes": repair_passes,
+        "repaired_total": repaired_total,
+        "remaining_gaps": remaining_gaps,
+        "valid": final_valid,
+        "pipeline": json!({
+            "analyze": "segment.analyze",
+            "draft": "broll.keywords",
+            "validate": "broll.validate_keywords",
+            "fetch": "broll.fetch",
+            "repair": "broll.repair",
+        }),
     }))
 }
 
