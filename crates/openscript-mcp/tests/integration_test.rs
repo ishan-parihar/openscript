@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 96 tools: + broll.auto (one-call A2V orchestrator) + sticker.keywords (agentic GIPHY keyword gen) + sticker.auto (one-call sticker pipeline)
+    // 97 tools: + broll.auto (one-call A2V orchestrator) + sticker.keywords (agentic GIPHY keyword gen) + sticker.validate_keywords (GIPHY relevance gate) + sticker.auto (one-call sticker pipeline)
     assert_eq!(
         tools.len(),
-        96,
-        "Expected 96 MCP tools, got {}",
+        97,
+        "Expected 97 MCP tools, got {}",
         tools.len()
     );
 
@@ -197,6 +197,7 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"broll.repair"));
     assert!(tool_names.contains(&"broll.auto"));
     assert!(tool_names.contains(&"sticker.keywords"));
+    assert!(tool_names.contains(&"sticker.validate_keywords"));
     assert!(tool_names.contains(&"sticker.auto"));
     assert!(tool_names.contains(&"system.config.get"));
     assert!(tool_names.contains(&"system.config.set"));

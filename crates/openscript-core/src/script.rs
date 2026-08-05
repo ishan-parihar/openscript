@@ -382,7 +382,7 @@ pub struct CaptionsSpec {
     #[serde(default = "default_highlight_color")]
     pub highlight_color: String,
 
-    /// Position: "bottom", "top", "center".
+    /// Position: "center" (default), "bottom", "top".
     #[serde(default = "default_caption_position")]
     pub position: String,
 
@@ -411,7 +411,10 @@ fn default_highlight_color() -> String {
     "#00ff88".to_string()
 }
 fn default_caption_position() -> String {
-    "bottom".to_string()
+    // Center is the product default: captions sit mid-screen, clear of the
+    // subject and of bottom safe-zone UI. Override per-call with "bottom"
+    // (shorts lower-third) or "top" when the composition calls for it.
+    "center".to_string()
 }
 fn default_safe_zone() -> f64 {
     0.85

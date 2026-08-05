@@ -1,7 +1,7 @@
 # PLAN — Sticker Relevance Fix (agentic intent → validated placement)
 
 **Date:** 2026-08-05
-**Status:** Plan (not yet implemented)
+**Status:** ✅ IMPLEMENTED (2026-08-05) — Stages A–E shipped; verified live on the 43-segment E2E timeline (LLM-down fail-safe: 0 placed, 43 skipped `not_emphatic`, zero caption-word query leakage). Tool count went **96 → 97** (one new tool `sticker.validate_keywords`; the intent/emphatic upgrade was to the existing `sticker.keywords`).
 **Context:** Discovered during the E2E A2V test (`broll.auto` on a 43-segment Hinglish script). 12 stickers were placed, but their provenance concepts were raw caption words (`"Bhai"`, `"hisaab"`, `"apna"`, `"dekh"`, `"logon"`…) and all 12 were anchored at the same `top-right` position. GIPHY returned reaction GIFs that were unrelated to the spoken content. The user's verdict: stickers are irrelevant.
 
 ---
@@ -75,7 +75,7 @@ Mirror of `broll.validate_keywords`:
 
 | File | Change |
 |------|--------|
-| `crates/openscript-mcp/src/tools.rs` | Upgrade `handle_sticker_keywords` (intent JSON), add `handle_sticker_validate_keywords`, rewire `handle_sticker_auto` + `handle_sticker_auto_assign`, add 2 tool definitions + routes (count 96 → 98), update `sticker.auto`'s `position` default handling |
+| `crates/openscript-mcp/src/tools.rs` | Upgrade `handle_sticker_keywords` (intent JSON), add `handle_sticker_validate_keywords` + `llm_validate_sticker_candidates`, rewire `handle_sticker_auto` + `handle_sticker_auto_assign`, add 1 tool definition + route (count 96 → 97), `sticker.auto` position default → `auto` |
 | `crates/openscript-mcp/src/server.rs` | Tool count + sticker family count + A2V trajectory text |
 | `crates/openscript-mcp/tests/integration_test.rs` | New tool assertions + count |
 | `scripts/smoke_test_mcp.sh` | Tool count 96 → 98 |

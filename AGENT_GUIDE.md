@@ -22,7 +22,7 @@
 | library | 3 | search, download, build |
 | overlay | 2 | generate, assign |
 | background | 3 | fetch, assign, search |
-| sticker | 6 | presets, load_preset, render, keywords, auto, auto_assign |
+| sticker | 7 | presets, load_preset, render, keywords, validate_keywords, auto, auto_assign |
 | stock | 2 | fetch, search |
 | youtube | 2 | search, download |
 | media | 2 | search, download |
@@ -89,8 +89,9 @@ script.generate_voices → script.build_captions → background.fetch → script
                            (video names/durations) against the spoken caption → final keywords + best video
 6. broll.fetch            — Download + auto-place the validated clips on the timeline
 7. sticker.auto           — ONE-CALL sticker pipeline (parallel to broll): segment → sticker.keywords
-                           (agent picks the IDEAL GIPHY sticker keyword per segment) → GIPHY search →
-                           download → place on the Stickers track (caption-safe, positioned PiP)
+                           (agent drafts INTENT + EMPHATIC keywords) → sticker.validate_keywords
+                           (GIPHY relevance gate: only approved stickers) → download → place on the
+                           Stickers track (spacing gate + position cycling, positioned PiP)
 8. music.assign           — Add background music
 9. captions.generate_ass  — Generate styled captions (word_highlight ASS, registered in timeline)
 10. timeline.validate     — Check for errors (segmentation bounds + BROLL_GAP coverage)
@@ -139,7 +140,7 @@ before and after repair.
 |------|--------|----------|--------|
 | B-roll | `broll.auto` (one-call) or `broll.keywords` → `broll.validate_keywords` → `broll.fetch` | `broll.fetch(download=true)` | `broll.assign` / `broll.repair` (gap healing) |
 | Images | `media.search` | `media.download` | `overlay.assign` |
-| GIFs / stickers | `sticker.keywords` (agentic) → `gif.search` | `gif.download` | `sticker.auto_assign` / `sticker.auto` → Stickers track (positioned PiP) |
+| GIFs / stickers | `sticker.keywords` (intent+emphatic) → `sticker.validate_keywords` (GIPHY relevance gate) → `gif.search` | `gif.download` | `sticker.auto_assign` / `sticker.auto` → Stickers track (positioned PiP) |
 | Music | `library.search` | `library.download` | `music.assign` |
 | SFX | `sfx.search` | — | `sfx.assign` |
 | YouTube | `youtube.search` | `youtube.download` | — |

@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (96 static tools): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto + sticker.keywords/sticker.auto)
+// Tool definitions (97 static tools): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto + sticker.keywords/sticker.validate_keywords/sticker.auto)
 // ---------------------------------------------------------------------------
 
 /// Resolve the fonts directory for ASS subtitle rendering.
@@ -93,7 +93,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "font_size": {"type": "integer", "default": 84, "description": "Font size in pixels"},
                     "color": {"type": "string", "default": "#ffffff", "description": "Primary caption color (hex)"},
                     "highlight_color": {"type": "string", "default": "#00ff88", "description": "Word highlight color for word_highlight style (hex)"},
-                    "position": {"type": "string", "default": "bottom", "description": "Caption position: 'bottom' (shorts safe zone, default), 'center', or 'top'"},
+                    "position": {"type": "string", "default": "center", "description": "Caption position: 'center' (default), 'bottom' (shorts safe zone), or 'top'"},
                     "safe_zone": {"type": "number", "default": 0.85, "description": "Vertical safe zone (0.0-1.0) for caption placement"},
                     "max_words_per_line": {"type": "integer", "default": 5, "description": "Max words per displayed line"},
                     "width": {"type": "integer", "default": 1080, "description": "Video width in pixels"},
@@ -209,7 +209,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "sfx": {"type": "array", "items": {"type": "object", "properties": {"role": {"type": "string"}, "at_s": {"type": "number"}}}, "description": "Sound effects: editorial role (whoosh, pop, hit, riser) and placement time in seconds"},
                     "music": {"anyOf": [{"type": "object", "properties": {"mood": {"type": "string"}, "energy": {"type": "string"}, "gain_db": {"type": "number"}, "duck_under_dialogue": {"type": "boolean"}}}, {"type": "null"}], "description": "Background music: mood, energy, volume level, and whether to duck under dialogue"},
                     "voiceover": {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string"}, "position_s": {"type": "number"}, "voice_profile_id": {"type": "string"}, "speed": {"type": "number"}, "gain_db": {"type": "number"}}}, "description": "TTS voiceover events: script text, placement, and voice profile"},
-                    "captions": {"type": "object", "properties": {"enabled": {"type": "boolean", "default": true}, "style": {"type": "string", "enum": ["standard", "kinetic"], "default": "standard"}, "position": {"type": "string", "enum": ["center", "bottom"], "default": "bottom"}}, "description": "Caption style: standard (full-sentence ASS) or kinetic (word-by-word viral style); position defaults to bottom safe zone"},
+                    "captions": {"type": "object", "properties": {"enabled": {"type": "boolean", "default": true}, "style": {"type": "string", "enum": ["standard", "kinetic"], "default": "standard"}, "position": {"type": "string", "enum": ["center", "bottom"], "default": "center"}}, "description": "Caption style: standard (full-sentence ASS) or kinetic (word-by-word viral style); position defaults to center screen"},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output video path (auto-generated if omitted)"},
                     "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28 range)"}
                 },
@@ -1276,17 +1276,32 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "sticker.validate_keywords",
+            "description": "STAGE 2 of the agentic sticker pipeline (parallel to broll.validate_keywords): relevance gate between sticker.keywords and placement. Takes sticker.keywords output, searches GIPHY for REAL candidate stickers per segment, and an LLM approves the best match against the spoken caption's intent/emotion. Segments with no emphatic keywords, no GIPHY results, or no approved match are skipped (better no sticker than an irrelevant one). Use BEFORE sticker.auto_assign so only genuinely relevant stickers reach the timeline. Returns: segments with approved, best_sticker (id/title/url), final_keyword, relevance, reason, candidates + skipped with reasons.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "enriched_segments": {"type": "array", "items": {"type": "object"}, "description": "Output of sticker.keywords: segments each with id, caption, intent, emphatic, sticker_keywords."},
+                    "max_candidates": {"type": "integer", "default": 4, "description": "Max GIPHY candidates to validate per segment."},
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions."}
+                },
+                "required": ["enriched_segments"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "sticker.auto_assign",
-            "description": "Auto-place stickers/GIFs at segment positions in ONE CALL. Uses enriched_segments from sticker.keywords (ideal per-segment sticker keywords) when provided; otherwise derives keywords from segment captions. Searches GIPHY, downloads, and places each sticker on the dedicated Stickers track (caption-safe position, scale relative to canvas width) — the renderer composites them as positioned PiP overlays on top of the b-roll. ONE-CALL replacement for gif.search + gif.download + overlay.assign N times. Requires GIPHY_API_KEY. Returns: events_created count, positions, timeline_path.",
+            "description": "Auto-place stickers/GIFs at segment positions in ONE CALL. Uses enriched_segments from sticker.validate_keywords (approved picks download DIRECTLY — no re-search) or sticker.keywords when provided; otherwise derives keywords from segment captions. Enforces a spacing gate (min_gap_s between placements) and position cycling ('auto' alternates top-right/bottom-right/center-left/bottom-left; an explicit position anchors all). Searches GIPHY, downloads, and places each sticker on the dedicated Stickers track (scale relative to canvas width) — the renderer composites them as positioned PiP overlays on top of the b-roll. ONE-CALL replacement for gif.search + gif.download + overlay.assign N times. Requires GIPHY_API_KEY. Returns: events_created count, positions, skipped (with reasons), timeline_path.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "timeline_path": {"type": "string", "description": "Path to timeline JSON with populated segments"},
-                    "enriched_segments": {"anyOf": [{"type": "array", "items": {"type": "object"}}, {"type": "null"}], "description": "Output of sticker.keywords: segments each with a sticker_keywords array. When provided, each segment's ideal keywords drive the GIPHY search."},
+                    "enriched_segments": {"anyOf": [{"type": "array", "items": {"type": "object"}}, {"type": "null"}], "description": "Output of sticker.validate_keywords (approved picks download directly) or sticker.keywords (keywords drive the search). Each segment: id, caption, sticker_keywords / approved + best_sticker."},
                     "sticker_query": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Override query for all stickers (e.g., 'funny', 'celebration'). If omitted, uses per-segment keywords."},
-                    "position": {"type": "string", "default": "top-right", "description": "Screen position for all stickers (top-right/top-left/bottom-right/bottom-left/center etc.)"},
+                    "position": {"type": "string", "default": "auto", "description": "Anchor position: 'auto' (default) cycles top-right/bottom-right/center-left/bottom-left for visual variety; explicit (top-right/top-left/bottom-right/bottom-left/center etc.) anchors every sticker there."},
                     "scale": {"type": "number", "default": 0.25, "description": "Sticker scale relative to canvas width (0.0-1.0)"},
-                    "max_stickers": {"type": "integer", "default": 10, "description": "Maximum stickers to place"}
+                    "max_stickers": {"type": "integer", "default": 10, "description": "Maximum stickers to place"},
+                    "min_gap_s": {"type": "number", "default": 2.0, "description": "Min seconds between consecutive sticker placements (spacing gate, prevents sticker spam)"}
                 },
                 "required": ["timeline_path"],
                 "additionalProperties": false
@@ -1294,7 +1309,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "sticker.auto",
-            "description": "ONE-CALL agentic sticker pipeline (parallel to broll.auto): segment.analyze → sticker.keywords (agentic ideal-keyword draft) → GIPHY search per segment → download → place on the Stickers track at each segment's position with caption-safe placement. Feed it an SRT + audio (or an existing timeline) and get back a timeline whose stickers layer is fully populated. Returns: timeline_path, segments_count, stickers_placed, skipped, sticker_keywords_backend.",
+            "description": "ONE-CALL agentic sticker pipeline (parallel to broll.auto): segment.analyze → sticker.keywords (agentic intent+emphatic draft) → sticker.validate_keywords (GIPHY relevance gate — only genuinely relevant stickers approved) → download → place on the Stickers track with spacing + position cycling. Feed it an SRT + audio (or an existing timeline) and get back a timeline whose stickers layer is populated with RELEVANT, non-spammy stickers. Returns: timeline_path, segments_count, stickers_placed, skipped (with reasons), sticker_keywords_backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1302,9 +1317,10 @@ pub fn tool_definitions() -> serde_json::Value {
                     "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "SRT transcript (required unless timeline_path is given)."},
                     "audio_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Source audio/video (required unless timeline_path is given)."},
                     "language": {"type": "string", "default": "hinglish", "description": "Source language of captions."},
-                    "position": {"type": "string", "default": "top-right", "description": "Sticker screen position."},
+                    "position": {"type": "string", "default": "auto", "description": "Sticker anchor: 'auto' (default) cycles top-right/bottom-right/center-left/bottom-left; explicit anchors every sticker there."},
                     "scale": {"type": "number", "default": 0.25, "description": "Sticker scale relative to canvas width."},
-                    "max_stickers": {"type": "integer", "default": 12, "description": "Maximum stickers to place."}
+                    "max_stickers": {"type": "integer", "default": 12, "description": "Maximum stickers to place."},
+                    "min_gap_s": {"type": "number", "default": 2.0, "description": "Min seconds between consecutive sticker placements (spacing gate)."}
                 },
                 "required": [],
                 "additionalProperties": false
@@ -1539,6 +1555,7 @@ pub fn route_tool(
         "gif.download" => Box::pin(handle_gif_download(args)),
         "overlay.assign" => Box::pin(handle_overlay_assign(args)),
         "sticker.keywords" => Box::pin(handle_sticker_keywords(args)),
+        "sticker.validate_keywords" => Box::pin(handle_sticker_validate_keywords(args)),
         "sticker.auto" => Box::pin(handle_sticker_auto(args)),
         "sticker.auto_assign" => Box::pin(handle_sticker_auto_assign(args)),
         "timeline.to_hyperframes" => Box::pin(handle_timeline_to_hyperframes(args)),
@@ -1972,7 +1989,7 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
     let font_size = default_u32(&args, "font_size", 84);
     let color = default_str(&args, "color", "#ffffff");
     let highlight_color = default_str(&args, "highlight_color", "#00ff88");
-    let position = default_str(&args, "position", "bottom");
+    let position = default_str(&args, "position", "center");
     let safe_zone = args.get("safe_zone").and_then(|v| v.as_f64()).unwrap_or(0.85);
     let max_words_per_line = default_u32(&args, "max_words_per_line", 5);
     let width = default_u32(&args, "width", 1080);
@@ -6560,7 +6577,9 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
         let sticker_res = handle_sticker_auto(json!({
             "timeline_path": timeline_path,
             "language": language,
-            "position": "top-right",
+            // "auto": position cycling + spacing gates (sticker relevance fix)
+            "position": "auto",
+            "min_gap_s": 2.0,
             "scale": 0.25,
             // Cap sticker volume in the one-call (GIPHY rate limits + render time).
             "max_stickers": segments_arr.len().min(12),
@@ -6583,7 +6602,7 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
         let mut cap_args = json!({
             "timeline_path": timeline_path,
             "style": "word_highlight",
-            "position": "bottom",
+            "position": "center",
         });
         if let Some(ref sp) = srt_path {
             if let Some(obj) = cap_args.as_object_mut() {
@@ -16566,11 +16585,15 @@ async fn handle_sticker_keywords(args: serde_json::Value) -> Result<serde_json::
         Rules:\n1. Output ONLY valid JSON — no markdown, no explanation\n2. For each segment, output 2-3 short \
         sticker keywords (1-3 words each) describing the REACTION/EMOTION/MEME that fits the spoken content\n3. Translate \
         Hinglish/Hindi by MEANING, not word-for-word\n4. Prefer common GIPHY searchable reaction phrases over abstract concepts\n5. \
-        Source language detected: {}\nOutput format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"k1\", \"k2\"]}}]}}",
+        Classify each segment's emotional weight:\n   - 'intent': one of anger, surprise, hype, celebration, sarcasm, sad, question, emphasis, none\n   - 'emphatic': true ONLY when the segment carries real emotional weight (shock, anger, hype, punchline, big claim, strong opinion). \
+        Calm/filler segments — plain statements, connectors, 'hai', 'bhai', mundane narration — are emphatic=false with sticker_keywords=[] \
+        (no sticker is better than an irrelevant one)\n6. Source language detected: {}\nOutput format: {{\"results\": [{{\"id\": \"seg_XXX\", \"intent\": \"anger\", \"emphatic\": true, \"sticker_keywords\": [\"angry eyes\", \"frustrated\"]}}]}}",
         language
     );
 
     let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let mut intent_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut emphatic_map: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     let mut last_backend = String::new();
     let mut last_model = String::new();
     let total = segments.len();
@@ -16629,13 +16652,20 @@ async fn handle_sticker_keywords(args: serde_json::Value) -> Result<serde_json::
         if let Some(results) = parsed.get("results").and_then(|v| v.as_array()) {
             for r in results {
                 if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
-                    if let Some(kws) = r.get("keywords").and_then(|v| v.as_array()) {
+                    let kws = r.get("sticker_keywords").or_else(|| r.get("keywords"));
+                    if let Some(kws) = kws.and_then(|v| v.as_array()) {
                         let keywords: Vec<String> = kws
                             .iter()
                             .filter_map(|k| k.as_str().map(String::from))
                             .filter(|k| k.len() >= 2)
                             .collect();
                         keyword_map.insert(id.to_string(), keywords);
+                    }
+                    if let Some(intent) = r.get("intent").and_then(|v| v.as_str()) {
+                        intent_map.insert(id.to_string(), intent.to_string());
+                    }
+                    if let Some(emph) = r.get("emphatic").and_then(|v| v.as_bool()) {
+                        emphatic_map.insert(id.to_string(), emph);
                     }
                 }
             }
@@ -16655,27 +16685,52 @@ async fn handle_sticker_keywords(args: serde_json::Value) -> Result<serde_json::
             .or_else(|| seg.get("text"))
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let keywords = keyword_map
+        // Resolve intent/emphatic with the same id-fallback ladder as keywords.
+        let intent = intent_map
             .get(&id)
-            .or_else(|| keyword_map.get(&format!("seg_{}", i)))
-            .or_else(|| keyword_map.get(&format!("seg_{:03}", i)))
+            .or_else(|| intent_map.get(&format!("seg_{}", i)))
+            .or_else(|| intent_map.get(&format!("seg_{:03}", i)))
             .cloned()
-            .unwrap_or_else(|| {
-                let words: Vec<String> = caption
-                    .split_whitespace()
-                    .filter(|w| w.len() > 3)
-                    .take(3)
-                    .map(String::from)
-                    .collect();
-                if words.is_empty() {
-                    vec!["funny".to_string()]
-                } else {
-                    words
-                }
-            });
+            .unwrap_or_else(|| "emphasis".to_string());
+        let emphatic = emphatic_map
+            .get(&id)
+            .or_else(|| emphatic_map.get(&format!("seg_{}", i)))
+            .or_else(|| emphatic_map.get(&format!("seg_{:03}", i)))
+            .copied()
+            // LLM-down path: the naive caption-word fallback is NOT auto-approved
+            // (that is exactly the irrelevance bug) — mark it non-emphatic so the
+            // validation gate rejects it. Better no sticker than a wrong one.
+            .unwrap_or(false);
+        let keywords: Vec<String> = if emphatic {
+            keyword_map
+                .get(&id)
+                .or_else(|| keyword_map.get(&format!("seg_{}", i)))
+                .or_else(|| keyword_map.get(&format!("seg_{:03}", i)))
+                .cloned()
+                .unwrap_or_else(|| {
+                    let words: Vec<String> = caption
+                        .split_whitespace()
+                        .filter(|w| w.len() > 3)
+                        .take(3)
+                        .map(String::from)
+                        .collect();
+                    if words.is_empty() {
+                        vec!["funny".to_string()]
+                    } else {
+                        words
+                    }
+                })
+        } else {
+            Vec::new()
+        };
         let mut out = seg.clone();
         if let Some(obj) = out.as_object_mut() {
             obj.insert("sticker_keywords".into(), json!(keywords));
+            obj.insert("intent".into(), json!(intent));
+            obj.insert("emphatic".into(), json!(emphatic));
+            if keywords.is_empty() {
+                obj.insert("skip_reason".into(), json!("not_emphatic"));
+            }
         }
         enriched.push(out);
     }
@@ -16690,15 +16745,339 @@ async fn handle_sticker_keywords(args: serde_json::Value) -> Result<serde_json::
 }
 
 // ---------------------------------------------------------------------------
+// LLM helper: sticker candidate validation (mirror of llm_validate_candidates)
+// ---------------------------------------------------------------------------
+// Presents the REAL GIPHY candidates (title + id) for a segment to the agent,
+// which approves the single best match against the spoken caption's intent.
+// Returns (best_candidate_index, final_keyword, relevance 0-1, reason, backend,
+// model). LLM-down ⇒ no approval — relevance must never be assumed.
+
+async fn llm_validate_sticker_candidates(
+    caption: &str,
+    intent: &str,
+    draft_keywords: &[String],
+    candidates: &[serde_json::Value],
+    language: &str,
+) -> (Option<usize>, String, f64, String, String, String) {
+    if candidates.is_empty() {
+        return (
+            None,
+            String::new(),
+            0.0,
+            "no candidates".into(),
+            String::new(),
+            String::new(),
+        );
+    }
+    let candidate_lines: Vec<String> = candidates
+        .iter()
+        .enumerate()
+        .take(6)
+        .map(|(idx, c)| {
+            let title = c.get("title").and_then(|v| v.as_str()).unwrap_or("?");
+            // Only the numeric index is shown — the LLM must return the index,
+            // not the opaque GIPHY id, to avoid best_idx ambiguity.
+            format!("  idx={} title=\"{}\"", idx, title)
+        })
+        .collect();
+    let system = format!(
+        "You are a short-form video director's sticker relevance validator. \
+        Given a spoken segment and candidate GIPHY stickers (index + title), \
+        decide whether any sticker genuinely matches the segment's EMOTION/INTENT ('{}'). \
+        Rules: \
+        1. Approve only a sticker that clearly fits the spoken content's emotional beat; \
+        a generic or contradictory sticker must be rejected. \
+        2. 'relevance' 0.0-1.0 (how well the best sticker matches). \
+        3. Output ONLY compact JSON: \
+        {{\"best_idx\": 2, \"final_keyword\": \"angry eyes\", \"relevance\": 0.9, \"reason\": \"one sentence\"}} \
+        or, if none fit: {{\"best_idx\": null, \"final_keyword\": \"\", \"relevance\": 0.0, \"reason\": \"why none fit\"}}. \
+        Source language: {}.",
+        intent, language
+    );
+    let user = format!(
+        "Segment caption (spoken): \"{}\"\nDetected intent: {}\nDraft keywords: [{}]\nCandidates:\n{}\n\
+         Pick the single best sticker index (or null if none genuinely fit). JSON only.",
+        caption,
+        intent,
+        draft_keywords.join(", "),
+        candidate_lines.join("\n")
+    );
+    match crate::llm::chat_complete(&system, &user, None).await {
+        Ok(r) => {
+            let parsed = parse_loose_json_obj(&r.text);
+            let best_idx = parsed
+                .get("best_idx")
+                .and_then(|v| v.as_u64())
+                .map(|u| u as usize)
+                // Clamp: an out-of-range index from the LLM must not silently
+                // reject a good sticker (fail toward the best candidate).
+                .map(|u| u.min(candidates.len().saturating_sub(1)));
+            let llm_kw = parsed
+                .get("final_keyword")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let final_kw = if llm_kw.is_empty() {
+                draft_keywords.first().cloned().unwrap_or_default()
+            } else {
+                llm_kw
+            };
+            let rel = parsed.get("relevance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let reason = parsed
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            (best_idx, final_kw, rel, reason, r.backend, r.model)
+        }
+        Err(e) => {
+            tracing::warn!("[sticker.validate_keywords] LLM failed: {}", e);
+            (
+                None,
+                String::new(),
+                0.0,
+                format!("llm_failed: {}", e),
+                String::new(),
+                String::new(),
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Handler: sticker.validate_keywords — Stage 2 relevance-validation gate
+// ---------------------------------------------------------------------------
+// Stage 1 (sticker.keywords) drafts emotional/intent sticker keywords. This
+// stage closes the loop: it searches GIPHY with those drafts, presents the
+// REAL candidate stickers (title + id) to the agent, and the agent approves the
+// best match against the spoken caption — producing final_keyword + best_sticker
+// per segment. Segments with no emphatic keywords, no GIPHY results, or no
+// approved match are skipped (better no sticker than an irrelevant one).
+
+async fn handle_sticker_validate_keywords(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    let enriched_segments: Vec<serde_json::Value> = args
+        .get("enriched_segments")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if enriched_segments.is_empty() {
+        return Err(ToolError::MissingArg(
+            "enriched_segments (from sticker.keywords)".to_string(),
+        ));
+    }
+    let max_candidates = default_u32(&args, "max_candidates", 4).max(1) as usize;
+    let language = default_str(&args, "language", "hinglish");
+
+    let giphy_api_key = std::env::var("GIPHY_API_KEY").ok();
+    if giphy_api_key.is_none() {
+        return Ok(json!({
+            "status": "warning",
+            "message": "GIPHY_API_KEY not set — cannot search candidates for relevance validation. Draft keywords are returned unchanged; set the key or run sticker.auto_assign with an explicit sticker_query.",
+            "validated": false,
+            "segments": enriched_segments,
+        }));
+    }
+    let giphy_api_key = giphy_api_key.unwrap();
+    let http = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| ToolError::Asset(format!("HTTP client: {}", e)))?;
+
+    let mut validated: Vec<serde_json::Value> = Vec::new();
+    let mut skipped: Vec<serde_json::Value> = Vec::new();
+    let mut last_backend = String::new();
+    let mut last_model = String::new();
+
+    for (i, seg) in enriched_segments.iter().enumerate() {
+        let id = seg
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&format!("seg_{}", i))
+            .to_string();
+        let caption = seg
+            .get("caption")
+            .or_else(|| seg.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let intent = seg
+            .get("intent")
+            .and_then(|v| v.as_str())
+            .unwrap_or("emphasis")
+            .to_string();
+        let draft: Vec<String> = seg
+            .get("sticker_keywords")
+            .or_else(|| seg.get("keywords"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|k| k.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        if draft.is_empty() {
+            // Record in BOTH the full segments list (so auto_assign knows this
+            // segment was explicitly rejected — no caption-word fallback) and
+            // the skipped summary (observability).
+            validated.push(json!({
+                "id": id,
+                "caption": caption,
+                "intent": intent,
+                "approved": false,
+                "skip_reason": "not_emphatic",
+                "draft_keywords": [],
+            }));
+            skipped.push(json!({"id": id, "reason": "not_emphatic"}));
+            continue;
+        }
+
+        // Search GIPHY with the top draft keywords, dedupe by sticker id.
+        let limit = max_candidates.to_string();
+        let mut candidates: Vec<serde_json::Value> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for q in draft.iter().take(2) {
+            let url = match reqwest::Url::parse_with_params(
+                "https://api.giphy.com/v1/stickers/search",
+                &[
+                    ("api_key", giphy_api_key.as_str()),
+                    ("q", q.as_str()),
+                    ("limit", limit.as_str()),
+                    ("rating", "g"),
+                    ("bundle", "sticker_layering"),
+                ],
+            ) {
+                Ok(u) => u,
+                Err(_) => continue,
+            };
+            let resp = match http.get(url).send().await {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            if !resp.status().is_success() {
+                continue;
+            }
+            let body: serde_json::Value = match resp.json().await {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if let Some(data) = body.get("data").and_then(|d| d.as_array()) {
+                for item in data {
+                    let sid = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    if sid.is_empty() || !seen.insert(sid.clone()) {
+                        continue;
+                    }
+                    let url = item
+                        .pointer("/images/original/url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if url.is_empty() {
+                        continue;
+                    }
+                    candidates.push(json!({
+                        "id": sid,
+                        "title": item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        "slug": item.get("slug").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        "url": url,
+                        "preview_url": item.pointer("/images/preview_gif/url").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    }));
+                    if candidates.len() >= max_candidates {
+                        break;
+                    }
+                }
+            }
+            if candidates.len() >= max_candidates {
+                break;
+            }
+        }
+
+        if candidates.is_empty() {
+            validated.push(json!({
+                "id": id,
+                "caption": caption,
+                "intent": intent,
+                "approved": false,
+                "skip_reason": "no_giphy_results",
+                "draft_keywords": draft,
+            }));
+            skipped.push(json!({"id": id, "reason": "no_giphy_results"}));
+            continue;
+        }
+
+        // Agent validates the real candidates against the spoken caption.
+        let (best_idx, final_keyword, relevance, reason, backend, model) =
+            llm_validate_sticker_candidates(&caption, &intent, &draft, &candidates, &language).await;
+        if !backend.is_empty() {
+            last_backend = backend;
+        }
+        if !model.is_empty() {
+            last_model = model;
+        }
+
+        let best_sticker = best_idx.and_then(|bi| candidates.get(bi)).cloned();
+        match best_sticker {
+            Some(sticker) => validated.push(json!({
+                "id": id,
+                "caption": caption,
+                "intent": intent,
+                // Both spellings emitted so any consumer (keyword search OR
+                // direct-pick path) reads the same field it already expects.
+                "sticker_keywords": draft,
+                "draft_keywords": draft,
+                "final_keyword": final_keyword,
+                "approved": true,
+                "relevance": relevance,
+                "reason": reason,
+                "best_sticker": sticker,
+                "candidates": candidates,
+            })),
+            None => {
+                validated.push(json!({
+                    "id": id,
+                    "caption": caption,
+                    "intent": intent,
+                    "approved": false,
+                    "skip_reason": "relevance_rejected",
+                    "draft_keywords": draft,
+                }));
+                skipped.push(json!({
+                    "id": id,
+                    "reason": "relevance_rejected",
+                    "caption": caption,
+                }));
+            }
+        }
+    }
+
+    // `segments` carries EVERY processed segment (approved + rejected with a
+    // skip_reason) so sticker.auto_assign never falls back to caption-word
+    // queries for segments the relevance gate already rejected.
+    let approved_count = validated
+        .iter()
+        .filter(|s| s.get("approved").and_then(|v| v.as_bool()).unwrap_or(false))
+        .count();
+    Ok(json!({
+        "status": "validated",
+        "backend": last_backend,
+        "model": last_model,
+        "validated_count": approved_count,
+        "processed_count": validated.len(),
+        "skipped_count": skipped.len(),
+        "skipped": skipped,
+        "segments": validated,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Handler: sticker.auto — ONE-CALL agentic sticker pipeline (parallel to broll.auto)
 // segment.analyze → sticker.keywords → GIPHY search → download → place on Stickers track
 // ---------------------------------------------------------------------------
 
 async fn handle_sticker_auto(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path_arg = args.get("timeline_path").and_then(|v| v.as_str()).map(String::from);
-    let position = default_str(&args, "position", "top-right");
+    let position = default_str(&args, "position", "auto");
     let scale = default_f64(&args, "scale", 0.25);
     let max_stickers = default_u32(&args, "max_stickers", 12) as usize;
+    let min_gap_s = default_f64(&args, "min_gap_s", 2.0).max(0.0);
 
     // Stage A: resolve timeline + segments (same pattern as broll.auto)
     let (timeline_path, segments) = if let Some(tl) = &timeline_path_arg {
@@ -16776,46 +17155,92 @@ async fn handle_sticker_auto(args: serde_json::Value) -> Result<serde_json::Valu
         return Err(ToolError::InvalidArg("sticker.auto: no segments found — check SRT/timeline".into()));
     }
 
-    // Stage B: agentic keyword draft
-    report_progress(40.0, 100.0, "2/3 sticker.keywords (agentic draft)").await.ok();
+    // Stage B: agentic keyword draft (intent + emphatic)
+    report_progress(35.0, 100.0, "2/4 sticker.keywords (agentic intent draft)").await.ok();
     let drafts = handle_sticker_keywords(json!({
         "segments": segments,
         "language": default_str(&args, "language", "hinglish"),
         "max_batch_size": 15,
     }))
     .await?;
-    let enriched_segments = drafts.get("segments").cloned().unwrap_or_else(|| json!([]));
+    let mut enriched_segments = drafts.get("segments").cloned().unwrap_or_else(|| json!([]));
     let backend = drafts.get("backend").cloned().unwrap_or_else(|| json!(""));
 
-    // Stage C: search + download + place
-    report_progress(60.0, 100.0, "3/3 sticker.auto_assign (GIPHY + place)").await.ok();
+    // Stage C: relevance gate — approve only stickers that genuinely match the
+    // spoken intent (mirror of broll.validate_keywords). GIPHY/LLM-down ⇒ drafts
+    // pass through unchanged; auto_assign's fallbacks + spacing still apply.
+    report_progress(55.0, 100.0, "3/4 sticker.validate_keywords (relevance gate)").await.ok();
+    let validated = handle_sticker_validate_keywords(json!({
+        "enriched_segments": enriched_segments,
+        "language": default_str(&args, "language", "hinglish"),
+        "max_candidates": 4,
+    }))
+    .await?;
+    if validated.get("status").and_then(|v| v.as_str()) == Some("validated") {
+        enriched_segments = validated.get("segments").cloned().unwrap_or_else(|| json!([]));
+    }
+
+    // Stage D: search + download + place (approved picks download directly)
+    report_progress(70.0, 100.0, "4/4 sticker.auto_assign (GIPHY + place)").await.ok();
     let placed = handle_sticker_auto_assign(json!({
         "timeline_path": timeline_path,
         "enriched_segments": enriched_segments,
         "position": position,
         "scale": scale,
         "max_stickers": max_stickers,
+        "min_gap_s": min_gap_s,
     }))
     .await?;
 
     let stickers_placed = placed.get("events_created").and_then(|v| v.as_u64()).unwrap_or(0);
     let skipped = placed.get("skipped").cloned().unwrap_or_else(|| json!([]));
+    let skipped_count = placed.get("skipped_count").and_then(|v| v.as_u64()).unwrap_or_else(|| {
+        skipped.as_array().map(|a| a.len() as u64).unwrap_or(0)
+    });
     report_progress(100.0, 100.0, "sticker.auto complete").await.ok();
 
     Ok(json!({
         "status": if stickers_placed > 0 { "success" } else { "warning" },
         "message": format!(
-            "Sticker pipeline complete: {} segment(s) decorated with GIPHY stickers ({} placed).",
+            "Sticker pipeline complete: {} segment(s) analyzed, {} sticker(s) placed, {} skipped (see skipped reasons: intent gate / relevance gate / spacing).",
             segments.len(),
-            stickers_placed
+            stickers_placed,
+            skipped_count
         ),
         "timeline_path": timeline_path,
         "segments_count": segments.len(),
         "stickers_placed": stickers_placed,
         "skipped": skipped,
         "sticker_keywords_backend": backend,
-        "pipeline": json!(["segment.analyze", "sticker.keywords", "sticker.auto_assign"]),
+        "pipeline": json!(["segment.analyze", "sticker.keywords", "sticker.validate_keywords", "sticker.auto_assign"]),
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Pure gating helpers (unit-tested): position cycling + placement spacing
+// ---------------------------------------------------------------------------
+
+/// Resolve the anchor position for the Nth placed sticker. "auto" cycles the
+/// anchor so a sticker run is visually varied and never crowds one corner;
+/// any explicit position passes through unchanged (manual override). The cycle
+/// stays clear of the center-screen caption zone.
+fn sticker_place_position(position: &str, placed_idx: usize) -> String {
+    if position != "auto" {
+        return position.to_string();
+    }
+    const CYCLE: [&str; 4] = ["top-right", "bottom-right", "center-left", "bottom-left"];
+    CYCLE[placed_idx % CYCLE.len()].to_string()
+}
+
+/// Spacing gate: a sticker may be placed only when the segment starts at least
+/// `min_gap_s` after the previous sticker's end. Prevents sticker spam on
+/// consecutive segments (the E2E test placed a sticker on nearly every
+/// segment, all at the same anchor).
+fn sticker_spacing_allowed(prev_end_s: Option<f64>, seg_start_s: f64, min_gap_s: f64) -> bool {
+    match prev_end_s {
+        Some(prev) => seg_start_s >= prev + min_gap_s,
+        None => true,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -16828,9 +17253,13 @@ async fn handle_sticker_auto(args: serde_json::Value) -> Result<serde_json::Valu
 async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let timeline_path = extract_str(&args, "timeline_path")?;
     let sticker_query: Option<String> = args.get("sticker_query").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let position = default_str(&args, "position", "top-right");
+    // "auto" (default) cycles anchors for visual variety; an explicit position
+    // (e.g. "top-right") anchors every sticker there (manual override).
+    let position = default_str(&args, "position", "auto");
     let scale = default_f64(&args, "scale", 0.25);
     let max_stickers = default_u32(&args, "max_stickers", 10) as usize;
+    // Minimum seconds between consecutive sticker placements (spacing gate).
+    let min_gap_s = default_f64(&args, "min_gap_s", 2.0).max(0.0);
     let enriched_segments: Vec<serde_json::Value> = args
         .get("enriched_segments")
         .and_then(|v| v.as_array())
@@ -16851,6 +17280,13 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
 
     // Map segment id → sticker_keywords from sticker.keywords output, if given.
     let mut keyword_by_seg: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    // Map segment id → validated segment (sticker.validate_keywords output).
+    // When present, the approved sticker is downloaded DIRECTLY (no re-search)
+    // and the relevance gate is respected.
+    let mut best_sticker_by_seg: std::collections::HashMap<String, serde_json::Value> = std::collections::HashMap::new();
+    // Map segment id → skip_reason from the relevance/intent gate. Segments the
+    // gate rejected MUST NOT fall back to caption-word queries.
+    let mut skip_reason_by_seg: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     for es in &enriched_segments {
         if let Some(id) = es.get("id").and_then(|v| v.as_str()) {
             let kws: Vec<String> = es
@@ -16860,6 +17296,19 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
                 .unwrap_or_default();
             if !kws.is_empty() {
                 keyword_by_seg.insert(id.to_string(), kws);
+            }
+            if let Some(r) = es.get("skip_reason").and_then(|v| v.as_str()) {
+                skip_reason_by_seg.insert(id.to_string(), r.to_string());
+            }
+            // Approved validated picks only — never auto-place an unapproved one.
+            let has_best_url = es
+                .get("best_sticker")
+                .and_then(|v| v.get("url"))
+                .and_then(|v| v.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            if es.get("approved").and_then(|v| v.as_bool()).unwrap_or(false) && has_best_url {
+                best_sticker_by_seg.insert(id.to_string(), es.clone());
             }
         }
     }
@@ -16875,62 +17324,113 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
     let stickers_dir = std::path::PathBuf::from("mcp/assets/stickers");
     let _ = std::fs::create_dir_all(&stickers_dir);
 
+    let mut last_sticker_end_s: Option<f64> = None;
+    let mut placed_count = 0usize;
     for seg in segments.iter() {
         if events_created.len() >= max_stickers { break; }
 
-        // Derive query: per-segment enriched keywords > global override > caption words
-        let query = if let Some(ref q) = sticker_query {
-            q.clone()
-        } else {
-            let seg_id = seg.id.clone();
-            keyword_by_seg
-                .get(&seg_id)
-                .and_then(|kws| kws.first().cloned())
-                .or_else(|| {
-                    let words: Vec<&str> = seg.caption.split_whitespace().filter(|w: &&str| w.len() > 3).take(3).collect();
-                    if words.is_empty() { Some("funny".to_string()) } else { Some(words.join(" ")) }
-                })
-                .unwrap_or_else(|| "funny".to_string())
-        };
-        let url = reqwest::Url::parse_with_params(
-            "https://api.giphy.com/v1/stickers/search",
-            &[
-                ("api_key", giphy_api_key.as_str()),
-                ("q", query.as_str()),
-                ("limit", "3"),
-                ("rating", "g"),
-                ("bundle", "sticker_layering"),
-            ],
-        )
-        .map_err(|e| ToolError::InvalidArg(format!("URL parse: {}", e)))?;
+        let seg_id = seg.id.clone();
+        // Honored rejection: the intent/relevance gate already decided this
+        // segment gets no sticker — never fall back to caption-word queries
+        // (that fallback IS the irrelevance bug). An explicit sticker_query is
+        // a manual override and bypasses the gate.
+        if sticker_query.is_none() {
+            if let Some(reason) = skip_reason_by_seg.get(&seg_id) {
+                skipped.push(json!({
+                    "segment_id": seg.id,
+                    "reason": reason.clone(),
+                    "query": String::new(),
+                }));
+                continue;
+            }
+        }
 
-        let resp = match http.get(url).send().await {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
-        if !resp.status().is_success() { continue; }
-        let body: serde_json::Value = match resp.json().await {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let data = body.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
-        if data.is_empty() {
-            skipped.push(json!({"segment_id": seg.id, "query": query, "reason": "no GIPHY results"}));
+        // Spacing gate: never place a sticker adjacent to the previous one
+        // (min_gap_s between the previous sticker's end and this segment start).
+        if !sticker_spacing_allowed(last_sticker_end_s, seg.start, min_gap_s) {
+            skipped.push(json!({
+                "segment_id": seg.id,
+                "reason": "adjacent_spacing",
+                "detail": format!(
+                    "segment starts {:.1}s after previous sticker's end (min gap {:.1}s)",
+                    seg.start - last_sticker_end_s.unwrap_or(0.0),
+                    min_gap_s
+                ),
+            }));
             continue;
         }
 
-        // Pick the first result whose original URL is downloadable.
+        // Validated pick (sticker.validate_keywords) → download DIRECTLY, no
+        // re-search; query = final_keyword (provenance + observability).
+        let mut query = String::new();
         let mut chosen_url = String::new();
         let mut chosen_title = String::new();
-        for item in &data {
-            let u = item.pointer("/images/original/url").and_then(|v| v.as_str()).unwrap_or("");
-            if !u.is_empty() {
-                chosen_url = u.to_string();
-                chosen_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                break;
+        if let Some(vs) = best_sticker_by_seg.get(&seg_id) {
+            if let Some(bs) = vs.get("best_sticker") {
+                query = vs
+                    .get("final_keyword")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| bs.get("title").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string();
+                chosen_url = bs.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                chosen_title = bs.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
             }
         }
-        if chosen_url.is_empty() { continue; }
+
+        if chosen_url.is_empty() {
+            // Derive query: per-segment enriched keywords > global override > caption words
+            query = if let Some(ref q) = sticker_query {
+                q.clone()
+            } else {
+                keyword_by_seg
+                    .get(&seg_id)
+                    .and_then(|kws| kws.first().cloned())
+                    .or_else(|| {
+                        let words: Vec<&str> = seg.caption.split_whitespace().filter(|w: &&str| w.len() > 3).take(3).collect();
+                        if words.is_empty() { Some("funny".to_string()) } else { Some(words.join(" ")) }
+                    })
+                    .unwrap_or_else(|| "funny".to_string())
+            };
+            let url = reqwest::Url::parse_with_params(
+                "https://api.giphy.com/v1/stickers/search",
+                &[
+                    ("api_key", giphy_api_key.as_str()),
+                    ("q", query.as_str()),
+                    ("limit", "3"),
+                    ("rating", "g"),
+                    ("bundle", "sticker_layering"),
+                ],
+            )
+            .map_err(|e| ToolError::InvalidArg(format!("URL parse: {}", e)))?;
+
+            let resp = match http.get(url).send().await {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            if !resp.status().is_success() { continue; }
+            let body: serde_json::Value = match resp.json().await {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let data = body.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+            if data.is_empty() {
+                skipped.push(json!({"segment_id": seg.id, "query": query, "reason": "no GIPHY results"}));
+                continue;
+            }
+
+            // Pick the first result whose original URL is downloadable.
+            for item in &data {
+                let u = item.pointer("/images/original/url").and_then(|v| v.as_str()).unwrap_or("");
+                if !u.is_empty() {
+                    chosen_url = u.to_string();
+                    chosen_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    break;
+                }
+            }
+            if chosen_url.is_empty() { continue; }
+        }
 
         // Download via the existing gif.download handler (cache-aware)
         let dl = handle_gif_download(json!({
@@ -16949,6 +17449,7 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
 
         // Place on the Stickers track. asset_id = event_id (registry key
         // convention used by broll.fetch) so the renderer resolves the path.
+        let place_pos = sticker_place_position(&position, placed_count);
         current_idx += 1;
         let event_id = format!("sticker_{:03}", current_idx);
         let start_ms = (seg.start * 1000.0) as i64;
@@ -16963,14 +17464,14 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
             gain_db: 0.0,
             fade_in_ms: 150,
             fade_out_ms: 150,
-            tags: vec!["sticker".to_string(), position.clone()],
+            tags: vec!["sticker".to_string(), place_pos.clone()],
             provenance: Some(openscript_core::timeline::Provenance {
                 tool: "sticker.auto_assign".into(),
                 editorial_role: Some("decoration".into()),
                 concept: Some(query.clone()),
             }),
             kind: openscript_core::timeline::EventKind::Broll {
-                concept: format!("overlay:{}", position),
+                concept: format!("overlay:{}", place_pos),
                 source_provider: asset_path_str.clone(),
                 transition_style: "overlay".into(),
                 crop_mode: "none".into(),
@@ -16982,17 +17483,20 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
         timeline.add_track_event(TrackType::Stickers, event);
         timeline.add_asset("broll", event_id.clone(), json!({
             "path": asset_path_str,
-            "position": position,
+            "position": place_pos,
             "scale": scale,
             "overlay": true,
         }));
         events_created.push(json!({
             "event_id": event_id,
             "position_ms": start_ms,
+            "position": place_pos,
             "sticker_path": asset_path_str,
             "query": query,
             "title": chosen_title,
         }));
+        last_sticker_end_s = Some(seg.end);
+        placed_count += 1;
     }
 
     timeline.save(timeline_path)?;
@@ -18305,6 +18809,33 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sticker_place_position_cycles_on_auto() {
+        // "auto" cycles the anchor so a sticker run is visually varied.
+        assert_eq!(sticker_place_position("auto", 0), "top-right");
+        assert_eq!(sticker_place_position("auto", 1), "bottom-right");
+        assert_eq!(sticker_place_position("auto", 2), "center-left");
+        assert_eq!(sticker_place_position("auto", 3), "bottom-left");
+        assert_eq!(sticker_place_position("auto", 4), "top-right"); // wraps
+        // Explicit position passes through unchanged (manual override).
+        assert_eq!(sticker_place_position("top-left", 5), "top-left");
+        assert_eq!(sticker_place_position("center", 0), "center");
+    }
+
+    #[test]
+    fn test_sticker_spacing_allowed_gate() {
+        // First sticker: always allowed.
+        assert!(sticker_spacing_allowed(None, 0.0, 2.0));
+        // Adjacent segment starts < min gap after previous end → blocked.
+        assert!(!sticker_spacing_allowed(Some(5.0), 6.0, 2.0));
+        // Exactly at the gap boundary → allowed.
+        assert!(sticker_spacing_allowed(Some(5.0), 7.0, 2.0));
+        // Well after → allowed.
+        assert!(sticker_spacing_allowed(Some(5.0), 12.0, 2.0));
+        // Zero gap → always allowed (legacy behavior).
+        assert!(sticker_spacing_allowed(Some(5.0), 5.0, 0.0));
+    }
 
     /// library.search returns results for keyword queries.
     #[tokio::test]

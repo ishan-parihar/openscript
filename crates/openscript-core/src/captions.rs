@@ -131,15 +131,16 @@ pub fn generate_ass(
 
     // Position → ASS Alignment + vertical margin. Alignment follows the
     // num-pad layout: 2 = bottom-center, 5 = middle-center, 8 = top-center.
-    // Bottom is the shorts convention — captions sit in the lower safe zone,
-    // clear of the subject. This FIXES the caption-position bug: `spec.position`
-    // was previously parsed but never honored, so every style hardcoded
-    // Alignment=5 (mid-screen) and captions rendered over the subject.
+    // Center is the product default — captions sit mid-screen, clear of the
+    // subject and of bottom safe-zone UI. This FIXES the caption-position bug:
+    // `spec.position` was previously parsed but never honored, so every style
+    // hardcoded Alignment=5 while callers asked for bottom — and captions
+    // rendered over the subject.
     let (alignment, margin_v) = match spec.position.as_str() {
         "top" => (8u32, canvas_height / 20),
-        "center" => (5u32, canvas_height / 6),
-        // "bottom" (and anything unknown) → bottom-center safe zone
-        _ => (2u32, canvas_height / 20),
+        "bottom" => (2u32, canvas_height / 20),
+        // "center" (and anything unknown) → middle-center
+        _ => (5u32, canvas_height / 6),
     };
     // Default style — bold, with outline and shadow.
     // Use the spec's caption color (not hardcoded white) so the calm
@@ -544,6 +545,29 @@ mod tests {
                 default_style
             );
         }
+    }
+
+    #[test]
+    fn test_generate_ass_default_position_is_center() {
+        // Product default: captions render center-screen (Alignment 5).
+        let spec = CaptionsSpec::default();
+        assert_eq!(spec.position, "center", "default position must be center");
+        let segments = vec![CaptionSegment {
+            text: "hello world".to_string(),
+            start_ms: 0,
+            end_ms: 2000,
+            words: estimate_word_timings("hello world", 0, 2000),
+        }];
+        let ass = generate_ass(&segments, &spec, 1080, 1920);
+        let default_style = ass
+            .lines()
+            .find(|l| l.starts_with("Style: Default"))
+            .unwrap_or("");
+        assert!(
+            default_style.ends_with("1,5,2,5,80,80,320,1"),
+            "default style must be middle-center (Alignment 5), got: {}",
+            default_style
+        );
     }
 
     #[test]
