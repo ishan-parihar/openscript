@@ -27,6 +27,34 @@ pub struct CaptionSegment {
     pub words: Vec<WordTiming>,
 }
 
+/// Ensure segments carry REAL word-level timings for word-based styles
+/// (word_highlight, karaoke_fill).
+///
+/// When the source transcript is phrase-level (no per-word timestamps — e.g.
+/// the A2V hinglish-ggml SRT), the SRT parser + grouping produces synthetic
+/// "words" that contain the ENTIRE phrase (one per SRT cue, or several when
+/// `group_entries_with_words` merges cues up to max_words). Feeding those to
+/// `word_highlight` wraps large chunks — or the whole line — in the highlight
+/// color, rendering the captions as a dim green block that is effectively
+/// invisible on footage (the A2V caption-invisibility bug). Splitting any
+/// whitespace-bearing synthetic word into even-spaced estimates restores the
+/// intended white text with only the current word highlighted. Genuine
+/// single-word captions ("Wow!") are left untouched.
+pub fn normalize_word_timings(segments: &mut [CaptionSegment]) {
+    for seg in segments.iter_mut() {
+        let has_embedded_whitespace = seg
+            .words
+            .iter()
+            .any(|w| w.word.trim().contains(char::is_whitespace));
+        if !has_embedded_whitespace {
+            continue;
+        }
+        // Rebuild ALL words from the segment text with even-spaced estimates
+        // across the segment window (the synthetic words carry no real timing).
+        seg.words = estimate_word_timings(&seg.text, seg.start_ms, seg.end_ms);
+    }
+}
+
 /// Generate word timings for a text segment given its overall duration.
 ///
 /// If TTS returns word-level timestamps, use those. Otherwise, estimate
@@ -101,26 +129,38 @@ pub fn generate_ass(
     let primary_color = hex_to_ass_color(&spec.color);
     let highlight_color = hex_to_ass_color(&spec.highlight_color);
 
-    // Default style — center of screen, bold, with outline and shadow.
+    // Position → ASS Alignment + vertical margin. Alignment follows the
+    // num-pad layout: 2 = bottom-center, 5 = middle-center, 8 = top-center.
+    // Bottom is the shorts convention — captions sit in the lower safe zone,
+    // clear of the subject. This FIXES the caption-position bug: `spec.position`
+    // was previously parsed but never honored, so every style hardcoded
+    // Alignment=5 (mid-screen) and captions rendered over the subject.
+    let (alignment, margin_v) = match spec.position.as_str() {
+        "top" => (8u32, canvas_height / 20),
+        "center" => (5u32, canvas_height / 6),
+        // "bottom" (and anything unknown) → bottom-center safe zone
+        _ => (2u32, canvas_height / 20),
+    };
+    // Default style — bold, with outline and shadow.
     // Use the spec's caption color (not hardcoded white) so the calm
     // theme's cream text (#F5F0E8) flows through to the ASS renderer.
     // (Round-2 UX audit GAP #13 fix — caption color was drifting to white.)
-    // Alignment=5 means middle-center
-    let margin_v = canvas_height / 6; // push captions toward center area
     out.push_str(&format!(
-        "Style: Default,{},{},{},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,5,80,80,{},1\n",
+        "Style: Default,{},{},{},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,{},80,80,{},1\n",
         spec.font,
         spec.font_size,
         primary_color,
+        alignment,
         margin_v,
     ));
 
     // Highlight style — same position, highlight color, bold
     out.push_str(&format!(
-        "Style: Highlight,{},{},{},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,5,80,80,{},1\n",
+        "Style: Highlight,{},{},{},&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,{},80,80,{},1\n",
         spec.font,
         spec.font_size,
         highlight_color,
+        alignment,
         margin_v,
     ));
 
@@ -132,18 +172,23 @@ pub fn generate_ass(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
     );
 
+    // Phrase-level transcripts must be split into real word timings BEFORE
+    // word-based styles render, otherwise the whole line is highlighted.
+    let mut segments = segments.to_vec();
+    normalize_word_timings(&mut segments);
+
     match spec.style.as_str() {
         "word_highlight" => {
-            generate_word_highlight(&mut out, segments, spec, primary_color, highlight_color)
+            generate_word_highlight(&mut out, &segments, spec, primary_color, highlight_color)
         }
-        "sentence_fade" => generate_sentence_fade(&mut out, segments, spec),
+        "sentence_fade" => generate_sentence_fade(&mut out, &segments, spec),
         "karaoke_fill" => {
-            generate_karaoke_fill(&mut out, segments, spec, primary_color, highlight_color)
+            generate_karaoke_fill(&mut out, &segments, spec, primary_color, highlight_color)
         }
         "subtitle_rail" => {
-            generate_subtitle_rail(&mut out, segments, spec, canvas_width, canvas_height)
+            generate_subtitle_rail(&mut out, &segments, spec, canvas_width, canvas_height)
         }
-        _ => generate_word_highlight(&mut out, segments, spec, primary_color, highlight_color),
+        _ => generate_word_highlight(&mut out, &segments, spec, primary_color, highlight_color),
     }
 
     out
@@ -456,11 +501,149 @@ mod tests {
             ass.contains("{\\c"),
             "Should contain valid ASS color override tags"
         );
-        // Should use center alignment (Alignment=5)
+        // Default (bottom) position → bottom-center alignment (2) in the
+        // num-pad layout, with a safe-zone bottom margin (1920/20 = 96).
+        // Regression test for the caption-position bug: position was parsed
+        // but ignored, and Alignment was hardcoded to 5 (mid-screen).
         assert!(
-            ass.contains(",5,"),
-            "Should use center alignment (Alignment=5)"
+            ass.contains("Style: Default,Bebas Neue,72,&H00ffffff,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,2,2,80,80,96,1"),
+            "Default style should use Alignment=2 (bottom-center) with 96px margin, got: {}",
+            ass.lines()
+                .find(|l| l.starts_with("Style: Default"))
+                .unwrap_or("")
         );
+    }
+
+    #[test]
+    fn test_generate_ass_position_mapping() {
+        // position must be honored: bottom → Alignment 2, center → 5, top → 8.
+        let cases = [
+            ("bottom", "1,5,2,2,80,80,96,1"),
+            ("center", "1,5,2,5,80,80,320,1"),
+            ("top", "1,5,2,8,80,80,96,1"),
+        ];
+        for (position, style_suffix) in cases {
+            let mut spec = test_spec();
+            spec.position = position.to_string();
+            let segments = vec![CaptionSegment {
+                text: "hello world".to_string(),
+                start_ms: 0,
+                end_ms: 2000,
+                words: estimate_word_timings("hello world", 0, 2000),
+            }];
+            let ass = generate_ass(&segments, &spec, 1080, 1920);
+            let default_style = ass
+                .lines()
+                .find(|l| l.starts_with("Style: Default"))
+                .unwrap_or("");
+            assert!(
+                default_style.ends_with(style_suffix),
+                "position '{}': expected style suffix '{}', got: {}",
+                position,
+                style_suffix,
+                default_style
+            );
+        }
+    }
+
+    #[test]
+    fn test_normalize_word_timings_splits_phrase_level() {
+        // Phrase-level SRT: one synthetic "word" holds the whole phrase.
+        let mut segments = vec![CaptionSegment {
+            text: "hello world test".to_string(),
+            start_ms: 0,
+            end_ms: 3000,
+            words: vec![WordTiming {
+                word: "hello world test".to_string(),
+                start_ms: 0,
+                end_ms: 3000,
+            }],
+        }];
+        normalize_word_timings(&mut segments);
+        assert_eq!(segments[0].words.len(), 3, "phrase should split into words");
+        assert_eq!(segments[0].words[0].word, "hello");
+        assert_eq!(segments[0].words[1].word, "world");
+        // Timings stay within the segment window.
+        assert!(segments[0].words[0].start_ms >= 0);
+        assert!(segments[0].words[2].end_ms <= 3000);
+    }
+
+    #[test]
+    fn test_normalize_word_timings_splits_merged_phrases() {
+        // group_entries_with_words can merge several phrase-level cues into
+        // one segment: 2+ synthetic "words", each holding multi-word text.
+        let mut segments = vec![CaptionSegment {
+            text: "hello world test again".to_string(),
+            start_ms: 0,
+            end_ms: 4000,
+            words: vec![
+                WordTiming {
+                    word: "hello world".to_string(),
+                    start_ms: 0,
+                    end_ms: 2000,
+                },
+                WordTiming {
+                    word: "test again".to_string(),
+                    start_ms: 2000,
+                    end_ms: 4000,
+                },
+            ],
+        }];
+        normalize_word_timings(&mut segments);
+        assert_eq!(segments[0].words.len(), 4, "merged phrases must split into words");
+        assert_eq!(segments[0].words[0].word, "hello");
+        assert_eq!(segments[0].words[3].word, "again");
+    }
+
+    #[test]
+    fn test_normalize_word_timings_leaves_single_word() {
+        let mut segments = vec![CaptionSegment {
+            text: "Wow!".to_string(),
+            start_ms: 0,
+            end_ms: 1000,
+            words: vec![WordTiming {
+                word: "Wow!".to_string(),
+                start_ms: 0,
+                end_ms: 1000,
+            }],
+        }];
+        normalize_word_timings(&mut segments);
+        assert_eq!(segments[0].words.len(), 1, "single word stays untouched");
+    }
+
+    #[test]
+    fn test_word_highlight_phrase_level_renders_white_text() {
+        // A phrase-level segment must render white text with only the current
+        // word highlighted — the regression behind the invisible captions.
+        let mut spec = test_spec();
+        spec.style = "word_highlight".to_string();
+        let segments = vec![CaptionSegment {
+            text: "hello world test".to_string(),
+            start_ms: 0,
+            end_ms: 3000,
+            words: vec![WordTiming {
+                word: "hello world test".to_string(),
+                start_ms: 0,
+                end_ms: 3000,
+            }],
+        }];
+        let ass = generate_ass(&segments, &spec, 1080, 1920);
+        // First word highlighted, then an immediate white reset before the
+        // remaining words — NOT a green wrap around the whole line.
+        assert!(
+            ass.contains("hello{\\c&H00ffffff\\fscx100\\fscy100} world test"),
+            "plain words must follow the white reset right after the highlighted word"
+        );
+        // The highlight color must never wrap the entire line: no dialogue
+        // whose text ends with the white reset after ALL words are green.
+        for line in ass.lines().filter(|l| l.starts_with("Dialogue:")) {
+            let after = line.split(",,,").nth(1).unwrap_or("");
+            assert!(
+                !after.starts_with("{\\fad(80,80)\\c&H0088ff00") || after.contains("{\\c&H00ffffff"),
+                "green highlight must always be closed with a white reset: {}",
+                line
+            );
+        }
     }
 
     #[test]

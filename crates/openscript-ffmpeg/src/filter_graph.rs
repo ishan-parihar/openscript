@@ -678,9 +678,12 @@ impl FilterGraphBuilder {
     /// 2. Chain segments with xfade/acrossfade for smooth crossfades
     /// 3. FPS normalization
     /// 4. Aspect ratio handling (9:16 center crop)
-    /// 5. Subtitle burn-in (ASS or SRT)
-    /// 6. Overlay MOV (PupCaps captions)
-    /// 7. Audio loudnorm
+    /// 5. B-roll overlays (full-frame, on top of base video)
+    /// 6. Sticker PiP overlays (positioned, on top of b-roll)
+    /// 7. Subtitle burn-in (ASS or SRT) — AFTER b-roll/stickers so captions
+    ///    are not covered by full-frame overlays
+    /// 8. Overlay MOV (PupCaps captions)
+    /// 9. Audio loudnorm
     pub fn build(self) -> (String, String, String) {
         if self.segments.is_empty() {
             return (String::new(), "[0:v]".into(), "[0:a]".into());
@@ -895,51 +898,6 @@ impl FilterGraphBuilder {
             vout = "[vcrop]".to_string();
         }
 
-        // Subtitle burn-in (ASS or SRT) — always burn in, overlay MOV goes on top
-        if let Some(ass) = &self.ass_path {
-            if let Ok(escaped) = escape_filter_path(ass) {
-                let filter = if let Some(fonts_dir) = &self.fonts_dir {
-                    format!(
-                        "[{}]subtitles='{}':fontsdir='{}'[vsub]",
-                        &vout[1..vout.len() - 1],
-                        escaped,
-                        fonts_dir
-                    )
-                } else {
-                    format!(
-                        "[{}]subtitles='{}'[vsub]",
-                        &vout[1..vout.len() - 1],
-                        escaped
-                    )
-                };
-                parts.push(filter);
-                vout = "[vsub]".into();
-            } else {
-                tracing::warn!("[filter_graph] Skipping ASS subtitles (escape failed)");
-            }
-        } else if let Some(srt) = &self.srt_path {
-            if let Ok(escaped) = escape_filter_path(srt) {
-                let filter = if let Some(fonts_dir) = &self.fonts_dir {
-                    format!(
-                        "[{}]subtitles='{}':fontsdir='{}'[vsub]",
-                        &vout[1..vout.len() - 1],
-                        escaped,
-                        fonts_dir
-                    )
-                } else {
-                    format!(
-                        "[{}]subtitles='{}'[vsub]",
-                        &vout[1..vout.len() - 1],
-                        escaped
-                    )
-                };
-                parts.push(filter);
-                vout = "[vsub]".into();
-            } else {
-                tracing::warn!("[filter_graph] Skipping SRT subtitles (escape failed)");
-            }
-        }
-
         // B-roll overlays — each b-roll event overlays at its timestamp.
         // Note: placeholder/empty paths are already filtered by with_broll().
         if !self.broll_events.is_empty() {
@@ -1133,7 +1091,11 @@ impl FilterGraphBuilder {
                     }
                 };
 
-                // Sticker width = scale × canvas width; height keeps aspect.
+                // Sticker width = scale × canvas width. We scale to FIT WITHIN
+                // an sw×sw box (force_original_aspect_ratio=decrease) and then
+                // pad to exactly sw×sw. The -2 (auto-height) variant would let
+                // portrait GIFs exceed the pad box and crash ffmpeg with
+                // "Padded dimensions cannot be smaller than input dimensions".
                 // Use even pixels so pad/overlay never see odd dimensions.
                 let sw = ((self.width as f64 * sticker.scale).round() as u32).max(2) & !1;
                 let (tl_x, tl_y) = sticker_position(&sticker.position, self.width, self.height, sw);
@@ -1146,9 +1108,10 @@ impl FilterGraphBuilder {
                         escaped_path, i
                     ));
                     parts.push(format!(
-                        "[stk_raw{}]fps={},scale={}:-2:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS+{:.3}/TB[stk_src_{}]",
+                        "[stk_raw{}]fps={},scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS+{:.3}/TB[stk_src_{}]",
                         i,
                         self.fps,
+                        sw,
                         sw,
                         sw,
                         sw,
@@ -1162,9 +1125,10 @@ impl FilterGraphBuilder {
                         escaped_path, i
                     ));
                     parts.push(format!(
-                        "[stk_raw{}]fps={},scale={}:-2:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS+{:.3}/TB[stk_src_{}]",
+                        "[stk_raw{}]fps={},scale={}:{}:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS+{:.3}/TB[stk_src_{}]",
                         i,
                         self.fps,
+                        sw,
                         sw,
                         sw,
                         sw,
@@ -1186,6 +1150,56 @@ impl FilterGraphBuilder {
                 current_v = format!("[{}]", out_label);
             }
             vout = current_v;
+        }
+
+        // Subtitle burn-in (ASS or SRT) — applied AFTER b-roll + stickers so
+        // the full-frame b-roll overlays do NOT paint over the captions (the
+        // A2V caption-invisibility bug: subtitles used to burn onto the base
+        // video first, then every b-roll overlay=0:0 covered them completely,
+        // leaving the rendered video caption-less). Only the legacy overlay
+        // MOV (PupCaps) composites above captions.
+        if let Some(ass) = &self.ass_path {
+            if let Ok(escaped) = escape_filter_path(ass) {
+                let filter = if let Some(fonts_dir) = &self.fonts_dir {
+                    format!(
+                        "[{}]subtitles='{}':fontsdir='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped,
+                        fonts_dir
+                    )
+                } else {
+                    format!(
+                        "[{}]subtitles='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped
+                    )
+                };
+                parts.push(filter);
+                vout = "[vsub]".into();
+            } else {
+                tracing::warn!("[filter_graph] Skipping ASS subtitles (escape failed)");
+            }
+        } else if let Some(srt) = &self.srt_path {
+            if let Ok(escaped) = escape_filter_path(srt) {
+                let filter = if let Some(fonts_dir) = &self.fonts_dir {
+                    format!(
+                        "[{}]subtitles='{}':fontsdir='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped,
+                        fonts_dir
+                    )
+                } else {
+                    format!(
+                        "[{}]subtitles='{}'[vsub]",
+                        &vout[1..vout.len() - 1],
+                        escaped
+                    )
+                };
+                parts.push(filter);
+                vout = "[vsub]".into();
+            } else {
+                tracing::warn!("[filter_graph] Skipping SRT subtitles (escape failed)");
+            }
         }
 
         // Overlay MOV (PupCaps captions) — composites the MOV on top of the video
@@ -1970,9 +1984,11 @@ mod tests {
             .with_stickers(stickers)
             .build();
 
-        // GIF loop + contain-scale + transparent pad
+        // GIF loop + contain-scale (fit within sw×sw box, then pad — portrait
+        // GIFs must not exceed the pad box or ffmpeg aborts with
+        // "Padded dimensions cannot be smaller than input dimensions")
         assert!(filter.contains("movie='/path/to/reaction.gif':loop=1:si=-1[stk_raw0]"));
-        assert!(filter.contains("scale=270:-2:force_original_aspect_ratio=decrease"));
+        assert!(filter.contains("scale=270:270:force_original_aspect_ratio=decrease"));
         assert!(filter.contains("pad=270:270"));
         assert!(filter.contains("format=rgba"));
         // Positioned overlay: top-right on 1080w with 0.25 scale (270px) + 40 margin

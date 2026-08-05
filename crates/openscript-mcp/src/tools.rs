@@ -93,7 +93,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "font_size": {"type": "integer", "default": 84, "description": "Font size in pixels"},
                     "color": {"type": "string", "default": "#ffffff", "description": "Primary caption color (hex)"},
                     "highlight_color": {"type": "string", "default": "#00ff88", "description": "Word highlight color for word_highlight style (hex)"},
-                    "position": {"type": "string", "default": "center", "description": "Caption position: 'center' or 'bottom'"},
+                    "position": {"type": "string", "default": "bottom", "description": "Caption position: 'bottom' (shorts safe zone, default), 'center', or 'top'"},
                     "safe_zone": {"type": "number", "default": 0.85, "description": "Vertical safe zone (0.0-1.0) for caption placement"},
                     "max_words_per_line": {"type": "integer", "default": 5, "description": "Max words per displayed line"},
                     "width": {"type": "integer", "default": 1080, "description": "Video width in pixels"},
@@ -209,7 +209,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "sfx": {"type": "array", "items": {"type": "object", "properties": {"role": {"type": "string"}, "at_s": {"type": "number"}}}, "description": "Sound effects: editorial role (whoosh, pop, hit, riser) and placement time in seconds"},
                     "music": {"anyOf": [{"type": "object", "properties": {"mood": {"type": "string"}, "energy": {"type": "string"}, "gain_db": {"type": "number"}, "duck_under_dialogue": {"type": "boolean"}}}, {"type": "null"}], "description": "Background music: mood, energy, volume level, and whether to duck under dialogue"},
                     "voiceover": {"type": "array", "items": {"type": "object", "properties": {"text": {"type": "string"}, "position_s": {"type": "number"}, "voice_profile_id": {"type": "string"}, "speed": {"type": "number"}, "gain_db": {"type": "number"}}}, "description": "TTS voiceover events: script text, placement, and voice profile"},
-                    "captions": {"type": "object", "properties": {"enabled": {"type": "boolean", "default": true}, "style": {"type": "string", "enum": ["standard", "kinetic"], "default": "standard"}, "position": {"type": "string", "enum": ["center", "bottom"], "default": "center"}}, "description": "Caption style: standard (full-sentence ASS) or kinetic (word-by-word viral style)"},
+                    "captions": {"type": "object", "properties": {"enabled": {"type": "boolean", "default": true}, "style": {"type": "string", "enum": ["standard", "kinetic"], "default": "standard"}, "position": {"type": "string", "enum": ["center", "bottom"], "default": "bottom"}}, "description": "Caption style: standard (full-sentence ASS) or kinetic (word-by-word viral style); position defaults to bottom safe zone"},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output video path (auto-generated if omitted)"},
                     "crf": {"type": "integer", "default": 20, "description": "Video quality (18-28 range)"}
                 },
@@ -1972,7 +1972,7 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
     let font_size = default_u32(&args, "font_size", 84);
     let color = default_str(&args, "color", "#ffffff");
     let highlight_color = default_str(&args, "highlight_color", "#00ff88");
-    let position = default_str(&args, "position", "center");
+    let position = default_str(&args, "position", "bottom");
     let safe_zone = args.get("safe_zone").and_then(|v| v.as_f64()).unwrap_or(0.85);
     let max_words_per_line = default_u32(&args, "max_words_per_line", 5);
     let width = default_u32(&args, "width", 1080);
@@ -6583,7 +6583,7 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
         let mut cap_args = json!({
             "timeline_path": timeline_path,
             "style": "word_highlight",
-            "position": "center",
+            "position": "bottom",
         });
         if let Some(ref sp) = srt_path {
             if let Some(obj) = cap_args.as_object_mut() {
