@@ -202,14 +202,15 @@ fn test_timeline_edl_v1_upgrade() {
 fn test_timeline_all_tracks_initialized() {
     let timeline = Timeline::new(PathBuf::from("/tmp/test.mp4"), "9:16", 30, None);
 
-    // All 6 track types should be initialized
-    assert_eq!(timeline.tracks.len(), 6);
+    // All 7 track types should be initialized
+    assert_eq!(timeline.tracks.len(), 7);
     assert!(timeline.tracks.contains_key(&TrackType::Dialogue));
     assert!(timeline.tracks.contains_key(&TrackType::Voiceover));
     assert!(timeline.tracks.contains_key(&TrackType::Captions));
     assert!(timeline.tracks.contains_key(&TrackType::Broll));
     assert!(timeline.tracks.contains_key(&TrackType::Music));
     assert!(timeline.tracks.contains_key(&TrackType::Sfx));
+    assert!(timeline.tracks.contains_key(&TrackType::Stickers));
 
     // All should be empty
     for (track, events) in &timeline.tracks {

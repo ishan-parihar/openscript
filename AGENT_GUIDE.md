@@ -22,7 +22,7 @@
 | library | 3 | search, download, build |
 | overlay | 2 | generate, assign |
 | background | 3 | fetch, assign, search |
-| sticker | 2 | presets, load_preset, render |
+| sticker | 6 | presets, load_preset, render, keywords, auto, auto_assign |
 | stock | 2 | fetch, search |
 | youtube | 2 | search, download |
 | media | 2 | search, download |
@@ -75,10 +75,12 @@ script.generate_voices → script.build_captions → background.fetch → script
 
 **Agentic pipeline (RECOMMENDED):**
 ```
-0. broll.auto             — ONE-CALL: runs steps 3–6 + 9–10 for you (segment.analyze →
-                           broll.keywords → broll.validate_keywords → broll.fetch →
-                           timeline.validate → broll.repair loop until 0 gaps remain).
-                           Feed it an SRT + audio; get back a fully covered timeline.
+0. broll.auto             — ONE-CALL FINALIZED: runs the ENTIRE A2V trajectory for you
+                           (segment.analyze → broll.keywords → broll.validate_keywords →
+                           broll.fetch → timeline.validate → broll.repair loop until 0 gaps,
+                           then sticker.auto agentic GIPHY stickers → captions.generate_ass).
+                           Feed it an SRT + audio; get back a fully covered timeline with
+                           stickers and styled captions, ready for music + render.
 1. transcribe             — Hinglish SRT from audio
 2. srt.prepare            — Group words into caption segments
 3. segment.analyze        — Sentence-aware segments (2–6s, docs/SEGMENTATION_ARCHITECTURE.md)
@@ -86,12 +88,13 @@ script.generate_voices → script.build_captions → background.fetch → script
 5. broll.validate_keywords— STAGE 2 (relevance-validation): agent scores REAL Pexels candidates
                            (video names/durations) against the spoken caption → final keywords + best video
 6. broll.fetch            — Download + auto-place the validated clips on the timeline
-7. music.assign           — Add background music
-8. captions.generate_ass  — Generate styled captions
-9. timeline.validate      — Check for errors (segmentation bounds + BROLL_GAP coverage)
-10. broll.repair          — ONLY if BROLL_GAP errors: heals gaps by re-running the agentic
-                            keyword→validate→fetch loop for those segments, with full timeline context
-11. timeline.render       — Render final video
+7. sticker.auto           — ONE-CALL sticker pipeline (parallel to broll): segment → sticker.keywords
+                           (agent picks the IDEAL GIPHY sticker keyword per segment) → GIPHY search →
+                           download → place on the Stickers track (caption-safe, positioned PiP)
+8. music.assign           — Add background music
+9. captions.generate_ass  — Generate styled captions (word_highlight ASS, registered in timeline)
+10. timeline.validate     — Check for errors (segmentation bounds + BROLL_GAP coverage)
+11. timeline.render       — Render final video (b-roll full-frame + stickers as positioned PiP overlays)
 ```
 
 **Key:** The keyword generation is AGENTIC, not deterministic — it never relies on a hardcoded
@@ -136,7 +139,7 @@ before and after repair.
 |------|--------|----------|--------|
 | B-roll | `broll.auto` (one-call) or `broll.keywords` → `broll.validate_keywords` → `broll.fetch` | `broll.fetch(download=true)` | `broll.assign` / `broll.repair` (gap healing) |
 | Images | `media.search` | `media.download` | `overlay.assign` |
-| GIFs | `gif.search` | `gif.download` | `overlay.assign` |
+| GIFs / stickers | `sticker.keywords` (agentic) → `gif.search` | `gif.download` | `sticker.auto_assign` / `sticker.auto` → Stickers track (positioned PiP) |
 | Music | `library.search` | `library.download` | `music.assign` |
 | SFX | `sfx.search` | — | `sfx.assign` |
 | YouTube | `youtube.search` | `youtube.download` | — |

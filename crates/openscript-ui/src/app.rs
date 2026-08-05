@@ -151,6 +151,7 @@ impl App {
             TrackType::Broll,
             TrackType::Music,
             TrackType::Sfx,
+            TrackType::Stickers,
         ];
         let current_idx = tracks
             .iter()

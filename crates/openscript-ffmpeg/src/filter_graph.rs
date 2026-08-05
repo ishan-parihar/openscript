@@ -21,6 +21,35 @@ fn audio_format_ext(path: &str) -> &'static str {
 /// reopen quote). Backslashes are converted to forward slashes for
 /// cross-platform consistency. Filter metacharacters (;, :, [, ], ,) are
 /// rejected to prevent filter graph injection.
+/// Compute the top-left overlay coordinate for a sticker anchor.
+/// Accepts the same position vocabulary as the multilayer renderer
+/// (top-left/right/center, bottom-*, center, center-left/right) plus the
+/// adjective-noun aliases agents use (center-top, center-bottom). Unknown
+/// positions fall back to top-left at the margin.
+fn sticker_position(position: &str, canvas_w: u32, canvas_h: u32, sticker_w: u32) -> (i32, i32) {
+    let margin = 40i32;
+    let cw = canvas_w as i32;
+    let ch = canvas_h as i32;
+    let sw = sticker_w as i32;
+    // Height is derived from width keeping aspect (scale:-2 in the filter),
+    // so we estimate a square bounding box for anchoring. The overlay filter
+    // itself uses the real scaled height; small vertical offset is acceptable
+    // because stickers are roughly square (GIFs) or content-fit (PNG/WebP).
+    let sh = sw;
+    match position {
+        "top-left" => (margin, margin),
+        "top-right" => (cw - sw - margin, margin),
+        "top-center" | "center-top" => ((cw - sw) / 2, margin),
+        "bottom-left" => (margin, ch - sh - margin),
+        "bottom-right" => (cw - sw - margin, ch - sh - margin),
+        "bottom-center" | "center-bottom" => ((cw - sw) / 2, ch - sh - margin),
+        "center" => ((cw - sw) / 2, (ch - sh) / 2),
+        "center-left" => (margin, (ch - sh) / 2),
+        "center-right" => (cw - sw - margin, (ch - sh) / 2),
+        _ => (margin, margin),
+    }
+}
+
 fn escape_filter_path(path: &str) -> Result<String, String> {
     // Reject paths containing filter metacharacters that could inject
     // arbitrary filter graph nodes.
@@ -62,6 +91,20 @@ pub struct BrollEvent {
     /// falls back to the 5s deterministic offset. Callers should probe the
     /// source with `crate::probe::probe` to populate this.
     pub source_duration_s: Option<f64>,
+}
+
+/// One positioned sticker/GIF PiP overlay on the Stickers track.
+/// Unlike b-roll (full-frame), stickers keep their aspect ratio and are
+/// placed at a `position` with a `scale` relative to canvas width.
+pub struct StickerEvent {
+    pub path: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// Overlay anchor: top-left / top-right / top-center / center / bottom-*
+    /// / center-left / center-right. Falls back to top-left for unknown values.
+    pub position: String,
+    /// Sticker width as a fraction of canvas width (0.0-1.0). Defaults to 0.2.
+    pub scale: f64,
 }
 
 /// Ken Burns motion pattern cycled across b-roll clips for visual variety.
@@ -203,6 +246,7 @@ pub struct FilterGraphBuilder {
     /// and ignored the timeline's `directives.mix.normalize_to_lufs` field.
     normalize_lufs: f64,
     broll_events: Vec<BrollEvent>,
+    sticker_events: Vec<StickerEvent>,
     music_events: Vec<MusicEvent>,
     sfx_events: Vec<SfxEvent>,
     voiceover_events: Vec<VoiceoverEvent>,
@@ -249,6 +293,7 @@ impl FilterGraphBuilder {
             loudnorm,
             normalize_lufs: -16.0, // EBU R128 broadcast default
             broll_events: Vec::new(),
+            sticker_events: Vec::new(),
             music_events: Vec::new(),
             sfx_events: Vec::new(),
             voiceover_events: Vec::new(),
@@ -332,6 +377,23 @@ impl FilterGraphBuilder {
     /// the "source exhausted → held last frame" static-image bug. Events whose
     /// path is not in the map keep `source_duration_s = None` and fall back
     /// to the conservative 3-play loop + small seek cap.
+    pub fn with_stickers(mut self, events: Vec<StickerEvent>) -> Self {
+        // Same placeholder/empty filtering discipline as with_broll: a
+        // placeholder or empty path would crash the `movie=` filter.
+        self.sticker_events = events
+            .into_iter()
+            .filter(|e| {
+                if e.path == "placeholder" || e.path.is_empty() {
+                    tracing::warn!("[filter_graph] Skipping placeholder/empty sticker path");
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+        self
+    }
+
     pub fn with_broll_durations(mut self, durations: std::collections::HashMap<String, f64>) -> Self {
         for ev in &mut self.broll_events {
             if ev.source_duration_s.is_none() {
@@ -401,6 +463,7 @@ impl FilterGraphBuilder {
             .with_raw_render(timeline.raw_render);
 
         let mut broll_events = Vec::new();
+        let mut sticker_events = Vec::new();
         let mut music_events = Vec::new();
         let mut sfx_events = Vec::new();
         let mut voiceover_events = Vec::new();
@@ -434,6 +497,50 @@ impl FilterGraphBuilder {
                             source_duration_s: None,
                         });
                     }
+                }
+            }
+        }
+
+        // Stickers — dedicated PiP overlay lane. Resolution is robust to both
+        // asset-registry conventions:
+        //   (a) event.asset_id == registry key (broll.fetch-style) → direct hit
+        //   (b) event.asset_id == file path, registry keyed by event_id
+        //       (legacy overlay.assign / sticker.auto_assign) → fall back to
+        //       scanning the registry for a record whose `path` matches, then
+        //       to treating event.asset_id itself as the path.
+        if let Some(sticker_track) = timeline.tracks.get(&TrackType::Stickers) {
+            for evt in sticker_track {
+                let record = timeline
+                    .assets
+                    .broll
+                    .get(&evt.asset_id)
+                    .or_else(|| {
+                        timeline.assets.broll.values().find(|v| {
+                            v.get("path")
+                                .and_then(|p| p.as_str())
+                                .map(|p| p == evt.asset_id)
+                                .unwrap_or(false)
+                        })
+                    });
+                let path = record
+                    .and_then(|v| v.get("path").and_then(|p| p.as_str()))
+                    .unwrap_or(&evt.asset_id)
+                    .to_string();
+                if !path.is_empty() && path != "placeholder" {
+                    let position = record
+                        .and_then(|v| v.get("position").and_then(|p| p.as_str()))
+                        .unwrap_or("top-right")
+                        .to_string();
+                    let scale = record
+                        .and_then(|v| v.get("scale").and_then(|s| s.as_f64()))
+                        .unwrap_or(0.2);
+                    sticker_events.push(StickerEvent {
+                        path,
+                        start_ms: evt.start_ms,
+                        end_ms: evt.end_ms,
+                        position,
+                        scale,
+                    });
                 }
             }
         }
@@ -523,6 +630,7 @@ impl FilterGraphBuilder {
         }
 
         b.broll_events = broll_events;
+        b.sticker_events = sticker_events;
         b.music_events = music_events;
         b.sfx_events = sfx_events;
         b.voiceover_events = voiceover_events;
@@ -995,6 +1103,84 @@ impl FilterGraphBuilder {
                     broll_final_label,
                     start_s,
                     broll.end_ms as f64 / 1000.0,
+                    out_label
+                ));
+                current_v = format!("[{}]", out_label);
+            }
+            vout = current_v;
+        }
+
+        // Sticker PiP overlays — the Stickers track. Unlike b-roll (full-frame),
+        // each sticker keeps its aspect ratio, is scaled relative to canvas
+        // width, and is anchored at its requested position (top-right, etc.).
+        // Animated GIFs loop continuously; eof_action=repeat holds the last
+        // frame if the window outlasts the source. Composited AFTER b-roll so
+        // stickers sit on top of the footage.
+        if !self.sticker_events.is_empty() {
+            let mut current_v = vout.clone();
+            for (i, sticker) in self.sticker_events.iter().enumerate() {
+                let start_s = sticker.start_ms as f64 / 1000.0;
+                let end_s = sticker.end_ms as f64 / 1000.0;
+                if end_s <= start_s {
+                    continue;
+                }
+                let out_label = format!("vstk_{}", i);
+                let escaped_path = match escape_filter_path(&sticker.path) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!("[filter_graph] Skipping sticker: {}", e);
+                        continue;
+                    }
+                };
+
+                // Sticker width = scale × canvas width; height keeps aspect.
+                // Use even pixels so pad/overlay never see odd dimensions.
+                let sw = ((self.width as f64 * sticker.scale).round() as u32).max(2) & !1;
+                let (tl_x, tl_y) = sticker_position(&sticker.position, self.width, self.height, sw);
+
+                let is_gif = sticker.path.ends_with(".gif");
+                if is_gif {
+                    // Animated GIF: continuous loop + contain + transparent pad.
+                    parts.push(format!(
+                        "movie='{}':loop=1:si=-1[stk_raw{}]",
+                        escaped_path, i
+                    ));
+                    parts.push(format!(
+                        "[stk_raw{}]fps={},scale={}:-2:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS+{:.3}/TB[stk_src_{}]",
+                        i,
+                        self.fps,
+                        sw,
+                        sw,
+                        sw,
+                        start_s,
+                        i
+                    ));
+                } else {
+                    // Static image/video sticker: contain + transparent pad.
+                    parts.push(format!(
+                        "movie='{}':si=-1[stk_raw{}]",
+                        escaped_path, i
+                    ));
+                    parts.push(format!(
+                        "[stk_raw{}]fps={},scale={}:-2:force_original_aspect_ratio=decrease:flags=lanczos,pad={}:{}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,format=rgba,setpts=PTS-STARTPTS+{:.3}/TB[stk_src_{}]",
+                        i,
+                        self.fps,
+                        sw,
+                        sw,
+                        sw,
+                        start_s,
+                        i
+                    ));
+                }
+
+                parts.push(format!(
+                    "[{}]{}overlay={}:{}:enable='between(t,{},{})':eof_action=repeat[{}]",
+                    &current_v[1..current_v.len() - 1],
+                    format!("[stk_src_{}]", i),
+                    tl_x,
+                    tl_y,
+                    start_s,
+                    end_s,
                     out_label
                 ));
                 current_v = format!("[{}]", out_label);
@@ -1758,5 +1944,51 @@ mod tests {
 
         assert!(filter.contains("setpts=PTS-STARTPTS+0.000/TB[broll_pts_0]"));
         assert!(filter.contains("[broll_pts_0]overlay=0:0:enable='between(t,0,3)'"));
+    }
+
+    #[test]
+    fn test_sticker_pip_overlay() {
+        // Stickers must be composited as POSITIONED PiP overlays (not full-frame):
+        // scale relative to canvas width, anchored at the requested position,
+        // on top of the b-roll chain, with a time-gated enable window.
+        let segments = vec![make_segment("seg_001", 0.0, 8.0)];
+        let broll = vec![BrollEvent {
+            path: "/path/to/broll.mp4".into(),
+            start_ms: 0,
+            end_ms: 8000,
+            source_duration_s: Some(15.0),
+        }];
+        let stickers = vec![StickerEvent {
+            path: "/path/to/reaction.gif".into(),
+            start_ms: 2000,
+            end_ms: 6000,
+            position: "top-right".into(),
+            scale: 0.25,
+        }];
+        let (filter, vout, _) = FilterGraphBuilder::new(segments, 30, "9:16", false)
+            .with_broll(broll)
+            .with_stickers(stickers)
+            .build();
+
+        // GIF loop + contain-scale + transparent pad
+        assert!(filter.contains("movie='/path/to/reaction.gif':loop=1:si=-1[stk_raw0]"));
+        assert!(filter.contains("scale=270:-2:force_original_aspect_ratio=decrease"));
+        assert!(filter.contains("pad=270:270"));
+        assert!(filter.contains("format=rgba"));
+        // Positioned overlay: top-right on 1080w with 0.25 scale (270px) + 40 margin
+        assert!(filter.contains("[stk_src_0]overlay=770:40:enable='between(t,2,6)':eof_action=repeat[vstk_0]"));
+        // Stickers composite AFTER b-roll (vout chains through the sticker)
+        assert_eq!(vout, "[vstk_0]");
+    }
+
+    #[test]
+    fn test_sticker_position_math() {
+        // sticker_position must anchor a 270px sticker correctly across presets.
+        assert_eq!(sticker_position("top-right", 1080, 1920, 270), (770, 40));
+        assert_eq!(sticker_position("top-left", 1080, 1920, 270), (40, 40));
+        assert_eq!(sticker_position("bottom-right", 1080, 1920, 270), (770, 1610));
+        assert_eq!(sticker_position("top-center", 1080, 1920, 270), (405, 40));
+        assert_eq!(sticker_position("center", 1080, 1920, 270), (405, 825));
+        assert_eq!(sticker_position("unknown-pos", 1080, 1920, 270), (40, 40)); // fallback
     }
 }

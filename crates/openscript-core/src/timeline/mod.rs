@@ -36,6 +36,7 @@ impl Timeline {
                 (TrackType::Broll, vec![]),
                 (TrackType::Music, vec![]),
                 (TrackType::Sfx, vec![]),
+                (TrackType::Stickers, vec![]),
             ]),
             directives: Directives {
                 ducking: vec![],
@@ -360,6 +361,7 @@ impl Timeline {
                 (TrackType::Broll, vec![]),
                 (TrackType::Music, vec![]),
                 (TrackType::Sfx, vec![]),
+                (TrackType::Stickers, vec![]),
             ]),
             directives: Directives {
                 ducking: vec![],

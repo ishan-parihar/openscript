@@ -16,7 +16,7 @@ pub enum EditorialRole {
     Outro,
 }
 
-/// All 6 track types in the timeline.
+/// All 7 track types in the timeline.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum TrackType {
@@ -26,6 +26,8 @@ pub enum TrackType {
     Broll,
     Music,
     Sfx,
+    /// Dedicated lane for sticker/GIF PiP overlays (position + scale are honored at render).
+    Stickers,
 }
 
 impl std::fmt::Display for TrackType {
@@ -37,6 +39,7 @@ impl std::fmt::Display for TrackType {
             TrackType::Broll => write!(f, "broll"),
             TrackType::Music => write!(f, "music"),
             TrackType::Sfx => write!(f, "sfx"),
+            TrackType::Stickers => write!(f, "stickers"),
         }
     }
 }
@@ -51,6 +54,7 @@ impl std::str::FromStr for TrackType {
             "broll" => Ok(TrackType::Broll),
             "music" => Ok(TrackType::Music),
             "sfx" => Ok(TrackType::Sfx),
+            "stickers" => Ok(TrackType::Stickers),
             _ => Err(format!("Unknown track type: {}", s)),
         }
     }

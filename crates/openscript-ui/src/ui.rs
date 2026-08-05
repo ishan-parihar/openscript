@@ -197,6 +197,7 @@ fn render_track_list(f: &mut Frame, app: &App, area: Rect) {
         TrackType::Broll,
         TrackType::Music,
         TrackType::Sfx,
+        TrackType::Stickers,
     ];
 
     let guard = app.timeline.try_read();

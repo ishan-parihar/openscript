@@ -1982,6 +1982,7 @@ pub fn score_timeline_editor(timeline: &Timeline) -> TimelineEditorReport {
         TrackType::Broll,
         TrackType::Music,
         TrackType::Sfx,
+        TrackType::Stickers,
     ];
     for tt in &all_tracks {
         let n = timeline.tracks.get(tt).map(|v| v.len()).unwrap_or(0);

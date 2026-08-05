@@ -13,6 +13,7 @@ const TRACKS = [
   { key: "b-roll", name: "B-Roll" },
   { key: "music", name: "Music" },
   { key: "sfx", name: "SFX" },
+  { key: "stickers", name: "Stickers" },
 ] as const;
 
 export function TimelineEditor() {
