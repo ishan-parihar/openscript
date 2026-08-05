@@ -166,6 +166,18 @@ verify.render      — Technical integrity (duration, aspect, file size)
 verify.production  — Full production quality (stock, music, captions)
 ```
 
+**B-roll non-redundancy (Phase 143):**
+The same stock clip must NEVER appear twice in one video — dedup happens at the
+Pexels **video id** level, not just the cache path. A clip cached under two
+query slugs (`crowd_people_aavaaz_35340082.mp4` vs `crowd_people_yah_35340082.mp4`)
+is still the same footage and is rejected: `broll.fetch`/`broll.repair` exclude
+already-used ids via the timeline (`used_broll_video_ids`), and `timeline.validate`
+flags `BROLL_REPEAT` for both exact-path and same-id-different-slug duplicates.
+`broll.fetch` warns when a concept's Pexels pool is exhausted and used ids must
+be re-used. `background.fetch` accepts `used_video_ids` (accumulate the
+`pexels_id` values from prior calls) so the golden path also never re-fetches
+the same clip under a different query.
+
 **B-roll coverage loop-closure (Phase A+B of docs/SEGMENTATION_UPGRADE_PLAN.md):**
 Clips now play exactly ONCE — the renderer never loops to fill a short clip's window.
 If `verify.production` (or `timeline.validate`) returns `broll_gaps`, each entry names the

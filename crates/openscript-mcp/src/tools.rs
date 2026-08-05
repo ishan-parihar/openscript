@@ -996,7 +996,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "background.fetch",
-            "description": "Fetch a background video clip. Searches Pexels API FIRST (stock footage, requires PEXELS_API_KEY), then YouTube via yt-dlp as fallback. Downloads, extracts a random clip of desired duration, crops to target aspect ratio. For multi-broll: call once per scene with different queries to get topic-relevant backgrounds. Returns: clip_path, source (pexels/youtube/fallback/procedural), duration_s.",
+            "description": "Fetch a background video clip. Searches Pexels API FIRST (stock footage, requires PEXELS_API_KEY), then YouTube via yt-dlp as fallback. Downloads, extracts a random clip of desired duration, crops to target aspect ratio. For multi-broll: call once per scene with different queries to get topic-relevant backgrounds. Non-redundant: pass used_video_ids (Pexels ids already used in this run) and the same stock clip is never re-fetched under a different query. Returns: clip_path, pexels_id, source (pexels/youtube/fallback/procedural), duration_s.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1004,7 +1004,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "duration_s": {"type": "number", "default": 30.0, "description": "Desired clip duration in seconds"},
                     "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
                     "cache_dir": {"type": "string", "default": "mcp/assets/background_cache", "description": "Cache directory for downloaded videos"},
-                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local fallback clips if YouTube download fails"}
+                    "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local fallback clips if YouTube download fails"},
+                    "used_video_ids": {"type": "array", "items": {"type": "integer"}, "description": "Pexels video ids already used in this run/timeline — these clips are skipped so the same footage never repeats under a different query. Returned pexels_id values from prior calls should be accumulated here."}
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -2983,8 +2984,14 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
     // B-roll non-repetition: the same clip must not appear on 2+ events —
     // identical footage later in the sequence reads as an error (the
     // b-roll-repeat bug where the deterministic fetch path could place the
-    // same Pexels clip on two segments).
+    // same Pexels clip on two segments). Dedup happens at TWO levels:
+    // 1. exact cache path (same file, same slug)
+    // 2. Pexels video id embedded in the cache filename — the same clip can
+    //    be cached under DIFFERENT query slugs (e.g.
+    //    crowd_people_aavaaz_35340082.mp4 vs crowd_people_yah_35340082.mp4),
+    //    which is still the SAME footage and must also be flagged.
     let mut seen_clip_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut seen_clip_ids: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
     for ev in timeline.tracks.get(&TrackType::Broll).cloned().unwrap_or_default() {
         if let Some(p) = timeline
             .assets
@@ -2998,6 +3005,18 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
                     "BROLL_REPEAT: clip {} is used by both {} and {} — same footage must not repeat later in the sequence (re-run broll.fetch / broll.repair for a distinct clip)",
                     p, prev, ev.id
                 ));
+            } else if let Some(id) = cache_path_video_id(p) {
+                // Path is new — the same Pexels video id under a DIFFERENT
+                // query slug is still the same footage (e.g.
+                // crowd_people_aavaaz_35340082.mp4 vs
+                // crowd_people_yah_35340082.mp4). Only the id check runs here
+                // so exact-path duplicates emit exactly one (path) error.
+                if let Some(prev) = seen_clip_ids.insert(id, ev.id.clone()) {
+                    errors.push(format!(
+                        "BROLL_REPEAT: Pexels video {} (used by {} and {}) is the same clip cached under different query slugs — same footage must not repeat later in the sequence (re-run broll.fetch / broll.repair for a distinct clip)",
+                        id, prev, ev.id
+                    ));
+                }
             }
         }
     }
@@ -4310,7 +4329,16 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         if download {
             let mut seen_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
             // Skip ids already placed on the timeline / chosen this run.
-            for v in fresh_candidates(&videos, &used_ids, download_n) {
+            let (cands, reused) = fresh_candidates(&videos, &used_ids, download_n);
+            if reused > 0 {
+                warnings.push(format!(
+                    "concept '{}': Pexels returned {} candidate(s), all already used on this timeline — reusing {} distinct clip(s) (library exhausted for this concept). Widen the keywords to get truly unique footage.",
+                    concept,
+                    videos.len(),
+                    reused
+                ));
+            }
+            for v in cands {
                 if !seen_ids.insert(v.id) {
                     continue;
                 }
@@ -7993,21 +8021,25 @@ fn used_broll_video_ids(timeline: &Timeline) -> std::collections::HashSet<i64> {
 /// LLM-down path could place the same clip on two segments when their concepts
 /// resolved to the same first Pexels result). Falls back to the first `n`
 /// candidates when the library is genuinely exhausted so a segment never goes
-/// bare.
+/// bare. Returns (selected, reused) where `reused` counts how many selected
+/// candidates were actually already-used ids (the silent-repeat case) — the
+/// caller surfaces this as a warning so reuse is never invisible.
 fn fresh_candidates<'a>(
     videos: &'a [openscript_assets::pexels::PexelsVideo],
     used_ids: &std::collections::HashSet<i64>,
     n: usize,
-) -> Vec<&'a openscript_assets::pexels::PexelsVideo> {
+) -> (Vec<&'a openscript_assets::pexels::PexelsVideo>, usize) {
     let fresh: Vec<&openscript_assets::pexels::PexelsVideo> = videos
         .iter()
         .filter(|v| !used_ids.contains(&v.id))
         .take(n)
         .collect();
     if fresh.is_empty() {
-        videos.iter().take(n).collect()
+        // Library exhausted for this concept — reuse the top hits rather than
+        // leaving the segment bare, but report exactly how many reused ids.
+        (videos.iter().take(n).collect(), videos.iter().take(n).filter(|v| used_ids.contains(&v.id)).count())
     } else {
-        fresh
+        (fresh, 0)
     }
 }
 
@@ -10660,6 +10692,18 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                 .collect()
         })
         .unwrap_or_default();
+    // Non-redundancy: Pexels video ids already used elsewhere in this run /
+    // timeline (e.g. by broll.fetch). The same stock clip must not be re-fetched
+    // under a different query — skip these ids during best-video selection.
+    let used_video_ids: std::collections::HashSet<i64> = args
+        .get("used_video_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64())
+                .collect::<std::collections::HashSet<i64>>()
+        })
+        .unwrap_or_default();
 
     std::fs::create_dir_all(&cache_dir)?;
 
@@ -10705,10 +10749,16 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                     .cloned()
                     .unwrap_or_default();
 
-                // Find a video with enough duration — prefer longer videos
-                let mut best_video: Option<(String, i64)> = None;
+                // Find a video with enough duration — prefer longer videos.
+                // Skip ids in `used_video_ids` so the same stock clip is never
+                // re-fetched under a different query (non-redundancy).
+                let mut best_video: Option<(String, i64, i64)> = None; // (url, duration, pexels_id)
                 let mut best_duration: i64 = 0;
                 for video in &videos {
+                    let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(-1);
+                    if vid_id >= 0 && used_video_ids.contains(&vid_id) {
+                        continue;
+                    }
                     let vid_duration = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
                     // Prefer videos that are at least as long as what we need
                     // But accept any video >= 5s — the renderer will loop it
@@ -10724,7 +10774,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                             if (720..=1920).contains(&width) && !url.is_empty() {
                                 // Prefer the longest video
                                 if vid_duration > best_duration {
-                                    best_video = Some((url.to_string(), vid_duration));
+                                    best_video = Some((url.to_string(), vid_duration, vid_id));
                                     best_duration = vid_duration;
                                 }
                                 break;
@@ -10733,7 +10783,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                     }
                 }
 
-                if let Some((video_url, source_duration)) = best_video {
+                if let Some((video_url, source_duration, pexels_id)) = best_video {
                     report_progress(40.0, 100.0, "Downloading stock footage...")
                         .await
                         .ok();
@@ -10851,6 +10901,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                                 "status": "fetched",
                                 "clip_path": output_path,
                                 "source": "pexels",
+                                "pexels_id": pexels_id,
                                 "source_duration_s": source_duration,
                                 "start_s": start_s,
                                 "duration_s": actual_duration_s,
@@ -18891,15 +18942,18 @@ mod tests {
         let mut used = std::collections::HashSet::new();
         used.insert(1);
         // Top hit (id 1) is already placed → must be skipped (the repeat bug).
-        let fresh = fresh_candidates(&vids, &used, 1);
+        let (fresh, reused) = fresh_candidates(&vids, &used, 1);
         assert_eq!(fresh.len(), 1);
         assert_eq!(fresh[0].id, 2, "used clip must be skipped");
-        // All used → library exhausted → fall back so the segment goes bare.
+        assert_eq!(reused, 0, "no reuse when fresh candidates exist");
+        // All used → library exhausted → fall back so the segment goes bare,
+        // and the reused count is reported so the caller can warn.
         used.insert(2);
         used.insert(3);
-        let fallback = fresh_candidates(&vids, &used, 2);
+        let (fallback, fallback_reused) = fresh_candidates(&vids, &used, 2);
         assert_eq!(fallback.len(), 2);
         assert_eq!(fallback[0].id, 1);
+        assert_eq!(fallback_reused, 2, "exhausted library reuse must be reported");
     }
 
     #[test]
@@ -19386,6 +19440,19 @@ Third and final segment
         );
         assert_eq!(cache_path_video_id("no_id_here.mp4"), None);
         assert_eq!(cache_path_video_id(""), None);
+    }
+
+    #[test]
+    fn test_cache_path_video_id_same_id_different_slugs() {
+        // The same Pexels video cached under two different query slugs must
+        // resolve to the SAME id — that is what the BROLL_REPEAT validator
+        // checks by id (the phase140 bug: one crowd clip under 11 slugs).
+        let a = cache_path_video_id("mcp/assets/broll_cache/crowd_people_aavaaz_35340082.mp4");
+        let b = cache_path_video_id("mcp/assets/broll_cache/crowd_people_yah_35340082.mp4");
+        let c = cache_path_video_id("mcp/assets/broll_cache/crowd_people_account_35340082.mp4");
+        assert_eq!(a, Some(35340082));
+        assert_eq!(b, Some(35340082));
+        assert_eq!(c, Some(35340082));
     }
 
     #[test]
