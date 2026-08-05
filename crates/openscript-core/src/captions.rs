@@ -64,19 +64,33 @@ pub fn estimate_word_timings(text: &str, start_ms: i64, end_ms: i64) -> Vec<Word
     if words.is_empty() || end_ms <= start_ms {
         return Vec::new();
     }
-
-    let total_duration = end_ms - start_ms;
-    let per_word = total_duration / words.len() as i64;
-
-    words
-        .iter()
-        .enumerate()
-        .map(|(i, word)| WordTiming {
+    // Character-proportional estimation: a longer word takes longer to speak,
+    // so each word gets a slice proportional to its char count. Equal slicing
+    // (duration / count) drifts on natural speech — the A2V caption-sync bug
+    // whenever only phrase-level timings are available. Real transcription
+    // word timings (word_srt_path) always win over this estimate.
+    let total_chars: usize = words.iter().map(|w| w.chars().count()).sum();
+    if total_chars == 0 {
+        return Vec::new();
+    }
+    let total_duration = (end_ms - start_ms) as f64;
+    let mut cursor = start_ms as f64;
+    let mut out = Vec::with_capacity(words.len());
+    for (i, word) in words.iter().enumerate() {
+        let frac = word.chars().count() as f64 / total_chars as f64;
+        let end = if i == words.len() - 1 {
+            end_ms as f64
+        } else {
+            cursor + frac * total_duration
+        };
+        out.push(WordTiming {
             word: word.to_string(),
-            start_ms: start_ms + (i as i64 * per_word),
-            end_ms: start_ms + ((i + 1) as i64 * per_word),
-        })
-        .collect()
+            start_ms: cursor.round() as i64,
+            end_ms: end.round() as i64,
+        });
+        cursor = end;
+    }
+    out
 }
 
 /// Format milliseconds as ASS timestamp: H:MM:SS.cc
@@ -435,9 +449,28 @@ mod tests {
         assert_eq!(words.len(), 3);
         assert_eq!(words[0].word, "hello");
         assert_eq!(words[0].start_ms, 0);
-        assert_eq!(words[0].end_ms, 1000);
-        assert_eq!(words[1].start_ms, 1000);
+        // Char-proportional: hello(5) world(5) test(4) of 14 chars → 5/14 of
+        // 3000ms ≈ 1071ms per long word, 4/14 for "test" (~857ms).
+        assert_eq!(words[0].end_ms, 1071);
+        assert_eq!(words[1].start_ms, 1071);
+        assert!(words[1].end_ms > words[1].start_ms);
         assert_eq!(words[2].end_ms, 3000);
+        // Shorter word gets a shorter slice than a long one (not equal).
+        assert!(
+            words[2].end_ms - words[2].start_ms < words[0].end_ms - words[0].start_ms,
+            "char-proportional: 'test' slice must be shorter than 'hello' slice"
+        );
+    }
+
+    #[test]
+    fn test_estimate_word_timings_char_proportional() {
+        // A 10-char word vs a 1-char word over 1100ms → the long word gets
+        // ~10/11 of the window; the short word a sliver.
+        let words = estimate_word_timings("aaaaaaaaaa b", 0, 1100);
+        assert_eq!(words.len(), 2);
+        assert!(words[0].end_ms - words[0].start_ms > 900);
+        assert!(words[1].end_ms - words[1].start_ms < 200);
+        assert_eq!(words[1].end_ms, 1100);
     }
 
     #[test]

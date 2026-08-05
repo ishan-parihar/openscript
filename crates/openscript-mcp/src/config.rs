@@ -3,7 +3,7 @@
 //! ## Load order (highest priority first)
 //!
 //! 1. **Environment variables** (`PEXELS_API_KEY`, `OPENROUTER_API_KEY`,
-//!    `OPENSCRIPT_LOCAL_MODEL`, …) — for CI / one-off overrides
+//!    `OPENCODE_API`, …) — for CI / one-off overrides
 //! 2. **`~/.openscript/config.json`** — primary user config (this module)
 //! 3. **`mcp/assets/.openscript_config.json`** — legacy / bundled repo config
 //! 4. **Built-in defaults**
@@ -106,29 +106,11 @@ pub struct ApiKeys {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
-    /// Ollama model name (default: qwen3.5-4b)
-    #[serde(default = "default_local_model")]
-    pub local_model: String,
-    /// OpenAI-compatible base URL for local inference
-    #[serde(default = "default_local_base_url")]
-    pub local_base_url: String,
-    /// Path to local GGUF (expanded ~)
-    #[serde(default)]
-    pub gguf_path: Option<String>,
-    /// Optional multimodal projector GGUF
-    #[serde(default)]
-    pub mmproj_path: Option<String>,
-    /// If true, send images to local Ollama (needs vision-capable model)
-    #[serde(default)]
-    pub local_vision: bool,
     #[serde(default = "default_openrouter_base_url")]
     pub openrouter_base_url: String,
     /// Ordered OpenRouter model cascade for text + vision fallbacks
     #[serde(default = "default_openrouter_models")]
     pub openrouter_models: Vec<String>,
-    /// Prefer openrouter for multimodal when an image is attached (default true)
-    #[serde(default = "default_true")]
-    pub prefer_openrouter_vision: bool,
     /// OpenCode API base URL (opencode.ai compatible)
     #[serde(default = "default_opencode_base_url")]
     pub opencode_base_url: String,
@@ -137,16 +119,6 @@ pub struct LlmConfig {
     pub opencode_model: String,
 }
 
-fn default_true() -> bool {
-    true
-}
-
-fn default_local_model() -> String {
-    "qwen3.5-4b".into()
-}
-fn default_local_base_url() -> String {
-    "http://127.0.0.1:11434/v1".into()
-}
 fn default_openrouter_base_url() -> String {
     "https://openrouter.ai/api/v1".into()
 }
@@ -166,14 +138,8 @@ fn default_opencode_model() -> String {
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
-            local_model: default_local_model(),
-            local_base_url: default_local_base_url(),
-            gguf_path: None,
-            mmproj_path: None,
-            local_vision: false,
             openrouter_base_url: default_openrouter_base_url(),
             openrouter_models: default_openrouter_models(),
-            prefer_openrouter_vision: true,
             opencode_base_url: default_opencode_base_url(),
             opencode_model: default_opencode_model(),
         }
@@ -228,16 +194,6 @@ impl Default for RenderConfig {
 // Expand paths / merge
 // ---------------------------------------------------------------------------
 
-fn expand_tilde(s: &str) -> String {
-    if let Some(rest) = s.strip_prefix("~/") {
-        return home_dir().join(rest).to_string_lossy().into_owned();
-    }
-    if s == "~" {
-        return home_dir().to_string_lossy().into_owned();
-    }
-    s.to_string()
-}
-
 impl OpenScriptConfig {
     /// Apply flat legacy keys into nested `api_keys` if nested fields empty.
     fn absorb_legacy(&mut self) {
@@ -274,13 +230,6 @@ impl OpenScriptConfig {
                 self.api_keys.opencode = v;
             }
         }
-        // Expand tildes in llm paths
-        if let Some(ref p) = self.llm.gguf_path {
-            self.llm.gguf_path = Some(expand_tilde(p));
-        }
-        if let Some(ref p) = self.llm.mmproj_path {
-            self.llm.mmproj_path = Some(expand_tilde(p));
-        }
     }
 
     /// Merge `other` under self (self wins for non-empty fields).
@@ -299,13 +248,6 @@ impl OpenScriptConfig {
         }
         if self.api_keys.opencode.is_empty() {
             self.api_keys.opencode = other.api_keys.opencode.clone();
-        }
-        // llm: only fill missing optionals / empty model if somehow empty
-        if self.llm.gguf_path.is_none() {
-            self.llm.gguf_path = other.llm.gguf_path.clone();
-        }
-        if self.llm.mmproj_path.is_none() {
-            self.llm.mmproj_path = other.llm.mmproj_path.clone();
         }
         if self.paths.sfx_path.is_none() {
             self.paths.sfx_path = other.paths.sfx_path.clone();
@@ -374,13 +316,6 @@ pub fn ensure_user_config(seed: Option<&OpenScriptConfig>) -> Result<(PathBuf, b
         return Ok((path, false));
     }
     let mut cfg = seed.cloned().unwrap_or_default();
-    // Sensible defaults for this machine
-    if cfg.llm.gguf_path.is_none() {
-        let gguf = home_dir().join("Downloads/Qwen3.5-4B-Q4_K_M.gguf");
-        if gguf.exists() {
-            cfg.llm.gguf_path = Some(gguf.to_string_lossy().into_owned());
-        }
-    }
     cfg.version = 1;
     write_user_config(&cfg)?;
     Ok((path, true))
@@ -402,14 +337,8 @@ pub fn write_user_config(cfg: &OpenScriptConfig) -> Result<PathBuf, String> {
             "opencode": cfg.api_keys.opencode,
         },
         "llm": {
-            "local_model": cfg.llm.local_model,
-            "local_base_url": cfg.llm.local_base_url,
-            "gguf_path": cfg.llm.gguf_path,
-            "mmproj_path": cfg.llm.mmproj_path,
-            "local_vision": cfg.llm.local_vision,
             "openrouter_base_url": cfg.llm.openrouter_base_url,
             "openrouter_models": cfg.llm.openrouter_models,
-            "prefer_openrouter_vision": cfg.llm.prefer_openrouter_vision,
             "opencode_base_url": cfg.llm.opencode_base_url,
             "opencode_model": cfg.llm.opencode_model,
         },
@@ -462,16 +391,6 @@ pub fn resolve_api_key(kind: &str) -> String {
     }
 }
 
-pub fn resolve_local_model() -> String {
-    env_nonempty("OPENSCRIPT_LOCAL_MODEL")
-        .unwrap_or_else(|| config().llm.local_model.clone())
-}
-
-pub fn resolve_local_base_url() -> String {
-    env_nonempty("OPENSCRIPT_LLM_URL")
-        .unwrap_or_else(|| config().llm.local_base_url.clone())
-}
-
 pub fn resolve_openrouter_base_url() -> String {
     env_nonempty("OPENROUTER_BASE_URL")
         .unwrap_or_else(|| config().llm.openrouter_base_url.clone())
@@ -500,64 +419,6 @@ pub fn resolve_openrouter_models() -> Vec<String> {
     } else {
         cfg.llm.openrouter_models.clone()
     }
-}
-
-pub fn resolve_gguf_path() -> Option<PathBuf> {
-    if let Some(p) = env_nonempty("OPENSCRIPT_GGUF_PATH") {
-        let pb = PathBuf::from(expand_tilde(&p));
-        if pb.exists() {
-            return Some(pb);
-        }
-    }
-    let cfg = config();
-    if let Some(ref p) = cfg.llm.gguf_path {
-        let pb = PathBuf::from(expand_tilde(p));
-        if pb.exists() {
-            return Some(pb);
-        }
-    }
-    // Default scan locations
-    let candidates = [
-        home_dir().join("Downloads/Qwen3.5-4B-Q4_K_M.gguf"),
-        home_dir().join("Downloads/Qwen3.5-4B-Q4_K_S.gguf"),
-        config_dir().join("models/Qwen3.5-4B-Q4_K_M.gguf"),
-        PathBuf::from("mcp/models/Qwen3.5-4B-Q4_K_M.gguf"),
-        PathBuf::from("mcp/assets/models/Qwen3.5-4B-Q4_K_M.gguf"),
-    ];
-    candidates.into_iter().find(|p| p.exists())
-}
-
-pub fn resolve_mmproj_path() -> Option<PathBuf> {
-    if let Some(p) = env_nonempty("OPENSCRIPT_MMPROJ_PATH") {
-        let pb = PathBuf::from(expand_tilde(&p));
-        if pb.exists() {
-            return Some(pb);
-        }
-    }
-    if let Some(ref p) = config().llm.mmproj_path {
-        let pb = PathBuf::from(expand_tilde(p));
-        if pb.exists() {
-            return Some(pb);
-        }
-    }
-    let candidates = [
-        home_dir().join("Downloads/mmproj-F16.gguf"),
-        home_dir().join("Downloads/mmproj-BF16.gguf"),
-        config_dir().join("models/mmproj-F16.gguf"),
-        PathBuf::from("mcp/models/mmproj-F16.gguf"),
-    ];
-    candidates.into_iter().find(|p| p.exists())
-}
-
-pub fn resolve_local_vision() -> bool {
-    if let Some(v) = env_nonempty("OPENSCRIPT_LOCAL_VISION") {
-        return v == "1" || v.eq_ignore_ascii_case("true");
-    }
-    config().llm.local_vision
-}
-
-pub fn resolve_prefer_openrouter_vision() -> bool {
-    config().llm.prefer_openrouter_vision
 }
 
 pub fn resolve_opencode_api_key() -> String {
@@ -601,14 +462,10 @@ pub fn config_public_view() -> Value {
             "openrouter_preview": redact(&resolve_api_key("openrouter")),
         },
         "llm": {
-            "local_model": resolve_local_model(),
-            "local_base_url": resolve_local_base_url(),
-            "gguf_path": resolve_gguf_path().map(|p| p.display().to_string()),
-            "mmproj_path": resolve_mmproj_path().map(|p| p.display().to_string()),
-            "local_vision": resolve_local_vision(),
-            "prefer_openrouter_vision": resolve_prefer_openrouter_vision(),
             "openrouter_base_url": resolve_openrouter_base_url(),
             "openrouter_models": resolve_openrouter_models(),
+            "opencode_base_url": resolve_opencode_base_url(),
+            "opencode_model": resolve_opencode_model(),
         },
         "paths": cfg.paths,
         "render": cfg.render,
@@ -618,12 +475,6 @@ pub fn config_public_view() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn expand_tilde_home() {
-        let h = home_dir().to_string_lossy().into_owned();
-        assert_eq!(expand_tilde("~/foo"), format!("{}/foo", h));
-    }
 
     #[test]
     fn default_models_cascade() {

@@ -88,6 +88,7 @@ pub fn tool_definitions() -> serde_json::Value {
                 "type": "object",
                 "properties": {
                     "srt_path": {"type": "string", "description": "Path to word-level SRT file (from transcribe)"},
+                    "word_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional word-level SRT from transcribe (word_srt_path). When provided, per-word timings are REAL transcription alignments instead of estimates from the phrase SRT — keeps the word-highlight synced with the voice (caption-sync fix)."},
                     "style": {"type": "string", "default": "word_highlight", "description": "Caption style: 'word_highlight' (TikTok per-word pop-up), 'standard' (full-sentence), 'kinetic' (animated word-by-word)"},
                     "font": {"type": "string", "default": "Bebas Neue", "description": "Font name for captions"},
                     "font_size": {"type": "integer", "default": 84, "description": "Font size in pixels"},
@@ -648,6 +649,7 @@ pub fn tool_definitions() -> serde_json::Value {
                 "type": "object",
                 "properties": {
                     "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "SRT transcript (required unless timeline_path is given)."},
+                    "word_srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional word-level SRT from transcribe (word_srt_path). When provided, captions use REAL per-word alignments (caption-voice sync) instead of estimates from the phrase SRT."},
                     "audio_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Source audio/video (required unless timeline_path is given)."},
                     "timeline_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Existing timeline to fill (skips analyze/build)."},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Where to save the produced timeline (default derived from srt_path)."},
@@ -841,13 +843,13 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "llm.complete",
-            "description": "Run a text LLM completion through the director cascade configured in ~/.openscript/config.json: local Ollama (qwen3.5-4b / GGUF) → OpenRouter free models. Returns: text, backend, model.",
+            "description": "Run a text LLM completion through the director cascade configured in ~/.openscript/config.json: OpenCode zen (default) → OpenRouter free models. Returns: text, backend, model.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string", "description": "User prompt"},
                     "system": {"type": "string", "default": "You are a helpful video director assistant.", "description": "System prompt"},
-                    "backend": {"type": "string", "default": "auto", "description": "Force backend: auto | local | openrouter"}
+                    "backend": {"type": "string", "default": "auto", "description": "Force backend: auto | opencode | openrouter"}
                 },
                 "required": ["prompt"],
                 "additionalProperties": false
@@ -855,7 +857,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "system.config.get",
-            "description": "Return the effective OpenScript configuration (redacted secrets) from ~/.openscript/config.json with env overrides applied. Use to verify LLM models, GGUF path, and which API keys are set.",
+            "description": "Return the effective OpenScript configuration (redacted secrets) from ~/.openscript/config.json with env overrides applied. Use to verify LLM models, base URLs, and which API keys are set.",
             "inputSchema": {
                 "type": "object",
                 "properties": {},
@@ -865,7 +867,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "system.config.set",
-            "description": "Merge keys into ~/.openscript/config.json (mode 0600). Supports nested paths via object: {api_keys:{openrouter:'…'}, llm:{local_model:'qwen3.5-4b'}}. Does not echo secrets back. Returns redacted config view.",
+            "description": "Merge keys into ~/.openscript/config.json (mode 0600). Supports nested paths via object: {api_keys:{openrouter:'…', opencode:'…'}, llm:{opencode_model:'mimo-v2.5-free'}}. Does not echo secrets back. Returns redacted config view.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -906,7 +908,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "vision.score_clip",
-            "description": "Vision+LLM relevance score of a stock clip vs scene dialogue and video_keywords. Uses local GGUF/Ollama when possible and OpenRouter free multimodal fallbacks. Returns relevance 0–1, time_of_day, match, reason. Wire into multi-broll QA and verify.production context_relevance.",
+            "description": "Vision+LLM relevance score of a stock clip vs scene dialogue and video_keywords. Uses OpenCode zen when possible and OpenRouter free multimodal fallbacks. Returns relevance 0–1, time_of_day, match, reason. Wire into multi-broll QA and verify.production context_relevance.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -934,7 +936,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "background_sources": {"type": "array", "items": {"type": "string"}, "description": "Fallback background paths if no manifest"},
                     "music_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Music path used at render if any"},
                     "min_grade": {"type": "string", "default": "B", "description": "Minimum acceptable grade (A/B/C/D/F)."},
-                    "vision_rescore": {"type": "boolean", "default": false, "description": "If true, re-score each background clip with vision.score_clip (local Qwen GGUF/Ollama → OpenRouter free multimodal). Adds vision_scores to the response."},
+                    "vision_rescore": {"type": "boolean", "default": false, "description": "If true, re-score each background clip with vision.score_clip (OpenCode zen → OpenRouter free multimodal). Adds vision_scores to the response."},
                     "video_keywords": {"type": "array", "items": {"type": "string"}, "description": "Agent-generated keywords describing the video content (e.g., ['corruption', 'protest', 'freedom']). Used by context_relevance scoring to verify b-roll matches the topic."},
                     "caption_style": {"type": "string", "description": "Caption style used: 'word_highlight', 'standard', 'kinetic', 'karaoke'. Detected from ASS file if not provided."}
                 },
@@ -1981,6 +1983,12 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
             "srt_path or timeline_path".to_string(),
         ));
     };
+    // Optional word-level SRT (from transcribe's word_srt_path). When present,
+    // parse THAT instead of the phrase SRT so per-word timings are real
+    // transcription alignments — the caption-voice sync fix for the A2V path.
+    let word_srt_path = args.get("word_srt_path")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let grouped_srt_path = args.get("grouped_srt_path")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
@@ -2018,8 +2026,11 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
         parent.join("captions.ass").to_string_lossy().to_string()
     };
 
-    // Parse word-level SRT and group with real word timings
-    let caption_segments: Vec<CaptionSegment> = match openscript_core::srt::parse_srt(&srt_path) {
+    // Parse word-level SRT and group with real word timings. Prefer the
+    // explicit word SRT when given (real alignments); otherwise the phrase SRT
+    // is normalized into estimated word timings (char-proportional).
+    let caption_source: &str = word_srt_path.as_deref().unwrap_or(&srt_path);
+    let caption_segments: Vec<CaptionSegment> = match openscript_core::srt::parse_srt(caption_source) {
         Ok(word_entries) => {
             let grouped_phrases = group_entries_with_words(&word_entries, 10, 64, 0.6);
 
@@ -2968,6 +2979,27 @@ async fn handle_timeline_validate(args: serde_json::Value) -> Result<serde_json:
             "BROLL_GAP: segment {} needs {:.1}s but clip {} provides {:.1}s (gap {:.1}s) — {}",
             g.segment_id, g.required_s, g.asset_id, g.available_s, g.gap_s, g.action
         ));
+    }
+    // B-roll non-repetition: the same clip must not appear on 2+ events —
+    // identical footage later in the sequence reads as an error (the
+    // b-roll-repeat bug where the deterministic fetch path could place the
+    // same Pexels clip on two segments).
+    let mut seen_clip_paths: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for ev in timeline.tracks.get(&TrackType::Broll).cloned().unwrap_or_default() {
+        if let Some(p) = timeline
+            .assets
+            .broll
+            .get(&ev.asset_id)
+            .and_then(|a| a.get("path"))
+            .and_then(|v| v.as_str())
+        {
+            if let Some(prev) = seen_clip_paths.insert(p.to_string(), ev.id.clone()) {
+                errors.push(format!(
+                    "BROLL_REPEAT: clip {} is used by both {} and {} — same footage must not repeat later in the sequence (re-run broll.fetch / broll.repair for a distinct clip)",
+                    p, prev, ev.id
+                ));
+            }
+        }
     }
     let valid = errors.is_empty();
 
@@ -4274,6 +4306,13 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
         .ok();
 
     let mut client = PexelsClient::new(&api_key, &asset_dir);
+    // Non-repetition: clips already placed on this timeline (or chosen earlier
+    // in THIS run) are excluded from candidate selection — the same footage
+    // must never appear twice later in the sequence (b-roll-repeat bug).
+    let mut used_ids: std::collections::HashSet<i64> = default_opt_str(&args, "timeline_path")
+        .and_then(|tl| Timeline::load(&tl).ok())
+        .map(|t| used_broll_video_ids(&t))
+        .unwrap_or_default();
     let mut all_results = Vec::new();
     let mut downloaded = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
@@ -4302,10 +4341,12 @@ async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_json::Value
             std::collections::HashMap::new();
         if download {
             let mut seen_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
-            for v in videos.iter().take(download_n) {
+            // Skip ids already placed on the timeline / chosen this run.
+            for v in fresh_candidates(&videos, &used_ids, download_n) {
                 if !seen_ids.insert(v.id) {
                     continue;
                 }
+                used_ids.insert(v.id);
                 let v_duration = v.duration as f64;
                 match client.download_best(v, concept).await {
                     Ok(path) => {
@@ -6365,6 +6406,9 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
     let srt_path = args.get("srt_path").and_then(|v| v.as_str()).map(String::from);
     let audio_path = args.get("audio_path").and_then(|v| v.as_str()).map(String::from);
     let timeline_path_arg = args.get("timeline_path").and_then(|v| v.as_str()).map(String::from);
+    // Word-level SRT from transcribe — real per-word alignments so the
+    // word-highlight captions stay synced with the voice (caption-sync fix).
+    let word_srt_path = default_opt_str(&args, "word_srt_path");
 
     let min_duration_s = default_f64(&args, "min_duration_s", 2.0);
     let max_duration_s = default_f64(&args, "max_duration_s", 6.0);
@@ -6607,6 +6651,11 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
         if let Some(ref sp) = srt_path {
             if let Some(obj) = cap_args.as_object_mut() {
                 obj.insert("srt_path".into(), json!(sp));
+            }
+        }
+        if let Some(ref wsp) = word_srt_path {
+            if let Some(obj) = cap_args.as_object_mut() {
+                obj.insert("word_srt_path".into(), json!(wsp));
             }
         }
         let cap_res = handle_captions_generate_ass(cap_args).await;
@@ -7969,6 +8018,29 @@ fn used_broll_video_ids(timeline: &Timeline) -> std::collections::HashSet<i64> {
         }
     }
     used
+}
+
+/// First `n` candidates whose Pexels id is NOT in `used_ids` — i.e. footage
+/// not already placed on this timeline (the b-roll-repeat bug: the deterministic
+/// LLM-down path could place the same clip on two segments when their concepts
+/// resolved to the same first Pexels result). Falls back to the first `n`
+/// candidates when the library is genuinely exhausted so a segment never goes
+/// bare.
+fn fresh_candidates<'a>(
+    videos: &'a [openscript_assets::pexels::PexelsVideo],
+    used_ids: &std::collections::HashSet<i64>,
+    n: usize,
+) -> Vec<&'a openscript_assets::pexels::PexelsVideo> {
+    let fresh: Vec<&openscript_assets::pexels::PexelsVideo> = videos
+        .iter()
+        .filter(|v| !used_ids.contains(&v.id))
+        .take(n)
+        .collect();
+    if fresh.is_empty() {
+        videos.iter().take(n).collect()
+    } else {
+        fresh
+    }
 }
 
 /// Structured timeline-viewer context: the composition layer stack (bottom →
@@ -17743,7 +17815,7 @@ async fn handle_timeline_to_hyperframes(
 // Handlers: llm.complete / vision.analyze_clip / vision.score_clip
 // ---------------------------------------------------------------------------
 
-/// Text LLM via local Ollama (Qwen3.5-4B GGUF) → OpenRouter free models.
+/// Text LLM via OpenCode zen → OpenRouter free models.
 async fn handle_llm_complete(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let prompt = extract_str(&args, "prompt")?;
     let system = default_str(
@@ -17806,6 +17878,9 @@ async fn handle_system_config_set(args: serde_json::Value) -> Result<serde_json:
         if let Some(s) = keys.get("openrouter").and_then(|v| v.as_str()) {
             cfg.api_keys.openrouter = s.to_string();
         }
+        if let Some(s) = keys.get("opencode").and_then(|v| v.as_str()) {
+            cfg.api_keys.opencode = s.to_string();
+        }
         // legacy aliases inside patch.api_keys
         if let Some(s) = keys.get("openrouter_api_key").and_then(|v| v.as_str()) {
             cfg.api_keys.openrouter = s.to_string();
@@ -17827,24 +17902,6 @@ async fn handle_system_config_set(args: serde_json::Value) -> Result<serde_json:
 
     // llm
     if let Some(llm) = patch.get("llm").and_then(|v| v.as_object()) {
-        if let Some(s) = llm.get("local_model").and_then(|v| v.as_str()) {
-            cfg.llm.local_model = s.to_string();
-        }
-        if let Some(s) = llm.get("local_base_url").and_then(|v| v.as_str()) {
-            cfg.llm.local_base_url = s.to_string();
-        }
-        if let Some(s) = llm.get("gguf_path").and_then(|v| v.as_str()) {
-            cfg.llm.gguf_path = Some(s.to_string());
-        }
-        if let Some(s) = llm.get("mmproj_path").and_then(|v| v.as_str()) {
-            cfg.llm.mmproj_path = Some(s.to_string());
-        }
-        if let Some(b) = llm.get("local_vision").and_then(|v| v.as_bool()) {
-            cfg.llm.local_vision = b;
-        }
-        if let Some(b) = llm.get("prefer_openrouter_vision").and_then(|v| v.as_bool()) {
-            cfg.llm.prefer_openrouter_vision = b;
-        }
         if let Some(s) = llm.get("openrouter_base_url").and_then(|v| v.as_str()) {
             cfg.llm.openrouter_base_url = s.to_string();
         }
@@ -17853,6 +17910,12 @@ async fn handle_system_config_set(args: serde_json::Value) -> Result<serde_json:
                 .iter()
                 .filter_map(|x| x.as_str().map(String::from))
                 .collect();
+        }
+        if let Some(s) = llm.get("opencode_base_url").and_then(|v| v.as_str()) {
+            cfg.llm.opencode_base_url = s.to_string();
+        }
+        if let Some(s) = llm.get("opencode_model").and_then(|v| v.as_str()) {
+            cfg.llm.opencode_model = s.to_string();
         }
     }
 
@@ -18293,7 +18356,7 @@ async fn handle_system_capabilities(
         "path": presets_dir,
     });
 
-    // LLM / vision cascade: local Ollama Qwen3.5-4B GGUF + OpenRouter free multimodal
+    // LLM / vision cascade: OpenCode zen + OpenRouter free multimodal
     let llm = crate::llm::probe_llm_capabilities().await;
     let openscript_config = crate::config::config_public_view();
 
@@ -18809,6 +18872,40 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_fresh_candidates_skips_used_ids() {
+        use openscript_assets::pexels::{PexelsVideo, PexelsVideoFile};
+        let mk = |id: i64| PexelsVideo {
+            id,
+            width: 1080,
+            height: 1920,
+            url: format!("https://www.pexels.com/video/clip-{}", id),
+            image: String::new(),
+            video_files: vec![PexelsVideoFile {
+                id,
+                quality: "hd".into(),
+                width: 1080,
+                height: 1920,
+                link: format!("https://files.example/{}.mp4", id),
+                size: 1000,
+            }],
+            duration: 10,
+        };
+        let vids = vec![mk(1), mk(2), mk(3)];
+        let mut used = std::collections::HashSet::new();
+        used.insert(1);
+        // Top hit (id 1) is already placed → must be skipped (the repeat bug).
+        let fresh = fresh_candidates(&vids, &used, 1);
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].id, 2, "used clip must be skipped");
+        // All used → library exhausted → fall back so the segment goes bare.
+        used.insert(2);
+        used.insert(3);
+        let fallback = fresh_candidates(&vids, &used, 2);
+        assert_eq!(fallback.len(), 2);
+        assert_eq!(fallback[0].id, 1);
+    }
 
     #[test]
     fn test_sticker_place_position_cycles_on_auto() {

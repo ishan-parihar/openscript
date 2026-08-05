@@ -4,20 +4,17 @@
     "pexels": "",
     "giphy": "",
     "pixabay": "",
-    "openrouter": ""
+    "openrouter": "",
+    "opencode": ""
   },
   "llm": {
-    "local_model": "qwen3.5-4b",
-    "local_base_url": "http://127.0.0.1:11434/v1",
-    "gguf_path": "~/Downloads/Qwen3.5-4B-Q4_K_M.gguf",
-    "mmproj_path": null,
-    "local_vision": false,
     "openrouter_base_url": "https://openrouter.ai/api/v1",
     "openrouter_models": [
       "google/gemma-4-31b-it:free",
       "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
     ],
-    "prefer_openrouter_vision": true
+    "opencode_base_url": "https://opencode.ai/zen/v1",
+    "opencode_model": "mimo-v2.5-free"
   },
   "paths": {},
   "render": {

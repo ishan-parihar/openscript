@@ -3,13 +3,12 @@
 //! Config: `~/.openscript/config.json` (see `crate::config`) + env overrides.
 //!
 //! **Text cascade** (first success wins):
-//!   1. Local Ollama (`llm.local_model`, default `qwen3.5-4b` / GGUF)
+//!   1. OpenCode zen (`llm.opencode_model`, default `mimo-v2.5-free`)
 //!   2. OpenRouter free models (`llm.openrouter_models`)
 //!
 //! **Vision cascade** (when an image is attached):
-//!   1. OpenRouter free multimodal (if key set and `prefer_openrouter_vision`)
-//!   2. Local Ollama with image only if `llm.local_vision` / `OPENSCRIPT_LOCAL_VISION`
-//!   3. Local text-only fallback (scene keywords only)
+//!   1. OpenCode zen (primary)
+//!   2. OpenRouter free multimodal (fallback)
 
 use crate::config;
 use serde::{Deserialize, Serialize};
@@ -38,34 +37,17 @@ pub enum LlmError {
 /// Ordered model cascade for text / vision.
 #[derive(Debug, Clone)]
 pub struct LlmCascade {
-    pub local_model: String,
-    pub local_base_url: String,
     pub openrouter_models: Vec<String>,
     pub openrouter_base_url: String,
-    pub gguf_path: Option<PathBuf>,
-    pub mmproj_path: Option<PathBuf>,
 }
 
 impl Default for LlmCascade {
     fn default() -> Self {
         Self {
-            local_model: config::resolve_local_model(),
-            local_base_url: config::resolve_local_base_url(),
             openrouter_models: config::resolve_openrouter_models(),
             openrouter_base_url: config::resolve_openrouter_base_url(),
-            gguf_path: config::resolve_gguf_path(),
-            mmproj_path: config::resolve_mmproj_path(),
         }
     }
-}
-
-/// Resolve local GGUF: env → ~/.openscript/config → Downloads → mcp/models
-pub fn resolve_gguf_path() -> Option<PathBuf> {
-    config::resolve_gguf_path()
-}
-
-pub fn resolve_mmproj_path() -> Option<PathBuf> {
-    config::resolve_mmproj_path()
 }
 
 fn openrouter_key() -> String {
@@ -79,35 +61,14 @@ fn opencode_key() -> String {
 /// Probe which backends are usable.
 pub async fn probe_llm_capabilities() -> Value {
     let cascade = LlmCascade::default();
-    let local_ok = probe_openai_compatible(&cascade.local_base_url, None).await;
     let or_key = !openrouter_key().is_empty();
     let cfg_view = config::config_public_view();
     json!({
         "config_file": cfg_view.get("config_file").cloned().unwrap_or(Value::Null),
-        "local": {
-            "available": local_ok,
-            "base_url": cascade.local_base_url,
-            "model": cascade.local_model,
-            "gguf_path": cascade.gguf_path.as_ref().map(|p| p.display().to_string()),
-            "gguf_present": cascade.gguf_path.is_some(),
-            "mmproj_path": cascade.mmproj_path.as_ref().map(|p| p.display().to_string()),
-            "mmproj_present": cascade.mmproj_path.is_some(),
-            "local_vision": config::resolve_local_vision(),
-            "reason": if local_ok {
-                Value::Null
-            } else {
-                Value::String(
-                    "Ollama not reachable. Start: ollama serve && bash scripts/import_local_gguf.sh. \
-                     Configure model in ~/.openscript/config.json (llm.local_model / llm.gguf_path)."
-                        .into(),
-                )
-            },
-        },
         "openrouter": {
             "available": or_key,
             "models": cascade.openrouter_models,
             "base_url": cascade.openrouter_base_url,
-            "prefer_for_vision": config::resolve_prefer_openrouter_vision(),
             "reason": if or_key {
                 Value::Null
             } else {
@@ -134,37 +95,14 @@ pub async fn probe_llm_capabilities() -> Value {
         },
         "cascade_text": [
             format!("opencode:{}", config::resolve_opencode_model()),
-            format!("local:{}", cascade.local_model),
             format!("openrouter:{}", cascade.openrouter_models.first().cloned().unwrap_or_default()),
             format!("openrouter:{}", cascade.openrouter_models.get(1).cloned().unwrap_or_default()),
         ],
         "cascade_vision": [
-            "openrouter (if key + prefer_openrouter_vision)",
-            "local vision (if llm.local_vision)",
-            "local text fallback",
+            "opencode (primary)",
+            "openrouter (fallback)",
         ],
     })
-}
-
-async fn probe_openai_compatible(base_url: &str, api_key: Option<&str>) -> bool {
-    let url = format!("{}/models", base_url.trim_end_matches('/'));
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let mut req = client.get(&url);
-    if let Some(k) = api_key {
-        if !k.is_empty() {
-            req = req.bearer_auth(k);
-        }
-    }
-    match req.send().await {
-        Ok(r) => r.status().is_success(),
-        Err(_) => false,
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +128,7 @@ fn strip_think_tags(s: &str) -> String {
 
 /// Chat completion with cascade.
 ///
-/// `backend_force`: `"auto"` (default), `"local"`, or `"openrouter"`.
+/// `backend_force`: `"auto"` (default), `"opencode"`, or `"openrouter"`.
 /// `image_b64_jpeg`: when set, prefers OpenRouter multimodal (see config).
 pub async fn chat_complete(
     system: &str,
@@ -209,11 +147,7 @@ pub async fn chat_complete_with_backend(
     let cascade = LlmCascade::default();
     let mut errors: Vec<String> = Vec::new();
     let force = backend_force.trim().to_ascii_lowercase();
-    let has_image = image_b64_jpeg.is_some();
-    let prefer_or_vision = has_image && config::resolve_prefer_openrouter_vision();
     let key = openrouter_key();
-    let local_up = probe_openai_compatible(&cascade.local_base_url, None).await;
-    let local_vision = config::resolve_local_vision();
 
     // --- helpers as local async blocks via nested calls ---
     async fn run_openrouter(
@@ -282,81 +216,13 @@ pub async fn chat_complete_with_backend(
         }
     }
 
-    async fn run_local(
-        cascade: &LlmCascade,
-        local_up: bool,
-        system: &str,
-        user: &str,
-        image_b64_jpeg: Option<&str>,
-        with_image: bool,
-        has_image: bool,
-        errors: &mut Vec<String>,
-    ) -> Option<ChatResult> {
-        if !local_up {
-            errors.push("local:ollama unreachable".into());
-            return None;
-        }
-        let img = if with_image { image_b64_jpeg } else { None };
-        match openai_chat(
-            &cascade.local_base_url,
-            &cascade.local_model,
-            None,
-            system,
-            user,
-            img,
-        )
-        .await
-        {
-            Ok(text) => Some(ChatResult {
-                text: strip_think_tags(&text),
-                backend: if with_image {
-                    "local_ollama".into()
-                } else if has_image {
-                    "local_ollama_text".into()
-                } else {
-                    "local_ollama".into()
-                },
-                model: cascade.local_model.clone(),
-            }),
-            Err(e) => {
-                errors.push(format!("local:{}", e));
-                None
-            }
-        }
-    }
-
     match force.as_str() {
         "local" => {
-            if let Some(r) = run_local(
-                &cascade,
-                local_up,
-                system,
-                user,
-                image_b64_jpeg,
-                has_image && local_vision,
-                has_image,
-                &mut errors,
-            )
-            .await
-            {
-                return Ok(r);
-            }
-            if has_image {
-                if let Some(r) = run_local(
-                    &cascade,
-                    local_up,
-                    system,
-                    user,
-                    image_b64_jpeg,
-                    false,
-                    has_image,
-                    &mut errors,
-                )
-                .await
-                {
-                    return Ok(r);
-                }
-            }
+            // Ollama support was removed — only opencode + openrouter remain.
+            return Err(LlmError::NoBackend(
+                "backend 'local' was removed: Ollama support dropped. Use 'auto', 'opencode', or 'openrouter'."
+                    .into(),
+            ));
         }
         "openrouter" => {
             if let Some(r) =
@@ -371,83 +237,14 @@ pub async fn chat_complete_with_backend(
             }
         }
         _ => {
-            // auto: opencode → local → openrouter
-            // Try opencode first (cloud, fast, free tier)
+            // auto: opencode → openrouter (cloud-first)
             if let Some(r) = run_opencode(system, user, image_b64_jpeg, &mut errors).await {
                 return Ok(r);
             }
-            if prefer_or_vision {
-                if let Some(r) =
-                    run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
-                {
-                    return Ok(r);
-                }
-                if local_vision {
-                    if let Some(r) = run_local(
-                        &cascade,
-                        local_up,
-                        system,
-                        user,
-                        image_b64_jpeg,
-                        true,
-                        has_image,
-                        &mut errors,
-                    )
-                    .await
-                    {
-                        return Ok(r);
-                    }
-                }
-                if let Some(r) = run_local(
-                    &cascade,
-                    local_up,
-                    system,
-                    user,
-                    image_b64_jpeg,
-                    false,
-                    has_image,
-                    &mut errors,
-                )
-                .await
-                {
-                    return Ok(r);
-                }
-            } else {
-                if let Some(r) = run_local(
-                    &cascade,
-                    local_up,
-                    system,
-                    user,
-                    image_b64_jpeg,
-                    has_image && local_vision,
-                    has_image,
-                    &mut errors,
-                )
-                .await
-                {
-                    return Ok(r);
-                }
-                if let Some(r) =
-                    run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
-                {
-                    return Ok(r);
-                }
-                if has_image {
-                    if let Some(r) = run_local(
-                        &cascade,
-                        local_up,
-                        system,
-                        user,
-                        image_b64_jpeg,
-                        false,
-                        has_image,
-                        &mut errors,
-                    )
-                    .await
-                    {
-                        return Ok(r);
-                    }
-                }
+            if let Some(r) =
+                run_openrouter(&cascade, &key, system, user, image_b64_jpeg, &mut errors).await
+            {
+                return Ok(r);
             }
         }
     }
@@ -480,8 +277,8 @@ async fn openai_chat(
         json!(user)
     };
 
-    // Qwen3.5 (Ollama) may spend tokens on internal reasoning; give headroom
-    // and disable think when the backend supports it (Ollama / some OpenAI forks).
+    // Qwen-family models may spend tokens on internal reasoning; give headroom
+    // and disable think when the backend supports it (OpenAI-compatible forks).
     let mut body = json!({
         "model": model,
         "messages": [
@@ -492,7 +289,7 @@ async fn openai_chat(
         "max_tokens": 1024,
         "think": false,
     });
-    // Ollama also accepts think under options for some versions
+    // Some OpenAI-compatible backends accept sampling knobs under `options`.
     if let Some(obj) = body.as_object_mut() {
         obj.insert(
             "options".into(),
@@ -541,7 +338,7 @@ async fn openai_chat(
 }
 
 /// Pull assistant text from OpenAI-compatible message objects.
-/// Qwen3.5-via-Ollama often puts chain-of-thought in `reasoning` / `reasoning_content`
+/// Qwen-family backends often put chain-of-thought in `reasoning` / `reasoning_content`
 /// while leaving `content` empty until think finishes — accept either.
 fn extract_message_text(msg: Option<&Value>) -> Option<String> {
     let msg = msg?;

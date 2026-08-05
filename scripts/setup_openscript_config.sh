@@ -13,9 +13,8 @@ set -euo pipefail
 
 CONFIG_DIR="${OPENSCRIPT_CONFIG_DIR:-$HOME/.openscript}"
 CONFIG_FILE="$CONFIG_DIR/config.json"
-GGUF_PATH="${OPENSCRIPT_GGUF_PATH:-$HOME/Downloads/Qwen3.5-4B-Q4_K_M.gguf}"
-LOCAL_MODEL="${OPENSCRIPT_LOCAL_MODEL:-qwen3.5-4b}"
 OR_KEY="${OPENROUTER_API_KEY:-${OPENROUTER_KEY:-}}"
+OPENCODE_KEY="${OPENCODE_API:-${OPENCODE_API_KEY:-}}"
 PEXELS_KEY="${PEXELS_API_KEY:-}"
 GIPHY_KEY="${GIPHY_API_KEY:-}"
 PIXABAY_KEY="${PIXABAY_API_KEY:-}"
@@ -23,11 +22,10 @@ PIXABAY_KEY="${PIXABAY_API_KEY:-}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --openrouter-key) OR_KEY="${2:-}"; shift 2 ;;
+    --opencode-key) OPENCODE_KEY="${2:-}"; shift 2 ;;
     --pexels-key) PEXELS_KEY="${2:-}"; shift 2 ;;
     --giphy-key) GIPHY_KEY="${2:-}"; shift 2 ;;
     --pixabay-key) PIXABAY_KEY="${2:-}"; shift 2 ;;
-    --gguf) GGUF_PATH="${2:-}"; shift 2 ;;
-    --model) LOCAL_MODEL="${2:-}"; shift 2 ;;
     -h|--help)
       cat <<'EOF'
 Create/update ~/.openscript/config.json (mode 0600).
@@ -35,11 +33,10 @@ Create/update ~/.openscript/config.json (mode 0600).
   --pexels-key KEY       Pexels API key (primary multi-broll)
   --giphy-key KEY        GIPHY key (stickers / memes)
   --pixabay-key KEY      Pixabay key (optional music/video)
-  --openrouter-key KEY   OpenRouter key (vision cascade)
-  --gguf PATH            Local GGUF path
-  --model NAME           Ollama model name (default qwen3.5-4b)
+  --openrouter-key KEY   OpenRouter key (fallback LLM / vision)
+  --opencode-key KEY     OpenCode key (primary LLM / vision, opencode.ai/zen)
 
-Env overrides: PEXELS_API_KEY, GIPHY_API_KEY, PIXABAY_API_KEY, OPENROUTER_API_KEY
+Env overrides: PEXELS_API_KEY, GIPHY_API_KEY, PIXABAY_API_KEY, OPENROUTER_API_KEY, OPENCODE_API
 EOF
       exit 0
       ;;
@@ -50,7 +47,7 @@ done
 mkdir -p "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 
-export CONFIG_FILE LOCAL_MODEL GGUF_PATH OR_KEY PEXELS_KEY GIPHY_KEY PIXABAY_KEY
+export CONFIG_FILE OR_KEY OPENCODE_KEY PEXELS_KEY GIPHY_KEY PIXABAY_KEY
 python3 <<'PY'
 import json, os
 from pathlib import Path
@@ -84,29 +81,21 @@ api_keys = {
         os.environ.get("OPENROUTER_API_KEY", ""),
         os.environ.get("OPENROUTER_KEY", ""),
     ),
+    "opencode": pick(
+        os.environ.get("OPENCODE_KEY"),
+        keys.get("opencode"),
+        existing.get("opencode_api_key"),
+        os.environ.get("OPENCODE_API", ""),
+        os.environ.get("OPENCODE_API_KEY", ""),
+    ),
 }
 
 llm_existing = existing.get("llm") if isinstance(existing.get("llm"), dict) else {}
-gguf_path = os.environ.get("GGUF_PATH", "")
-gguf = None
-if gguf_path and Path(gguf_path).expanduser().exists():
-    gguf = str(Path(gguf_path).expanduser())
-elif llm_existing.get("gguf_path"):
-    g = str(Path(str(llm_existing["gguf_path"])).expanduser())
-    gguf = g if Path(g).exists() else None
-
-local_model = os.environ.get("LOCAL_MODEL") or llm_existing.get("local_model") or "qwen3.5-4b"
 
 cfg = {
     "version": 1,
     "api_keys": api_keys,
     "llm": {
-        "local_model": local_model,
-        "local_base_url": llm_existing.get("local_base_url")
-            or os.environ.get("OPENSCRIPT_LLM_URL", "http://127.0.0.1:11434/v1"),
-        "gguf_path": gguf,
-        "mmproj_path": llm_existing.get("mmproj_path"),
-        "local_vision": bool(llm_existing.get("local_vision", False)),
         "openrouter_base_url": llm_existing.get("openrouter_base_url")
             or "https://openrouter.ai/api/v1",
         "openrouter_models": llm_existing.get("openrouter_models")
@@ -114,7 +103,9 @@ cfg = {
                 "google/gemma-4-31b-it:free",
                 "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
             ],
-        "prefer_openrouter_vision": llm_existing.get("prefer_openrouter_vision", True),
+        "opencode_base_url": llm_existing.get("opencode_base_url")
+            or "https://opencode.ai/zen/v1",
+        "opencode_model": llm_existing.get("opencode_model") or "mimo-v2.5-free",
     },
     "paths": existing.get("paths") if isinstance(existing.get("paths"), dict) else {},
     "render": existing.get("render")
@@ -127,8 +118,8 @@ os.chmod(path, 0o600)
 print(f"Wrote {path} (mode 0600)")
 for k, v in api_keys.items():
     print(f"  {k}: {'set' if v else 'NOT set'}")
-print(f"  local_model: {cfg['llm']['local_model']}")
-print(f"  gguf_path:   {cfg['llm']['gguf_path']}")
+print(f"  opencode_model: {cfg['llm']['opencode_model']}")
+print(f"  opencode_base_url: {cfg['llm']['opencode_base_url']}")
 PY
 
 echo ""
