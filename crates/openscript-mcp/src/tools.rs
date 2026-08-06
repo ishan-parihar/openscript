@@ -13789,7 +13789,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         backgrounds.push(openscript_ffmpeg::multilayer_render::BackgroundClip {
             path: bg_path,
             duration_s: dur,
-            looped: false, // Each scene has its own clip, no need to loop
+            // Loop per-scene trims: Pexels source clips are often SHORTER than
+            // the scene (e.g. a 6s clip for a 12s scene). Without -stream_loop
+            // the concat runs out early and the render holds the last frame
+            // for the remaining seconds (frozen tail). select(lte(n,N)) keeps
+            // exactly the scene frame count from the looped stream, so an
+            // exact-size trim is unaffected.
+            looped: true,
         });
     }
 

@@ -15,7 +15,7 @@ LONG-LIVED SERVE MODE (--serve):
 
 PROTOCOL:
 
-  → {"op":"synth","text":"Hello","voice":"ishan","max_new_tokens":256,
+  → {"op":"synth","text":"Hello","voice":"ishan","max_new_tokens":1024,
      "temperature":0.7,"top_p":0.9,"top_k":50,"seed":42,"output_path":"/tmp/a.wav"}
   ← {"status":"ok","duration_ms":1234,"sample_rate":44100}
 
@@ -71,14 +71,18 @@ def log(msg: str) -> None:
 
 
 # --- Chunking ----------------------------------------------------------------
-# The AR model stops generating at `max_new_tokens` (default 256). Long scene
-# text sent in one shot silently truncates the END of the sentence (words
-# dropped) — the "TTS truncation" bug. Split on sentence boundaries into
-# chunks safely under the token budget, synthesize each chunk with the same
-# voice, and concatenate the audio. The model produces natural inter-sentence
-# pauses, so no extra silence is inserted.
+# The AR model stops generating at `max_new_tokens` (default 1024; the runtime
+# manifest caps the sequence at max_seq_len=2048 and the generator stops early
+# on the EOS token, so a high budget costs nothing for short text). The old 256
+# budget allowed only ~11.9s of audio per call — a 207-char scene at natural
+# speech rate (~17 c/s, ~1.25 AR tokens/char) needs the full 256, so any longer
+# scene silently truncated the END of the sentence (words dropped) — the
+# "TTS truncation" bug. Split on sentence boundaries into chunks safely under
+# the token budget, synthesize each chunk with the same voice, and concatenate
+# the audio. The model produces natural inter-sentence pauses, so no extra
+# silence is inserted.
 
-MAX_CHARS_PER_CHUNK = 700  # ~175 AR tokens (safety margin under 256)
+MAX_CHARS_PER_CHUNK = 600  # ~620-780 AR tokens at natural speech rates; well under the 1024 budget
 
 
 def chunk_text(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
@@ -185,7 +189,7 @@ def handle_synth(req):
 
     kwargs = dict(
         voice=voice,
-        max_new_tokens=int(req.get("max_new_tokens", 256)),
+        max_new_tokens=int(req.get("max_new_tokens", 1024)),
         temperature=float(req.get("temperature", 0.7)),
         top_p=float(req.get("top_p", 0.9)),
         top_k=int(req.get("top_k", 50)),
@@ -280,7 +284,7 @@ def main() -> int:
     parser.add_argument("--text", help="Text to synthesize (fresh-process mode)")
     parser.add_argument("--voice", help="Voice profile name")
     parser.add_argument("--output", help="Output WAV path")
-    parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--max-new-tokens", type=int, default=1024)
     args = parser.parse_args()
 
     if args.serve:
