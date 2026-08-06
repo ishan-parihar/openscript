@@ -95,18 +95,30 @@ def align_with_whisper(
     load_time = time.time() - start
     _log(f"Model loaded in {load_time:.1f}s")
 
-    # Transcribe with word timestamps
+    # Transcribe with word timestamps. When a reference transcript is given,
+    # seed the decoder with it as initial_prompt — this conditions Whisper
+    # toward the KNOWN words so the word-level timing windows stay aligned to
+    # them (and word counts match, which remap_words_to_script needs to keep
+    # real timings instead of falling back to even spacing).
     _log(f"Running Whisper alignment (language={language})...")
     align_start = time.time()
 
+    transcribe_kwargs = dict(
+        language=language if language != "auto" else None,
+        word_timestamps=True,
+        condition_on_previous_text=False,
+        fp16=False,  # CPU mode
+    )
+    if text and text.strip():
+        # Strip ASR markup that Whisper could echo back (timestamps, brackets).
+        import re as _re
+
+        prompt = _re.sub(r"\{\{?[^}]*\}?\}", "", text.strip())
+        prompt = _re.sub(r"[\[\]()]", " ", prompt)
+        transcribe_kwargs["initial_prompt"] = prompt[:500]
+
     try:
-        result = model.transcribe(
-            wav_path,
-            language=language if language != "auto" else None,
-            word_timestamps=True,
-            condition_on_previous_text=False,
-            fp16=False,  # CPU mode
-        )
+        result = model.transcribe(wav_path, **transcribe_kwargs)
     except Exception as e:
         return {"error": f"Whisper alignment failed: {e}", "status": "error"}
 

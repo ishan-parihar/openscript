@@ -70,6 +70,84 @@ def log(msg: str) -> None:
     sys.stderr.flush()
 
 
+# --- Chunking ----------------------------------------------------------------
+# The AR model stops generating at `max_new_tokens` (default 256). Long scene
+# text sent in one shot silently truncates the END of the sentence (words
+# dropped) — the "TTS truncation" bug. Split on sentence boundaries into
+# chunks safely under the token budget, synthesize each chunk with the same
+# voice, and concatenate the audio. The model produces natural inter-sentence
+# pauses, so no extra silence is inserted.
+
+MAX_CHARS_PER_CHUNK = 700  # ~175 AR tokens (safety margin under 256)
+
+
+def chunk_text(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
+    """Split text into sentence-aligned chunks under max_chars.
+
+    Splits on sentence terminators (. ! ? … ; and newlines), keeping each
+    chunk under the budget. A single over-long sentence is split at comma/
+    semicolon boundaries, then hard-cut at word boundaries (last resort).
+    Returns a list of non-empty chunks.
+    """
+    import re
+
+    if len(text) <= max_chars:
+        return [text] if text.strip() else []
+
+    sentences = re.split(r"(?<=[.!?…;])\s+|\n+", text.strip())
+    chunks: list = []
+    cur = ""
+
+    def push(piece: str) -> None:
+        nonlocal cur
+        piece = piece.strip()
+        if not piece:
+            return
+        if not cur:
+            cur = piece
+        else:
+            cur = f"{cur} {piece}"
+
+    def flush() -> None:
+        nonlocal cur
+        if cur:
+            chunks.append(cur.strip())
+            cur = ""
+
+    for sent in sentences:
+        sent = sent.strip()
+        if not sent:
+            continue
+        if len(cur) + len(sent) + 1 <= max_chars:
+            push(sent)
+            continue
+        flush()
+        if len(sent) <= max_chars:
+            push(sent)
+            continue
+        # Over-long sentence: split at comma/semicolon boundaries first.
+        parts = re.split(r"(?<=[,;:])\s+", sent)
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if len(cur) + len(part) + 1 <= max_chars:
+                push(part)
+                continue
+            flush()
+            # Hard cut at word boundary, then raw char cut as last resort.
+            while len(part) > max_chars:
+                cut = part[:max_chars]
+                if " " in cut:
+                    cut = cut.rsplit(" ", 1)[0]
+                chunks.append(cut.strip())
+                part = part[len(cut):].lstrip()
+            if part:
+                push(part)
+    flush()
+    return chunks
+
+
 # --- Runtime (lazy) ----------------------------------------------------------
 _runtime = None  # ArkTtsRuntime — created on first synth, kept alive
 
@@ -84,6 +162,7 @@ def get_runtime():
 
 
 def handle_synth(req):
+    import numpy as np  # noqa: PLC0415
     import soundfile as sf  # noqa: PLC0415
 
     text = req.get("text", "")
@@ -96,8 +175,15 @@ def handle_synth(req):
     except Exception as exc:  # model load failure
         raise RuntimeError(f"failed to load Audio8 runtime: {exc}") from exc
 
-    audio, _codes = runtime.synthesize(
-        text=text,
+    # Chunk long text on sentence boundaries — the AR model truncates the
+    # tail of any input that exceeds max_new_tokens (the "words dropped from
+    # the end of the sentence" bug). Chunks keep timing/voice identical and
+    # the audio is concatenated into a single WAV.
+    chunks = chunk_text(text)
+    if not chunks:
+        raise ValueError("synth text produced no chunks")
+
+    kwargs = dict(
         voice=voice,
         max_new_tokens=int(req.get("max_new_tokens", 256)),
         temperature=float(req.get("temperature", 0.7)),
@@ -105,11 +191,21 @@ def handle_synth(req):
         top_k=int(req.get("top_k", 50)),
         seed=int(req.get("seed", 42)),
     )
+    if len(chunks) == 1:
+        audio, _codes = runtime.synthesize(text=chunks[0], **kwargs)
+    else:
+        log(f"synthesizing {len(chunks)} chunk(s) for {len(text)} chars "
+            f"(max_new_tokens={kwargs['max_new_tokens']})")
+        parts = []
+        for chunk in chunks:
+            part, _codes = runtime.synthesize(text=chunk, **kwargs)
+            parts.append(np.asarray(part, dtype=np.float32))
+        audio = np.concatenate(parts) if len(parts) > 1 else parts[0]
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out), audio, SAMPLE_RATE)
     duration_ms = int(round(len(audio) / SAMPLE_RATE * 1000.0))
-    return {"status": "ok", "duration_ms": duration_ms, "sample_rate": SAMPLE_RATE}
+    return {"status": "ok", "duration_ms": duration_ms, "sample_rate": SAMPLE_RATE, "chunks": len(chunks)}
 
 
 def handle_register(req):

@@ -6576,11 +6576,39 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
 
     if run_stickers {
         report_progress(88.0, 100.0, "sticker.auto (agentic GIPHY stickers)").await.ok();
+        // Unification: the b-roll pipeline's VALIDATED keywords (final_keywords
+        // — agent-approved, Pexels-verified) also drive the GIPHY sticker search
+        // per segment, so b-roll and stickers share ONE keyword source instead
+        // of sticker.keywords re-drafting a separate intent pass.
+        let sticker_shared_keywords: Vec<serde_json::Value> = validated_segments
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        let id = v.get("id").and_then(|i| i.as_str())?.to_string();
+                        let kws: Vec<String> = v
+                            .get("final_keywords")
+                            .and_then(|k| k.as_array())
+                            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
+                            .unwrap_or_default();
+                        if kws.is_empty() {
+                            return None;
+                        }
+                        Some(json!({
+                            "id": id,
+                            "caption": v.get("caption").cloned().unwrap_or_else(|| json!("")),
+                            "sticker_keywords": kws,
+                        }))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         // sticker.auto loads the timeline's segments directly (timeline_path
-        // branch) and runs sticker.keywords → GIPHY → Stickers track.
+        // branch) and runs shared keywords → GIPHY relevance gate → Stickers track.
         let sticker_res = handle_sticker_auto(json!({
             "timeline_path": timeline_path,
             "language": language,
+            "shared_keywords": sticker_shared_keywords,
             // "auto": position cycling + spacing gates (sticker relevance fix)
             "position": "auto",
             "min_gap_s": 2.0,
@@ -7987,6 +8015,40 @@ fn normalize_caption_text(s: &str) -> String {
 /// `out_start_ms` is the phrase's start on the OUTPUT clock (crossfade-remapped
 /// when applicable); `phrase_start_s` is the phrase's start on the SOURCE clock.
 /// Word timings are translated onto the output clock the same way.
+/// Token-set Jaccard similarity of two normalized caption strings
+/// (0.0 = disjoint, 1.0 = identical token sets). Used to accept real
+/// alignment windows when the ASR word text differs slightly from the
+/// phrase text (Hinglish ASR: "nahin" vs "nahi", dropped filler words) —
+/// the exact-equality gate was collapsing those to even-spacing estimates.
+fn caption_text_similarity(a: &str, b: &str) -> f64 {
+    // Tokenize the RAW strings (normalize_caption_text concatenates without
+    // spaces, so it cannot be re-split into tokens). Each token is
+    // lowercased and punctuation-stripped.
+    let tokenize = |s: &str| -> std::collections::HashSet<String> {
+        s.split_whitespace()
+            .map(|t| {
+                t.chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .flat_map(|c| c.to_lowercase())
+                    .collect::<String>()
+            })
+            .filter(|t| !t.is_empty())
+            .collect()
+    };
+    let ta = tokenize(a);
+    let tb = tokenize(b);
+    if ta.is_empty() && tb.is_empty() {
+        return 1.0;
+    }
+    let inter = ta.intersection(&tb).count();
+    let union = ta.union(&tb).count();
+    if union == 0 {
+        0.0
+    } else {
+        inter as f64 / union as f64
+    }
+}
+
 fn caption_words_for_phrase(
     phrase: &openscript_core::srt::SrtEntry,
     word_entries: &[openscript_core::srt::SrtEntry],
@@ -8004,20 +8066,57 @@ fn caption_words_for_phrase(
         .map(|w| w.text.trim())
         .collect::<Vec<_>>()
         .join(" ");
-    if !overlapping.is_empty()
-        && !normalize_caption_text(&joined).is_empty()
-        && normalize_caption_text(&joined) == normalize_caption_text(&phrase.text)
-    {
-        // Real alignments — offset onto the output clock (identity when no
-        // crossfade remap is active since out_start_ms == source start).
-        overlapping
+    let joined_norm = normalize_caption_text(&joined);
+    let phrase_norm = normalize_caption_text(&phrase.text);
+    // Accept the alignment windows when the ASR word text matches the phrase
+    // exactly OR closely (Jaccard >= 0.5) — minor ASR differences must not
+    // throw away real timings. When accepted, the word TEXT is overridden
+    // with the phrase's own words (caption text = ground truth; alignment
+    // windows = real), zipped by index and truncated to the shorter side.
+    let close_match = !joined_norm.is_empty()
+        && !phrase_norm.is_empty()
+        && (joined_norm == phrase_norm
+            || caption_text_similarity(&joined, &phrase.text) >= 0.5);
+    if !overlapping.is_empty() && close_match {
+        let phrase_words: Vec<&str> = phrase.text.split_whitespace().collect();
+        let mut out: Vec<WordTiming> = overlapping
             .iter()
-            .map(|w| WordTiming {
-                word: w.text.clone(),
+            .zip(phrase_words.iter())
+            .map(|(w, pw)| WordTiming {
+                word: pw.to_string(),
                 start_ms: out_start_ms + ((w.start - phrase_start_s) * 1000.0).round() as i64,
                 end_ms: out_start_ms + ((w.end - phrase_start_s) * 1000.0).round() as i64,
             })
-            .collect()
+            .collect();
+        // Fuzzy matches can have FEWER aligned words than the phrase (ASR
+        // merged/dropped words). Pad the tail with char-proportional timings
+        // over the remaining window so every phrase word gets a highlight cue
+        // instead of the last words rendering unhighlighted.
+        if out.len() < phrase_words.len() {
+            let last_end = out.last().map(|w| w.end_ms).unwrap_or(out_start_ms);
+            let window_ms = (phrase.end - phrase.start) * 1000.0;
+            let elapsed_ms = (last_end - out_start_ms) as f64;
+            let tail_ms = (window_ms - elapsed_ms).max(0.0);
+            let remaining: Vec<&str> = phrase_words[out.len()..].to_vec();
+            let chars: usize = remaining.iter().map(|w| w.len()).sum();
+            let mut acc = last_end;
+            for w in remaining {
+                let dur = if chars > 0 {
+                    (tail_ms * w.len() as f64 / chars as f64).round() as i64
+                } else {
+                    0
+                };
+                let start = acc;
+                let end = (acc + dur).max(start + 1);
+                out.push(WordTiming {
+                    word: w.to_string(),
+                    start_ms: start,
+                    end_ms: end,
+                });
+                acc = end;
+            }
+        }
+        out
     } else {
         estimate_word_timings(
             &phrase.text,
@@ -10465,14 +10564,45 @@ async fn handle_script_generate_voices(
         )
         .await?;
 
-        // Calculate word timings for this scene using Parakeet TDT force alignment.
-        // Falls back to even-spacing estimation if Parakeet is unavailable.
+        // Calculate word timings for this scene, routing the alignment engine
+        // by script language: Hinglish/Hindi → Whisper (multilingual, `hi`),
+        // English → Parakeet TDT. Parakeet is English-only; on Hinglish its
+        // word counts drift and remap_words_to_script collapses to even-spacing
+        // estimates (caption-sync gap). Both engines' timings are text-remapped
+        // to the script's ground-truth words below.
         let scene_end_ms = current_ms + result.duration_ms;
-        let words = remap_words_to_script(
-            &scene.text,
-            run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms)
-                .await
-                .unwrap_or_else(|e| {
+        let lang = spec.language.to_lowercase();
+        let hinglish = lang.starts_with("hi") || lang.contains("hinglish");
+        let words = if hinglish {
+            match run_whisper_alignment(&result.output_path, &scene.text, "hi", current_ms, scene_end_ms).await {
+                Ok(timed) => remap_words_to_script(&scene.text, timed, current_ms, scene_end_ms),
+                Err(e) => {
+                    let msg = format!(
+                        "Scene {}: Whisper alignment failed ({}), falling back to Parakeet.",
+                        i + 1,
+                        e
+                    );
+                    tracing::warn!("[script.generate_voices] {}", msg);
+                    voice_warnings.push(msg);
+                    match run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms).await {
+                        Ok(timed) => remap_words_to_script(&scene.text, timed, current_ms, scene_end_ms),
+                        Err(e2) => {
+                            let msg2 = format!(
+                                "Scene {}: Parakeet fallback failed ({}), using estimated word timings. Caption sync will be approximate.",
+                                i + 1,
+                                e2
+                            );
+                            tracing::warn!("[script.generate_voices] {}", msg2);
+                            voice_warnings.push(msg2);
+                            estimate_word_timings(&scene.text, current_ms, scene_end_ms)
+                        }
+                    }
+                }
+            }
+        } else {
+            match run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms).await {
+                Ok(timed) => remap_words_to_script(&scene.text, timed, current_ms, scene_end_ms),
+                Err(e) => {
                     let msg = format!(
                         "Scene {}: Parakeet force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
                         i + 1,
@@ -10481,10 +10611,9 @@ async fn handle_script_generate_voices(
                     tracing::warn!("[script.generate_voices] {}", msg);
                     voice_warnings.push(msg);
                     estimate_word_timings(&scene.text, current_ms, scene_end_ms)
-                }),
-            current_ms,
-            scene_end_ms,
-        );
+                }
+            }
+        };
 
         segments.push(serde_json::json!({
             "scene_id": scene.id,
@@ -10536,6 +10665,53 @@ async fn handle_script_generate_voices(
 /// aligned word count matches the script word count, keep the timings but
 /// substitute the script words. On any mismatch (dropped/merged/mangled
 /// words) fall back to char-proportional estimation over the segment window.
+/// When the ASR returned MORE words than the script (whisper commonly appends a
+/// trailing hallucinated token, or prepends a filler word), try trimming the
+/// excess from the tail or the head and check the remaining text still matches
+/// the script closely (Jaccard ≥ 0.5). If it does, keep the REAL timing windows
+/// overridden with the script's words instead of collapsing to estimates.
+/// Returns None when the count excess is >3 or the trimmed text diverges.
+fn try_trim_align_to_script(
+    timed: &[WordTiming],
+    script_words: &[&str],
+) -> Option<Vec<WordTiming>> {
+    let excess = timed.len().checked_sub(script_words.len())?;
+    if excess == 0 || excess > 3 || script_words.is_empty() {
+        return None;
+    }
+    let script_text = script_words.join(" ");
+    let tail_cut = &timed[..timed.len() - excess];
+    let head_cut = &timed[excess..];
+    let text_of = |slice: &[WordTiming]| -> String {
+        slice
+            .iter()
+            .map(|w| w.word.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let tail_sim = caption_text_similarity(&text_of(tail_cut), &script_text);
+    let head_sim = caption_text_similarity(&text_of(head_cut), &script_text);
+    let (best_slice, best_sim) = if tail_sim >= head_sim {
+        (tail_cut, tail_sim)
+    } else {
+        (head_cut, head_sim)
+    };
+    if best_sim < 0.5 {
+        return None;
+    }
+    Some(
+        best_slice
+            .iter()
+            .zip(script_words.iter())
+            .map(|(tw, sw)| WordTiming {
+                word: sw.to_string(),
+                start_ms: tw.start_ms,
+                end_ms: tw.end_ms,
+            })
+            .collect(),
+    )
+}
+
 fn remap_words_to_script(
     text: &str,
     timed: Vec<WordTiming>,
@@ -10548,8 +10724,14 @@ fn remap_words_to_script(
         return timed;
     }
     if timed.is_empty() || timed.len() != script_words.len() {
-        // No alignment, or the ASR dropped/merged words — estimate timings
-        // from the script text so captions tile the window with correct words.
+        // No alignment, or the ASR dropped/merged words — try trimming ASR
+        // hallucinations first, then estimate timings from the script text so
+        // captions tile the window with correct words.
+        if !timed.is_empty() && timed.len() > script_words.len() {
+            if let Some(trimmed) = try_trim_align_to_script(&timed, &script_words) {
+                return trimmed;
+            }
+        }
         return estimate_word_timings(text, start_ms, end_ms);
     }
     timed.iter()
@@ -10739,6 +10921,106 @@ async fn run_parakeet_alignment(
 
     if words.is_empty() {
         return Err("Parakeet returned no words".to_string());
+    }
+
+    Ok(words)
+}
+
+/// Run Whisper word-timestamp alignment on a TTS WAV (multilingual — used for
+/// Hinglish/Hindi scripts where the English-only Parakeet TDT model drifts and
+/// collapses captions to even-spacing estimates). `openai-whisper` transcribes
+/// with `word_timestamps=True` and the `language` hint keeps it on the right
+/// language; the timing windows are the value — `remap_words_to_script`
+/// overrides the word TEXT with the script's ground truth downstream, so ASR
+/// word errors never reach the caption.
+///
+/// Fresh-process per call (model reload ~1s for `base`) is acceptable here:
+/// only Hinglish/Hindi scripts route through Whisper, and the load is bounded
+/// per scene. Errors are returned as strings and callers fall back to Parakeet
+/// / estimation.
+async fn run_whisper_alignment(
+    wav_path: &str,
+    text: &str,
+    language: &str,
+    offset_ms: i64,
+    _scene_end_ms: i64,
+) -> Result<Vec<WordTiming>, String> {
+    let sidecar_script = resolve_repo_path("mcp/scripts/whisper_align.py");
+    let tmp_json = format!("{}.whisper.align.json", wav_path);
+
+    let output = tokio::process::Command::new("python3")
+        .arg(&sidecar_script)
+        .arg("--wav")
+        .arg(wav_path)
+        .arg("--text")
+        .arg(text)
+        .arg("--language")
+        .arg(language)
+        .arg("--model")
+        .arg("base")
+        .arg("--output")
+        .arg(&tmp_json)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn whisper align: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = std::fs::remove_file(&tmp_json);
+        return Err(format!(
+            "Whisper align failed: {}",
+            stderr.lines().last().unwrap_or("unknown")
+        ));
+    }
+
+    let align_str = std::fs::read_to_string(&tmp_json)
+        .map_err(|e| format!("Failed to read whisper alignment: {}", e))?;
+    let _ = std::fs::remove_file(&tmp_json);
+
+    let align: serde_json::Value = serde_json::from_str(&align_str)
+        .map_err(|e| format!("Failed to parse whisper alignment JSON: {}", e))?;
+    if let Some(err) = align.get("error").and_then(|v| v.as_str()) {
+        return Err(format!("Whisper align error: {}", err));
+    }
+
+    // Whisper returns seconds RELATIVE TO THE WAV (0-based); convert to ms and
+    // shift onto the global timeline clock by `offset_ms` (the scene start) —
+    // mirroring run_parakeet_alignment. Without this, count-matched words for
+    // scenes after the first land at 0.. instead of their real positions.
+    let mut words = Vec::new();
+    if let Some(word_arr) = align.get("words").and_then(|v| v.as_array()) {
+        for w in word_arr {
+            let word = w
+                .get("word")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let start_ms = w
+                .get("start_s")
+                .and_then(|v| v.as_f64())
+                .map(|s| (s * 1000.0).round() as i64 + offset_ms)
+                .unwrap_or(offset_ms);
+            let end_ms = w
+                .get("end_s")
+                .and_then(|v| v.as_f64())
+                .map(|s| (s * 1000.0).round() as i64 + offset_ms)
+                .unwrap_or(start_ms);
+            if !word.is_empty() && end_ms > start_ms {
+                words.push(WordTiming {
+                    word,
+                    start_ms,
+                    end_ms,
+                });
+            }
+        }
+    }
+
+    if words.is_empty() {
+        return Err("Whisper returned no word timings".to_string());
     }
 
     Ok(words)
@@ -13044,6 +13326,11 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let mut scene_stock_meta: Vec<Option<(String, String, String, f64, String)>> = Vec::new();
     let pexels_key_val = pexels_key();
 
+    // The final stock query per scene — the sticker stage reuses these SAME
+    // keywords so b-roll and stickers are driven by one keyword source
+    // (sticker/broll pipeline unification).
+    let mut scene_stock_queries: Vec<String> = Vec::new();
+
     // Multi-broll stock footage: unique clip per scene.
     // Priority: Pexels (if key) → YouTube via yt-dlp (no key) → procedural (last resort).
     // type:"static" is the explicit opt-out. type:"procedural" still TRIES stock first
@@ -13122,6 +13409,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             };
             // Keep unsafe-keyword rewrite for edge terms (blood → calm nature)
             let query = safe_search_query(&stock_q.query, &spec.output.theme);
+            scene_stock_queries.push(query.clone());
             let signal_tokens = stock_q.signal_tokens.clone();
             tracing::info!(
                 "[script.to_video] stock query scene {}: signal={:?} anchor='{}' → query='{}'",
@@ -13523,9 +13811,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             std::collections::HashMap::new();
         let single_speaker_multi_scene =
             spec.speakers.len() == 1 && spec.scenes.len() >= 3;
-        // Track queries used across speakers/scenes so we don't fetch the same
-        // sticker twice.
+        // Track queries used across speakers/scenes so we don't re-search the
+        // same term (query-level dedup).
         let mut used_sticker_queries: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        // Track GIPHY sticker IDs already downloaded — the definitive
+        // no-duplicate-sticker guarantee (two different queries can return the
+        // same top sticker).
+        let mut used_sticker_ids: std::collections::HashSet<String> =
             std::collections::HashSet::new();
 
         if !giphy_key_val.is_empty() {
@@ -13607,7 +13900,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    if used_sticker_queries.contains(&sticker_id) {
+                                    if used_sticker_ids.contains(&sticker_id) {
                                         continue;
                                     }
 
@@ -13675,7 +13968,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                                     speaker_name.clone(),
                                                     sticker_path.clone(),
                                                 );
-                                                used_sticker_queries.insert(sticker_id);
+                                                used_sticker_ids.insert(sticker_id);
                                                 tracing::info!(
                                                     "[script.to_video] Downloaded GIPHY sticker for {}: {} ({} bytes)",
                                                     speaker_name,
@@ -13707,105 +14000,122 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 let stickers_dir = "mcp/assets/stickers";
 
                 for (scene_idx, scene) in spec.scenes.iter().enumerate() {
-                    // Build a scene-specific query: emote > noun > text snippet
-                    let query = {
-                        let mut candidates: Vec<String> = Vec::new();
-                        if let Some(ref emote) = scene.emote {
-                            if !emote.is_empty() {
-                                candidates.push(emote.clone());
-                            }
+                    // Candidate queries, tried IN ORDER until a fresh,
+                    // non-duplicate sticker downloads: the scene's b-roll stock
+                    // query FIRST (unified keyword source for broll + sticker),
+                    // then sticker-friendly fallbacks (emote, salient noun,
+                    // text snippet, "talking head"). If the topic query only
+                    // surfaces already-used or static stickers, the next
+                    // candidate is tried — variation never silently collapses
+                    // to one repeated sticker.
+                    let mut sticker_candidates: Vec<String> = Vec::new();
+                    if let Some(q) = scene_stock_queries.get(scene_idx) {
+                        if !q.trim().is_empty() {
+                            sticker_candidates.push(q.clone());
                         }
-                        if let Some(noun) = extract_salient_noun(&scene.text) {
-                            candidates.push(noun);
+                    }
+                    if let Some(ref emote) = scene.emote {
+                        if !emote.is_empty() {
+                            sticker_candidates.push(emote.clone());
                         }
-                        // Use first 3 words of scene text as fallback
-                        let text_snippet: String = scene
-                            .text
-                            .split_whitespace()
-                            .take(3)
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        if !text_snippet.is_empty() {
-                            candidates.push(text_snippet);
+                    }
+                    if let Some(noun) = extract_salient_noun(&scene.text) {
+                        sticker_candidates.push(noun);
+                    }
+                    // Use first 3 words of scene text as fallback
+                    let text_snippet: String = scene
+                        .text
+                        .split_whitespace()
+                        .take(3)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !text_snippet.is_empty() {
+                        sticker_candidates.push(text_snippet);
+                    }
+                    sticker_candidates.push("talking head".to_string());
+                    let mut seen_q = std::collections::HashSet::new();
+                    sticker_candidates.retain(|c| seen_q.insert(c.clone()));
+
+                    let mut scene_placed = false;
+                    for query in &sticker_candidates {
+                        if scene_placed {
+                            break;
                         }
-                        candidates.push("talking head".to_string());
+                        if used_sticker_queries.contains(query) {
+                            continue;
+                        }
+                        used_sticker_queries.insert(query.clone());
+                        tracing::info!(
+                            "[script.to_video] Per-scene sticker query for scene {}: '{}'",
+                            scene_idx,
+                            query
+                        );
 
-                        candidates
-                            .into_iter()
-                            .find(|c| !used_sticker_queries.contains(c.as_str()))
-                            .unwrap_or_else(|| "talking head".to_string())
-                    };
-                    used_sticker_queries.insert(query.clone());
+                        let giphy_url = format!(
+                            "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=8&rating=g&bundle=sticker_layering&lang=en",
+                            giphy_key_val,
+                            urlencoding::encode(query)
+                        );
 
-                    tracing::info!(
-                        "[script.to_video] Per-scene sticker query for scene {}: '{}'",
-                        scene_idx,
-                        query
-                    );
+                        if let Ok(resp) = client.get(&giphy_url).send().await {
+                            if resp.status().is_success() {
+                                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                                    if let Some(data) = body.get("data").and_then(|v| v.as_array()) {
+                                        for sticker in data {
+                                            let is_sticker = sticker
+                                                .get("is_sticker")
+                                                .and_then(|v| v.as_i64())
+                                                .unwrap_or(1);
+                                            if is_sticker != 1 { continue; }
 
-                    let giphy_url = format!(
-                        "https://api.giphy.com/v1/stickers/search?api_key={}&q={}&limit=8&rating=g&bundle=sticker_layering&lang=en",
-                        giphy_key_val,
-                        urlencoding::encode(&query)
-                    );
+                                            let sticker_id = sticker
+                                                .get("id")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("")
+                                                .to_string();
+                                            if used_sticker_ids.contains(&sticker_id) { continue; }
 
-                    if let Ok(resp) = client.get(&giphy_url).send().await {
-                        if resp.status().is_success() {
-                            if let Ok(body) = resp.json::<serde_json::Value>().await {
-                                if let Some(data) = body.get("data").and_then(|v| v.as_array()) {
-                                    for sticker in data {
-                                        let is_sticker = sticker
-                                            .get("is_sticker")
-                                            .and_then(|v| v.as_i64())
-                                            .unwrap_or(1);
-                                        if is_sticker != 1 { continue; }
+                                            let images = sticker.get("images").cloned().unwrap_or(json!({}));
+                                            let original = images.get("original").cloned().unwrap_or(json!({}));
 
-                                        let sticker_id = sticker
-                                            .get("id")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-                                        if used_sticker_queries.contains(&sticker_id) { continue; }
+                                            let sticker_url = original
+                                                .get("url")
+                                                .and_then(|v| v.as_str())
+                                                .filter(|s| !s.is_empty())
+                                                .unwrap_or("");
+                                            if sticker_url.is_empty() { continue; }
 
-                                        let images = sticker.get("images").cloned().unwrap_or(json!({}));
-                                        let original = images.get("original").cloned().unwrap_or(json!({}));
+                                            let frames = original
+                                                .get("frames")
+                                                .and_then(|v| v.as_str())
+                                                .and_then(|s| s.parse::<u32>().ok())
+                                                .unwrap_or(0);
+                                            if frames < 2 { continue; }
 
-                                        let sticker_url = original
-                                            .get("url")
-                                            .and_then(|v| v.as_str())
-                                            .filter(|s| !s.is_empty())
-                                            .unwrap_or("");
-                                        if sticker_url.is_empty() { continue; }
+                                            let size: i64 = original
+                                                .get("webp_size")
+                                                .and_then(|v| v.as_i64())
+                                                .or_else(|| original.get("size").and_then(|v| v.as_i64()))
+                                                .unwrap_or(0);
+                                            if size > 3_000_000 { continue; }
 
-                                        let frames = original
-                                            .get("frames")
-                                            .and_then(|v| v.as_str())
-                                            .and_then(|s| s.parse::<u32>().ok())
-                                            .unwrap_or(0);
-                                        if frames < 2 { continue; }
-
-                                        let size: i64 = original
-                                            .get("webp_size")
-                                            .and_then(|v| v.as_i64())
-                                            .or_else(|| original.get("size").and_then(|v| v.as_i64()))
-                                            .unwrap_or(0);
-                                        if size > 3_000_000 { continue; }
-
-                                        let sticker_path = format!(
-                                            "{}/giphy_s{}_{}.gif",
-                                            stickers_dir, scene_idx, speaker_name
-                                        );
-                                        if let Ok(dl_resp) = client.get(sticker_url).send().await {
-                                            if dl_resp.status().is_success() {
-                                                if let Ok(bytes) = dl_resp.bytes().await {
-                                                    std::fs::write(&sticker_path, &bytes).ok();
-                                                    scene_sticker_map.insert(scene_idx, sticker_path.clone());
-                                                    used_sticker_queries.insert(sticker_id);
-                                                    tracing::info!(
-                                                        "[script.to_video] Per-scene sticker for scene {}: {}",
-                                                        scene_idx, sticker_path
-                                                    );
-                                                    break;
+                                            let sticker_path = format!(
+                                                "{}/giphy_s{}_{}.gif",
+                                                stickers_dir, scene_idx, speaker_name
+                                            );
+                                            if let Ok(dl_resp) = client.get(sticker_url).send().await {
+                                                if dl_resp.status().is_success() {
+                                                    if let Ok(bytes) = dl_resp.bytes().await {
+                                                        std::fs::write(&sticker_path, &bytes).ok();
+                                                        scene_sticker_map.insert(scene_idx, sticker_path.clone());
+                                                        used_sticker_ids.insert(sticker_id);
+                                                        tracing::info!(
+                                                            "[script.to_video] Per-scene sticker for scene {}: {}",
+                                                            scene_idx, sticker_path
+                                                        );
+                                                        scene_placed = true;
+                                                        break;
+                                                    }
                                                 }
                                             }
                                         }
@@ -13813,6 +14123,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                                 }
                             }
                         }
+                    }
+                    if !scene_placed {
+                        tracing::warn!(
+                            "[script.to_video] No fresh sticker for scene {} after {} query candidate(s) — will use the speaker sticker",
+                            scene_idx,
+                            sticker_candidates.len()
+                        );
                     }
                 }
             }
@@ -14279,7 +14596,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             // The sparse handler wrote broll=1 event covering the full video; we now have
             // per-scene broll assignments, music, captions, and SFX. Clear each track to
             // avoid duplicate/overlapping events.
-            for track_type in [TrackType::Broll, TrackType::Music, TrackType::Captions, TrackType::Sfx] {
+            for track_type in [TrackType::Broll, TrackType::Music, TrackType::Captions, TrackType::Sfx, TrackType::Stickers] {
                 if let Some(events) = tl.tracks.get_mut(&track_type) {
                     events.clear();
                 }
@@ -14441,14 +14758,58 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 );
             }
 
+            // Stickers track: persist the overlays the multilayer render
+            // composites so verify.render / timeline inspection see them.
+            // (Previously stickers existed only in the render spec — the
+            // timeline's Stickers track stayed empty and verify reported 0.)
+            for (i, st) in stickers.iter().enumerate() {
+                let event_id = format!("sticker_{:03}", i + 1);
+                let start_ms = (st.start_s * 1000.0) as i64;
+                let end_ms = (st.end_s * 1000.0) as i64;
+                tl.add_track_event(
+                    TrackType::Stickers,
+                    TimelineEvent {
+                        id: event_id.clone(),
+                        asset_id: event_id.clone(),
+                        start_ms,
+                        end_ms,
+                        offset_ms: 0,
+                        gain_db: 0.0,
+                        fade_in_ms: 150,
+                        fade_out_ms: 150,
+                        tags: vec!["sticker".to_string(), st.position.clone()],
+                        provenance: None,
+                        kind: EventKind::Broll {
+                            concept: format!("overlay:{}", st.position),
+                            source_provider: st.path.clone(),
+                            transition_style: "overlay".into(),
+                            crop_mode: "none".into(),
+                            orientation: "9:16".into(),
+                            motion_intensity: "static".into(),
+                        },
+                    },
+                );
+                tl.add_asset(
+                    "broll",
+                    event_id.clone(),
+                    serde_json::json!({
+                        "path": st.path,
+                        "position": st.position,
+                        "scale": st.scale,
+                        "overlay": true,
+                    }),
+                );
+            }
+
             // Save updated timeline
             let _ = tl.save(&timeline_path);
             tracing::info!(
-                "[script.to_video] Updated timeline tracks: broll={} music={} captions={} sfx={}",
+                "[script.to_video] Updated timeline tracks: broll={} music={} captions={} sfx={} stickers={}",
                 bg_assignments.len(),
                 if music_path.is_some() { 1 } else { 0 },
                 if !captions_path.is_empty() { 1 } else { 0 },
                 sfx_hits.len(),
+                stickers.len(),
             );
         }
     }
@@ -17321,16 +17682,31 @@ async fn handle_sticker_auto(args: serde_json::Value) -> Result<serde_json::Valu
         return Err(ToolError::InvalidArg("sticker.auto: no segments found — check SRT/timeline".into()));
     }
 
-    // Stage B: agentic keyword draft (intent + emphatic)
+    // Stage B: keyword draft. When the caller already drafted keywords (e.g.
+    // broll.auto passes its validated b-roll keywords so ONE keyword source
+    // drives both b-roll and stickers — the unification), use them directly and
+    // skip the separate LLM sticker-intent pass. Otherwise run the agentic
+    // sticker.keywords draft (intent + emphatic).
+    let shared_keywords: Vec<serde_json::Value> = args
+        .get("shared_keywords")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     report_progress(35.0, 100.0, "2/4 sticker.keywords (agentic intent draft)").await.ok();
-    let drafts = handle_sticker_keywords(json!({
-        "segments": segments,
-        "language": default_str(&args, "language", "hinglish"),
-        "max_batch_size": 15,
-    }))
-    .await?;
-    let mut enriched_segments = drafts.get("segments").cloned().unwrap_or_else(|| json!([]));
-    let backend = drafts.get("backend").cloned().unwrap_or_else(|| json!(""));
+    let (mut enriched_segments, backend) = if !shared_keywords.is_empty() {
+        (json!(shared_keywords), json!("shared_broll_keywords"))
+    } else {
+        let drafts = handle_sticker_keywords(json!({
+            "segments": segments,
+            "language": default_str(&args, "language", "hinglish"),
+            "max_batch_size": 15,
+        }))
+        .await?;
+        (
+            drafts.get("segments").cloned().unwrap_or_else(|| json!([])),
+            drafts.get("backend").cloned().unwrap_or_else(|| json!("")),
+        )
+    };
 
     // Stage C: relevance gate — approve only stickers that genuinely match the
     // spoken intent (mirror of broll.validate_keywords). GIPHY/LLM-down ⇒ drafts
@@ -17492,6 +17868,10 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
 
     let mut last_sticker_end_s: Option<f64> = None;
     let mut placed_count = 0usize;
+    // No-duplicate-sticker guarantee: GIPHY ids placed earlier in this run are
+    // never placed again — two segments with similar keywords often resolve to
+    // the SAME top GIPHY sticker (the "same sticker repeats" bug).
+    let mut used_sticker_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for seg in segments.iter() {
         if events_created.len() >= max_stickers { break; }
 
@@ -17531,8 +17911,21 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
         let mut query = String::new();
         let mut chosen_url = String::new();
         let mut chosen_title = String::new();
+        let mut chosen_sticker_id = String::new();
         if let Some(vs) = best_sticker_by_seg.get(&seg_id) {
             if let Some(bs) = vs.get("best_sticker") {
+                // Duplicate guard for validated picks: two segments can approve
+                // the same GIPHY sticker — the second is skipped, never re-placed.
+                let sticker_giphy_id = bs.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if !sticker_giphy_id.is_empty() && used_sticker_ids.contains(&sticker_giphy_id) {
+                    skipped.push(json!({
+                        "segment_id": seg.id,
+                        "reason": "duplicate_sticker",
+                        "detail": format!("GIPHY sticker {} already placed on this timeline", sticker_giphy_id),
+                    }));
+                    continue;
+                }
+                chosen_sticker_id = sticker_giphy_id;
                 query = vs
                     .get("final_keyword")
                     .and_then(|v| v.as_str())
@@ -17586,12 +17979,18 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
                 continue;
             }
 
-            // Pick the first result whose original URL is downloadable.
+            // Pick the first result whose original URL is downloadable and that
+            // has not already been placed (duplicate-sticker guard).
             for item in &data {
+                let gid = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if !gid.is_empty() && used_sticker_ids.contains(&gid) {
+                    continue;
+                }
                 let u = item.pointer("/images/original/url").and_then(|v| v.as_str()).unwrap_or("");
                 if !u.is_empty() {
                     chosen_url = u.to_string();
                     chosen_title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    chosen_sticker_id = gid;
                     break;
                 }
             }
@@ -17611,6 +18010,9 @@ async fn handle_sticker_auto_assign(args: serde_json::Value) -> Result<serde_jso
         if asset_path_str.is_empty() || asset_path_str == "placeholder" {
             skipped.push(json!({"segment_id": seg.id, "query": query, "reason": "download failed"}));
             continue;
+        }
+        if !chosen_sticker_id.is_empty() {
+            used_sticker_ids.insert(chosen_sticker_id);
         }
 
         // Place on the Stickers track. asset_id = event_id (registry key
@@ -18471,6 +18873,35 @@ async fn handle_system_capabilities(
         "note": "Zero-shot voice cloning via Audio8 TTS Preview 0.6B (ONNX INT4). English default for the script-to-video workflow.",
     });
 
+    // Whisper word alignment (multilingual — primary alignment engine for
+    // Hinglish/Hindi scripts; Parakeet TDT is English-only and drifts on
+    // Hinglish). Used by script.generate_voices when script.language is
+    // hi/hinglish. Requires the openai-whisper Python package.
+    let whisper_script = "mcp/scripts/whisper_align.py";
+    let whisper_script_exists = path_exists(whisper_script);
+    let whisper_importable = std::process::Command::new("python3")
+        .args(["-c", "import whisper; print('ok')"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    let whisper_align = json!({
+        "available": whisper_script_exists && whisper_importable,
+        "path": whisper_script,
+        "script_exists": whisper_script_exists,
+        "whisper_importable": whisper_importable,
+        "model": "base",
+        "languages": ["hi", "hinglish", "en", "es", "fr", "de"],
+        "reason": if whisper_script_exists && whisper_importable {
+            serde_json::Value::Null
+        } else if !whisper_script_exists {
+            "whisper_align.py not found. Hinglish scripts fall back to Parakeet alignment (English-only — caption sync on Hinglish will be approximate).".into()
+        } else {
+            "openai-whisper not installed (pip install openai-whisper). Hinglish scripts fall back to Parakeet alignment.".into()
+        },
+    });
+
     // LLM / vision cascade: OpenCode zen + OpenRouter free multimodal
     let llm = crate::llm::probe_llm_capabilities().await;
     let openscript_config = crate::config::config_public_view();
@@ -18482,6 +18913,7 @@ async fn handle_system_capabilities(
         "audio8": audio8,
         "transcription": transcription,
         "parakeet_align": parakeet_align,
+        "whisper_align": whisper_align,
         "pexels": pexels,
         "giphy": giphy,
         "pixabay": pixabay,
@@ -19060,6 +19492,45 @@ mod tests {
     }
 
     #[test]
+    fn test_caption_text_similarity_scores() {
+        assert_eq!(caption_text_similarity("a b c", "a b c"), 1.0);
+        assert_eq!(caption_text_similarity("", ""), 1.0);
+        assert_eq!(caption_text_similarity("a b c", "x y z"), 0.0);
+        // One token differs out of six → Jaccard 5/7 ≈ 0.71 (fuzzy gate ≥ 0.5).
+        assert!(caption_text_similarity("a b c d e f", "a b c d e g") >= 0.5);
+        // Disjoint Hinglish vs English stays below the gate.
+        assert!(caption_text_similarity("bhai sarkaar ki phati", "the government started") < 0.5);
+    }
+
+    #[test]
+    fn test_caption_words_for_phrase_fuzzy_match_keeps_real_timings() {
+        use openscript_core::srt::SrtEntry;
+        // Hinglish ASR transcribed one word slightly differently ("sarkaar" →
+        // "sarkaari"). Exact equality fails but the token sets are ~identical;
+        // the real alignment windows must be KEPT (not collapsed to estimates)
+        // and the word TEXT overridden with the phrase's own words.
+        let phrase = SrtEntry {
+            idx: 1,
+            start: 0.0,
+            end: 3.31,
+            text: "Bhai sarkaar ki phati badhiya".to_string(),
+        };
+        let words_src = vec![
+            SrtEntry { idx: 1, start: 0.0, end: 0.5, text: "Bhai".into() },
+            SrtEntry { idx: 2, start: 0.5, end: 1.0, text: "sarkaari".into() },
+            SrtEntry { idx: 3, start: 1.0, end: 1.5, text: "ki".into() },
+            SrtEntry { idx: 4, start: 1.5, end: 2.0, text: "phati".into() },
+            SrtEntry { idx: 5, start: 2.0, end: 3.31, text: "badhiya".into() },
+        ];
+        let words = caption_words_for_phrase(&phrase, &words_src, 0, 0.0);
+        assert_eq!(words.len(), 5, "real windows kept, not estimated");
+        assert_eq!(words[1].word, "sarkaar", "text overridden with phrase word");
+        assert_eq!(words[1].start_ms, 500, "real alignment start preserved");
+        assert_eq!(words[1].end_ms, 1000, "real alignment end preserved");
+        assert_eq!(words[4].end_ms, 3310);
+    }
+
+    #[test]
     fn test_remap_words_to_script_same_count_keeps_timings_script_text() {
         // ASR mis-heard the cloned voice: "bias" → "pie" (same word count).
         // The caption TEXT must be the script's words; the real alignment
@@ -19089,6 +19560,30 @@ mod tests {
         assert_eq!(out[2].word, "test");
         assert_eq!(out[0].start_ms, 0);
         assert_eq!(out[2].end_ms, 3000, "estimate must tile the full window");
+    }
+
+    #[test]
+    fn test_remap_words_to_script_trims_trailing_hallucination() {
+        // Whisper appended a trailing hallucinated token ("HBC") after the
+        // real words — 17 aligned vs 16 script words. The trailing trim must
+        // keep the REAL timing windows (not collapse to estimates) and apply
+        // the script's text.
+        let script = "Log kehte hain sab theek hai par sach yeh hai ki kuch bhi theek nahi hai";
+        let mut timed: Vec<WordTiming> = script
+            .split_whitespace()
+            .enumerate()
+            .map(|(i, w)| WordTiming {
+                word: w.to_string(),
+                start_ms: i as i64 * 300,
+                end_ms: i as i64 * 300 + 250,
+            })
+            .collect();
+        timed.push(WordTiming { word: "HBC".into(), start_ms: 4800, end_ms: 5100 });
+        let out = remap_words_to_script(script, timed, 0, 5100);
+        assert_eq!(out.len(), 16, "trailing hallucination trimmed, real windows kept");
+        assert_eq!(out[15].word, "hai");
+        assert_eq!(out[15].start_ms, 4500, "last real word timing preserved");
+        assert_eq!(out[15].end_ms, 4750);
     }
 
     #[test]

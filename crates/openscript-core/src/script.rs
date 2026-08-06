@@ -43,6 +43,15 @@ pub struct ScriptSpec {
     #[serde(default)]
     pub tts: TtsSpec,
 
+    /// Source language of the script text. Routes the caption word-timing
+    /// alignment engine: "en" (default) → Parakeet TDT (fast, English-only);
+    /// "hi" / "hinglish" / "hi-IN" → Whisper (multilingual, language hint
+    /// `hi`) — Parakeet's English ASR drifts on Hinglish audio and collapses
+    /// captions to even-spacing estimates. Accepted values follow the
+    /// transcribe `language_hint` vocabulary.
+    #[serde(default = "default_language")]
+    pub language: String,
+
     /// Speaker definitions (voice, visual preset, position).
     ///
     /// Keys are speaker IDs referenced by scenes. At least one speaker
@@ -181,6 +190,9 @@ pub struct TtsSpec {
 
 fn default_tts_backend() -> String {
     "kokoro".to_string()
+}
+fn default_language() -> String {
+    "en".to_string()
 }
 fn default_speed() -> f64 {
     1.0
