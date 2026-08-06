@@ -1000,9 +1000,11 @@ pub fn tool_definitions() -> serde_json::Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "YouTube search query (e.g. 'minecraft parkour no copyright')"},
-                    "duration_s": {"type": "number", "default": 30.0, "description": "Desired clip duration in seconds"},
-                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
+            "query": {"type": "string", "description": "YouTube search query (e.g. 'minecraft parkour no copyright')"},
+            "duration_s": {"type": "number", "default": 30.0, "description": "Desired clip duration in seconds"},
+            "min_duration_s": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": 0, "description": "Minimum clip duration in seconds (SEGMENTATION_ARCHITECTURE min clip duration). Clips shorter than this are skipped so they never need looping — alternates are fetched instead. 0 = default to duration_s."},
+            "max_duration_s": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": 0, "description": "Maximum clip duration in seconds (SEGMENTATION_ARCHITECTURE max clip duration). 0 = no cap."},
+            "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
                     "cache_dir": {"type": "string", "default": "mcp/assets/background_cache", "description": "Cache directory for downloaded videos"},
                     "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local fallback clips if YouTube download fails"},
                     "used_video_ids": {"type": "array", "items": {"type": "integer"}, "description": "Pexels video ids already used in this run/timeline — these clips are skipped so the same footage never repeats under a different query. Returned pexels_id values from prior calls should be accumulated here."}
@@ -1758,6 +1760,63 @@ fn aspect_to_orientation(aspect: &str) -> &'static str {
         "1:1" => "square",
         _ => "portrait",
     }
+}
+
+/// Build a Pexels video search URL with optional duration filters.
+///
+/// Implements the SEGMENTATION_ARCHITECTURE.md clip-duration matching: when
+/// `min_duration_s > 0` the API only returns clips at least that long, so a
+/// scene's clip never needs looping — the caller keeps fetching ALTERNATE
+/// stock videos (via `page`) for the same keywords until one covers the
+/// required duration. `max_duration_s > 0` caps the upper bound.
+fn pexels_search_url(
+    query: &str,
+    orientation: &str,
+    page: i64,
+    min_duration_s: f64,
+    max_duration_s: f64,
+) -> String {
+    let mut url = format!(
+        "https://api.pexels.com/videos/search?query={}&per_page=15&orientation={}&page={}",
+        urlencoding::encode(query),
+        orientation,
+        page
+    );
+    // floor (not ceil) for the API filter: a clip that EXACTLY covers the
+    // scene (e.g. 11.9s for an 11.89s scene) must stay in the candidate pool;
+    // the caller's strict float check `(vid_dur as f64) >= needed` decides
+    // coverage, so the API filter only narrows, never excludes a valid cover.
+    if min_duration_s > 0.0 {
+        url.push_str(&format!(
+            "&min_duration={}",
+            min_duration_s.floor() as i64
+        ));
+    }
+    if max_duration_s > 0.0 {
+        url.push_str(&format!(
+            "&max_duration={}",
+            max_duration_s.floor() as i64
+        ));
+    }
+    url
+}
+
+/// Find the best download URL (720-1920px width file) for a Pexels video JSON
+/// object, or None when no suitable file exists. Shared by the script.to_video
+/// pass 1 (covering) and pass 2 (loop fallback) selection loops.
+fn pexels_file_url(video: &serde_json::Value) -> Option<String> {
+    video
+        .get("video_files")
+        .and_then(|v| v.as_array())
+        .and_then(|files| {
+            files.iter().find(|f| {
+                let width = f.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
+                let u = f.get("link").and_then(|v| v.as_str()).unwrap_or("");
+                (720..=1920).contains(&width) && !u.is_empty()
+            })
+        })
+        .and_then(|f| f.get("link").and_then(|v| v.as_str()))
+        .map(|s| s.to_string())
 }
 
 /// Build an ffmpeg `-vf` filter that **cover-crops** to the target aspect
@@ -11033,6 +11092,11 @@ async fn run_whisper_alignment(
 async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let query = extract_str(&args, "query")?;
     let duration_s = default_f64(&args, "duration_s", 30.0);
+    // SEGMENTATION_ARCHITECTURE min/max clip duration: clips shorter than
+    // `min_duration_s` are skipped (alternates are fetched instead of looping);
+    // `max_duration_s` caps the upper bound. 0 = fall back to duration_s / no cap.
+    let min_duration_s = default_f64(&args, "min_duration_s", 0.0);
+    let max_duration_s = default_f64(&args, "max_duration_s", 0.0);
     let aspect = default_str(&args, "aspect", "9:16");
     let cache_dir = default_str(&args, "cache_dir", "mcp/assets/background_cache");
     let fallback_pool: Vec<String> = args
@@ -11072,19 +11136,18 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
         let orientation = aspect_to_orientation(&aspect);
 
-        let pexels_url = format!(
-            "https://api.pexels.com/videos/search?query={}&per_page=15&orientation={}",
-            urlencoding::encode(query),
-            orientation
-        );
-
+        // SEGMENTATION_ARCHITECTURE clip-duration matching: prefer clips that
+        // COVER the requested duration so short clips never need looping —
+        // fetch ALTERNATE stock videos for the same keywords (up to 3 pages)
+        // until one covers `duration_s`. `min_duration_s`/`max_duration_s`
+        // params (default 0) are passed to the API as hard filters when set.
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
 
         match client
-            .get(&pexels_url)
+            .get(&pexels_search_url(query, &orientation, 1, min_duration_s, max_duration_s))
             .header("Authorization", &pexels_key_val)
             .send()
             .await
@@ -11095,11 +11158,44 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                     .await
                     .map_err(|e| ToolError::Asset(format!("Pexels parse error: {}", e)))?;
 
-                let videos = body
+                let mut videos = body
                     .get("videos")
                     .and_then(|v| v.as_array())
                     .cloned()
                     .unwrap_or_default();
+
+                // Keep fetching alternates (pages 2-3) until a clip covers
+                // `duration_s` — the whole point of "find alternate videos
+                // rather than looping". Stop early when page 1 already has one.
+                for page in 2..=3 {
+                    let has_cover = videos.iter().any(|v| {
+                        v.get("duration").and_then(|x| x.as_i64()).unwrap_or(0) as f64
+                            >= duration_s
+                    });
+                    if has_cover {
+                        break;
+                    }
+                    if let Ok(resp2) = client
+                        .get(&pexels_search_url(
+                            query,
+                            &orientation,
+                            page,
+                            min_duration_s,
+                            max_duration_s,
+                        ))
+                        .header("Authorization", &pexels_key_val)
+                        .send()
+                        .await
+                    {
+                        if resp2.status().is_success() {
+                            if let Ok(b2) = resp2.json::<serde_json::Value>().await {
+                                if let Some(v2) = b2.get("videos").and_then(|v| v.as_array()) {
+                                    videos.extend(v2.clone());
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Find a video with enough duration — prefer longer videos.
                 // Skip ids in `used_video_ids` so the same stock clip is never
@@ -13438,160 +13534,190 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             let mut stock_meta: Option<(String, String, String, f64, String)> = None; // id,hash,q,lex,title
 
             // --- Priority 1: Pexels (requires API key) ---
+            // SEGMENTATION_ARCHITECTURE min clip duration: request clips that
+            // COVER the scene (min_duration = scene length) so short clips are
+            // NOT looped — prefer an ALTERNATE stock video for the scene's
+            // keywords (up to 3 pages). If no clip covers the scene, fall back
+            // to the longest short clip (renderer loops it only as a last
+            // resort so the tail never freezes).
             if !pexels_key_val.is_empty() {
-                let pexels_url = format!(
-                    "https://api.pexels.com/videos/search?query={}&per_page=5&orientation={}",
-                    urlencoding::encode(&query),
-                    orientation
-                );
-
-                if let Ok(resp) = client
-                    .get(&pexels_url)
-                    .header("Authorization", &pexels_key_val)
-                    .send()
-                    .await
-                {
-                    if resp.status().is_success() {
-                        if let Ok(body) = resp.json::<serde_json::Value>().await {
-                            if let Some(videos) = body.get("videos").and_then(|v| v.as_array()) {
-                                for video in videos {
-                                    let vid_id =
-                                        video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-                                    if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
-                                        continue;
-                                    }
-                                    let vid_dur = video
-                                        .get("duration")
-                                        .and_then(|v| v.as_i64())
-                                        .unwrap_or(0);
-                                    if vid_dur >= 3 {
-                                        if let Some(files) =
-                                            video.get("video_files").and_then(|v| v.as_array())
-                                        {
-                                            for file in files {
-                                                let width = file
-                                                    .get("width")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(0);
-                                                let url = file
-                                                    .get("link")
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("");
-                                                if (720..=1920).contains(&width) && !url.is_empty() {
-                                                    let clip_path = format!(
-                                                        "{}/scene_{:03}.mp4",
-                                                        cache_dir,
-                                                        scene_idx + 1
-                                                    );
-                                                    if let Ok(dl_resp) =
-                                                        client.get(url).send().await
-                                                    {
-                                                        if dl_resp.status().is_success() {
-                                                            if let Ok(bytes) =
-                                                                dl_resp.bytes().await
-                                                            {
-                                                                std::fs::write(&clip_path, &bytes)
-                                                                    .ok();
-                                                                let crop_filter =
-                                                                    crop_filter_for_aspect(
-                                                                        &spec.meta.aspect,
-                                                                    );
-                                                                let trimmed = format!(
-                                                                    "{}/scene_{:03}_trim.mp4",
-                                                                    cache_dir,
-                                                                    scene_idx + 1
-                                                                );
-                                                                let trim_result =
-                                                                    tokio::process::Command::new(
-                                                                        "ffmpeg",
-                                                                    )
-                                                                    .arg("-y")
-                                                                    .arg("-i")
-                                                                    .arg(&clip_path)
-                                                                    .arg("-t")
-                                                                    .arg(dur.to_string())
-                                                                    .arg("-vf")
-                                                                    .arg(&crop_filter)
-                                                                    .arg("-c:v")
-                                                                    .arg("libx264")
-                                                                    .arg("-preset")
-                                                                    .arg("fast")
-                                                                    .arg("-crf")
-                                                                    .arg("23")
-                                                                    .arg("-an")
-                                                                    .arg(&trimmed)
-                                                                    .stdin(std::process::Stdio::null())
-                                                                    .stdout(std::process::Stdio::null())
-                                                                    .stderr(std::process::Stdio::piped())
-                                                                    .kill_on_drop(true)
-                                                                    .output()
-                                                                    .await;
-                                                                let chosen = if trim_result
-                                                                    .as_ref()
-                                                                    .map(|o| o.status.success())
-                                                                    .unwrap_or(false)
-                                                                {
-                                                                    trimmed
-                                                                } else {
-                                                                    clip_path
-                                                                };
-                                                                // Geometry gate (no stretch)
-                                                                let geo = crate::stock_signal::probe_geometry(
-                                                                    &chosen,
-                                                                    &spec.meta.aspect,
-                                                                );
-                                                                if !geo.ok {
-                                                                    tracing::warn!(
-                                                                        "[pexels stock] geometry reject id={} {:?}",
-                                                                        vid_id,
-                                                                        geo.reasons
-                                                                    );
-                                                                    let _ = std::fs::remove_file(&chosen);
-                                                                    continue;
-                                                                }
-                                                                // Fingerprint: reject if same bytes as prior scene
-                                                                if let Some(h) =
-                                                                    file_content_fingerprint(
-                                                                        &chosen,
-                                                                    )
-                                                                {
-                                                                    if used_content_hashes
-                                                                        .contains(&h)
-                                                                    {
-                                                                        let _ =
-                                                                            std::fs::remove_file(
-                                                                                &chosen,
-                                                                            );
-                                                                        continue;
-                                                                    }
-                                                                    used_content_hashes
-                                                                        .insert(h.clone());
-                                                                    stock_meta = Some((
-                                                                        format!("pexels_{}", vid_id),
-                                                                        h,
-                                                                        query.clone(),
-                                                                        0.5,
-                                                                        String::new(),
-                                                                    ));
-                                                                }
-                                                                scene_bg = Some(chosen);
-                                                                used_pexels_ids.insert(vid_id);
-                                                                bg_source = "pexels";
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if scene_bg.is_some() {
-                                        break;
-                                    }
-                                }
-                            }
+                let needed_dur = dur.max(3.0);
+                let mut covering: Vec<(String, i64)> = Vec::new(); // (file url, pexels id)
+                let mut shorts: Vec<(i64, String, i64)> = Vec::new(); // (dur, url, id)
+                // Pass 1 (pages 1-3): only clips that cover the scene duration.
+                for page in 1..=3 {
+                    let pexels_url =
+                        pexels_search_url(&query, orientation, page, needed_dur, 0.0);
+                    let Ok(resp) = client
+                        .get(&pexels_url)
+                        .header("Authorization", &pexels_key_val)
+                        .send()
+                        .await
+                    else {
+                        continue;
+                    };
+                    if !resp.status().is_success() {
+                        continue;
+                    }
+                    let Ok(body) = resp.json::<serde_json::Value>().await else {
+                        continue;
+                    };
+                    let Some(videos) = body.get("videos").and_then(|v| v.as_array()) else {
+                        continue;
+                    };
+                    for video in videos {
+                        let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                        if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
+                            continue;
+                        }
+                        let vid_dur = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+                        let Some(url) = pexels_file_url(video) else {
+                            continue;
+                        };
+                        // Strict float comparison: a clip counts as "covering"
+                        // only if it is genuinely at least the scene length
+                        // (integer truncation would admit 0.9s-short clips).
+                        if (vid_dur as f64) >= needed_dur && covering.len() < 6 {
+                            covering.push((url, vid_id));
                         }
                     }
+                    if !covering.is_empty() {
+                        break;
+                    }
+                }
+                // Pass 2 (fallback): only if no alternate covers the scene —
+                // keep the longest short clips to loop as a last resort.
+                if covering.is_empty() {
+                    for page in 1..=2 {
+                        let pexels_url = pexels_search_url(&query, orientation, page, 0.0, 0.0);
+                        let Ok(resp) = client
+                            .get(&pexels_url)
+                            .header("Authorization", &pexels_key_val)
+                            .send()
+                            .await
+                        else {
+                            continue;
+                        };
+                        if !resp.status().is_success() {
+                            continue;
+                        }
+                        let Ok(body) = resp.json::<serde_json::Value>().await else {
+                            continue;
+                        };
+                        let Some(videos) = body.get("videos").and_then(|v| v.as_array()) else {
+                            continue;
+                        };
+                        for video in videos {
+                            let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+                            if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
+                                continue;
+                            }
+                            let vid_dur =
+                                video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
+                            if vid_dur < 3 {
+                                continue;
+                            }
+                            let Some(url) = pexels_file_url(video) else {
+                                continue;
+                            };
+                            shorts.push((vid_dur, url, vid_id));
+                        }
+                    }
+                    shorts.sort_by(|a, b| b.0.cmp(&a.0));
+                    shorts.truncate(4);
+                    tracing::warn!(
+                        "[pexels stock] no clip covering scene {} (need {:.1}s); falling back to loop",
+                        scene_idx + 1,
+                        needed_dur
+                    );
+                }
+                let candidates: Vec<(String, i64)> = covering
+                    .into_iter()
+                    .chain(shorts.into_iter().map(|(_, u, i)| (u, i)))
+                    .collect();
+                for (url, vid_id) in candidates {
+                    let clip_path = format!(
+                        "{}/scene_{:03}.mp4",
+                        cache_dir,
+                        scene_idx + 1
+                    );
+                    let Ok(dl_resp) = client.get(url).send().await else {
+                        continue;
+                    };
+                    if !dl_resp.status().is_success() {
+                        continue;
+                    }
+                    let Ok(bytes) = dl_resp.bytes().await else {
+                        continue;
+                    };
+                    std::fs::write(&clip_path, &bytes).ok();
+                    let crop_filter = crop_filter_for_aspect(&spec.meta.aspect);
+                    let trimmed = format!(
+                        "{}/scene_{:03}_trim.mp4",
+                        cache_dir,
+                        scene_idx + 1
+                    );
+                    let trim_result = tokio::process::Command::new("ffmpeg")
+                        .arg("-y")
+                        .arg("-i")
+                        .arg(&clip_path)
+                        .arg("-t")
+                        .arg(dur.to_string())
+                        .arg("-vf")
+                        .arg(&crop_filter)
+                        .arg("-c:v")
+                        .arg("libx264")
+                        .arg("-preset")
+                        .arg("fast")
+                        .arg("-crf")
+                        .arg("23")
+                        .arg("-an")
+                        .arg(&trimmed)
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::piped())
+                        .kill_on_drop(true)
+                        .output()
+                        .await;
+                    let chosen = if trim_result
+                        .as_ref()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false)
+                    {
+                        trimmed
+                    } else {
+                        clip_path
+                    };
+                    // Geometry gate (no stretch)
+                    let geo = crate::stock_signal::probe_geometry(&chosen, &spec.meta.aspect);
+                    if !geo.ok {
+                        tracing::warn!(
+                            "[pexels stock] geometry reject id={} {:?}",
+                            vid_id,
+                            geo.reasons
+                        );
+                        let _ = std::fs::remove_file(&chosen);
+                        continue;
+                    }
+                    // Fingerprint: reject if same bytes as prior scene
+                    if let Some(h) = file_content_fingerprint(&chosen) {
+                        if used_content_hashes.contains(&h) {
+                            let _ = std::fs::remove_file(&chosen);
+                            continue;
+                        }
+                        used_content_hashes.insert(h.clone());
+                        stock_meta = Some((
+                            format!("pexels_{}", vid_id),
+                            h,
+                            query.clone(),
+                            0.5,
+                            String::new(),
+                        ));
+                    }
+                    scene_bg = Some(chosen);
+                    used_pexels_ids.insert(vid_id);
+                    bg_source = "pexels";
+                    break;
                 }
             }
 
@@ -19426,6 +19552,27 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_pexels_search_url_min_max_duration_and_page() {
+        // SEGMENTATION_ARCHITECTURE clip-duration matching: min/max duration
+        // filters are appended so the API only returns clips that cover the
+        // requested window (no short-clip looping).
+        let url = pexels_search_url("crowd protest", "portrait", 2, 11.9, 0.0);
+        assert!(url.starts_with(
+            "https://api.pexels.com/videos/search?query=crowd%20protest&per_page=15&orientation=portrait&page=2"
+        ), "base URL shape: {}", url);
+        assert!(url.contains("&min_duration=11"), "min_duration floor: {}", url);
+        assert!(!url.contains("max_duration"), "no max when 0: {}", url);
+
+        let url2 = pexels_search_url("tech", "landscape", 1, 2.0, 6.0);
+        assert!(url2.contains("&min_duration=2"), "min: {}", url2);
+        assert!(url2.contains("&max_duration=6"), "max floor: {}", url2);
+
+        let url3 = pexels_search_url("nature", "portrait", 1, 0.0, 0.0);
+        assert!(!url3.contains("min_duration"), "no min when 0: {}", url3);
+        assert!(!url3.contains("max_duration"), "no max when 0: {}", url3);
+    }
 
     #[test]
     fn test_normalize_caption_text_strips_punctuation_and_case() {
