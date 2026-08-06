@@ -5,7 +5,7 @@
 
 ---
 
-## Tool Families (27 families, 88 tools)
+## Tool Families (27 families, 98 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
@@ -14,7 +14,7 @@
 | hf | 6 | classify, lint, validate, snapshot, render |
 | tts | 4 | generate, estimate_duration, preview, commentary |
 | music | 4 | index, search, assign, ducking.plan |
-| broll | 3 | suggest, fetch, assign, plan |
+| broll | 9 | suggest, fetch, assign, plan, keywords, validate_keywords, repair, auto, probe |
 | srt | 4 | read, prepare, apply_edit, to_timeline |
 | voice | 3 | profile.add, profile.list, profile.remove |
 | sfx | 3 | index, search, assign |

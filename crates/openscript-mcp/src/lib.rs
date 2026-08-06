@@ -7,4 +7,5 @@ pub mod library_indexer;
 pub mod llm;
 pub mod server;
 pub mod stock_signal;
+pub mod stock_pool;
 pub mod tools;

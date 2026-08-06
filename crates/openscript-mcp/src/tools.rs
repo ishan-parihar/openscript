@@ -16,7 +16,7 @@ use crate::error::ToolError;
 use crate::server::report_progress;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (97 static tools): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto + sticker.keywords/sticker.validate_keywords/sticker.auto)
+// Tool definitions (98 static tools): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto/broll.probe + sticker.keywords/sticker.validate_keywords/sticker.auto)
 // ---------------------------------------------------------------------------
 
 /// Resolve the fonts directory for ASS subtitle rendering.
@@ -666,6 +666,23 @@ pub fn tool_definitions() -> serde_json::Value {
                     "captions": {"type": "boolean", "default": true, "description": "After b-roll coverage, generate styled ASS captions and register them in timeline.assets.captions. Finalizes the A2V one-call."}
                 },
                 "required": [],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "broll.probe",
+            "description": "Search ALL stock engines (Pexels → Pixabay → YouTube) for a keyword and return a NORMALIZED, DEDUPLICATED, RANKED candidate pool — one StockCandidate model across engines with the shared stock_signal lexical gate. Use BEFORE broll.fetch/broll.validate_keywords to see what footage actually exists for a scene keyword: per-provider counts plus candidates with provider, id, title, duration_s, width, height, thumbnail, page_url, direct_url, and lexical relevance score. Pixabay is only searched when PIXABAY_API_KEY is set (film footage, not animation). YouTube is always searched via yt-dlp. Cross-engine dedup: the same clip title found on multiple providers collapses to one candidate (Pexels wins ties). Returns: status, query, per_provider counts, count, candidates[].",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search keyword(s) for stock footage, e.g. 'crowd protest rally' or 'morning coffee desk'."},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Video orientation: 9:16 / 16:9 / 1:1."},
+                    "min_duration_s": {"type": "number", "default": 0, "description": "Only keep candidates at least this long (0 = no floor)."},
+                    "max_duration_s": {"type": "number", "default": 0, "description": "Cap candidates at this duration (0 = no cap)."},
+                    "per_provider": {"type": "integer", "default": 8, "description": "Max candidates to fetch per engine before dedup/rank."},
+                    "signal": {"type": "array", "items": {"type": "string"}, "description": "Optional lexical bias tokens (e.g. from broll.keywords). Empty derives signal tokens from the query."}
+                },
+                "required": ["query"],
                 "additionalProperties": false
             }
         },
@@ -1490,6 +1507,7 @@ pub fn route_tool(
         "broll.validate_keywords" => Box::pin(handle_broll_validate_keywords(args)),
         "broll.repair" => Box::pin(handle_broll_repair(args)),
         "broll.auto" => Box::pin(handle_broll_auto(args)),
+        "broll.probe" => Box::pin(handle_broll_probe(args)),
         "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
@@ -1725,7 +1743,7 @@ fn get_api_key(config_name: &str, _env_name: &str) -> String {
 }
 
 /// Convenience: get Pexels API key (config file or env var)
-fn pexels_key() -> String {
+pub(crate) fn pexels_key() -> String {
     get_api_key("pexels_api_key", "PEXELS_API_KEY")
 }
 
@@ -1735,7 +1753,7 @@ fn giphy_key() -> String {
 }
 
 /// Convenience: get Pixabay API key (config file or env var)
-fn pixabay_key() -> String {
+pub(crate) fn pixabay_key() -> String {
     get_api_key("pixabay_api_key", "PIXABAY_API_KEY")
 }
 
@@ -1753,7 +1771,7 @@ fn aspect_to_crop_dims(aspect: &str) -> (u32, u32) {
 }
 
 /// Convert an aspect-ratio string to a Pexels orientation keyword.
-fn aspect_to_orientation(aspect: &str) -> &'static str {
+pub(crate) fn aspect_to_orientation(aspect: &str) -> &'static str {
     match aspect {
         "9:16" => "portrait",
         "16:9" => "landscape",
@@ -1769,7 +1787,7 @@ fn aspect_to_orientation(aspect: &str) -> &'static str {
 /// scene's clip never needs looping — the caller keeps fetching ALTERNATE
 /// stock videos (via `page`) for the same keywords until one covers the
 /// required duration. `max_duration_s > 0` caps the upper bound.
-fn pexels_search_url(
+pub(crate) fn pexels_search_url(
     query: &str,
     orientation: &str,
     page: i64,
@@ -1804,7 +1822,7 @@ fn pexels_search_url(
 /// Find the best download URL (720-1920px width file) for a Pexels video JSON
 /// object, or None when no suitable file exists. Shared by the script.to_video
 /// pass 1 (covering) and pass 2 (loop fallback) selection loops.
-fn pexels_file_url(video: &serde_json::Value) -> Option<String> {
+pub(crate) fn pexels_file_url(video: &serde_json::Value) -> Option<String> {
     video
         .get("video_files")
         .and_then(|v| v.as_array())
@@ -6756,6 +6774,78 @@ async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_json::Value,
             "stickers": "sticker.auto",
             "captions": "captions.generate_ass",
         }),
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Handler: broll.probe (all-engine stock candidate pool, normalized + ranked)
+// ---------------------------------------------------------------------------
+
+async fn handle_broll_probe(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let aspect = default_str(&args, "aspect", "9:16");
+    let min_duration_s = default_f64(&args, "min_duration_s", 0.0);
+    let max_duration_s = default_f64(&args, "max_duration_s", 0.0);
+    let per_provider = default_u32(&args, "per_provider", 8) as usize;
+    let signal: Vec<String> = args
+        .get("signal")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    report_progress(0.0, 100.0, &format!("Probing stock engines for '{}'...", query))
+        .await
+        .ok();
+
+    let q = crate::stock_pool::StockPoolQuery {
+        query: query.to_string(),
+        aspect,
+        min_duration_s,
+        max_duration_s,
+        per_provider,
+        signal,
+    };
+    let outcome = crate::stock_pool::search_stock_pool(&q).await;
+
+    let candidates: Vec<serde_json::Value> = outcome
+        .candidates
+        .iter()
+        .map(|c| {
+            json!({
+                "provider": c.provider,
+                "id": c.id,
+                "title": c.title,
+                "duration_s": c.duration_s,
+                "width": c.width,
+                "height": c.height,
+                "thumbnail_url": c.thumbnail_url,
+                "page_url": c.page_url,
+                "direct_url": c.direct_url,
+                "lexical": c.lexical,
+            })
+        })
+        .collect();
+
+    let per_provider: serde_json::Value = outcome
+        .per_provider
+        .iter()
+        .map(|(p, n)| json!({ "provider": p, "count": n }))
+        .collect();
+
+    report_progress(100.0, 100.0, &format!("Found {} ranked candidates", candidates.len()))
+        .await
+        .ok();
+
+    Ok(json!({
+        "status": "searched",
+        "query": query,
+        "per_provider": per_provider,
+        "count": candidates.len(),
+        "candidates": candidates,
     }))
 }
 
