@@ -11461,145 +11461,74 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
         }
     }
 
-    // === PRIORITY 2: YouTube via yt-dlp ===
-    report_progress(30.0, 100.0, "Trying YouTube...").await.ok();
-    let full_video_path = format!("{}/{}.mp4", cache_dir, cache_key);
-
-    if !Path::new(&full_video_path).exists() {
-        let yt_dlp_result = tokio::process::Command::new("yt-dlp")
-            .arg("--format")
-            .arg("bestvideo[height<=720][ext=mp4]+bestaudio/bestvideo[height<=720]+bestaudio/best[vcodec!=none][height<=720]/best[vcodec!=none]/best")
-            .arg("--merge-output-format")
-            .arg("mp4")
-            .arg("--output")
-            .arg(&full_video_path)
-            .arg("--no-playlist")
-            .arg("--quiet")
-            .arg(format!("ytsearch1:{}", query))
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .output()
-            .await;
-
-        match yt_dlp_result {
-            Ok(output) if output.status.success() => {
-                report_progress(60.0, 100.0, "YouTube downloaded, extracting clip...")
-                    .await
-                    .ok();
-            }
-            _ => {
-                // === PRIORITY 3: Fallback pool ===
-                if let Some(fallback) = fallback_pool.first() {
-                    if Path::new(fallback).exists() {
-                        return Ok(json!({
-                            "status": "fallback",
-                            "clip_path": fallback,
-                            "source": "fallback_pool",
-                            "source_duration_s": duration_s,
-                            "cached": false,
-                            "warning": "Pexels + YouTube failed, using fallback pool"
-                        }));
-                    }
-                }
-                // === PRIORITY 4: Procedural ===
-                return generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect)
-                    .await;
-            }
-        }
+    // === PRIORITY 2: YouTube via yt-dlp (signal-ranked, stock-phrased) ===
+    // Reuses fetch_youtube_stock_clip_signal — the SAME relevance path as
+    // script.to_video: 12 candidates → stock_signal lexical gate → video-only
+    // download → cover-crop (setsar=1) → geometry gate. Plain keywords on
+    // YouTube surface news/lectures; the "stock footage" suffix flips results
+    // to real b-roll (docs/MEDIA_SEARCH_AUDIT.md §2).
+    report_progress(30.0, 100.0, "Searching YouTube stock footage...").await.ok();
+    let mut used_yt_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut used_yt_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let signal = crate::stock_signal::signal_tokens_from_scene(query, &[]);
+    let yt_query = if query.to_ascii_lowercase().contains("stock footage") {
+        query.to_string()
     } else {
-        report_progress(60.0, 100.0, "Using cached YouTube video...")
-            .await
-            .ok();
+        format!("{} stock footage", query)
+    };
+    if let Some(fetch) = fetch_youtube_stock_clip_signal(
+        &yt_query,
+        &signal,
+        duration_s,
+        &aspect,
+        &clip_path,
+        0,
+        &mut used_yt_ids,
+        &mut used_yt_hashes,
+    )
+    .await
+    {
+        report_progress(100.0, 100.0, "YouTube stock clip ready").await.ok();
+        // Probe the produced clip for its ACTUAL duration — the signal path
+        // trims from start_s=1.5 with `-t duration_s`, so a short source
+        // yields a clip shorter than requested. Report the truth so consumers
+        // (broll_gaps / broll.auto) can loop or flag the shortfall.
+        let actual_duration_s = match openscript_ffmpeg::probe::probe(&clip_path).await {
+            Ok(m) if m.duration > 0.0 => m.duration,
+            _ => duration_s,
+        };
+        return Ok(json!({
+            "status": "fetched",
+            "clip_path": clip_path,
+            "source": "youtube",
+            "youtube_id": fetch.video_id,
+            "source_title": fetch.source_title,
+            "lexical_score": fetch.lexical_score,
+            "source_duration_s": actual_duration_s,
+            "start_s": 1.5, // extraction start used by fetch_youtube_stock_clip_signal (scene 0)
+            "duration_s": duration_s,
+            "needs_looping": actual_duration_s < duration_s,
+            "cached": false,
+        }));
     }
 
-    // Get video duration via ffprobe
-    let probe_output = tokio::process::Command::new("ffprobe")
-        .arg("-v")
-        .arg("error")
-        .arg("-show_entries")
-        .arg("format=duration")
-        .arg("-of")
-        .arg("default=noprint_wrappers=1:nokey=1")
-        .arg(&full_video_path)
-        .output()
-        .await;
-
-    let source_duration_s: f64 = match probe_output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .trim()
-            .parse()
-            .unwrap_or(duration_s),
-        _ => duration_s,
-    };
-
-    // Pick a random start time (leave room for clip duration)
-    let max_start = (source_duration_s - duration_s).max(0.0);
-    let start_s = if max_start > 0.0 {
-        // Use a simple hash of query + timestamp for deterministic randomness
-        let seed = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0) as u64)
-            .wrapping_add(md5_hash(query.as_bytes()) as u64);
-        (seed as f64 / u64::MAX as f64) * max_start
-    } else {
-        0.0
-    };
-
-    // Crop dimensions based on aspect
-    let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
-
-    // Extract clip with crop
-    let crop_filter = format!("crop={}:{}", crop_w, crop_h);
-    let extract_result = tokio::process::Command::new("ffmpeg")
-        .arg("-y")
-        .arg("-ss")
-        .arg(start_s.to_string())
-        .arg("-i")
-        .arg(&full_video_path)
-        .arg("-t")
-        .arg(duration_s.to_string())
-        .arg("-vf")
-        .arg(&crop_filter)
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-preset")
-        .arg("fast")
-        .arg("-crf")
-        .arg("23")
-        .arg("-an") // no audio (we'll add our own)
-        .arg(&clip_path)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .output()
-        .await;
-
-    match extract_result {
-        Ok(o) if o.status.success() => {
-            report_progress(100.0, 100.0, "Clip extracted").await.ok();
-            Ok(json!({
-                "status": "fetched",
-                "clip_path": clip_path,
-                "source_duration_s": source_duration_s,
-                "start_s": start_s,
-                "duration_s": duration_s,
-                "cached": Path::new(&full_video_path).exists(),
-            }))
+    // === PRIORITY 3: Fallback pool ===
+    if let Some(fallback) = fallback_pool.first() {
+        if Path::new(fallback).exists() {
+            return Ok(json!({
+                "status": "fallback",
+                "clip_path": fallback,
+                "source": "fallback_pool",
+                "source_duration_s": duration_s,
+                "cached": false,
+                "warning": "Pexels + YouTube failed, using fallback pool"
+            }));
         }
-        Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            Err(ToolError::Ffmpeg(format!(
-                "FFmpeg clip extraction failed: {}",
-                stderr
-            )))
-        }
-        Err(e) => Err(ToolError::Ffmpeg(format!("FFmpeg spawn failed: {}", e))),
     }
+    // === PRIORITY 4: Procedural ===
+    generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect).await
 }
+
 
 /// Generate a procedural background via FFmpeg filters (fallback when yt-dlp unavailable).
 async fn generate_procedural_background(
