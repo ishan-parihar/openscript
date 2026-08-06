@@ -10468,18 +10468,23 @@ async fn handle_script_generate_voices(
         // Calculate word timings for this scene using Parakeet TDT force alignment.
         // Falls back to even-spacing estimation if Parakeet is unavailable.
         let scene_end_ms = current_ms + result.duration_ms;
-        let words = run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms)
-            .await
-            .unwrap_or_else(|e| {
-                let msg = format!(
-                    "Scene {}: Parakeet force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
-                    i + 1,
-                    e
-                );
-                tracing::warn!("[script.generate_voices] {}", msg);
-                voice_warnings.push(msg);
-                estimate_word_timings(&scene.text, current_ms, scene_end_ms)
-            });
+        let words = remap_words_to_script(
+            &scene.text,
+            run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms)
+                .await
+                .unwrap_or_else(|e| {
+                    let msg = format!(
+                        "Scene {}: Parakeet force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
+                        i + 1,
+                        e
+                    );
+                    tracing::warn!("[script.generate_voices] {}", msg);
+                    voice_warnings.push(msg);
+                    estimate_word_timings(&scene.text, current_ms, scene_end_ms)
+                }),
+            current_ms,
+            scene_end_ms,
+        );
 
         segments.push(serde_json::json!({
             "scene_id": scene.id,
@@ -10522,6 +10527,41 @@ async fn handle_script_generate_voices(
 // Handler: script.build_captions — ASS generation from word timings
 // ---------------------------------------------------------------------------
 
+/// Remap ASR-aligned word timings so the caption TEXT is the script's own
+/// words (ground truth) while keeping the alignment's real timing windows.
+///
+/// Parakeet force-aligns by transcribing the TTS audio, and ASR can mis-hear
+/// a cloned voice (e.g. "bias" → "pie"). Burning the transcription would put
+/// wrong words on screen while the audio says the right ones. When the
+/// aligned word count matches the script word count, keep the timings but
+/// substitute the script words. On any mismatch (dropped/merged/mangled
+/// words) fall back to char-proportional estimation over the segment window.
+fn remap_words_to_script(
+    text: &str,
+    timed: Vec<WordTiming>,
+    start_ms: i64,
+    end_ms: i64,
+) -> Vec<WordTiming> {
+    let script_words: Vec<&str> = text.split_whitespace().collect();
+    if script_words.is_empty() {
+        // No script text to remap against — passthrough the aligned words.
+        return timed;
+    }
+    if timed.is_empty() || timed.len() != script_words.len() {
+        // No alignment, or the ASR dropped/merged words — estimate timings
+        // from the script text so captions tile the window with correct words.
+        return estimate_word_timings(text, start_ms, end_ms);
+    }
+    timed.iter()
+        .zip(script_words.iter())
+        .map(|(tw, sw)| WordTiming {
+            word: sw.to_string(),
+            start_ms: tw.start_ms,
+            end_ms: tw.end_ms,
+        })
+        .collect()
+}
+
 async fn handle_script_build_captions(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
@@ -10550,8 +10590,12 @@ async fn handle_script_build_captions(
             let start_ms = seg.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
             let end_ms = seg.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(0);
 
-            // Convert word timings from manifest
-            let words: Vec<WordTiming> = seg
+            // Convert word timings from manifest. Caption TEXT must be the
+            // SCRIPT's words — never the ASR transcription of the TTS audio
+            // (Parakeet mis-hears cloned voices: "bias" → "pie"). Keep the
+            // alignment's real timing windows when the word count matches;
+            // otherwise fall back to char-proportional estimation.
+            let timed_words: Vec<WordTiming> = seg
                 .get("words")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
@@ -10565,7 +10609,8 @@ async fn handle_script_build_captions(
                         })
                         .collect()
                 })
-                .unwrap_or_else(|| estimate_word_timings(&text, start_ms, end_ms));
+                .unwrap_or_default();
+            let words = remap_words_to_script(&text, timed_words, start_ms, end_ms);
 
             segments.push(CaptionSegment {
                 text,
@@ -19012,6 +19057,70 @@ mod tests {
         assert_eq!(words.len(), 3);
         assert_eq!(words[2].start_ms, 660, "real alignment start preserved");
         assert_eq!(words[2].end_ms, 2600, "real alignment end preserved");
+    }
+
+    #[test]
+    fn test_remap_words_to_script_same_count_keeps_timings_script_text() {
+        // ASR mis-heard the cloned voice: "bias" → "pie" (same word count).
+        // The caption TEXT must be the script's words; the real alignment
+        // timing windows are preserved.
+        let timed = vec![
+            WordTiming { word: "There's".into(), start_ms: 0, end_ms: 220 },
+            WordTiming { word: "a".into(), start_ms: 220, end_ms: 300 },
+            WordTiming { word: "pie".into(), start_ms: 300, end_ms: 480 }, // ASR error
+            WordTiming { word: "so".into(), start_ms: 480, end_ms: 700 },
+        ];
+        let out = remap_words_to_script("There's a bias so", timed, 0, 700);
+        let words: Vec<&str> = out.iter().map(|w| w.word.as_str()).collect();
+        assert_eq!(words, vec!["There's", "a", "bias", "so"], "script text must win");
+        assert_eq!(out[2].start_ms, 300, "real timing window preserved");
+        assert_eq!(out[2].end_ms, 480);
+    }
+
+    #[test]
+    fn test_remap_words_to_script_count_mismatch_estimates() {
+        // ASR dropped a word → counts diverge → char-proportional estimate
+        // on the SCRIPT text tiles the whole window (no wrong text, no holes).
+        let timed = vec![WordTiming { word: "hello".into(), start_ms: 0, end_ms: 1500 }];
+        let out = remap_words_to_script("hello world test", timed, 0, 3000);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].word, "hello");
+        assert_eq!(out[1].word, "world");
+        assert_eq!(out[2].word, "test");
+        assert_eq!(out[0].start_ms, 0);
+        assert_eq!(out[2].end_ms, 3000, "estimate must tile the full window");
+    }
+
+    #[test]
+    fn test_remap_words_to_script_empty_inputs() {
+        // Empty aligned words → estimate (non-empty text).
+        let out = remap_words_to_script("hello world", Vec::new(), 0, 2000);
+        assert_eq!(out.len(), 2);
+        // Empty text → passthrough unchanged.
+        let timed = vec![WordTiming { word: "x".into(), start_ms: 0, end_ms: 500 }];
+        let out2 = remap_words_to_script("", timed, 0, 500);
+        assert_eq!(out2.len(), 1);
+    }
+
+    #[test]
+    fn test_remap_words_to_script_idempotent_double_remap() {
+        // generate_voices remaps at the source; build_captions remaps again
+        // defensively. A second remap on already-remapped words must be
+        // idempotent — including when the first pass fell to estimation.
+        let raw = vec![WordTiming { word: "pie".into(), start_ms: 0, end_ms: 900 }];
+        let once = remap_words_to_script("there's a bias", raw, 0, 3000);
+        // count mismatch (1 vs 3) → estimate path on first pass
+        assert_eq!(once.len(), 3);
+        assert_eq!(once[2].word, "bias");
+        let twice = remap_words_to_script("there's a bias", once.clone(), 0, 3000);
+        assert_eq!(twice.len(), 3);
+        assert_eq!(twice[2].word, "bias");
+        assert_eq!(twice[0].start_ms, once[0].start_ms, "timings unchanged by 2nd remap");
+        assert_eq!(twice[2].end_ms, once[2].end_ms);
+        // Same-count zip path is also idempotent (text already = script words).
+        let zipped = remap_words_to_script("a b c", once, 0, 3000);
+        assert_eq!(zipped.len(), 3);
+        assert_eq!(zipped[1].word, "b");
     }
 
     #[test]
