@@ -69,3 +69,9 @@ output/
 .cortexkit/
 .sisyphus/
 .hive/
+
+# Agent skill installs (npx skills add) — tooling, not project source
+.agents/
+.claude/
+skills-lock.json
+skills/readme-craft

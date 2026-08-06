@@ -1,140 +1,109 @@
 # OpenScript
 
+![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
 ![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)
-![License](https://img.shields.io/badge/License-MIT-green)
-![PyPI](https://img.shields.io/pypi/v/openscript?logo=pypi)
-![Remotion](https://img.shields.io/badge/Remotion-4.x-black?logo=remotion)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)
+![MCP](https://img.shields.io/badge/MCP-Server-violet?logo=modelcontextprotocol)
+![License](https://img.shields.io/badge/License-MIT-green)
 
+**Turn any script — or any audio, or any existing footage — into a narrated, captioned, b-roll'd MP4. One MCP call.**
 
-**Turn any script into a narrated video — AI voice, subtitles, B-roll, music, done.**
-
-![OpenScript output](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/openscript-output.png)
+![OpenScript pipeline: script.json → script.to_video → final.mp4](assets/readme/hero.svg)
 
 ---
 
 ## What it does
 
-| Input | Output |
-|-------|--------|
-| Markdown script | MP4 video (1080p/4K) |
-| Sections → scenes | AI narration (Audio8 cloned voice / Kokoro / Edge / OpenAI TTS) |
-| Code blocks → syntax highlights | Auto-generated subtitles (SRT/VTT) |
-| Image refs → B-roll | Background music (Suno/UDIO) |
-| Metadata → chapters | YouTube-ready chapters + description |
+OpenScript is an AI-directed video pipeline. You give it a script (speakers, scenes, captions), an audio file, or raw footage — it returns a finished vertical video with a cloned/neural voiceover, word-synced captions, per-scene stock b-roll, GIPHY sticker overlays, and a ducked music bed.
 
----
+Real output (6 frames sampled from a script-generated video — voice clone, centered word-highlight captions, stock b-roll):
+
+![Real render frames](assets/readme/frames.jpg)
+
+## The one-call path
+
+```bash
+script.parse    # validate the script JSON
+script.to_video # ONE CALL: script → MP4
+```
+
+`script.to_video` runs the whole pipeline internally — no manual chaining:
+
+1. **Voice** — Audio8 zero-shot voice clone (or Kokoro 54-voice presets) narrates every scene
+2. **Captions** — word-level ASS captions, centered, with highlight animation
+3. **B-roll** — unique stock clips per scene (Pexels → yt-dlp fallback), duration-matched, non-repeating
+4. **Stickers** — GIPHY sticker overlays per speaker (keyword-relevance gated)
+5. **Music** — background bed with sidechain ducking under narration
+6. **Render** — FFmpeg multilayer → MP4 (HyperFrames/Remotion available as escape hatches)
 
 ## Quick start
 
 ```bash
-# Install
-pipx install openscript
+# Requirements: Rust toolchain, ffmpeg/ffprobe 6+, yt-dlp, Python 3.11+
 
-# Or with uv
-uv tool install openscript
+cargo build --release
 
-# First video in 60 seconds
-openscript init my-video
-# Edit my-video/script.md
-openscript render my-video
-# → my-video/output/final.mp4
+# One-call video from a script
+openscript script-to-video --script script.json --output final.mp4
+
+# Or start the MCP server (97 tools over stdio) for an AI agent
+openscript run-mcp
 ```
 
----
-
-## Example script
-
-```markdown
----
-title: "Rust Async in 3 Minutes"
-voice: "af_heart"
-music: "ambient-tech"
----
-
-# Intro
-
-Rust async isn't magic. It's a state machine.
-
-## The Future Trait
-
-```rust
-trait Future {
-    type Output;
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output>;
-}
-```
-
-*[B-roll: rust-logo.png]*
-
-## The Executor
-
-Executors drive futures to completion. `tokio::spawn` polls until `Ready`.
-
-*[B-roll: tokio-diagram.png]*
-
----
+API keys (optional but unlock real stock): `PEXELS_API_KEY` (b-roll), `GIPHY_API_KEY` (stickers), `PIXABAY_API_KEY` (music/video). Without them the pipeline falls back to yt-dlp / procedural backgrounds.
 
 ## Architecture
 
+A Rust workspace (8 crates) with Python ML sidecars and three render engines:
+
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Script    │────▶│   Parser    │────▶│  Composer   │────▶│  Renderer   │
-│  (Markdown) │     │  (AST +     │     │  (Remotion  │     │  (FFmpeg/   │
-│             │     │   metadata) │     │   + TTS)    │     │   Remotion) │
-└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
-                           │                   │                   │
-                           ▼                   ▼                   ▼
-                    Frontmatter           Scene graph         Video + audio
-                    validation            composition         synchronization
+┌────────────┐   ┌────────────┐   ┌──────────────────────┐   ┌────────────┐
+│  MCP tools │──▶│  Tool      │──▶│  Render engines      │──▶│  MP4       │
+│  (97)      │   │  dispatch  │   │  FFmpeg multilayer*  │   │  (9:16)    │
+└────────────┘   │  route_tool│   │  HyperFrames (GSAP)  │   └────────────┘
+                 └────────────┘   │  Remotion (React)    │
+                                   └──────────────────────┘
 ```
 
----
+| Layer | Crate / Dir | Role |
+|-------|-------------|------|
+| Types & timeline | `openscript-core` | ScriptSpec, EDL v2 timeline, captions, production-quality scoring |
+| Render | `openscript-ffmpeg` | Filter-graph builder, multilayer render, subtitle burn |
+| Voice | `openscript-tts` | Audio8/Kokoro sidecar client, voice-profile registry |
+| Transcribe | `openscript-transcribe` | Apex/Whisper STT + word alignment (Hinglish-aware) |
+| Media | `openscript-assets` | Pexels client, music/SFX indexes |
+| Integration | `openscript-mcp` | MCP server + tool handlers (97 tools, 27 families) |
+| Binaries | `openscript-cli`, `openscript-tauri` | CLI wrapper / desktop app |
+| ML sidecars | `mcp/scripts/` | Audio8 TTS, Kokoro TTS, Apex transcribe, Whisper align |
+| Motion render | `hyperframes/` | HTML+GSAP composition engine (default motion graphics) |
 
-## Features
+## Trajectories
 
-| Category | Details |
-|----------|---------|
-| **TTS** | Audio8 (local zero-shot voice clone), Kokoro (local presets), Edge TTS, OpenAI, ElevenLabs |
-| **Subtitles** | Word-level timing, style presets, multi-language |
-| **B-roll** | Auto-fetch from Pexels/Unsplash, local images, code animations |
-| **Music** | Suno, UDIO, local files, ducking under narration |
-| **Code** | Syntax highlighting (syntect), line-by-line reveal, terminal recording |
-| **Export** | MP4 (H.264/HEVC), WebM, ProRes, vertical/horizontal |
+| Input | Path | Use case |
+|-------|------|----------|
+| Script | `script.parse → script.to_video` | From-scratch video creation (golden path) |
+| Audio | `transcribe → srt.prepare → broll.auto → timeline.render` | A2V — audio to reel (Hinglish SRT supported) |
+| Video | `transcribe → srt.to_timeline → broll.fetch → timeline.render` | V2V — repurpose existing footage |
+| Footage | `timeline.build → timeline.add_segment → timeline.render` | NLE-style editing of existing media |
 
----
+Every trajectory ends in `verify.production` — a 100-point quality gate scoring stock authenticity, music fit, caption sync, segmentation pacing, and visual repetition.
 
-## Commands
+## Media sources
 
-| Command | Description |
-|---------|-------------|
-| `openscript init <name>` | Scaffold new project |
-| `openscript render <name>` | Full render pipeline |
-| `openscript preview <name>` | Fast preview (no B-roll/music) |
-| `openscript voice <name>` | Generate narration only |
-| `openscript subtitle <name>` | Generate SRT/VTT only |
-
----
-
-
-## Visual proof
-
-| Script → Video | Subtitle styling | Code animation |
-|:---:|:---:|:---:|
-| ![Script to video](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/script-to-video.png) | ![Subtitles](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/subtitles.png) | ![Code animation](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/code-animation.png) |
-
-| B-roll integration | Music ducking | Chapter markers |
-|:---:|:---:|:---:|
-| ![B-roll](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/broll.png) | ![Music](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/music.png) | ![Chapters](https://github.com/ishan-parihar/openscript/raw/main/assets/readme/chapters.png) |
+| Asset | Sources | Dedup / relevance |
+|-------|---------|-------------------|
+| B-roll | Pexels (primary) → yt-dlp/YouTube (fallback) | Video-ID dedup, min-duration coverage, concept-alias search |
+| Stickers | GIPHY (transparent GIFs) | Keyword-relevance gate (agent-scored) before download |
+| Music | Local library (20) → YouTube-scraped (500+) → Pixabay | Mood/energy matching, sidechain ducking |
+| Images | Pexels photo API, Openverse | License-aware |
 
 ## Requirements
 
-- Python 3.11+
-- FFmpeg 6+
-- Node.js 20+ (for Remotion)
-- 4 GB RAM minimum
-
----
+- Rust 2021 toolchain
+- FFmpeg / ffprobe 6+
+- yt-dlp (YouTube fallback + music library scraping)
+- Python 3.11+ (ML sidecars: Audio8, Kokoro, Whisper alignment)
+- Optional API keys: `PEXELS_API_KEY`, `GIPHY_API_KEY`, `PIXABAY_API_KEY`
 
 ## License
 
