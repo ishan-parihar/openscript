@@ -2,7 +2,7 @@ use openscript_core::amplitude::extract_amplitude;
 use openscript_core::background::assign_backgrounds;
 use openscript_core::captions::{estimate_word_timings, generate_ass, CaptionSegment, WordTiming};
 use openscript_core::script::{parse_script, validate_script, CaptionsSpec};
-use openscript_core::srt::{analyze_srt, build_edl, group_entries, group_entries_with_words, parse_srt, write_srt};
+use openscript_core::srt::{analyze_srt, build_edl, group_entries, parse_srt, write_srt};
 use openscript_core::sticker::{generate_sticker_composition, StickerPreset};
 use openscript_core::timeline::Timeline;
 use openscript_core::types::TrackType;
@@ -2027,104 +2027,68 @@ async fn handle_captions_generate_ass(args: serde_json::Value) -> Result<serde_j
         parent.join("captions.ass").to_string_lossy().to_string()
     };
 
-    // Parse word-level SRT and group with real word timings. Prefer the
-    // explicit word SRT when given (real alignments); otherwise the phrase SRT
-    // is normalized into estimated word timings (char-proportional).
-    let caption_source: &str = word_srt_path.as_deref().unwrap_or(&srt_path);
-    let caption_segments: Vec<CaptionSegment> = match openscript_core::srt::parse_srt(caption_source) {
-        Ok(word_entries) => {
-            let grouped_phrases = group_entries_with_words(&word_entries, 10, 64, 0.6);
-
-            if let Some(cf_ms) = crossfade_ms {
-                // Remap timestamps for xfade crossfade overlaps
-                let crossfade_s = cf_ms as f64 / 1000.0;
-                let mut output_offsets: Vec<f64> = Vec::new();
-                let mut accum = 0.0;
-                for phrase in &grouped_phrases {
-                    let idx = output_offsets.len();
-                    output_offsets.push(accum - (idx as f64 * crossfade_s));
-                    let dur = phrase.end - phrase.start;
-                    accum += dur;
-                }
-
-                grouped_phrases
-                    .iter()
-                    .enumerate()
-                    .map(|(i, phrase)| {
-                        let out_start = (output_offsets[i] * 1000.0).round() as i64;
-                        let out_end = out_start + ((phrase.end - phrase.start) * 1000.0).round() as i64;
-                        let words: Vec<WordTiming> = phrase
-                            .words
-                            .iter()
-                            .map(|(word, ws, we)| {
-                                let word_start_ms = out_start + ((*ws - phrase.start) * 1000.0).round() as i64;
-                                let word_end_ms = out_start + ((*we - phrase.start) * 1000.0).round() as i64;
-                                WordTiming {
-                                    word: word.clone(),
-                                    start_ms: word_start_ms,
-                                    end_ms: word_end_ms,
-                                }
-                            })
-                            .collect();
-                        CaptionSegment {
-                            text: phrase.text.clone(),
-                            start_ms: out_start,
-                            end_ms: out_end,
-                            words,
-                        }
-                    })
-                    .collect()
-            } else {
-                // No crossfade remapping — use source timestamps directly
-                grouped_phrases
-                    .iter()
-                    .map(|phrase| {
-                        let start_ms = (phrase.start * 1000.0).round() as i64;
-                        let end_ms = (phrase.end * 1000.0).round() as i64;
-                        let words: Vec<WordTiming> = phrase
-                            .words
-                            .iter()
-                            .map(|(word, ws, we)| WordTiming {
-                                word: word.clone(),
-                                start_ms: (ws * 1000.0).round() as i64,
-                                end_ms: (we * 1000.0).round() as i64,
-                            })
-                            .collect();
-                        CaptionSegment {
-                            text: phrase.text.clone(),
-                            start_ms,
-                            end_ms,
-                            words,
-                        }
-                    })
-                    .collect()
+    // Caption TEXT and phrase windows ALWAYS come from the phrase transcript
+    // (srt_path) — the language-correct captions (e.g. Hinglish). The word SRT
+    // (word_srt_path) only contributes REAL per-word timings when its words
+    // actually align with the phrase text (same language + content); on a
+    // language mismatch or a stale/partial word SRT, per-word timings fall
+    // back to char-proportional estimates. This fixes the A2V caption bugs:
+    //   1. English captions on Hinglish audio (a foreign word SRT was used as
+    //      the entire caption source, replacing the Hinglish phrase text).
+    //   2. Captions breaking off mid-video (the word SRT covered only part of
+    //      the audio, so the ASS inherited a 60s hole).
+    let caption_segments: Vec<CaptionSegment> = {
+        // Parse the phrase transcript first — authoritative text + windows.
+        let phrase_entries = match openscript_core::srt::parse_srt(&srt_path) {
+            Ok(e) if !e.is_empty() => e,
+            Ok(_) | Err(_) => {
+                // Fallback: try grouped SRT with estimated word timings.
+                let fallback_path = grouped_srt_path.as_deref().unwrap_or(&srt_path);
+                let (err_note, fallback_entries) = match openscript_core::srt::parse_srt(fallback_path) {
+                    Ok(fb) if !fb.is_empty() => {
+                        tracing::warn!("Phrase SRT parse failed/empty for captions, using grouped SRT fallback");
+                        (String::new(), fb)
+                    }
+                    Ok(_) | Err(_) => {
+                        return Err(ToolError::InvalidArg(format!(
+                            "Failed to parse SRT {} (fallback {} also failed)", srt_path, fallback_path
+                        )));
+                    }
+                };
+                tracing::warn!("Phrase SRT unavailable for captions: {}", err_note);
+                fallback_entries
             }
+        };
+        // Word-level timings (optional enrichment only).
+        let word_entries: Vec<openscript_core::srt::SrtEntry> = word_srt_path
+            .as_deref()
+            .and_then(|p| openscript_core::srt::parse_srt(p).ok())
+            .unwrap_or_default();
+
+        // Crossfade remap (output clock) when segments overlap via xfade.
+        let crossfade_s = crossfade_ms.map(|cf| cf as f64 / 1000.0);
+        let mut out_offsets: Vec<f64> = Vec::with_capacity(phrase_entries.len());
+        let mut accum = 0.0;
+        for (i, ph) in phrase_entries.iter().enumerate() {
+            out_offsets.push(accum - (i as f64 * crossfade_s.unwrap_or(0.0)));
+            accum += ph.end - ph.start;
         }
-        Err(e) => {
-            // Fallback: try grouped SRT with estimated word timings
-            let fallback_path = grouped_srt_path.as_deref().unwrap_or(&srt_path);
-            match openscript_core::srt::parse_srt(fallback_path) {
-                Ok(fallback_entries) => {
-                    tracing::warn!("Word-level SRT parse failed for captions: {}, using grouped SRT fallback", e);
-                    fallback_entries.iter().map(|entry| {
-                        let start_ms = (entry.start * 1000.0).round() as i64;
-                        let end_ms = (entry.end * 1000.0).round() as i64;
-                        let words = estimate_word_timings(&entry.text, start_ms, end_ms);
-                        CaptionSegment {
-                            text: entry.text.clone(),
-                            start_ms,
-                            end_ms,
-                            words,
-                        }
-                    }).collect()
+
+        phrase_entries
+            .iter()
+            .enumerate()
+            .map(|(i, ph)| {
+                let out_start = (out_offsets[i] * 1000.0).round() as i64;
+                let out_end = out_start + ((ph.end - ph.start) * 1000.0).round() as i64;
+                let words = caption_words_for_phrase(ph, &word_entries, out_start, ph.start);
+                CaptionSegment {
+                    text: ph.text.clone(),
+                    start_ms: out_start,
+                    end_ms: out_end,
+                    words,
                 }
-                Err(e2) => {
-                    return Err(ToolError::InvalidArg(format!(
-                        "Failed to parse SRT {}: {} (fallback also failed: {})", srt_path, e, e2
-                    )));
-                }
-            }
-        }
+            })
+            .collect()
     };
 
     let ass_content = generate_ass(&caption_segments, &spec, width, height);
@@ -8000,6 +7964,67 @@ fn find_segment_for_window<'a>(
                 start_ms < s_end && end_ms > s_start
             })
         })
+}
+
+/// Normalize caption text for word-alignment comparison: lowercase, drop
+/// punctuation, collapse whitespace. Used to decide whether a word SRT's
+/// words actually match the phrase transcript (same language + content)
+/// before adopting the word SRT's real per-word timings.
+fn normalize_caption_text(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect::<String>()
+}
+
+/// Build per-word timings for one phrase. Real word-SRT timings are used ONLY
+/// when the word entries overlapping the phrase window join to the same text
+/// as the phrase (language + content match). Otherwise — the word SRT is a
+/// different language (English word SRT over Hinglish audio) or stale/partial
+/// (60s hole) — fall back to char-proportional estimates so the caption keeps
+/// the phrase's language and full coverage.
+///
+/// `out_start_ms` is the phrase's start on the OUTPUT clock (crossfade-remapped
+/// when applicable); `phrase_start_s` is the phrase's start on the SOURCE clock.
+/// Word timings are translated onto the output clock the same way.
+fn caption_words_for_phrase(
+    phrase: &openscript_core::srt::SrtEntry,
+    word_entries: &[openscript_core::srt::SrtEntry],
+    out_start_ms: i64,
+    phrase_start_s: f64,
+) -> Vec<WordTiming> {
+    // Words whose window overlaps this phrase's window (with tolerance).
+    let tol = 0.05;
+    let overlapping: Vec<&openscript_core::srt::SrtEntry> = word_entries
+        .iter()
+        .filter(|w| w.start >= phrase.start - tol && w.end <= phrase.end + tol)
+        .collect();
+    let joined: String = overlapping
+        .iter()
+        .map(|w| w.text.trim())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !overlapping.is_empty()
+        && !normalize_caption_text(&joined).is_empty()
+        && normalize_caption_text(&joined) == normalize_caption_text(&phrase.text)
+    {
+        // Real alignments — offset onto the output clock (identity when no
+        // crossfade remap is active since out_start_ms == source start).
+        overlapping
+            .iter()
+            .map(|w| WordTiming {
+                word: w.text.clone(),
+                start_ms: out_start_ms + ((w.start - phrase_start_s) * 1000.0).round() as i64,
+                end_ms: out_start_ms + ((w.end - phrase_start_s) * 1000.0).round() as i64,
+            })
+            .collect()
+    } else {
+        estimate_word_timings(
+            &phrase.text,
+            out_start_ms,
+            out_start_ms + ((phrase.end - phrase.start) * 1000.0).round() as i64,
+        )
+    }
 }
 
 /// Collect the Pexels video ids already in use across the timeline's broll
@@ -18918,6 +18943,76 @@ async fn handle_help_tool(args: serde_json::Value) -> Result<serde_json::Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_normalize_caption_text_strips_punctuation_and_case() {
+        assert_eq!(
+            normalize_caption_text("Bhai sarkaar ki phati badhiya."),
+            normalize_caption_text("bhai sarkaarki phati badhiya"),
+            "punctuation/space/case-insensitive normalization"
+        );
+        assert_ne!(
+            normalize_caption_text("The government started"),
+            normalize_caption_text("Bhai sarkaar ki phati"),
+            "different language must not normalize to the same text"
+        );
+    }
+
+    #[test]
+    fn test_caption_words_for_phrase_language_mismatch_falls_back() {
+        use openscript_core::srt::SrtEntry;
+        // Hinglish phrase (audio is Hinglish) vs ENGLISH word SRT — the A2V
+        // caption-language bug. Real word timings must NOT be adopted (their
+        // words don't match the phrase); char-proportional estimates on the
+        // Hinglish phrase text must be used instead.
+        let phrase = SrtEntry {
+            idx: 1,
+            start: 0.0,
+            end: 3.31,
+            text: "Bhai sarkaar ki phati badhiya. Sarkaar shuruaat".to_string(),
+        };
+        let english_words = vec![
+            SrtEntry { idx: 1, start: 0.0, end: 0.46, text: "The".into() },
+            SrtEntry { idx: 2, start: 0.46, end: 0.66, text: "government".into() },
+            SrtEntry { idx: 3, start: 0.66, end: 2.60, text: "started".into() },
+            SrtEntry { idx: 4, start: 2.60, end: 3.02, text: "the".into() },
+            SrtEntry { idx: 5, start: 3.02, end: 3.31, text: "same".into() },
+        ];
+        let words = caption_words_for_phrase(&phrase, &english_words, 0, 0.0);
+        assert!(
+            !words.is_empty(),
+            "must still produce words for the phrase"
+        );
+        assert_eq!(
+            words.iter().map(|w| w.word.as_str()).collect::<Vec<_>>().join(" "),
+            "Bhai sarkaar ki phati badhiya. Sarkaar shuruaat",
+            "caption words must be the Hinglish phrase text, not the English word SRT"
+        );
+        // Estimates must tile the phrase window exactly.
+        assert_eq!(words.first().unwrap().start_ms, 0);
+        assert_eq!(words.last().unwrap().end_ms, 3310);
+    }
+
+    #[test]
+    fn test_caption_words_for_phrase_aligned_uses_real_timings() {
+        use openscript_core::srt::SrtEntry;
+        // Matching word SRT (same language + content) → real alignments win.
+        let phrase = SrtEntry {
+            idx: 1,
+            start: 0.0,
+            end: 3.31,
+            text: "the government started".to_string(),
+        };
+        let words_src = vec![
+            SrtEntry { idx: 1, start: 0.0, end: 0.46, text: "the".into() },
+            SrtEntry { idx: 2, start: 0.46, end: 0.66, text: "government".into() },
+            SrtEntry { idx: 3, start: 0.66, end: 2.60, text: "started".into() },
+        ];
+        let words = caption_words_for_phrase(&phrase, &words_src, 0, 0.0);
+        assert_eq!(words.len(), 3);
+        assert_eq!(words[2].start_ms, 660, "real alignment start preserved");
+        assert_eq!(words[2].end_ms, 2600, "real alignment end preserved");
+    }
 
     #[test]
     fn test_fresh_candidates_skips_used_ids() {

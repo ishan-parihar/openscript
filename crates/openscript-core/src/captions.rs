@@ -228,6 +228,14 @@ fn hex_to_ass_color(hex: &str) -> String {
 /// SENTENCE SEPARATION: Each segment is split into sentences on punctuation.
 /// Each sentence is displayed independently — the next sentence does NOT
 /// appear until the current one is fully spoken.
+///
+/// GAP-BRIDGING: consecutive word timings from real transcription carry
+/// pauses (e.g. word N ends 3.34s, word N+1 starts 3.60s). A cue that ends at
+/// the word's own end leaves a hole where NO dialogue is active — the caption
+/// vanishes mid-phrase and breaks the visual flow. Each word's cue therefore
+/// runs from its own start to the NEXT word's start (or the chunk end for the
+/// last word), so the caption is continuously visible while the highlight
+/// walks the line.
 fn generate_word_highlight(
     out: &mut String,
     segments: &[CaptionSegment],
@@ -245,30 +253,60 @@ fn generate_word_highlight(
                 continue;
             }
 
+            // Bridged cue windows: [word[i].start, word[i+1].start) for all
+            // but the last word, which ends at its own end. Never shorter
+            // than the word's own window and never empty (zero-duration
+            // words get the next word's start as their end).
+            let windows: Vec<(i64, i64)> = (0..sentence.len())
+                .map(|i| {
+                    let start = sentence[i].start_ms;
+                    let end = if i + 1 < sentence.len() {
+                        // Bridge the pause to the next word's start.
+                        sentence[i + 1].start_ms.max(sentence[i].end_ms)
+                    } else {
+                        sentence[i].end_ms
+                    };
+                    (start, end.max(start + 1)) // ensure start < end
+                })
+                .collect();
+
             // If the sentence fits in one line, show it as a single line
             if sentence.len() <= max_per_line {
                 // For each word in the sentence, show the full sentence with
                 // the current word highlighted
-                for (i, word) in sentence.iter().enumerate() {
+                for (i, (start_ms, end_ms)) in windows.iter().enumerate() {
                     let text =
                         build_highlighted_line(sentence, i, &primary_color, &highlight_color);
                     out.push_str(&format!(
                         "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
-                        ass_time(word.start_ms),
-                        ass_time(word.end_ms),
+                        ass_time(*start_ms),
+                        ass_time(*end_ms),
                         text
                     ));
                 }
             } else {
-                // Sentence is longer than max_per_line — split into chunks
+                // Sentence is longer than max_per_line — split into chunks.
+                // Bridge within each chunk the same way (last word of the
+                // chunk ends at the chunk's last word end).
                 for chunk in sentence.chunks(max_per_line) {
-                    for (i, word) in chunk.iter().enumerate() {
+                    let chunk_windows: Vec<(i64, i64)> = (0..chunk.len())
+                        .map(|i| {
+                            let start = chunk[i].start_ms;
+                            let end = if i + 1 < chunk.len() {
+                                chunk[i + 1].start_ms.max(chunk[i].end_ms)
+                            } else {
+                                chunk[i].end_ms
+                            };
+                            (start, end.max(start + 1))
+                        })
+                        .collect();
+                    for (i, (start_ms, end_ms)) in chunk_windows.iter().enumerate() {
                         let text =
                             build_highlighted_line(chunk, i, &primary_color, &highlight_color);
                         out.push_str(&format!(
                             "Dialogue: 1,{},{},Default,,0,0,0,,{}\n",
-                            ass_time(word.start_ms),
-                            ass_time(word.end_ms),
+                            ass_time(*start_ms),
+                            ass_time(*end_ms),
                             text
                         ));
                     }
@@ -781,6 +819,53 @@ mod tests {
             line.contains("fscx110"),
             "Should contain scale-up for highlighted word"
         );
+    }
+
+    #[test]
+    fn test_word_highlight_bridges_word_gaps() {
+        // Real transcription word timings carry pauses between words
+        // (word 2 ends at 3.34s, word 3 starts at 3.60s). The old emitter
+        // ended each cue at the word's own end, leaving a hole where NO
+        // dialogue was active — the caption vanished mid-phrase. The bridged
+        // emitter must run each word's cue to the NEXT word's start.
+        let mut spec = test_spec();
+        spec.style = "word_highlight".to_string();
+        let segments = vec![CaptionSegment {
+            text: "way, the media".to_string(),
+            start_ms: 3020,
+            end_ms: 4400,
+            words: vec![
+                WordTiming { word: "way,".to_string(), start_ms: 3020, end_ms: 3340 },
+                WordTiming { word: "the".to_string(), start_ms: 3600, end_ms: 3740 },
+                WordTiming { word: "media".to_string(), start_ms: 3740, end_ms: 4400 },
+            ],
+        }];
+        let ass = generate_ass(&segments, &spec, 1080, 1920);
+        // "way," cue must bridge the 3340->3600 pause: start 3020, end 3600.
+        assert!(
+            ass.contains("Dialogue: 1,0:00:03.02,0:00:03.60"),
+            "word gap must be bridged (cue 3020->3600), got: {}",
+            ass.lines()
+                .filter(|l| l.starts_with("Dialogue:"))
+                .take(3)
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        // No cue may have start >= end (zero-duration words are guarded).
+        for line in ass.lines().filter(|l| l.starts_with("Dialogue:")) {
+            let parts: Vec<&str> = line.split(',').collect();
+            assert!(parts.len() >= 3, "malformed dialogue: {}", line);
+            let t = |s: &str| -> f64 {
+                let hms: Vec<&str> = s.split(':').collect();
+                let secs: f64 = hms[2].replace('.', "").parse().unwrap_or(0.0);
+                hms[0].parse::<f64>().unwrap_or(0.0) * 3600.0
+                    + hms[1].parse::<f64>().unwrap_or(0.0) * 60.0
+                    + secs / 100.0
+            };
+            let start = t(parts[1]);
+            let end = t(parts[2]);
+            assert!(start < end, "zero-duration cue must not exist: {}", line);
+        }
     }
 
     #[test]
