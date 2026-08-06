@@ -10,14 +10,16 @@
 | Engine | Where used | Key needed | Status on this machine |
 |--------|-----------|-----------|------------------------|
 | **Pexels** | `background.fetch` (Priority 1), `broll.fetch`, `script.to_video` (Priority 1) | `PEXELS_API_KEY` | ✅ **SET — primary b-roll source** |
-| **YouTube** (yt-dlp) | `background.fetch` (Priority 2, **blind**), `script.to_video` (Priority 2, **signal-ranked**), `youtube.search` / `youtube.download`, music library | none | ✅ **Works** (yt-dlp installed) |
-| **Pixabay** | `stock.search` / `stock.fetch` — **music only**; video path forces `video_type=animation` | `PIXABAY_API_KEY` | ❌ **DEAD — key unset + video never wired into any b-roll path** |
+| **YouTube** (yt-dlp) | `background.fetch` (Priority 2, **signal-ranked**), `script.to_video` (Priority 2, **signal-ranked**), `youtube.search` / `youtube.download`, music library | none | ✅ **Works** (yt-dlp installed) |
+| **Pixabay** | `stock.search` / `stock.fetch` (music + **film video**), `background.fetch` (Priority 1.5, **signal-ranked**), `broll.probe` pool | `PIXABAY_API_KEY` | 🟡 **WIRED but key unset on this machine** — film footage now flows into the b-roll chain; set the key in `setup.sh` to activate |
 
 ### Key code paths
 - `pexels_search_url()` — Pexels URL builder with `min_duration`/`max_duration` filters (SEGMENTATION_ARCHITECTURE).
 - `fetch_youtube_stock_clip_signal()` — the **good** YouTube path: 12 candidates via `ytsearch`, ranked by `stock_signal::rank_and_filter_candidates` (lexical gate), video-only format, video-ID + content-hash dedup. Used by `script.to_video` Priority 2.
-- `handle_background_fetch` Priority 2 — the **weak** YouTube path: `ytsearch1:{query}` — first hit, no ranking, no duration filter, no stock phrasing.
-- `handle_stock_search` / `handle_stock_fetch` — Pixabay music + animation-only video; fall back to local library without a key.
+- `handle_background_fetch` Priority 1.5 — the **Pixabay path**: `fetch_pixabay_stock_clip_signal` — film-only search (`video_type=film`), stock_signal lexical gate, HTTP download, cover-crop, geometry gate, id+content-hash dedup. Shares dedup sets with the YouTube priority so a clip used by Pixabay is never re-fetched by YouTube.
+- `handle_background_fetch` Priority 2 — the **YouTube path**: `fetch_youtube_stock_clip_signal` — 12 candidates, stock_signal lexical gate, "stock footage" phrasing, video-only download, cover-crop, geometry gate, id+content-hash dedup.
+- `handle_stock_search` / `handle_stock_fetch` — Pixabay music + **film video** (`video_type` defaults to `film`, overridable); fall back to local library without a key.
+- `stock_pool.rs::search_stock_pool` — unified `StockCandidate` pool across Pexels/Pixabay/YouTube; `broll.probe` exposes it as an MCP tool.
 
 ---
 
@@ -69,8 +71,8 @@ Method: `docs/../output/media_probe_samples/probe_report.json` (full JSON), 10 s
 
 ## 3. Implementation gaps (why "clip relevance" suffers)
 
-1. **`background.fetch` YouTube fallback is a blind grab.** `ytsearch1:{query}` takes the *first* search hit with no lexical gate, no duration check, no stock phrasing, no dedup. `script.to_video` already has the ranked path — `background.fetch` should reuse it.
-2. **Pixabay video is not a b-roll provider.** It's music-only, requires a key that isn't set, and its video endpoint is pinned to `animation`. No pipeline path can currently produce Pixabay *footage*.
+1. ~~**`background.fetch` YouTube fallback is a blind grab.**~~ **FIXED (Phase 151):** Priority 2 now reuses `fetch_youtube_stock_clip_signal` — ranked by the lexical gate, stock-phrased, deduped.
+2. ~~**Pixabay video is not a b-roll provider.**~~ **FIXED (Phase 152):** `stock.fetch`/`stock.search` video now default to `video_type=film` (animation still reachable via the `video_type` arg), and `background.fetch` gained a signal-ranked Pixabay Priority 1.5. Remaining: obtain a `PIXABAY_API_KEY` to activate.
 3. **`youtube.search` returns unranked, unbounded results.** No duration filter, no lexical prefilter — agents get whatever yt-dlp returns (news/lectures).
 4. **No unified candidate model across engines.** Pexels → `PexelsVideo`, YouTube → yt-dlp JSON, Pixabay → hits. Ranking (`stock_signal`), dedup (id/hash), and duration-coverage logic can't be shared across engines because the response shapes differ. Only the to_video YouTube path gets the full treatment.
 5. **Pexels requires a custom User-Agent.** Plain clients (default urllib) get Cloudflare 403 (1010). The Rust client sets `OpenScript/1.0` — fine in-pipeline; any new probe/test code must set it too.
@@ -80,9 +82,9 @@ Method: `docs/../output/media_probe_samples/probe_report.json` (full JSON), 10 s
 ## 4. Recommendations for the b-roll architecture plan
 
 1. **Unify into a candidate pool.** Fetch N candidates per keyword from every enabled engine, normalize into one `StockCandidate { provider, id, title, duration_s, width, height, thumbnail, url }`, then rank *once* with `stock_signal` (lexical) + duration-coverage + orientation, and dedup by video ID **across engines** (same clip can exist on both Pexels and YouTube).
-2. **Engine priority:** Pexels (relevance + duration API) → YouTube with stock phrasing + lexical gate → Pixabay footage (needs key + drop `video_type=animation`).
-3. **Fix `background.fetch`:** replace `ytsearch1` with the existing `fetch_youtube_stock_clip_signal` (or at minimum append " stock footage" to the query and rank the top 5 by lexical score).
-4. **Enable Pixabay:** obtain a free `PIXABAY_API_KEY`, remove `video_type=animation` (or make it a param), and add Pixabay as a second stock provider behind Pexels.
+2. ~~**Engine priority:** Pexels → YouTube → Pixabay.~~ **DONE:** `background.fetch` now runs Pexels (P1) → Pixabay film (P1.5) → YouTube (P2) → fallback pool → procedural.
+3. ~~**Fix `background.fetch`:** replace `ytsearch1`.~~ **DONE (Phase 151).**
+4. ~~**Enable Pixabay:** key + drop `video_type=animation` + wire into b-roll.~~ **DONE (Phase 152):** `setup.sh`/`setup_openscript_config.sh`/`openscript.env.example` all carry the `PIXABAY_API_KEY` placeholder; film footage is wired into the chain. Remaining action: user provides a key.
 5. **`youtube.search` upgrade:** optional `min_duration_s`/`max_duration_s` bounds + lexical relevance prefilter so agents never see news/lecture noise.
 6. **Add a probe/QA tool:** a `broll.probe` MCP tool that returns the unified candidate pool for a keyword (all engines, ranked) — turns this audit into a permanent diagnostic.
 

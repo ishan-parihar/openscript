@@ -1139,14 +1139,15 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "stock.fetch",
-            "description": "Download stock music or videos from Pixabay API. Requires PIXABAY_API_KEY env var. Falls back to local stock library if API key not set. For music: downloads MP3 tracks by mood/genre query. For video: downloads animation/footage clips. Returns downloaded file paths. Use for sourcing royalty-free background music and video footage.",
+            "description": "Download stock music or videos from Pixabay API. Requires PIXABAY_API_KEY env var. Falls back to local stock library if API key not set. For music: downloads MP3 tracks by mood/genre query. For video: downloads footage clips — `video_type` defaults to 'film' (real footage; set 'animation' only if you explicitly want motion graphics). Returns downloaded file paths. Use for sourcing royalty-free background music and video footage.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "type": {"type": "string", "enum": ["music", "video"], "description": "Media type to fetch"},
                     "query": {"type": "string", "description": "Search query (e.g. 'lofi chill' for music, 'minecraft gameplay' for video)"},
                     "limit": {"type": "integer", "default": 5, "description": "Max results to download"},
-                    "output_dir": {"type": "string", "default": "mcp/assets/stock_cache", "description": "Directory for downloaded files"}
+                    "output_dir": {"type": "string", "default": "mcp/assets/stock_cache", "description": "Directory for downloaded files"},
+                    "video_type": {"type": "string", "enum": ["film", "animation"], "default": "film", "description": "For video: 'film' = real footage (b-roll), 'animation' = motion graphics. Ignored for music."}
                 },
                 "required": ["type", "query"],
                 "additionalProperties": false
@@ -1184,13 +1185,14 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "stock.search",
-            "description": "Search Pixabay for stock music or videos WITHOUT downloading. Returns titles, durations, thumbnails, and URLs so agents can browse before downloading via stock.fetch. Requires PIXABAY_API_KEY env var. Falls back to local stock library listing if no API key.",
+            "description": "Search Pixabay for stock music or videos WITHOUT downloading. Returns titles, durations, thumbnails, and URLs so agents can browse before downloading via stock.fetch. Requires PIXABAY_API_KEY env var. Falls back to local stock library listing if no API key. Video searches default to `video_type` 'film' (real footage).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "type": {"type": "string", "enum": ["music", "video"], "description": "Media type to search"},
                     "query": {"type": "string", "description": "Search query"},
-                    "limit": {"type": "integer", "default": 10, "description": "Max results"}
+                    "limit": {"type": "integer", "default": 10, "description": "Max results"},
+                    "video_type": {"type": "string", "enum": ["film", "animation"], "default": "film", "description": "For video: 'film' = real footage (b-roll), 'animation' = motion graphics. Ignored for music."}
                 },
                 "required": ["type", "query"],
                 "additionalProperties": false
@@ -9687,6 +9689,281 @@ async fn fetch_youtube_stock_clip_signal(
     None
 }
 
+/// Pixabay stock-footage path — mirrors `fetch_youtube_stock_clip_signal` but
+/// via the Pixabay video API (`video_type=film` — real footage, NOT
+/// `video_type=animation`, which returns motion graphics useless as b-roll;
+/// see docs/MEDIA_SEARCH_AUDIT.md §4).
+///
+/// Flow: film search → stock_signal lexical gate → HTTP download of the best
+/// file → cover-crop (setsar=1) → geometry gate → content-hash dedup. Returns
+/// the same `StockClipFetch` contract as the YouTube path.
+async fn fetch_pixabay_stock_clip_signal(
+    query: &str,
+    signal_tokens: &[String],
+    duration_s: f64,
+    min_duration_s: f64,
+    max_duration_s: f64,
+    aspect: &str,
+    out_path: &str,
+    used_video_ids: &mut std::collections::HashSet<String>,
+    used_content_hashes: &mut std::collections::HashSet<String>,
+) -> Option<StockClipFetch> {
+    let cache_dir = "mcp/assets/background_cache";
+    std::fs::create_dir_all(cache_dir).ok()?;
+
+    let key = pixabay_key();
+    if key.is_empty() {
+        return None;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .ok()?;
+
+    // Film footage only — per_page 30 gives the ranker a decent pool to pick
+    // from. Pixabay's API caps per_page at 200; 30 keeps the payload small.
+    let url = format!(
+        "https://pixabay.com/api/videos/?key={}&q={}&per_page=30&video_type=film",
+        key,
+        urlencoding::encode(query)
+    );
+    let body: serde_json::Value = match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.json().await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!("[pixabay stock] parse error: {}", e);
+                return None;
+            }
+        },
+        Ok(resp) => {
+            tracing::warn!("[pixabay stock] API status {}", resp.status());
+            return None;
+        }
+        Err(e) => {
+            tracing::warn!("[pixabay stock] request failed: {}", e);
+            return None;
+        }
+    };
+
+    let hits = match body.get("hits").and_then(|v| v.as_array()) {
+        Some(arr) if !arr.is_empty() => arr.clone(),
+        _ => {
+            tracing::warn!("[pixabay stock] no hits for query='{}'", query);
+            return None;
+        }
+    };
+
+    // Build (id, title) candidate pairs. Pixabay's `tags` field acts as the
+    // title for lexical ranking; hit id is the dedup key.
+    let mut candidates: Vec<(String, String)> = Vec::new();
+    for h in &hits {
+        let id = h.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+        if id == 0 {
+            continue;
+        }
+        let id_s = id.to_string();
+        if used_video_ids.contains(&id_s) {
+            continue;
+        }
+        // SEGMENTATION_ARCHITECTURE min/max clip duration: skip clips shorter
+        // than the request (they'd force looping) and clips beyond an explicit
+        // max. 0 = no bound. Mirrors the Pexels priority's API filters.
+        let dur = h.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        if dur > 0.0 && dur < duration_s.max(min_duration_s) {
+            continue;
+        }
+        if max_duration_s > 0.0 && dur > max_duration_s {
+            continue;
+        }
+        let title = h
+            .get("tags")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if title.is_empty() {
+            continue;
+        }
+        candidates.push((id_s, title));
+    }
+    if candidates.is_empty() {
+        tracing::warn!(
+            "[pixabay stock] no unused film candidates for query='{}'",
+            query
+        );
+        return None;
+    }
+
+    let signal: Vec<String> = if signal_tokens.is_empty() {
+        crate::stock_signal::tokenize(query)
+    } else {
+        signal_tokens.to_vec()
+    };
+    let min_lex = crate::stock_signal::min_lexical_accept();
+    let ranked = crate::stock_signal::rank_and_filter_candidates(&candidates, &signal, min_lex);
+    tracing::info!(
+        "[pixabay stock] ranked {} candidates (min_lex={:.2}) top={}",
+        ranked.len(),
+        min_lex,
+        ranked
+            .first()
+            .map(|c| format!("{}:{:.2}:{}", c.id, c.lexical, &c.title[..c.title.len().min(40)]))
+            .unwrap_or_else(|| "none".into())
+    );
+
+    for cand in ranked.into_iter().take(8) {
+        let video_id = cand.id.clone();
+        let title = cand.title.clone();
+        let lex = cand.lexical;
+
+        // Re-locate the hit to grab its direct file URLs.
+        let hit = match hits.iter().find(|h| {
+            h.get("id")
+                .and_then(|v| v.as_u64())
+                .map(|i| i.to_string())
+                .as_deref()
+                == Some(video_id.as_str())
+        }) {
+            Some(h) => h,
+            None => continue,
+        };
+        let direct_url = hit
+            .get("videos")
+            .and_then(|v| v.get("large"))
+            .or_else(|| hit.get("videos").and_then(|v| v.get("medium")))
+            .or_else(|| hit.get("videos").and_then(|v| v.get("small")))
+            .and_then(|q| q.get("url"))
+            .and_then(|u| u.as_str())
+            .unwrap_or("")
+            .to_string();
+        if direct_url.is_empty() {
+            tracing::warn!(
+                "[pixabay stock] no direct url id={} title='{}'",
+                video_id,
+                &title[..title.len().min(50)]
+            );
+            continue;
+        }
+
+        let full_path = format!("{}/pixabay_id_{}.mp4", cache_dir, video_id);
+        if !Path::new(&full_path).exists() {
+            match client.get(&direct_url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if std::fs::write(&full_path, &bytes).is_err() {
+                            tracing::warn!("[pixabay stock] write failed id={}", video_id);
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+                _ => {
+                    tracing::warn!(
+                        "[pixabay stock] download failed id={} title='{}' q={}",
+                        video_id,
+                        &title[..title.len().min(50)],
+                        query
+                    );
+                    continue;
+                }
+            }
+        }
+
+        let content_hash = match file_content_fingerprint(&full_path) {
+            Some(h) => h,
+            None => continue,
+        };
+        if used_content_hashes.contains(&content_hash) {
+            tracing::info!(
+                "[pixabay stock] skip duplicate content hash {} (id={})",
+                content_hash,
+                video_id
+            );
+            used_video_ids.insert(video_id);
+            continue;
+        }
+
+        // Cover-crop (no stretch) + square SAR. Pixabay clips are stock loops;
+        // start at 0 (no channel-intro skip needed like YouTube).
+        let crop = crop_filter_for_aspect(aspect);
+        let trim = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-i",
+                &full_path,
+                "-t",
+                &duration_s.max(2.0).to_string(),
+                "-vf",
+                &crop,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-an",
+                out_path,
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output()
+            .await
+            .ok()?;
+        if !trim.status.success() || !Path::new(out_path).exists() {
+            continue;
+        }
+
+        // Geometry gate: reject stretch / wrong display aspect
+        let geo = crate::stock_signal::probe_geometry(out_path, aspect);
+        if !geo.ok {
+            tracing::warn!(
+                "[pixabay stock] geometry reject id={} reasons={:?} {}x{} sar={}:{}",
+                video_id,
+                geo.reasons,
+                geo.width,
+                geo.height,
+                geo.sar_num,
+                geo.sar_den
+            );
+            let _ = std::fs::remove_file(out_path);
+            used_video_ids.insert(video_id);
+            continue;
+        }
+
+        let out_hash = file_content_fingerprint(out_path).unwrap_or_else(|| content_hash.clone());
+        if used_content_hashes.contains(&out_hash) {
+            let _ = std::fs::remove_file(out_path);
+            used_video_ids.insert(video_id);
+            continue;
+        }
+
+        used_video_ids.insert(video_id.clone());
+        used_content_hashes.insert(content_hash.clone());
+        used_content_hashes.insert(out_hash.clone());
+        tracing::info!(
+            "[pixabay stock] ACCEPT id={} lex={:.2} hash={} title='{}' query='{}' -> {}",
+            video_id,
+            lex,
+            &out_hash[..out_hash.len().min(20)],
+            &title[..title.len().min(50)],
+            query,
+            out_path
+        );
+        return Some(StockClipFetch {
+            path: out_path.to_string(),
+            video_id,
+            content_hash: out_hash,
+            search_query: format!("{} | title={}", query, title),
+            lexical_score: lex,
+            source_title: title,
+        });
+    }
+    None
+}
+
 /// Backward-compatible wrapper (no uniqueness set). Kept for call sites that
 /// do not track identity sets (e.g. one-off background.fetch without multi-broll).
 #[allow(dead_code)]
@@ -11461,15 +11738,61 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
         }
     }
 
+    // === PRIORITY 1.5: Pixabay film footage (signal-ranked) ===
+    // Pixabay is now wired into the b-roll chain: `video_type=film` (real
+    // footage, NOT animation) → stock_signal lexical gate → HTTP download →
+    // cover-crop → geometry gate → content-hash dedup. Needs PIXABAY_API_KEY
+    // (setup.sh / setup_openscript_config.sh). Shares the dedup sets with the
+    // YouTube priority below so a clip used here is never re-fetched by the
+    // YouTube path (non-redundancy across engines).
+    let mut used_stock_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut used_stock_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if !pixabay_key().is_empty() {
+        report_progress(20.0, 100.0, "Searching Pixabay stock footage...").await.ok();
+        if let Some(fetch) = fetch_pixabay_stock_clip_signal(
+            query,
+            &[],
+            duration_s,
+            min_duration_s,
+            max_duration_s,
+            &aspect,
+            &clip_path,
+            &mut used_stock_ids,
+            &mut used_stock_hashes,
+        )
+        .await
+        {
+            report_progress(100.0, 100.0, "Pixabay stock clip ready").await.ok();
+            // Probe the produced clip for its ACTUAL duration (same contract as
+            // the YouTube path below) so consumers can loop or flag shortfalls.
+            let actual_duration_s = match openscript_ffmpeg::probe::probe(&clip_path).await {
+                Ok(m) if m.duration > 0.0 => m.duration,
+                _ => duration_s,
+            };
+            return Ok(json!({
+                "status": "fetched",
+                "clip_path": clip_path,
+                "source": "pixabay",
+                "pixabay_id": fetch.video_id,
+                "source_title": fetch.source_title,
+                "lexical_score": fetch.lexical_score,
+                "source_duration_s": actual_duration_s,
+                "start_s": 0.0,
+                "duration_s": duration_s,
+                "needs_looping": actual_duration_s < duration_s,
+                "cached": false,
+            }));
+        }
+    }
+
     // === PRIORITY 2: YouTube via yt-dlp (signal-ranked, stock-phrased) ===
     // Reuses fetch_youtube_stock_clip_signal — the SAME relevance path as
     // script.to_video: 12 candidates → stock_signal lexical gate → video-only
     // download → cover-crop (setsar=1) → geometry gate. Plain keywords on
     // YouTube surface news/lectures; the "stock footage" suffix flips results
-    // to real b-roll (docs/MEDIA_SEARCH_AUDIT.md §2).
+    // to real b-roll (docs/MEDIA_SEARCH_AUDIT.md §2). Shares the dedup sets
+    // declared above with the Pixabay priority.
     report_progress(30.0, 100.0, "Searching YouTube stock footage...").await.ok();
-    let mut used_yt_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut used_yt_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
     let signal = crate::stock_signal::signal_tokens_from_scene(query, &[]);
     let yt_query = if query.to_ascii_lowercase().contains("stock footage") {
         query.to_string()
@@ -11483,8 +11806,8 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
         &aspect,
         &clip_path,
         0,
-        &mut used_yt_ids,
-        &mut used_yt_hashes,
+        &mut used_stock_ids,
+        &mut used_stock_hashes,
     )
     .await
     {
@@ -15400,11 +15723,13 @@ async fn handle_stock_fetch(args: serde_json::Value) -> Result<serde_json::Value
         // Try Pixabay video API
         let pixabay_key_val = if pixabay_key().is_empty() { None } else { Some(pixabay_key()) };
         if let Some(key) = pixabay_key_val {
+            let video_type = default_str(&args, "video_type", "film");
             let url = format!(
-                "https://pixabay.com/api/videos/?key={}&q={}&per_page={}&video_type=animation",
+                "https://pixabay.com/api/videos/?key={}&q={}&per_page={}&video_type={}",
                 key,
                 urlencoding::encode(query),
-                limit
+                limit,
+                video_type
             );
             let client = reqwest::Client::new();
             match client.get(&url).send().await {
@@ -15916,13 +16241,25 @@ async fn handle_stock_search(args: serde_json::Value) -> Result<serde_json::Valu
             "https://pixabay.com/api/videos/"
         };
 
-        let url = format!(
-            "{}?key={}&q={}&per_page={}",
-            endpoint,
-            key,
-            urlencoding::encode(query),
-            limit
-        );
+        let video_type = default_str(&args, "video_type", "film");
+        let url = if media_type == "music" {
+            format!(
+                "{}?key={}&q={}&per_page={}",
+                endpoint,
+                key,
+                urlencoding::encode(query),
+                limit
+            )
+        } else {
+            format!(
+                "{}?key={}&q={}&per_page={}&video_type={}",
+                endpoint,
+                key,
+                urlencoding::encode(query),
+                limit,
+                video_type
+            )
+        };
 
         let client = reqwest::Client::new();
         match client.get(&url).send().await {
