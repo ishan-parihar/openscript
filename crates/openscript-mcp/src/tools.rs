@@ -1013,7 +1013,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "background.fetch",
-            "description": "Fetch a background video clip. Searches Pexels API FIRST (stock footage, requires PEXELS_API_KEY), then YouTube via yt-dlp as fallback. Downloads, extracts a random clip of desired duration, crops to target aspect ratio. For multi-broll: call once per scene with different queries to get topic-relevant backgrounds. Non-redundant: pass used_video_ids (Pexels ids already used in this run) and the same stock clip is never re-fetched under a different query. Returns: clip_path, pexels_id, source (pexels/youtube/fallback/procedural), duration_s.",
+            "description": "Fetch a background video clip. Searches Pexels API FIRST (stock footage, requires PEXELS_API_KEY), then YouTube via yt-dlp as fallback. Downloads, extracts a random clip of desired duration, crops to target aspect ratio. For multi-broll: call once per scene with different queries to get topic-relevant backgrounds. Non-redundant: pass used_video_ids (Pexels ids already used in this run) and the same stock clip is never re-fetched under a different query. Vision-aware: pass scene_text (the scene's dialogue) to (a) seed the vision relevance gate that rejects clips whose actual frames don't match the scene, and (b) scope the cache key so a different scene never reuses another scene's cached clip. YouTube candidates are ranked by lexical relevance x duration preference (lecture penalty) and thumbnail/frame vision gates. Returns: clip_path, pexels_id, source (pexels/youtube/fallback/procedural), duration_s, lexical_score, vision_score, vision_reason.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1024,7 +1024,8 @@ pub fn tool_definitions() -> serde_json::Value {
             "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio: 9:16, 16:9, 1:1"},
                     "cache_dir": {"type": "string", "default": "mcp/assets/background_cache", "description": "Cache directory for downloaded videos"},
                     "fallback_pool": {"type": "array", "items": {"type": "string"}, "description": "Local fallback clips if YouTube download fails"},
-                    "used_video_ids": {"type": "array", "items": {"type": "integer"}, "description": "Pexels video ids already used in this run/timeline — these clips are skipped so the same footage never repeats under a different query. Returned pexels_id values from prior calls should be accumulated here."}
+                    "used_video_ids": {"type": "array", "items": {"type": "integer"}, "description": "Pexels video ids already used in this run/timeline — these clips are skipped so the same footage never repeats under a different query. Returned pexels_id values from prior calls should be accumulated here."},
+                    "scene_text": {"type": "string", "description": "The scene's dialogue/text this clip will illustrate. Used (a) to seed the vision relevance gate that rejects clips whose actual frames don't match the scene, and (b) to scope the cache key so a different scene never reuses another scene's cached clip."}
                 },
                 "required": ["query"],
                 "additionalProperties": false
@@ -7647,7 +7648,11 @@ fn compute_production_score(
             content_hash: Some(format!("shim_hash_{}", i)),
             video_id: None,
             search_query: Some(p.clone()),
-         lexical_score: None, source_title: None, })
+            lexical_score: None,
+            source_title: None,
+            vision_score: None,
+            vision_reason: None,
+        })
         .collect();
     let stickers: Vec<StickerLayerInfo> = (0..sticker_count)
         .map(|i| StickerLayerInfo {
@@ -9029,7 +9034,11 @@ async fn handle_verify_production(args: serde_json::Value) -> Result<serde_json:
                     content_hash: None,
                     video_id: None,
                     search_query: None,
-                 lexical_score: None, source_title: None, })
+                    lexical_score: None,
+                    source_title: None,
+                    vision_score: None,
+                    vision_reason: None,
+                })
                 .collect();
         }
     }
@@ -9391,6 +9400,11 @@ struct StockClipFetch {
     search_query: String,
     lexical_score: f64,
     source_title: String,
+    /// L3 vision gate: 0–1 relevance of the ACTUAL extracted frame vs the
+    /// scene, when a vision backend was available. None = gate skipped/failed.
+    vision_score: Option<f64>,
+    /// Short justification from the vision model (why it matched/mismatched).
+    vision_reason: Option<String>,
 }
 
 fn file_content_fingerprint(path: &str) -> Option<String> {
@@ -9412,23 +9426,14 @@ fn file_content_fingerprint(path: &str) -> Option<String> {
     Some(format!("{:016x}_{}", hash, size))
 }
 
-/// List up to `limit` YouTube video IDs for a search query (no download).
-#[allow(dead_code)]
-async fn youtube_search_ids(query: &str, limit: usize) -> Vec<String> {
-    youtube_search_id_titles(query, limit)
-        .await
-        .into_iter()
-        .map(|(id, _)| id)
-        .collect()
-}
-
-/// YouTube search returning `(id, title)` for lexical relevance ranking.
-async fn youtube_search_id_titles(query: &str, limit: usize) -> Vec<(String, String)> {
+/// YouTube search returning `YtCandidate`s with duration + thumbnail (L0).
+/// Uses `--dump-json` (like stock_pool::yt_search_entries) so the L1 duration
+/// preference and L2 thumbnail vision gate have the metadata they need.
+async fn youtube_search_candidates(query: &str, limit: usize) -> Vec<crate::stock_signal::YtCandidate> {
     let out = tokio::process::Command::new("yt-dlp")
         .args([
             "--flat-playlist",
-            "--print",
-            "%(id)s\t%(title)s",
+            "--dump-json",
             "--no-warnings",
             "--quiet",
             &format!("ytsearch{}:{}", limit, query),
@@ -9442,20 +9447,25 @@ async fn youtube_search_id_titles(query: &str, limit: usize) -> Vec<(String, Str
     match out {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
             .lines()
-            .filter_map(|l| {
-                let l = l.trim();
-                if l.is_empty() {
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter_map(|d| {
+                let id = d.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let title = d.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if id.is_empty() || title.is_empty() {
                     return None;
                 }
-                let (id, title) = match l.split_once('\t') {
-                    Some((i, t)) => (i.trim(), t.trim()),
-                    None => (l, ""),
-                };
-                if id.len() >= 6 && !id.contains(' ') {
-                    Some((id.to_string(), title.to_string()))
-                } else {
-                    None
-                }
+                let duration_s = d.get("duration").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                let thumbnail_url = d
+                    .get("thumbnail")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", id));
+                Some(crate::stock_signal::YtCandidate {
+                    id,
+                    title,
+                    duration_s,
+                    thumbnail_url,
+                })
             })
             .collect(),
         _ => Vec::new(),
@@ -9487,11 +9497,86 @@ async fn fetch_youtube_stock_clip_unique(
         scene_idx,
         used_video_ids,
         used_content_hashes,
+        "",
+        0.0,
+        0.0,
     )
     .await
 }
 
-/// Full signal-aware YouTube stock fetch.
+/// Threshold below which a vision-gated YouTube candidate is rejected.
+/// Env override: OPENSCRIPT_YT_VISION_MIN_MATCH (0.0–1.0).
+fn yt_vision_min_match() -> f64 {
+    std::env::var("OPENSCRIPT_YT_VISION_MIN_MATCH")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.4)
+}
+
+/// Whether the L2/L3 vision gates are enabled. Default ON when a vision
+/// backend is configured; disable entirely with OPENSCRIPT_YT_VISION_GATE=0.
+fn yt_vision_gate_enabled() -> bool {
+    if std::env::var("OPENSCRIPT_YT_VISION_GATE")
+        .map(|v| v == "0" || v.eq_ignore_ascii_case("false"))
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    // Vision backend availability: openrouter key OR opencode key configured.
+    !crate::config::resolve_api_key("openrouter").is_empty()
+        || !crate::config::resolve_opencode_api_key().is_empty()
+}
+
+/// Parse `{score:{relevance,match,reason}}` from a vision call into an
+/// (relevance, matched, reason) triple. Fail-open: unparseable → treated as
+/// "gate passed" so a vision hiccup never blocks the pipeline.
+fn parse_vision_score(v: &serde_json::Value) -> (f64, bool, Option<String>) {
+    let score = v.get("score").unwrap_or(v);
+    let relevance = score
+        .get("relevance")
+        .and_then(|x| x.as_f64())
+        .unwrap_or(1.0);
+    let matched = score
+        .get("match")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(true);
+    let reason = score
+        .get("reason")
+        .and_then(|x| x.as_str())
+        .map(String::from);
+    (relevance, matched, reason)
+}
+
+/// Download a small stock image (YouTube thumbnail) to a temp file.
+async fn download_thumbnail(url: &str, dest: &str) -> bool {
+    let Ok(client) = reqwest::Client::builder()
+        .user_agent("OpenScript/1.0 (+https://github.com/ishan-parihar/openscript)")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    else {
+        return false;
+    };
+    match client.get(url).send().await {
+        Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+            Ok(bytes) => {
+                if bytes.len() < 200 {
+                    return false;
+                }
+                std::fs::write(dest, &bytes).is_ok()
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Full signal-aware YouTube stock fetch — 4-layer upgrade:
+/// L0: yt-dlp `--dump-json` (id, title, duration, thumbnail)
+/// L1: duration-preference ranking (lectures penalized) + duration bounds
+/// L2: thumbnail vision pre-filter BEFORE the full download
+/// L3: post-trim frame vision gate (verifies the actual extracted pixels)
+/// plus the pre-existing lexical gate, content-hash dedup, cover-crop,
+/// geometry gate.
 async fn fetch_youtube_stock_clip_signal(
     query: &str,
     signal_tokens: &[String],
@@ -9501,12 +9586,15 @@ async fn fetch_youtube_stock_clip_signal(
     scene_idx: usize,
     used_video_ids: &mut std::collections::HashSet<String>,
     used_content_hashes: &mut std::collections::HashSet<String>,
+    scene_text: &str,
+    min_duration_s: f64,
+    max_duration_s: f64,
 ) -> Option<StockClipFetch> {
     let cache_dir = "mcp/assets/background_cache";
     std::fs::create_dir_all(cache_dir).ok()?;
 
     let diversified = query.to_string();
-    let mut candidates = youtube_search_id_titles(&diversified, 12).await;
+    let mut candidates = youtube_search_candidates(&diversified, 12).await;
     if candidates.is_empty() {
         // Fallback: shorter query (first 6 tokens)
         let short: String = query
@@ -9514,11 +9602,11 @@ async fn fetch_youtube_stock_clip_signal(
             .take(6)
             .collect::<Vec<_>>()
             .join(" ");
-        candidates = youtube_search_id_titles(&short, 10).await;
+        candidates = youtube_search_candidates(&short, 10).await;
     }
 
     // Drop already-used IDs
-    candidates.retain(|(id, _)| !used_video_ids.contains(id));
+    candidates.retain(|c| !used_video_ids.contains(&c.id));
     if candidates.is_empty() {
         tracing::warn!(
             "[youtube stock] no unused video IDs for query='{}'",
@@ -9533,22 +9621,88 @@ async fn fetch_youtube_stock_clip_signal(
         signal_tokens.to_vec()
     };
     let min_lex = crate::stock_signal::min_lexical_accept();
-    let ranked =
-        crate::stock_signal::rank_and_filter_candidates(&candidates, &signal, min_lex);
+    let vision = yt_vision_gate_enabled();
+    let min_vision = yt_vision_min_match();
+    let ranked = crate::stock_signal::rank_yt_candidates(
+        &candidates,
+        &signal,
+        min_lex,
+        min_duration_s,
+        max_duration_s,
+    );
     tracing::info!(
-        "[youtube stock] ranked {} candidates (min_lex={:.2}) top={}",
+        "[youtube stock] ranked {} candidates (min_lex={:.2} vision={}) top={}",
         ranked.len(),
         min_lex,
+        vision,
         ranked
             .first()
-            .map(|c| format!("{}:{:.2}:{}", c.id, c.lexical, &c.title[..c.title.len().min(40)]))
+            .map(|c| format!("{}:{:.2}:{}s:{}", c.id, c.lexical, c.duration_s as i64, &c.title[..c.title.len().min(40)]))
             .unwrap_or_else(|| "none".into())
     );
 
+    let scene_kw: Vec<String> = signal.clone();
     for cand in ranked.into_iter().take(8) {
         let video_id = cand.id.clone();
         let title = cand.title.clone();
         let lex = cand.lexical;
+
+        // L2: thumbnail vision pre-filter (cheap — ~10 KB download + 1 vision
+        // call). Rejects lecture/thumbnail-bait candidates before the full
+        // video is downloaded. Fail-open on any error.
+        let mut thumb_ok = true;
+        if vision && !cand.thumbnail_url.is_empty() {
+            let thumb_path = format!("{}/yt_thumb_{}.jpg", cache_dir, video_id);
+            if download_thumbnail(&cand.thumbnail_url, &thumb_path).await {
+                match crate::llm::score_image_relevance(
+                    &thumb_path,
+                    if scene_text.is_empty() { diversified.as_str() } else { scene_text },
+                    &scene_kw,
+                    Some(&diversified),
+                )
+                .await
+                {
+                    Ok(v) => {
+                        let (rel, matched, reason) = parse_vision_score(&v);
+                        if !matched || rel < min_vision {
+                            thumb_ok = false;
+                            let reject_msg = format!(
+                                "thumbnail reject rel={:.2} matched={} {}",
+                                rel,
+                                matched,
+                                reason.unwrap_or_default()
+                            );
+                            tracing::info!(
+                                "[youtube stock] {} id={} title='{}'",
+                                reject_msg,
+                                video_id,
+                                &title[..title.len().min(50)]
+                            );
+                            used_video_ids.insert(video_id.clone());
+                        } else {
+                            tracing::info!(
+                                "[youtube stock] thumbnail PASS rel={:.2} id={} title='{}'",
+                                rel,
+                                video_id,
+                                &title[..title.len().min(50)]
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[youtube stock] thumbnail vision error id={} (fail-open): {}",
+                            video_id,
+                            e
+                        );
+                    }
+                }
+                let _ = std::fs::remove_file(&thumb_path);
+            }
+        }
+        if !thumb_ok {
+            continue;
+        }
+
         let full_path = format!("{}/yt_id_{}.mp4", cache_dir, video_id);
         if !Path::new(&full_path).exists() {
             let url = format!("https://www.youtube.com/watch?v={}", video_id);
@@ -9658,6 +9812,56 @@ async fn fetch_youtube_stock_clip_signal(
             continue;
         }
 
+        // L3: frame vision gate — verify the ACTUAL extracted pixels match the
+        // scene (the user-reported failure: "initial seconds don't depict what
+        // is required"). Score the trimmed clip at its first second (0.4s in
+        // — the cover-crop output starts at `start_s` of the source). Fail-open
+        // on vision errors so a transient backend issue never blocks renders.
+        let mut vision_score: Option<f64> = None;
+        let mut vision_reason: Option<String> = None;
+        if vision {
+            match crate::llm::score_clip_relevance_at(
+                out_path,
+                Some(0.4),
+                if scene_text.is_empty() { diversified.as_str() } else { scene_text },
+                &scene_kw,
+                Some(&diversified),
+            )
+            .await
+            {
+                Ok(v) => {
+                    let (rel, matched, reason) = parse_vision_score(&v);
+                    if !matched || rel < min_vision {
+                        tracing::info!(
+                            "[youtube stock] FRAME REJECT id={} rel={:.2} matched={} {}",
+                            video_id,
+                            rel,
+                            matched,
+                            reason.clone().unwrap_or_default()
+                        );
+                        let _ = std::fs::remove_file(out_path);
+                        used_video_ids.insert(video_id);
+                        continue;
+                    }
+                    vision_score = Some(rel);
+                    vision_reason = reason;
+                    tracing::info!(
+                        "[youtube stock] frame PASS rel={:.2} id={} title='{}'",
+                        rel,
+                        video_id,
+                        &title[..title.len().min(50)]
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[youtube stock] frame vision error id={} (fail-open): {}",
+                        video_id,
+                        e
+                    );
+                }
+            }
+        }
+
         let out_hash = file_content_fingerprint(out_path).unwrap_or_else(|| content_hash.clone());
         if used_content_hashes.contains(&out_hash) {
             let _ = std::fs::remove_file(out_path);
@@ -9669,9 +9873,10 @@ async fn fetch_youtube_stock_clip_signal(
         used_content_hashes.insert(content_hash.clone());
         used_content_hashes.insert(out_hash.clone());
         tracing::info!(
-            "[youtube stock] ACCEPT id={} lex={:.2} hash={} title='{}' query='{}' -> {}",
+            "[youtube stock] ACCEPT id={} lex={:.2} vision={:?} hash={} title='{}' query='{}' -> {}",
             video_id,
             lex,
+            vision_score,
             &out_hash[..out_hash.len().min(20)],
             &title[..title.len().min(50)],
             diversified,
@@ -9684,6 +9889,8 @@ async fn fetch_youtube_stock_clip_signal(
             search_query: format!("{} | title={}", diversified, title),
             lexical_score: lex,
             source_title: title,
+            vision_score,
+            vision_reason,
         });
     }
     None
@@ -9959,6 +10166,8 @@ async fn fetch_pixabay_stock_clip_signal(
             search_query: format!("{} | title={}", query, title),
             lexical_score: lex,
             source_title: title,
+            vision_score: None,
+            vision_reason: None,
         });
     }
     None
@@ -11465,6 +11674,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     let min_duration_s = default_f64(&args, "min_duration_s", 0.0);
     let max_duration_s = default_f64(&args, "max_duration_s", 0.0);
     let aspect = default_str(&args, "aspect", "9:16");
+    let scene_text = default_str(&args, "scene_text", "");
     let cache_dir = default_str(&args, "cache_dir", "mcp/assets/background_cache");
     let fallback_pool: Vec<String> = args
         .get("fallback_pool")
@@ -11490,7 +11700,14 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
 
     std::fs::create_dir_all(&cache_dir)?;
 
-    let cache_key = format!("{:x}", md5_hash(query.as_bytes()));
+    // Cache key includes the scene text so a different scene context never
+    // reuses a clip cached for another scene — the L3 vision gate must be
+    // re-run per scene, not short-circuited by a stale cache hit.
+    let mut cache_seed = query.as_bytes().to_vec();
+    if !scene_text.is_empty() {
+        cache_seed.extend_from_slice(scene_text.as_bytes());
+    }
+    let cache_key = format!("{:x}", md5_hash(&cache_seed));
     let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
 
     // === PRIORITY 1: Pexels API (most reliable) ===
@@ -11808,6 +12025,9 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
         0,
         &mut used_stock_ids,
         &mut used_stock_hashes,
+        &scene_text,
+        min_duration_s,
+        max_duration_s,
     )
     .await
     {
@@ -11827,6 +12047,8 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
             "youtube_id": fetch.video_id,
             "source_title": fetch.source_title,
             "lexical_score": fetch.lexical_score,
+            "vision_score": fetch.vision_score,
+            "vision_reason": fetch.vision_reason,
             "source_duration_s": actual_duration_s,
             "start_s": 1.5, // extraction start used by fetch_youtube_stock_clip_signal (scene 0)
             "duration_s": duration_s,
@@ -13761,7 +13983,9 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     let mut per_scene_backgrounds: Vec<String> = Vec::new();
     // (video_id, content_hash, search_query) per scene for variance KPIs
     // Per-scene stock provenance for KPI (id, hash, query, lex, title)
-    let mut scene_stock_meta: Vec<Option<(String, String, String, f64, String)>> = Vec::new();
+    // id, hash, q, lex, title, vision_score, vision_reason
+    let mut scene_stock_meta: Vec<Option<(String, String, String, f64, String, f64, Option<String>)>> =
+        Vec::new();
     let pexels_key_val = pexels_key();
 
     // The final stock query per scene — the sticker stage reuses these SAME
@@ -13873,7 +14097,16 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
 
             let mut scene_bg: Option<String> = None;
             let mut bg_source = "none";
-            let mut stock_meta: Option<(String, String, String, f64, String)> = None; // id,hash,q,lex,title
+            // id, hash, q, lex, title, vision_score, vision_reason
+            let mut stock_meta: Option<(
+                String,
+                String,
+                String,
+                f64,
+                String,
+                f64,
+                Option<String>,
+            )> = None;
 
             // --- Priority 1: Pexels (requires API key) ---
             // SEGMENTATION_ARCHITECTURE min clip duration: request clips that
@@ -14054,6 +14287,8 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                             query.clone(),
                             0.5,
                             String::new(),
+                            0.5, // Pexels metadata is reliable; no vision gate
+                            None,
                         ));
                     }
                     scene_bg = Some(chosen);
@@ -14094,15 +14329,21 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     scene_idx,
                     &mut used_video_ids,
                     &mut used_content_hashes,
+                    scene_text,
+                    dur,
+                    dur,
                 )
                 .await
                 {
+                    let lex = fetch.lexical_score;
                     stock_meta = Some((
                         fetch.video_id,
                         fetch.content_hash,
                         fetch.search_query,
-                        fetch.lexical_score,
+                        lex,
                         fetch.source_title,
+                        fetch.vision_score.unwrap_or(lex),
+                        fetch.vision_reason,
                     ));
                     scene_bg = Some(fetch.path);
                     bg_source = "youtube";
@@ -14127,15 +14368,21 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     scene_idx,
                     &mut used_video_ids,
                     &mut used_content_hashes,
+                    scene_text,
+                    dur,
+                    dur,
                 )
                 .await
                 {
+                    let lex = fetch.lexical_score;
                     stock_meta = Some((
                         fetch.video_id,
                         fetch.content_hash,
                         fetch.search_query,
-                        fetch.lexical_score,
+                        lex,
                         fetch.source_title,
+                        fetch.vision_score.unwrap_or(lex),
+                        fetch.vision_reason,
                     ));
                     scene_bg = Some(fetch.path);
                     bg_source = "youtube";
@@ -15439,7 +15686,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     Some("procedural".into())
                 } else if b.path.contains("_yt") || b.path.contains("background_cache") {
                     Some("youtube".into())
-                } else if meta.map(|(id, _, _, _, _)| id.starts_with("pexels_")).unwrap_or(false) {
+                } else if meta.map(|(id, _, _, _, _, _, _)| id.starts_with("pexels_")).unwrap_or(false) {
                     Some("pexels".into())
                 } else {
                     None
@@ -15449,11 +15696,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     start_ms: t_cursor,
                     end_ms: t_cursor + dur_ms,
                     source_hint: hint,
-                    content_hash: meta.map(|(_, h, _, _, _)| h.clone()),
-                    video_id: meta.map(|(id, _, _, _, _)| id.clone()),
-                    search_query: meta.map(|(_, _, q, _, _)| q.clone()),
-                    lexical_score: meta.map(|(_, _, _, lex, _)| *lex),
-                    source_title: meta.map(|(_, _, _, _, t)| t.clone()),
+                    content_hash: meta.map(|(_, h, _, _, _, _, _)| h.clone()),
+                    video_id: meta.map(|(id, _, _, _, _, _, _)| id.clone()),
+                    search_query: meta.map(|(_, _, q, _, _, _, _)| q.clone()),
+                    lexical_score: meta.map(|(_, _, _, lex, _, _, _)| *lex),
+                    source_title: meta.map(|(_, _, _, _, t, _, _)| t.clone()),
+                    vision_score: meta.map(|(_, _, _, _, _, vs, _)| *vs),
+                    vision_reason: meta.and_then(|(_, _, _, _, _, _, vr)| vr.clone()),
                 });
                 t_cursor += dur_ms;
             }

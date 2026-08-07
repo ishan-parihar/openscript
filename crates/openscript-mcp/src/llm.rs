@@ -512,24 +512,15 @@ pub async fn analyze_clip(
     }))
 }
 
-/// Vision/text score of a clip against scene context. Returns JSON-shaped Value.
-pub async fn score_clip_relevance(
-    video_path: &str,
+/// Shared vision scoring: send an already-base64 JPEG + scene context to the
+/// cascade and return the parsed score JSON.
+async fn score_image_b64(
+    b64: String,
+    source_desc: &str,
     scene_text: &str,
     video_keywords: &[String],
     search_query: Option<&str>,
 ) -> Result<Value, LlmError> {
-    let frame_path = format!(
-        "/tmp/openscript_vision_{}.jpg",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
-    let _ = extract_frame_jpeg(video_path, None, &frame_path).await?;
-    let b64 = jpeg_to_base64(&frame_path)?;
-    let _ = std::fs::remove_file(&frame_path);
-
     let kw = video_keywords.join(", ");
     let system = "You are a short-form video director's vision assistant. \
         /no_think Judge whether a stock clip matches the spoken scene. \
@@ -550,11 +541,58 @@ pub async fn score_clip_relevance(
         "status": "scored",
         "backend": result.backend,
         "model": result.model,
-        "video_path": video_path,
+        "source": source_desc,
         "scene_text": scene_text,
         "raw": result.text,
         "score": parsed,
     }))
+}
+
+/// Vision/text score of a clip against scene context. Returns JSON-shaped Value.
+pub async fn score_clip_relevance(
+    video_path: &str,
+    scene_text: &str,
+    video_keywords: &[String],
+    search_query: Option<&str>,
+) -> Result<Value, LlmError> {
+    score_clip_relevance_at(video_path, None, scene_text, video_keywords, search_query).await
+}
+
+/// Vision score of a clip against scene context, extracting the frame at a
+/// specific second (L3 frame gate — verifies the ACTUAL pixels at the trim
+/// point, not the thumbnail or a random midpoint). `at_s=None` = midpoint.
+pub async fn score_clip_relevance_at(
+    video_path: &str,
+    at_s: Option<f64>,
+    scene_text: &str,
+    video_keywords: &[String],
+    search_query: Option<&str>,
+) -> Result<Value, LlmError> {
+    let frame_path = format!(
+        "/tmp/openscript_vision_{}.jpg",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    let _ = extract_frame_jpeg(video_path, at_s, &frame_path).await?;
+    let b64 = jpeg_to_base64(&frame_path)?;
+    let _ = std::fs::remove_file(&frame_path);
+    score_image_b64(b64, video_path, scene_text, video_keywords, search_query).await
+}
+
+/// Vision score of a stock IMAGE (e.g. a YouTube thumbnail) against scene
+/// context — the L2 pre-download gate. Cheap (~10 KB download, one vision
+/// call) and rejects lecture/thumbnail-bait candidates before the full video
+/// is downloaded.
+pub async fn score_image_relevance(
+    image_path: &str,
+    scene_text: &str,
+    video_keywords: &[String],
+    search_query: Option<&str>,
+) -> Result<Value, LlmError> {
+    let b64 = jpeg_to_base64(image_path)?;
+    score_image_b64(b64, image_path, scene_text, video_keywords, search_query).await
 }
 
 fn parse_json_loose(s: &str) -> Value {

@@ -823,6 +823,85 @@ pub fn rank_and_filter_candidates(
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// YouTube-specific ranking (L0+L1 of the vision-aware upgrade)
+// ---------------------------------------------------------------------------
+
+/// A YouTube search hit with the metadata we need for L1 ranking + L2/L3
+/// vision gates: yt-dlp `--dump-json` exposes `duration` and `thumbnail`
+/// for free, but the old `--print %(id)s\t%(title)s` path discarded them.
+#[derive(Debug, Clone)]
+pub struct YtCandidate {
+    pub id: String,
+    pub title: String,
+    pub duration_s: f64,
+    pub thumbnail_url: String,
+}
+
+/// A ranked YouTube candidate carrying the metadata the vision gates need.
+#[derive(Debug, Clone)]
+pub struct RankedYtCandidate {
+    pub id: String,
+    pub title: String,
+    pub lexical: f64,
+    pub duration_s: f64,
+    pub thumbnail_url: String,
+}
+
+/// Duration preference multiplier (L1): short stock clips outrank lectures.
+/// - 6–60s  → 1.0 (ideal b-roll window)
+/// - 60–300s → 0.85 (long-ish, still possibly footage)
+/// - >300s  → 0.45 (lecture/stream territory — the user-reported failure)
+/// - <6s    → 0.7 (too short to be useful b-roll)
+/// - 0 (unknown) → 0.9 (don't over-penalize missing metadata)
+pub fn duration_preference(duration_s: f64) -> f64 {
+    if duration_s <= 0.0 {
+        0.9
+    } else if duration_s < 6.0 {
+        0.7
+    } else if duration_s <= 60.0 {
+        1.0
+    } else if duration_s <= 300.0 {
+        0.85
+    } else {
+        0.45
+    }
+}
+
+/// Rank YouTube candidates: lexical relevance × duration preference, drop
+/// denylist titles, hard-gate below `min_score`. `min_duration_s`/`max_duration_s`
+/// (0 = no bound) act as hard pre-filters so lectures/long streams are never
+/// even considered for scenes that need a short clip.
+pub fn rank_yt_candidates(
+    candidates: &[YtCandidate],
+    signal: &[String],
+    min_score: f64,
+    min_duration_s: f64,
+    max_duration_s: f64,
+) -> Vec<RankedYtCandidate> {
+    let mut ranked: Vec<RankedYtCandidate> = candidates
+        .iter()
+        .filter(|c| !is_broll_title_denylisted(&c.title))
+        .filter(|c| {
+            let d = c.duration_s;
+            (min_duration_s <= 0.0 || d <= 0.0 || d >= min_duration_s)
+                && (max_duration_s <= 0.0 || d <= 0.0 || d <= max_duration_s)
+        })
+        .map(|c| {
+            let lexical = lexical_relevance(&c.title, signal);
+            RankedYtCandidate {
+                id: c.id.clone(),
+                title: c.title.clone(),
+                lexical: lexical * duration_preference(c.duration_s),
+                duration_s: c.duration_s,
+                thumbnail_url: c.thumbnail_url.clone(),
+            }
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.lexical.total_cmp(&a.lexical));
+    ranked.into_iter().filter(|c| c.lexical >= min_score).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -918,6 +997,59 @@ mod tests {
         let signal = vec!["morning".into(), "coffee".into(), "phone".into()];
         let ranked = rank_and_filter_candidates(&cands, &signal, 0.12);
         assert_eq!(ranked[0].id, "b");
+    }
+
+    #[test]
+    fn duration_preference_penalizes_lectures() {
+        assert_eq!(duration_preference(30.0), 1.0);
+        assert_eq!(duration_preference(6.0), 1.0);
+        assert!(duration_preference(60.0) >= 0.8);
+        assert!(duration_preference(0.0) > 0.8);
+        assert!(duration_preference(500.0) < 0.5, "lectures must be penalized");
+        assert!(duration_preference(2400.0) < 0.5);
+        assert!(duration_preference(3.0) < 1.0, "too-short clips penalized");
+    }
+
+    #[test]
+    fn rank_yt_puts_short_relevant_clip_over_lecture() {
+        let cands = vec![
+            YtCandidate {
+                id: "lecture".into(),
+                title: "How to prepare for an interview - English at Work".into(),
+                duration_s: 276.0,
+                thumbnail_url: String::new(),
+            },
+            YtCandidate {
+                id: "clip".into(),
+                title: "Office interview conversation stock footage vertical".into(),
+                duration_s: 15.0,
+                thumbnail_url: String::new(),
+            },
+        ];
+        let signal = vec!["interview".into(), "office".into()];
+        let ranked = rank_yt_candidates(&cands, &signal, 0.12, 0.0, 0.0);
+        assert_eq!(ranked[0].id, "clip", "short relevant clip must outrank lecture");
+    }
+
+    #[test]
+    fn rank_yt_hard_filters_by_duration_bounds() {
+        let cands = vec![
+            YtCandidate {
+                id: "short".into(),
+                title: "coffee desk morning".into(),
+                duration_s: 8.0,
+                thumbnail_url: String::new(),
+            },
+            YtCandidate {
+                id: "long".into(),
+                title: "coffee desk morning b-roll".into(),
+                duration_s: 900.0,
+                thumbnail_url: String::new(),
+            },
+        ];
+        let signal = vec!["coffee".into(), "desk".into(), "morning".into()];
+        let ranked = rank_yt_candidates(&cands, &signal, 0.12, 10.0, 60.0);
+        assert!(ranked.iter().all(|c| c.id == "short"), "only in-window clip survives");
     }
 
     #[test]

@@ -213,6 +213,15 @@ pub struct BackgroundLayerInfo {
     /// Provider title / description snippet used at accept time.
     #[serde(default)]
     pub source_title: Option<String>,
+    /// Vision-gate relevance score (0–1) from the L2/L3 multimodal check
+    /// (YouTube candidates). Pexels/Pixabay/procedural set this to the
+    /// lexical score — their metadata is reliable without a frame check.
+    #[serde(default)]
+    pub vision_score: Option<f64>,
+    /// Human-readable reason from the vision gate (why the frame matched or
+    /// was rejected). Absent when no vision check ran.
+    #[serde(default)]
+    pub vision_reason: Option<String>,
 }
 
 /// Music bed metadata for variance scoring.
@@ -2178,6 +2187,8 @@ pub fn backgrounds_from_timeline(timeline: &Timeline) -> Vec<BackgroundLayerInfo
                     search_query: None,
                     lexical_score: None,
                     source_title: None,
+                    vision_score: None,
+                    vision_reason: None,
                 });
             }
         }
@@ -2503,7 +2514,9 @@ mod tests {
                     content_hash: Some("proc1".into()),
                     video_id: None,
                     search_query: None,
-                 lexical_score: None, source_title: None, },
+                 lexical_score: None, source_title: None,
+                    vision_score: None,
+                    vision_reason: None, },
                 BackgroundLayerInfo {
                     path: "mcp/assets/backgrounds/procedural_02.mp4".into(),
                     start_ms: 8000,
@@ -2512,7 +2525,9 @@ mod tests {
                     content_hash: Some("proc2".into()),
                     video_id: None,
                     search_query: None,
-                 lexical_score: None, source_title: None, },
+                 lexical_score: None, source_title: None,
+                    vision_score: None,
+                    vision_reason: None, },
             ],
             has_dialogue: true,
             rms_ok: true,
@@ -2576,7 +2591,9 @@ mod tests {
                     content_hash: Some(format!("unique_hash_{}", i)),
                     video_id: Some(format!("vid{}", i)),
                     search_query: Some(format!("morning habit {}", i)),
-                 lexical_score: None, source_title: None, })
+                 lexical_score: None, source_title: None,
+                    vision_score: None,
+                    vision_reason: None, })
                 .collect(),
             stickers: vec![StickerLayerInfo {
                 path: "mcp/assets/stickers/giphy_alice.gif".into(),
@@ -2673,7 +2690,9 @@ mod tests {
                 content_hash: Some("deadbeef_111".into()), // SAME hash — the bug
                 video_id: Some("abc123".into()),
                 search_query: Some("morning routine".into()),
-             lexical_score: None, source_title: None, })
+             lexical_score: None, source_title: None,
+                    vision_score: None,
+                    vision_reason: None, })
             .collect();
         let d = score_visual_repetition(&bgs);
         assert_eq!(d.score, 0, "identical content must score 0, got {}", d.score);
@@ -2753,6 +2772,8 @@ mod tests {
                 search_query: Some("query".into()),
                 lexical_score: None,
                 source_title: None,
+                    vision_score: None,
+                    vision_reason: None,
             })
             .collect();
         let d = score_visual_repetition(&bgs);
@@ -2774,7 +2795,9 @@ mod tests {
                 content_hash: Some(format!("hash_{}", i)),
                 video_id: Some(format!("vid{}", i)),
                 search_query: Some(format!("query {}", i)),
-             lexical_score: None, source_title: None, })
+             lexical_score: None, source_title: None,
+                    vision_score: None,
+                    vision_reason: None, })
             .collect();
         let d = score_visual_repetition(&bgs);
         assert!(d.score >= 8, "unique hashes should be high, got {}", d.score);
@@ -2796,6 +2819,8 @@ mod tests {
                     search_query: Some("desk laptop".into()),
                     lexical_score: Some(0.4),
                     source_title: Some("Workspace laptop coffee".into()),
+                    vision_score: Some(0.4),
+                    vision_reason: None,
                 },
                 BackgroundLayerInfo {
                     path: "mcp/assets/backgrounds/procedural_01.mp4".into(),
