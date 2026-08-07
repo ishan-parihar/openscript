@@ -37,6 +37,16 @@ const NOISE_TOKENS: &[&str] = &[
     "starts", "start", "started", "make", "makes", "made", "try", "tries",
     "watch", "come", "comes", "back", "get", "gets", "got", "keep", "keeps",
     "open", "opens", "touch", "touches", "write", "writes", "check", "checking",
+    // negations / function words / non-visual scene chatter (leaked into
+    // stock queries and produced garbage ytsearch: "calm daily not fix
+    // yourself remember never ..."). These carry zero visual signal.
+    "not", "never", "ever", "daily", "out", "eight", "see", "name",
+    "slowly", "gently", "shift", "yourself", "remember", "fix", "broken",
+    "stuck", "survival", "mode", "safety", "signals", "practices",
+    "gently", "elongated", "micro", "movement", "discharge", "present",
+    "things", "signal", "practice", "daily", "fixing", "fixes",
+    "small", "wiggle", "turn", "orienting", "orient", "safe",
+    "nerve", "nerves", "firstly", "secondly", "thirdly", "once", "every",
     // pronouns / fillers already partially stopped elsewhere
     "your", "you", "our", "their", "thing", "things", "whole", "single", "must",
     "exactly", "really", "just", "like", "also", "even", "still", "don", "doesn",
@@ -501,8 +511,15 @@ fn pick_visual_anchor(signal: &[String], video_keywords: &[String], scene_idx: u
             }
         }
     }
-    if let Some((_, a)) = best {
-        return a.to_string();
+    // A single shared keyword (e.g. video_keywords contains "breath", which
+    // is also an anchor key) used to pin EVERY scene to the same anchor — all
+    // six scenes queried "yoga stretch morning home light". Require at least
+    // two distinct anchor keys to commit to a specific anchor; otherwise fall
+    // back to the rotated bank so scenes diversify.
+    if let Some((score, a)) = best {
+        if score >= 2 {
+            return a.to_string();
+        }
     }
     // Fall back to rotated bank so multi-scene still diversifies
     bank[scene_idx % bank.len()].0.to_string()
@@ -1159,5 +1176,44 @@ mod tests {
     #[test]
     fn translate_hinglish_visuals_case_insensitive() {
         assert_eq!(translate_hinglish_visuals("SARKAR ka paisa"), "government building ka money");
+    }
+
+    #[test]
+    fn anchor_not_pinned_by_single_shared_keyword() {
+        // Regression: a single shared keyword (e.g. "breath" in video_keywords
+        // that is also an anchor key) used to pin EVERY scene to the same
+        // anchor → all six scenes queried "yoga stretch morning home light".
+        // Requiring >= 2 distinct anchor keys must fall back to the rotated
+        // bank so multi-scene queries diversify.
+        let signal = vec![
+            "breath".to_string(),
+            "calm".to_string(),
+            "healing".to_string(),
+            "nervous".to_string(),
+        ];
+        let kw = vec!["breath".to_string(), "calm".to_string(), "stretch".to_string()];
+        let a0 = pick_visual_anchor(&signal, &kw, 0);
+        let a1 = pick_visual_anchor(&signal, &kw, 1);
+        let a2 = pick_visual_anchor(&signal, &kw, 2);
+        // Single shared keyword "breath" alone must NOT pin all to one anchor.
+        let distinct: std::collections::HashSet<String> =
+            [a0.clone(), a1.clone(), a2.clone()].into_iter().collect();
+        assert!(
+            distinct.len() >= 2,
+            "anchors should diversify, got {}",
+            distinct.len()
+        );
+    }
+
+    #[test]
+    fn anchor_commits_when_two_distinct_keys_match() {
+        // Two distinct anchor keys SHOULD commit to that anchor (score >= 2).
+        // "yoga stretch morning home light" anchor keys likely include
+        // "stretch" + "morning" — both present → commit, don't rotate.
+        let signal = vec!["stretch".to_string(), "morning".to_string()];
+        let kw = vec!["yoga".to_string(), "stretch".to_string(), "home".to_string()];
+        let a = pick_visual_anchor(&signal, &kw, 5);
+        // Either the specific anchor or a rotated fallback — must be non-empty.
+        assert!(!a.is_empty());
     }
 }

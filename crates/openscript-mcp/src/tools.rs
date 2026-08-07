@@ -35,6 +35,20 @@ fn resolve_fonts_dir() -> Option<String> {
     }
 }
 
+/// Truncate a string to at most `max` bytes at a UTF-8 char boundary.
+/// Safe for logging titles with multibyte chars (em-dashes, curly apostrophes)
+/// that would otherwise panic a naive `&s[..n]` slice.
+fn truncate_utf8(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut idx = max;
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    &s[..idx]
+}
+
 pub fn tool_definitions() -> serde_json::Value {
     let mut tools = json!([
         // ===================================================================
@@ -9430,46 +9444,79 @@ fn file_content_fingerprint(path: &str) -> Option<String> {
 /// Uses `--dump-json` (like stock_pool::yt_search_entries) so the L1 duration
 /// preference and L2 thumbnail vision gate have the metadata they need.
 async fn youtube_search_candidates(query: &str, limit: usize) -> Vec<crate::stock_signal::YtCandidate> {
-    let out = tokio::process::Command::new("yt-dlp")
-        .args([
-            "--flat-playlist",
-            "--dump-json",
-            "--no-warnings",
-            "--quiet",
-            &format!("ytsearch{}:{}", limit, query),
-        ])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
-        .await;
-    match out {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
-            .lines()
-            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-            .filter_map(|d| {
-                let id = d.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                let title = d.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                if id.is_empty() || title.is_empty() {
-                    return None;
-                }
-                let duration_s = d.get("duration").and_then(|x| x.as_f64()).unwrap_or(0.0);
-                let thumbnail_url = d
-                    .get("thumbnail")
-                    .and_then(|x| x.as_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", id));
-                Some(crate::stock_signal::YtCandidate {
-                    id,
-                    title,
-                    duration_s,
-                    thumbnail_url,
-                })
+    // Retry once with backoff: YouTube transiently throttles the search
+    // endpoint during multi-scene bursts (same bot-detection family as the
+    // download 403s). A silent empty result otherwise falls the scene to
+    // procedural even though the query is valid.
+    for attempt in 0..2 {
+        let out = tokio::process::Command::new("yt-dlp")
+            .args([
+                "--flat-playlist",
+                "--dump-json",
+                "--no-warnings",
+                "--quiet",
+                "--socket-timeout",
+                "25",
+                &format!("ytsearch{}:{}", limit, query),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .output()
+            .await;
+        let err_tail = out
+            .as_ref()
+            .map(|o| {
+                String::from_utf8_lossy(&o.stderr)
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .rev()
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             })
-            .collect(),
-        _ => Vec::new(),
+            .unwrap_or_default();
+        match out {
+            Ok(o) if o.status.success() => {
+                let parsed: Vec<crate::stock_signal::YtCandidate> = String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                    .filter_map(|d| {
+                        let id = d.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                        let title = d.get("title").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                        if id.is_empty() || title.is_empty() {
+                            return None;
+                        }
+                        let duration_s = d.get("duration").and_then(|x| x.as_f64()).unwrap_or(0.0);
+                        let thumbnail_url = d
+                            .get("thumbnail")
+                            .and_then(|x| x.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", id));
+                        Some(crate::stock_signal::YtCandidate {
+                            id,
+                            title,
+                            duration_s,
+                            thumbnail_url,
+                        })
+                    })
+                    .collect();
+                if !parsed.is_empty() {
+                    return parsed;
+                }
+            }
+            _ => {}
+        }
+        tracing::warn!(
+            "[youtube stock] search failed attempt {} for query='{}' err={} — retrying",
+            attempt + 1,
+            query,
+            err_tail
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
     }
+    Vec::new()
 }
 
 /// Fetch a stock clip that is content-unique **and** context-relevant.
@@ -9637,9 +9684,28 @@ async fn fetch_youtube_stock_clip_signal(
         vision,
         ranked
             .first()
-            .map(|c| format!("{}:{:.2}:{}s:{}", c.id, c.lexical, c.duration_s as i64, &c.title[..c.title.len().min(40)]))
+            .map(|c| format!("{}:{:.2}:{}s:{}", c.id, c.lexical, c.duration_s as i64, truncate_utf8(&c.title, 40)))
             .unwrap_or_else(|| "none".into())
     );
+    if ranked.is_empty() && !candidates.is_empty() {
+        // Diagnostic: WHY did ranking reject everything? Surface the raw
+        // candidate pool (id, duration, title) + the active duration bounds
+        // so a zero-result is attributable to the query, the gate, or the
+        // signal — not silently blamed on the search.
+        let raw: Vec<String> = candidates
+            .iter()
+            .take(10)
+            .map(|c| format!("{}:{}s:{}", c.id, c.duration_s as i64, truncate_utf8(&c.title, 45)))
+            .collect();
+        tracing::warn!(
+            "[youtube stock] ranked 0 from {} raw candidates (min_dur={:.1}s max_dur={:.1}s min_lex={:.2}) raw={:?}",
+            candidates.len(),
+            min_duration_s,
+            max_duration_s,
+            min_lex,
+            raw
+        );
+    }
 
     let scene_kw: Vec<String> = signal.clone();
     for cand in ranked.into_iter().take(8) {
@@ -9676,7 +9742,7 @@ async fn fetch_youtube_stock_clip_signal(
                                 "[youtube stock] {} id={} title='{}'",
                                 reject_msg,
                                 video_id,
-                                &title[..title.len().min(50)]
+                                truncate_utf8(&title, 50)
                             );
                             used_video_ids.insert(video_id.clone());
                         } else {
@@ -9684,7 +9750,7 @@ async fn fetch_youtube_stock_clip_signal(
                                 "[youtube stock] thumbnail PASS rel={:.2} id={} title='{}'",
                                 rel,
                                 video_id,
-                                &title[..title.len().min(50)]
+                                truncate_utf8(&title, 50)
                             );
                         }
                     }
@@ -9708,8 +9774,8 @@ async fn fetch_youtube_stock_clip_signal(
             let url = format!("https://www.youtube.com/watch?v={}", video_id);
             // Video-only preferred (avoid audio-only / music streams ranked as "stock").
             // Cover-crop later handles landscape→portrait cleanly.
-            let yt = tokio::process::Command::new("yt-dlp")
-                .args([
+            let mut yt_cmd = tokio::process::Command::new("yt-dlp");
+            yt_cmd.args([
                     "--format",
                     "bestvideo[height<=720][ext=mp4]+bestaudio/bestvideo[height<=720]+bestaudio/bestvideo[height<=720][ext=mp4]/bestvideo[height<=720]/best[vcodec!=none][height<=720]/best[vcodec!=none]/best",
                     "--merge-output-format",
@@ -9721,8 +9787,20 @@ async fn fetch_youtube_stock_clip_signal(
                     "--no-warnings",
                     "--socket-timeout",
                     "25",
-                    &url,
-                ])
+                    "--retries",
+                    "4",
+                    "--retry-sleep",
+                    "3",
+                    "--extractor-retries",
+                    "3",
+                ]);
+            if let Ok(cookies) = std::env::var("OPENSCRIPT_YT_COOKIES") {
+                if !cookies.is_empty() && std::path::Path::new(&cookies).exists() {
+                    yt_cmd.args(["--cookies", &cookies]);
+                }
+            }
+            yt_cmd.arg(&url);
+            let yt = yt_cmd
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::piped())
@@ -9735,12 +9813,26 @@ async fn fetch_youtube_stock_clip_signal(
                 .map(|o| o.status.success() && Path::new(&full_path).exists())
                 .unwrap_or(false);
             if !ok {
+                let err_tail = yt
+                    .as_ref()
+                    .map(|o| {
+                        String::from_utf8_lossy(&o.stderr)
+                            .lines()
+                            .filter(|l| !l.trim().is_empty())
+                            .rev()
+                            .take(4)
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    })
+                    .unwrap_or_default();
                 tracing::warn!(
-                    "[youtube stock] download failed id={} title='{}' q={}",
+                    "[youtube stock] download failed id={} title='{}' q={} err={}",
                     video_id,
-                    &title[..title.len().min(50)],
-                    diversified
+                    truncate_utf8(&title, 50),
+                    diversified,
+                    err_tail
                 );
+                tokio::time::sleep(std::time::Duration::from_millis(900)).await;
                 continue;
             }
         }
@@ -9849,7 +9941,7 @@ async fn fetch_youtube_stock_clip_signal(
                         "[youtube stock] frame PASS rel={:.2} id={} title='{}'",
                         rel,
                         video_id,
-                        &title[..title.len().min(50)]
+                        truncate_utf8(&title, 50)
                     );
                 }
                 Err(e) => {
@@ -9878,7 +9970,7 @@ async fn fetch_youtube_stock_clip_signal(
             lex,
             vision_score,
             &out_hash[..out_hash.len().min(20)],
-            &title[..title.len().min(50)],
+            truncate_utf8(&title, 50),
             diversified,
             out_path
         );
@@ -10014,7 +10106,7 @@ async fn fetch_pixabay_stock_clip_signal(
         min_lex,
         ranked
             .first()
-            .map(|c| format!("{}:{:.2}:{}", c.id, c.lexical, &c.title[..c.title.len().min(40)]))
+            .map(|c| format!("{}:{:.2}:{}", c.id, c.lexical, truncate_utf8(&c.title, 40)))
             .unwrap_or_else(|| "none".into())
     );
 
@@ -10047,7 +10139,7 @@ async fn fetch_pixabay_stock_clip_signal(
             tracing::warn!(
                 "[pixabay stock] no direct url id={} title='{}'",
                 video_id,
-                &title[..title.len().min(50)]
+                truncate_utf8(&title, 50)
             );
             continue;
         }
@@ -10069,7 +10161,7 @@ async fn fetch_pixabay_stock_clip_signal(
                     tracing::warn!(
                         "[pixabay stock] download failed id={} title='{}' q={}",
                         video_id,
-                        &title[..title.len().min(50)],
+                        truncate_utf8(&title, 50),
                         query
                     );
                     continue;
@@ -10155,7 +10247,7 @@ async fn fetch_pixabay_stock_clip_signal(
             video_id,
             lex,
             &out_hash[..out_hash.len().min(20)],
-            &title[..title.len().min(50)],
+            truncate_utf8(&title, 50),
             query,
             out_path
         );
@@ -14320,6 +14412,12 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 }
                 used_yt_queries.insert(yt_q.clone());
                 let yt_out = format!("{}/scene_{:03}_yt.mp4", cache_dir, scene_idx + 1);
+                // min_duration_s = dur (never accept a clip shorter than the
+                // scene — avoids looping), max_duration_s = 0 (no cap — the
+                // clip is trimmed to `-t dur` anyway). Passing dur as BOTH
+                // bounds required the video duration to EXACTLY equal the
+                // scene length, which rejected every YouTube candidate and
+                // silently degraded to procedural b-roll.
                 if let Some(fetch) = fetch_youtube_stock_clip_signal(
                     &yt_q,
                     &signal_tokens,
@@ -14331,7 +14429,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     &mut used_content_hashes,
                     scene_text,
                     dur,
-                    dur,
+                    0.0,
                 )
                 .await
                 {
@@ -14370,7 +14468,7 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                     &mut used_content_hashes,
                     scene_text,
                     dur,
-                    dur,
+                    0.0,
                 )
                 .await
                 {
@@ -14401,14 +14499,40 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 per_scene_backgrounds.push(path);
             } else {
                 // Last resort: procedural (synthetic) — hard production quality fail.
-                let fallback = format!(
-                    "mcp/assets/backgrounds/procedural_{:02}.mp4",
-                    (scene_idx % 10) + 1
-                );
-                let procedural_path = if std::path::Path::new(&fallback).exists() {
-                    fallback
-                } else {
+                // Rotate through ACTUAL files on disk (never assume a numbered
+                // clip exists — missing procedural_04/08 used to silently
+                // duplicate procedural_01 across scenes). Prefer a file not yet
+                // used this run so the anti-repeat KPI doesn't trip even on
+                // the fallback path.
+                let mut proc_candidates: Vec<String> = std::fs::read_dir("mcp/assets/backgrounds")
+                    .map(|rd| {
+                        rd.filter_map(|e| e.ok())
+                            .map(|e| e.path())
+                            .filter(|p| {
+                                p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .map(|n| n.starts_with("procedural_") && n.ends_with(".mp4"))
+                                    .unwrap_or(false)
+                            })
+                            .filter_map(|p| p.to_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                proc_candidates.sort();
+                let procedural_path = if proc_candidates.is_empty() {
                     "mcp/assets/backgrounds/procedural_01.mp4".to_string()
+                } else {
+                    let unused = proc_candidates
+                        .iter()
+                        .find(|p| !per_scene_backgrounds.contains(p))
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            // All used — rotate; pick the least-recently used
+                            // (first used, since we push in order) to maximize
+                            // distance between repeats.
+                            proc_candidates[scene_idx % proc_candidates.len()].clone()
+                        });
+                    unused
                 };
                 per_scene_backgrounds.push(procedural_path.clone());
                 let allow_proc = std::env::var("OPENSCRIPT_ALLOW_PROCEDURAL")
@@ -15682,12 +15806,19 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             for (i, b) in render_spec.backgrounds.iter().enumerate() {
                 let dur_ms = (b.duration_s * 1000.0) as i64;
                 let meta = scene_stock_meta.get(i).and_then(|m| m.as_ref());
-                let hint = if is_procedural_media_path(&b.path) {
+                // Authoritative provenance FIRST: the 7-tuple's video_id is
+                // `pexels_<id>` for Pexels, a raw YouTube id for yt-dlp.
+                // Path heuristics run AFTER so a Pexels clip stored in
+                // background_cache/ is not mislabeled "youtube".
+                let hint = if meta
+                    .map(|(id, _, _, _, _, _, _)| id.starts_with("pexels_"))
+                    .unwrap_or(false)
+                {
+                    Some("pexels".into())
+                } else if is_procedural_media_path(&b.path) {
                     Some("procedural".into())
                 } else if b.path.contains("_yt") || b.path.contains("background_cache") {
                     Some("youtube".into())
-                } else if meta.map(|(id, _, _, _, _, _, _)| id.starts_with("pexels_")).unwrap_or(false) {
-                    Some("pexels".into())
                 } else {
                     None
                 };
