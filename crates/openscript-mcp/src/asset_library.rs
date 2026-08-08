@@ -286,6 +286,7 @@ impl AssetLibrary {
             .filter(|p| is_media_file(p))
             .collect();
         entries.sort();
+        let mut next_id = next_asset_id(&self.assets);
 
         for path in entries {
             let pstr = path.to_string_lossy().to_string();
@@ -314,7 +315,7 @@ impl AssetLibrary {
                 .and_then(|s| s.to_str())
                 .unwrap_or("untitled");
             let entry = AssetEntry {
-                id: format!("ul_{:04}", self.assets.len() + 1 + report.indexed),
+                id: next_id.clone(),
                 path: pstr.clone(),
                 content_hash: hash,
                 source: "user_upload".to_string(),
@@ -330,6 +331,7 @@ impl AssetLibrary {
             };
             self.upsert(entry);
             report.indexed += 1;
+            next_id = bump_id(&next_id);
         }
         Ok(report)
     }
@@ -344,6 +346,7 @@ impl AssetLibrary {
         title: &str,
         keywords: Vec<String>,
     ) -> Result<String, ToolError> {
+        let id = next_asset_id(&self.assets);
         let hash = crate::tools::file_content_fingerprint(path).ok_or_else(|| {
             ToolError::Asset(format!("imported file unreadable: {path}"))
         })?;
@@ -355,7 +358,6 @@ impl AssetLibrary {
         })?;
         let width = meta.width.unwrap_or(0);
         let height = meta.height.unwrap_or(0);
-        let id = format!("ul_{:04}", self.assets.len() + 1);
         let entry = AssetEntry {
             id: id.clone(),
             path: path.to_string(),
@@ -424,6 +426,27 @@ pub fn auto_keywords_from_stem(stem: &str) -> Vec<String> {
 /// RFC-3339-ish timestamp for created/rated/used fields.
 fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+/// Highest existing numeric suffix + 1 (`ul_0001` after `ul_0000`), stable
+/// across removals (unlike `assets.len() + 1`, which can collide after deletes).
+fn next_asset_id(assets: &[AssetEntry]) -> String {
+    let max = assets
+        .iter()
+        .filter_map(|a| a.id.strip_prefix("ul_"))
+        .filter_map(|s| s.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    format!("ul_{:04}", max + 1)
+}
+
+/// Increment a `ul_XXXX` id.
+fn bump_id(id: &str) -> String {
+    let n = id
+        .strip_prefix("ul_")
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    format!("ul_{:04}", n + 1)
 }
 
 #[cfg(test)]

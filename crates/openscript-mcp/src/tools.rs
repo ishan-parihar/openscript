@@ -38,7 +38,7 @@ fn resolve_fonts_dir() -> Option<String> {
 /// Truncate a string to at most `max` bytes at a UTF-8 char boundary.
 /// Safe for logging titles with multibyte chars (em-dashes, curly apostrophes)
 /// that would otherwise panic a naive `&s[..n]` slice.
-fn truncate_utf8(s: &str, max: usize) -> &str {
+pub(crate) fn truncate_utf8(s: &str, max: usize) -> &str {
     if s.len() <= max {
         return s;
     }
@@ -11905,21 +11905,38 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     .await?;
 
     let source = outcome.source.clone();
+    let provider_id = outcome.provider_id.clone();
+    // Probe the produced clip so consumers (broll_gaps / broll.auto) receive the
+    // ACTUAL duration and a truthful needs_looping flag — the old background.fetch
+    // reported these accurately per provider (regression fix after unification).
+    let actual_duration_s = match openscript_ffmpeg::probe::probe(&outcome.clip_path).await {
+        Ok(m) if m.duration > 0.0 => m.duration,
+        _ => duration_s,
+    };
     let mut result = json!({
         "status": if outcome.fell_to_procedural { "warning" } else { "fetched" },
         "clip_path": outcome.clip_path,
         "source": source,
-        "source_duration_s": duration_s,
+        "source_duration_s": actual_duration_s,
         "start_s": 0.0,
         "duration_s": duration_s,
-        "needs_looping": false,
+        "needs_looping": actual_duration_s < duration_s,
         "cached": false,
         "exhausted": outcome.exhausted,
     });
     match source.as_str() {
-        "pexels" => result["pexels_id"] = json!(outcome.provider_id),
-        "pixabay" => result["pixabay_id"] = json!(outcome.provider_id),
-        "youtube" => result["youtube_id"] = json!(outcome.provider_id),
+        "pexels" => {
+            if let Some(pid) = provider_id.as_deref() {
+                // Preserve the numeric pexels_id contract (was i64 before the
+                // scene_media unification).
+                result["pexels_id"] = match pid.parse::<i64>() {
+                    Ok(n) => json!(n),
+                    Err(_) => json!(pid),
+                };
+            }
+        }
+        "pixabay" => result["pixabay_id"] = json!(provider_id),
+        "youtube" => result["youtube_id"] = json!(provider_id),
         _ => {}
     }
     result["lexical_score"] = json!(outcome.lexical_score);
@@ -13957,8 +13974,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
                 };
                 render_warnings.push(warn);
             }
+            // Manifest provenance (render manifest source_hint) keys off the
+            // `pexels_<id>` prefix — preserve it for the pexels tier.
+            let meta_id = match outcome.source.as_str() {
+                "pexels" => format!("pexels_{}", outcome.provider_id.clone().unwrap_or_default()),
+                _ => outcome.provider_id.clone().unwrap_or_default(),
+            };
             scene_stock_meta.push(Some((
-                outcome.provider_id.clone().unwrap_or_default(),
+                meta_id,
                 outcome.content_hash.clone(),
                 outcome.search_query.clone(),
                 outcome.lexical_score,
@@ -15367,6 +15390,10 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         "rendered_production_fail"
     } else if is_draft {
         "draft"
+    } else if !pq.hard_fails.is_empty() {
+        // Hard failures (e.g. >=50% procedural, music mismatch) always win —
+        // the more severe signal must not be masked by the procedural status.
+        "rendered_production_fail"
     } else if fell_to_procedural_any
         && !std::env::var("OPENSCRIPT_ALLOW_PROCEDURAL")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -15374,8 +15401,6 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     {
         // Loud-warning procedural policy: render ships but the status says so.
         "rendered_with_procedural"
-    } else if !pq.hard_fails.is_empty() {
-        "rendered_production_fail"
     } else if pq.production_score >= 70 {
         "rendered"
     } else if pq.production_score >= 40 {

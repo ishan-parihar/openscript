@@ -133,6 +133,8 @@ pub async fn fetch_scene_background(
             &query,
             &aspect,
             duration_s,
+            min_duration_s,
+            max_duration_s,
             &cache_dir,
             &out_stem,
             scene_idx,
@@ -282,6 +284,8 @@ async fn tier_pexels(
     query: &str,
     aspect: &str,
     duration_s: f64,
+    min_duration_s: f64,
+    max_duration_s: f64,
     cache_dir: &str,
     out_stem: &str,
     scene_idx: usize,
@@ -297,12 +301,17 @@ async fn tier_pexels(
     let key = crate::tools::pexels_key();
 
     let needed_dur = duration_s.max(3.0);
+    // Honor explicit caller bounds (SEGMENTATION_ARCHITECTURE): the covering
+    // pass filters by max_duration_s too; min is the max of the caller floor
+    // and the scene length (never accept a clip shorter than the scene).
+    let min_filter = needed_dur.max(min_duration_s);
     let mut covering: Vec<(String, i64)> = Vec::new(); // (file url, pexels id)
     let mut shorts: Vec<(i64, String, i64)> = Vec::new(); // (dur, url, id)
 
     // Pass 1 (pages 1-3): only clips that cover the scene duration.
     for page in 1..=3 {
-        let url = crate::tools::pexels_search_url(query, orientation, page, needed_dur, 0.0);
+        let url =
+            crate::tools::pexels_search_url(query, orientation, page, min_filter, max_duration_s);
         let Ok(resp) = client.get(&url).header("Authorization", &key).send().await else {
             continue;
         };
@@ -375,7 +384,7 @@ async fn tier_pexels(
     if candidates.is_empty() {
         exhausted.push(format!(
             "pexels: 0 candidates (covering {needed_dur:.1}s) for '{}'",
-            truncate(query, 60)
+            crate::tools::truncate_utf8(query, 60)
         ));
         return Ok(None);
     }
@@ -637,18 +646,6 @@ pub fn choose_procedural_clip(
 /// the vision gate actually ran (non-fail-open — None means reject).
 pub fn yt_tier_accepts(lexical: f64, vision: Option<f64>) -> bool {
     lexical * YT_SOURCE_PRIOR >= YT_MIN_LEXICAL && vision.is_some()
-}
-
-/// Byte-safe log truncation.
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        return s;
-    }
-    let mut idx = max;
-    while idx > 0 && !s.is_char_boundary(idx) {
-        idx -= 1;
-    }
-    &s[..idx]
 }
 
 #[cfg(test)]
