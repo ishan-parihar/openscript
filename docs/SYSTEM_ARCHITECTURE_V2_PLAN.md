@@ -13,10 +13,10 @@
 |---|------|--------|
 | 1 | Root-cause audit: why procedural cuts shipped | ✅ COMPLETED (Part A) |
 | 2 | Decision lock: procedural policy, library storage, curation surface, YouTube tier | ✅ COMPLETED (user decisions) |
-| 3 | Phase 1 — Fallback discipline: unified acquisition chain + procedural loud-warning | ⏳ PENDING |
-| 4 | Phase 2 — Asset-development pipeline backend (`asset.*` MCP/CLI surface) | ⏳ PENDING |
-| 5 | Phase 3 — Generation integration: library tier + YouTube opt-in | ⏳ PENDING |
-| 6 | Phase 4 — Unified `openscript` CLI surface + docs | ⏳ PENDING |
+| 3 | Phase 1 — Fallback discipline: unified acquisition chain + procedural loud-warning | ✅ COMPLETED (scene_media.rs, background.fetch + script.to_video rewired) |
+| 4 | Phase 2 — Asset-development pipeline backend (`asset.*` MCP/CLI surface) | ✅ COMPLETED (asset_library.rs + 6 asset.* tools, E2E verified) |
+| 5 | Phase 3 — Generation integration: library tier + YouTube opt-in | ✅ COMPLETED (Tier 1 live-verified; `rendered_with_procedural` status) |
+| 6 | Phase 4 — Unified `openscript` CLI surface + docs | ⏳ PENDING (docs updated; tools.rs 98-handler split + CLI subcommands deferred — mechanical move, deferred to avoid regression risk in the same session) |
 | 7 | Phase 5 — Tauri Asset-Library curation UI (deferred, after backend) | ⏳ PENDING (later) |
 
 ---

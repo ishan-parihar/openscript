@@ -701,6 +701,91 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         // ===================================================================
+        // ===================================================================
+        // GROUP 2c: ASSET DEVELOPMENT — user-curated footage library
+        // (asset-development pipeline; separate from the generation pipeline)
+        // ===================================================================
+        {
+            "name": "asset.library.status",
+            "description": "Asset-development pipeline: library health summary. Returns schema version, media root, total assets, and counts by source (user_upload/pexels/pixabay/youtube) and curation status (candidate/approved/rejected). Use to see what the user's footage library contains before asset.search. Returns: status, version, root, total_assets, by_source, by_status.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        },
+        {
+            "name": "asset.ingest",
+            "description": "Asset-development pipeline: scan a directory (default mcp/assets/user_library) and index new footage — ffprobe metadata, content-hash fingerprint, auto-keywords from filename. Idempotent (hash dedup skips already-indexed files). Runs BEFORE curation: the indexed entries are 'candidate' until asset.rate approves them. Returns: status, dir, indexed, skipped_duplicates, errors, total_assets.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "dir": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Directory to scan (default mcp/assets/user_library)"}
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "asset.probe",
+            "description": "Asset-development pipeline: build a CURATION POOL — search Pexels + Pixabay + YouTube for N candidate clips matching keywords and return thumbnails + metadata WITHOUT downloading. The user/agent classifies each candidate (relevance, quality) via asset.rate, then asset.import downloads the winners into the local library. YouTube is always searched here (acquisition engine), independent of the generation opt-in flag. Returns: status, query, per_provider counts, count, candidates[] with thumbnail_url, duration_s, provider, id, direct_url.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search keywords for footage, e.g. 'morning desk coffee'"},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Orientation: 9:16 / 16:9 / 1:1"},
+                    "min_duration_s": {"type": "number", "default": 0, "description": "Only keep candidates at least this long (0 = no floor)"},
+                    "max_duration_s": {"type": "number", "default": 0, "description": "Cap candidates at this duration (0 = no cap)"},
+                    "per_provider": {"type": "integer", "default": 8, "description": "Max candidates per provider before dedup/rank"},
+                    "signal": {"type": "array", "items": {"type": "string"}, "description": "Optional lexical bias tokens; empty derives from the query"}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "asset.rate",
+            "description": "Asset-development pipeline: classify an asset (from asset.ingest or asset.import) — relevance 0-1 per keyword, quality 0-5, mood/energy/motion tags, and curation status (approved/rejected/candidate). Only approved assets with quality_rating >= 3.0 are eligible for the generation pipeline (Tier 1). Persists to mcp/assets/user_library_index.json. Returns: status, asset_id, curation_status, quality_rating.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "Asset id from asset.library.status / asset.ingest / asset.import"},
+                    "relevance": {"type": "object", "additionalProperties": {"type": "number"}, "description": "Per-keyword relevance 0-1, e.g. {\"morning\": 0.9, \"desk\": 0.85}"},
+                    "quality_rating": {"type": "number", "default": 0, "description": "Quality 0-5 (user-classified)"},
+                    "mood": {"type": "string", "default": "", "description": "calm / energetic / neutral / dark / uplifting"},
+                    "energy": {"type": "string", "default": "", "description": "low / medium / high"},
+                    "motion_intensity": {"type": "string", "default": "", "description": "slow / medium / fast"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Free tags, e.g. vertical, clean, no_people"},
+                    "status": {"type": "string", "default": "candidate", "description": "approved / rejected / candidate"}
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "asset.import",
+            "description": "Asset-development pipeline: download a probed external candidate (YouTube via yt-dlp, direct file URL for Pexels/Pixabay) or copy a local file into mcp/assets/user_library/ and index it as a 'candidate'. Use AFTER asset.probe + asset.rate approved a clip. Returns: status, asset_id, path, total_assets.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Direct file URL (Pexels/Pixabay) or YouTube watch URL"},
+                    "path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Local file path to copy into the library"},
+                    "title": {"type": "string", "default": "", "description": "Human-readable title"},
+                    "source": {"type": "string", "default": "user_upload", "description": "user_upload / pexels / pixabay / youtube"},
+                    "provider_id": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Provider video id, e.g. pexels_4521"},
+                    "keywords": {"type": "array", "items": {"type": "string"}, "description": "Search keywords for this clip"}
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "asset.search",
+            "description": "Asset-development pipeline: search the curated library by keywords — returns only approved assets with quality_rating >= quality_floor (default 3.0), ranked by relevance-to-keywords × quality × freshness (least-recently-used first). This is the consumption side the generation pipeline uses as its Tier 1 footage source. Returns: status, count, assets[] with id, path, title, keywords, mood, quality_rating, duration_s, aspect, relevance, usage_count.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "keywords": {"type": "string", "description": "Search keywords, e.g. 'morning desk coffee'"},
+                    "quality_floor": {"type": "number", "default": 3.0, "description": "Minimum quality_rating to return (default 3.0)"}
+                },
+                "required": ["keywords"],
+                "additionalProperties": false
+            }
+        },
         // GROUP 3: VOICEOVER & TTS — Commentary, narration, and voice production
         // ===================================================================
         {
@@ -1525,6 +1610,12 @@ pub fn route_tool(
         "broll.repair" => Box::pin(handle_broll_repair(args)),
         "broll.auto" => Box::pin(handle_broll_auto(args)),
         "broll.probe" => Box::pin(handle_broll_probe(args)),
+        "asset.library.status" => Box::pin(handle_asset_library_status(args)),
+        "asset.ingest" => Box::pin(handle_asset_ingest(args)),
+        "asset.probe" => Box::pin(handle_asset_probe(args)),
+        "asset.rate" => Box::pin(handle_asset_rate(args)),
+        "asset.import" => Box::pin(handle_asset_import(args)),
+        "asset.search" => Box::pin(handle_asset_search(args)),
         "segment.analyze" => Box::pin(handle_segment_analyze(args)),
         "voiceover.generate" => Box::pin(handle_voiceover_generate(args)),
         "tts.commentary" => Box::pin(handle_tts_commentary(args)),
@@ -1616,7 +1707,7 @@ pub fn route_tool(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn extract_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, ToolError> {
+pub(crate) fn extract_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, ToolError> {
     args.get(key)
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::MissingArg(key.to_string()))
@@ -1645,14 +1736,14 @@ fn extract_arr(args: &serde_json::Value, key: &str) -> Result<Vec<String>, ToolE
         .ok_or_else(|| ToolError::MissingArg(key.to_string()))
 }
 
-fn default_str(args: &serde_json::Value, key: &str, default: &str) -> String {
+pub(crate) fn default_str(args: &serde_json::Value, key: &str, default: &str) -> String {
     args.get(key)
         .and_then(|v| v.as_str())
         .unwrap_or(default)
         .to_string()
 }
 
-fn default_f64(args: &serde_json::Value, key: &str, default: f64) -> f64 {
+pub(crate) fn default_f64(args: &serde_json::Value, key: &str, default: f64) -> f64 {
     args.get(key).and_then(|v| v.as_f64()).unwrap_or(default)
 }
 
@@ -1667,7 +1758,7 @@ fn default_i64(args: &serde_json::Value, key: &str, default: i64) -> i64 {
     args.get(key).and_then(|v| v.as_i64()).unwrap_or(default)
 }
 
-fn default_bool(args: &serde_json::Value, key: &str, default: bool) -> bool {
+pub(crate) fn default_bool(args: &serde_json::Value, key: &str, default: bool) -> bool {
     args.get(key).and_then(|v| v.as_bool()).unwrap_or(default)
 }
 
@@ -7624,7 +7715,7 @@ async fn handle_verify_render(args: serde_json::Value) -> Result<serde_json::Val
 // Production Quality KPIs — thin wrappers around openscript_core::production_quality
 // ---------------------------------------------------------------------------
 
-fn is_procedural_media_path(path: &str) -> bool {
+pub(crate) fn is_procedural_media_path(path: &str) -> bool {
     matches!(
         openscript_core::production_quality::classify_video_source(path, None),
         openscript_core::production_quality::VideoSourceClass::ProceduralSynthetic
@@ -9407,21 +9498,21 @@ async fn handle_director_run(args: serde_json::Value) -> Result<serde_json::Valu
 
 /// Download a short stock clip via yt-dlp (no API key). Used when Pexels is unavailable.
 /// Result of a unique stock fetch (path + identity for variance tracking).
-struct StockClipFetch {
-    path: String,
-    video_id: String,
-    content_hash: String,
-    search_query: String,
-    lexical_score: f64,
-    source_title: String,
+pub(crate) struct StockClipFetch {
+    pub(crate) path: String,
+    pub(crate) video_id: String,
+    pub(crate) content_hash: String,
+    pub(crate) search_query: String,
+    pub(crate) lexical_score: f64,
+    pub(crate) source_title: String,
     /// L3 vision gate: 0–1 relevance of the ACTUAL extracted frame vs the
     /// scene, when a vision backend was available. None = gate skipped/failed.
-    vision_score: Option<f64>,
+    pub(crate) vision_score: Option<f64>,
     /// Short justification from the vision model (why it matched/mismatched).
-    vision_reason: Option<String>,
+    pub(crate) vision_reason: Option<String>,
 }
 
-fn file_content_fingerprint(path: &str) -> Option<String> {
+pub(crate) fn file_content_fingerprint(path: &str) -> Option<String> {
     use std::io::Read;
     let mut f = std::fs::File::open(path).ok()?;
     let mut buf = vec![0u8; 256 * 1024];
@@ -9624,7 +9715,7 @@ async fn download_thumbnail(url: &str, dest: &str) -> bool {
 /// L3: post-trim frame vision gate (verifies the actual extracted pixels)
 /// plus the pre-existing lexical gate, content-hash dedup, cover-crop,
 /// geometry gate.
-async fn fetch_youtube_stock_clip_signal(
+pub(crate) async fn fetch_youtube_stock_clip_signal(
     query: &str,
     signal_tokens: &[String],
     duration_s: f64,
@@ -9996,7 +10087,7 @@ async fn fetch_youtube_stock_clip_signal(
 /// Flow: film search → stock_signal lexical gate → HTTP download of the best
 /// file → cover-crop (setsar=1) → geometry gate → content-hash dedup. Returns
 /// the same `StockClipFetch` contract as the YouTube path.
-async fn fetch_pixabay_stock_clip_signal(
+pub(crate) async fn fetch_pixabay_stock_clip_signal(
     query: &str,
     signal_tokens: &[String],
     duration_s: f64,
@@ -11768,6 +11859,7 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
     let aspect = default_str(&args, "aspect", "9:16");
     let scene_text = default_str(&args, "scene_text", "");
     let cache_dir = default_str(&args, "cache_dir", "mcp/assets/background_cache");
+    let enable_youtube = default_bool(&args, "enable_youtube", false);
     let fallback_pool: Vec<String> = args
         .get("fallback_pool")
         .and_then(|v| v.as_array())
@@ -11777,453 +11869,74 @@ async fn handle_background_fetch(args: serde_json::Value) -> Result<serde_json::
                 .collect()
         })
         .unwrap_or_default();
-    // Non-redundancy: Pexels video ids already used elsewhere in this run /
-    // timeline (e.g. by broll.fetch). The same stock clip must not be re-fetched
-    // under a different query — skip these ids during best-video selection.
-    let used_video_ids: std::collections::HashSet<i64> = args
+    // Pexels ids already used elsewhere in this run (non-redundancy across calls).
+    let used_pexels_ids: std::collections::HashSet<i64> = args
         .get("used_video_ids")
         .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_i64())
-                .collect::<std::collections::HashSet<i64>>()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
         .unwrap_or_default();
 
     std::fs::create_dir_all(&cache_dir)?;
 
-    // Cache key includes the scene text so a different scene context never
-    // reuses a clip cached for another scene — the L3 vision gate must be
-    // re-run per scene, not short-circuited by a stale cache hit.
-    let mut cache_seed = query.as_bytes().to_vec();
-    if !scene_text.is_empty() {
-        cache_seed.extend_from_slice(scene_text.as_bytes());
-    }
-    let cache_key = format!("{:x}", md5_hash(&cache_seed));
-    let clip_path = format!("{}/{}_clip.mp4", cache_dir, cache_key);
-
-    // === PRIORITY 1: Pexels API (most reliable) ===
-    let pexels_key_val = pexels_key();
-
-    if !pexels_key_val.is_empty() {
-        report_progress(0.0, 100.0, "Searching Pexels for stock footage...")
-            .await
-            .ok();
-
-        let orientation = aspect_to_orientation(&aspect);
-
-        // SEGMENTATION_ARCHITECTURE clip-duration matching: prefer clips that
-        // COVER the requested duration so short clips never need looping —
-        // fetch ALTERNATE stock videos for the same keywords (up to 3 pages)
-        // until one covers `duration_s`. `min_duration_s`/`max_duration_s`
-        // params (default 0) are passed to the API as hard filters when set.
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
-
-        match client
-            .get(&pexels_search_url(query, &orientation, 1, min_duration_s, max_duration_s))
-            .header("Authorization", &pexels_key_val)
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
-                let body: serde_json::Value = resp
-                    .json()
-                    .await
-                    .map_err(|e| ToolError::Asset(format!("Pexels parse error: {}", e)))?;
-
-                let mut videos = body
-                    .get("videos")
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .unwrap_or_default();
-
-                // Keep fetching alternates (pages 2-3) until a clip covers
-                // `duration_s` — the whole point of "find alternate videos
-                // rather than looping". Stop early when page 1 already has one.
-                for page in 2..=3 {
-                    let has_cover = videos.iter().any(|v| {
-                        v.get("duration").and_then(|x| x.as_i64()).unwrap_or(0) as f64
-                            >= duration_s
-                    });
-                    if has_cover {
-                        break;
-                    }
-                    if let Ok(resp2) = client
-                        .get(&pexels_search_url(
-                            query,
-                            &orientation,
-                            page,
-                            min_duration_s,
-                            max_duration_s,
-                        ))
-                        .header("Authorization", &pexels_key_val)
-                        .send()
-                        .await
-                    {
-                        if resp2.status().is_success() {
-                            if let Ok(b2) = resp2.json::<serde_json::Value>().await {
-                                if let Some(v2) = b2.get("videos").and_then(|v| v.as_array()) {
-                                    videos.extend(v2.clone());
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Find a video with enough duration — prefer longer videos.
-                // Skip ids in `used_video_ids` so the same stock clip is never
-                // re-fetched under a different query (non-redundancy).
-                let mut best_video: Option<(String, i64, i64)> = None; // (url, duration, pexels_id)
-                let mut best_duration: i64 = 0;
-                for video in &videos {
-                    let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(-1);
-                    if vid_id >= 0 && used_video_ids.contains(&vid_id) {
-                        continue;
-                    }
-                    let vid_duration = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
-                    // Prefer videos that are at least as long as what we need
-                    // But accept any video >= 5s — the renderer will loop it
-                    if vid_duration >= 5 {
-                        // Get the best quality file that's 720p-1080p
-                        for file in video
-                            .get("video_files")
-                            .and_then(|v| v.as_array())
-                            .unwrap_or(&Vec::new())
-                        {
-                            let width = file.get("width").and_then(|v| v.as_u64()).unwrap_or(0);
-                            let url = file.get("link").and_then(|v| v.as_str()).unwrap_or("");
-                            if (720..=1920).contains(&width) && !url.is_empty() {
-                                // Prefer the longest video
-                                if vid_duration > best_duration {
-                                    best_video = Some((url.to_string(), vid_duration, vid_id));
-                                    best_duration = vid_duration;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if let Some((video_url, source_duration, pexels_id)) = best_video {
-                    report_progress(40.0, 100.0, "Downloading stock footage...")
-                        .await
-                        .ok();
-
-                    // Download the full video
-                    match client.get(&video_url).send().await {
-                        Ok(resp) if resp.status().is_success() => {
-                            let bytes = resp
-                                .bytes()
-                                .await
-                                .map_err(|e| ToolError::Asset(format!("Download error: {}", e)))?;
-                            let full_path = format!("{}/{}_full.mp4", cache_dir, cache_key);
-                            std::fs::write(&full_path, &bytes)?;
-
-                            report_progress(70.0, 100.0, "Processing clip...")
-                                .await
-                                .ok();
-
-                            // If the source video is long enough, extract the requested duration
-                            // If it's shorter, use the full video (renderer will loop it)
-                            let (output_path, actual_duration_s, start_s) =
-                                if source_duration as f64 >= duration_s {
-                                    // Extract a clip of duration_s from a random start point
-                                    let max_start = (source_duration as f64 - duration_s).max(0.0);
-                                    let seed = std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .map(|d| d.as_nanos())
-                                        .unwrap_or(0)
-                                        as u64;
-                                    let start = if max_start > 0.0 {
-                                        (seed as f64 / u64::MAX as f64) * max_start
-                                    } else {
-                                        0.0
-                                    };
-
-                                    // Crop to aspect ratio
-                                    let crop_filter = crop_filter_for_aspect(&aspect);
-
-                                    let crop_result = tokio::process::Command::new("ffmpeg")
-                                        .arg("-y")
-                                        .arg("-ss")
-                                        .arg(start.to_string())
-                                        .arg("-i")
-                                        .arg(&full_path)
-                                        .arg("-t")
-                                        .arg(duration_s.to_string())
-                                        .arg("-vf")
-                                        .arg(&crop_filter)
-                                        .arg("-c:v")
-                                        .arg("libx264")
-                                        .arg("-preset")
-                                        .arg("fast")
-                                        .arg("-crf")
-                                        .arg("23")
-                                        .arg("-an")
-                                        .arg(&clip_path)
-                                        .stdin(std::process::Stdio::null())
-                                        .stdout(std::process::Stdio::null())
-                                        .stderr(std::process::Stdio::piped())
-                                        .kill_on_drop(true)
-                                        .output()
-                                        .await;
-
-                                    if let Ok(o) = crop_result {
-                                        if o.status.success() {
-                                            (clip_path.clone(), duration_s, start)
-                                        } else {
-                                            (full_path.clone(), source_duration as f64, 0.0)
-                                        }
-                                    } else {
-                                        (full_path.clone(), source_duration as f64, 0.0)
-                                    }
-                                } else {
-                                    // Source is shorter than needed — use full video, renderer will loop
-                                    // Still crop to aspect ratio
-                                    let crop_filter = crop_filter_for_aspect(&aspect);
-
-                                    let crop_result = tokio::process::Command::new("ffmpeg")
-                                        .arg("-y")
-                                        .arg("-i")
-                                        .arg(&full_path)
-                                        .arg("-vf")
-                                        .arg(&crop_filter)
-                                        .arg("-c:v")
-                                        .arg("libx264")
-                                        .arg("-preset")
-                                        .arg("fast")
-                                        .arg("-crf")
-                                        .arg("23")
-                                        .arg("-an")
-                                        .arg(&clip_path)
-                                        .stdin(std::process::Stdio::null())
-                                        .stdout(std::process::Stdio::null())
-                                        .stderr(std::process::Stdio::piped())
-                                        .kill_on_drop(true)
-                                        .output()
-                                        .await;
-
-                                    if let Ok(o) = crop_result {
-                                        if o.status.success() {
-                                            (clip_path.clone(), source_duration as f64, 0.0)
-                                        } else {
-                                            (full_path.clone(), source_duration as f64, 0.0)
-                                        }
-                                    } else {
-                                        (full_path.clone(), source_duration as f64, 0.0)
-                                    }
-                                };
-
-                            report_progress(100.0, 100.0, "Stock footage ready")
-                                .await
-                                .ok();
-                            let needs_looping = (source_duration as f64) < duration_s;
-                            let result = json!({
-                                "status": "fetched",
-                                "clip_path": output_path,
-                                "source": "pexels",
-                                "pexels_id": pexels_id,
-                                "source_duration_s": source_duration,
-                                "start_s": start_s,
-                                "duration_s": actual_duration_s,
-                                "needs_looping": needs_looping,
-                                "cached": false
-                            });
-                            return Ok(result);
-                        }
-                        _ => tracing::warn!("[background.fetch] Pexels download failed"),
-                    }
-                } else {
-                    tracing::warn!(
-                        "[background.fetch] No suitable Pexels videos found for query: {}",
-                        query
-                    );
-                }
-            }
-            _ => tracing::warn!("[background.fetch] Pexels API request failed"),
-        }
-    }
-
-    // === PRIORITY 1.5: Pixabay film footage (signal-ranked) ===
-    // Pixabay is now wired into the b-roll chain: `video_type=film` (real
-    // footage, NOT animation) → stock_signal lexical gate → HTTP download →
-    // cover-crop → geometry gate → content-hash dedup. Needs PIXABAY_API_KEY
-    // (setup.sh / setup_openscript_config.sh). Shares the dedup sets with the
-    // YouTube priority below so a clip used here is never re-fetched by the
-    // YouTube path (non-redundancy across engines).
     let mut used_stock_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut used_stock_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
-    if !pixabay_key().is_empty() {
-        report_progress(20.0, 100.0, "Searching Pixabay stock footage...").await.ok();
-        if let Some(fetch) = fetch_pixabay_stock_clip_signal(
-            query,
-            &[],
+    let mut used_pexels: std::collections::HashSet<i64> = used_pexels_ids;
+
+    let signal = crate::stock_signal::signal_tokens_from_scene(&query, &[]);
+    let outcome = crate::scene_media::fetch_scene_background(
+        crate::scene_media::SceneMediaRequest {
+            query: query.to_string(),
+            signal_tokens: signal,
+            scene_text,
             duration_s,
             min_duration_s,
             max_duration_s,
-            &aspect,
-            &clip_path,
-            &mut used_stock_ids,
-            &mut used_stock_hashes,
-        )
-        .await
-        {
-            report_progress(100.0, 100.0, "Pixabay stock clip ready").await.ok();
-            // Probe the produced clip for its ACTUAL duration (same contract as
-            // the YouTube path below) so consumers can loop or flag shortfalls.
-            let actual_duration_s = match openscript_ffmpeg::probe::probe(&clip_path).await {
-                Ok(m) if m.duration > 0.0 => m.duration,
-                _ => duration_s,
-            };
-            return Ok(json!({
-                "status": "fetched",
-                "clip_path": clip_path,
-                "source": "pixabay",
-                "pixabay_id": fetch.video_id,
-                "source_title": fetch.source_title,
-                "lexical_score": fetch.lexical_score,
-                "source_duration_s": actual_duration_s,
-                "start_s": 0.0,
-                "duration_s": duration_s,
-                "needs_looping": actual_duration_s < duration_s,
-                "cached": false,
-            }));
-        }
-    }
-
-    // === PRIORITY 2: YouTube via yt-dlp (signal-ranked, stock-phrased) ===
-    // Reuses fetch_youtube_stock_clip_signal — the SAME relevance path as
-    // script.to_video: 12 candidates → stock_signal lexical gate → video-only
-    // download → cover-crop (setsar=1) → geometry gate. Plain keywords on
-    // YouTube surface news/lectures; the "stock footage" suffix flips results
-    // to real b-roll (docs/MEDIA_SEARCH_AUDIT.md §2). Shares the dedup sets
-    // declared above with the Pixabay priority.
-    report_progress(30.0, 100.0, "Searching YouTube stock footage...").await.ok();
-    let signal = crate::stock_signal::signal_tokens_from_scene(query, &[]);
-    let yt_query = if query.to_ascii_lowercase().contains("stock footage") {
-        query.to_string()
-    } else {
-        format!("{} stock footage", query)
-    };
-    if let Some(fetch) = fetch_youtube_stock_clip_signal(
-        &yt_query,
-        &signal,
-        duration_s,
-        &aspect,
-        &clip_path,
-        0,
-        &mut used_stock_ids,
-        &mut used_stock_hashes,
-        &scene_text,
-        min_duration_s,
-        max_duration_s,
+            aspect: aspect.clone(),
+            cache_dir: cache_dir.to_string(),
+            out_stem: "clip".to_string(),
+            scene_idx: 0,
+            enable_youtube,
+            fallback_pool,
+            used_video_ids: &mut used_stock_ids,
+            used_content_hashes: &mut used_stock_hashes,
+            used_pexels_ids: &mut used_pexels,
+        },
     )
-    .await
-    {
-        report_progress(100.0, 100.0, "YouTube stock clip ready").await.ok();
-        // Probe the produced clip for its ACTUAL duration — the signal path
-        // trims from start_s=1.5 with `-t duration_s`, so a short source
-        // yields a clip shorter than requested. Report the truth so consumers
-        // (broll_gaps / broll.auto) can loop or flag the shortfall.
-        let actual_duration_s = match openscript_ffmpeg::probe::probe(&clip_path).await {
-            Ok(m) if m.duration > 0.0 => m.duration,
-            _ => duration_s,
-        };
-        return Ok(json!({
-            "status": "fetched",
-            "clip_path": clip_path,
-            "source": "youtube",
-            "youtube_id": fetch.video_id,
-            "source_title": fetch.source_title,
-            "lexical_score": fetch.lexical_score,
-            "vision_score": fetch.vision_score,
-            "vision_reason": fetch.vision_reason,
-            "source_duration_s": actual_duration_s,
-            "start_s": 1.5, // extraction start used by fetch_youtube_stock_clip_signal (scene 0)
-            "duration_s": duration_s,
-            "needs_looping": actual_duration_s < duration_s,
-            "cached": false,
-        }));
-    }
+    .await?;
 
-    // === PRIORITY 3: Fallback pool ===
-    if let Some(fallback) = fallback_pool.first() {
-        if Path::new(fallback).exists() {
-            return Ok(json!({
-                "status": "fallback",
-                "clip_path": fallback,
-                "source": "fallback_pool",
-                "source_duration_s": duration_s,
-                "cached": false,
-                "warning": "Pexels + YouTube failed, using fallback pool"
-            }));
-        }
-    }
-    // === PRIORITY 4: Procedural ===
-    generate_procedural_background(&cache_dir, &cache_key, duration_s, &aspect).await
-}
-
-
-/// Generate a procedural background via FFmpeg filters (fallback when yt-dlp unavailable).
-async fn generate_procedural_background(
-    cache_dir: &str,
-    cache_key: &str,
-    duration_s: f64,
-    aspect: &str,
-) -> Result<serde_json::Value, ToolError> {
-    let (w, h) = aspect_to_crop_dims(aspect);
-    let clip_path = format!("{}/{}_procedural.mp4", cache_dir, cache_key);
-
-    let filter = format!(
-        "color=c=0x0a0a1a:s={}x{}:d={}:r=30[bg];\
-         color=c=0x1a1a3a:s={}x{}:d={}:r=30[bg2];\
-         [bg][bg2]blend=all_mode=overlay:all_opacity=0.5[bg3];\
-         [bg3]geq=r='128+80*sin(2*PI*X/W+0.1*T)':g='128+80*sin(2*PI*Y/H+0.15*T)':b='128+80*sin(2*PI*(X+Y)/(W+H)+0.2*T)'[v]",
-        w, h, duration_s, w, h, duration_s
-    );
-
-    let result = tokio::process::Command::new("ffmpeg")
-        .arg("-y")
-        .arg("-filter_complex")
-        .arg(&filter)
-        .arg("-map")
-        .arg("[v]")
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-preset")
-        .arg("fast")
-        .arg("-crf")
-        .arg("23")
-        .arg("-an")
-        .arg(&clip_path)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .output()
-        .await?;
-
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        return Err(ToolError::Ffmpeg(format!(
-            "Procedural background failed: {}",
-            stderr
-        )));
-    }
-
-    Ok(json!({
-        "status": "procedural",
-        "clip_path": clip_path,
+    let source = outcome.source.clone();
+    let mut result = json!({
+        "status": if outcome.fell_to_procedural { "warning" } else { "fetched" },
+        "clip_path": outcome.clip_path,
+        "source": source,
+        "source_duration_s": duration_s,
+        "start_s": 0.0,
         "duration_s": duration_s,
+        "needs_looping": false,
         "cached": false,
-        "warning": "yt-dlp unavailable, generated procedural background"
-    }))
+        "exhausted": outcome.exhausted,
+    });
+    match source.as_str() {
+        "pexels" => result["pexels_id"] = json!(outcome.provider_id),
+        "pixabay" => result["pixabay_id"] = json!(outcome.provider_id),
+        "youtube" => result["youtube_id"] = json!(outcome.provider_id),
+        _ => {}
+    }
+    result["lexical_score"] = json!(outcome.lexical_score);
+    result["source_title"] = json!(outcome.source_title);
+    if let Some(v) = outcome.vision_score {
+        result["vision_score"] = json!(v);
+    }
+    if let Some(r) = outcome.vision_reason {
+        result["vision_reason"] = json!(r);
+    }
+    if outcome.fell_to_procedural {
+        result["warning"] =
+            json!("All stock tiers exhausted — procedural fallback used (see exhausted)");
+    }
+    Ok(result)
 }
 
-// ---------------------------------------------------------------------------
 // Handler: background.assign — assign clips to scenes
 // ---------------------------------------------------------------------------
 
@@ -14078,12 +13791,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
     // id, hash, q, lex, title, vision_score, vision_reason
     let mut scene_stock_meta: Vec<Option<(String, String, String, f64, String, f64, Option<String>)>> =
         Vec::new();
-    let pexels_key_val = pexels_key();
 
     // The final stock query per scene — the sticker stage reuses these SAME
     // keywords so b-roll and stickers are driven by one keyword source
     // (sticker/broll pipeline unification).
     let mut scene_stock_queries: Vec<String> = Vec::new();
+    // Set when ANY scene fell to the procedural last resort (drives the
+    // final delivery_status downgrade below).
+    let mut fell_to_procedural_any = false;
 
     // Multi-broll stock footage: unique clip per scene.
     // Priority: Pexels (if key) → YouTube via yt-dlp (no key) → procedural (last resort).
@@ -14099,17 +13814,14 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         .await
         .ok();
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(|e| ToolError::Asset(format!("HTTP client error: {}", e)))?;
 
-        let orientation = match spec.meta.aspect.as_str() {
-            "9:16" => "portrait",
-            "16:9" => "landscape",
-            "1:1" => "square",
-            _ => "portrait",
-        };
+        // YouTube tier is OPT-IN for generation (user decision). Default false:
+        // the chain stops at Pexels → Pixabay → fallback_pool. YouTube stays
+        // always-on for asset-development workflows (asset.probe / broll.probe).
+        let yt_enabled = spec.background.enable_youtube
+            || std::env::var("OPENSCRIPT_YT_FOR_GENERATION")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false);
 
         let cache_dir = "mcp/assets/background_cache";
         std::fs::create_dir_all(cache_dir).ok();
@@ -14187,371 +13899,74 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
             .await
             .ok();
 
-            let mut scene_bg: Option<String> = None;
-            let mut bg_source = "none";
-            // id, hash, q, lex, title, vision_score, vision_reason
-            let mut stock_meta: Option<(
-                String,
-                String,
-                String,
-                f64,
-                String,
-                f64,
-                Option<String>,
-            )> = None;
-
-            // --- Priority 1: Pexels (requires API key) ---
-            // SEGMENTATION_ARCHITECTURE min clip duration: request clips that
-            // COVER the scene (min_duration = scene length) so short clips are
-            // NOT looped — prefer an ALTERNATE stock video for the scene's
-            // keywords (up to 3 pages). If no clip covers the scene, fall back
-            // to the longest short clip (renderer loops it only as a last
-            // resort so the tail never freezes).
-            if !pexels_key_val.is_empty() {
-                let needed_dur = dur.max(3.0);
-                let mut covering: Vec<(String, i64)> = Vec::new(); // (file url, pexels id)
-                let mut shorts: Vec<(i64, String, i64)> = Vec::new(); // (dur, url, id)
-                // Pass 1 (pages 1-3): only clips that cover the scene duration.
-                for page in 1..=3 {
-                    let pexels_url =
-                        pexels_search_url(&query, orientation, page, needed_dur, 0.0);
-                    let Ok(resp) = client
-                        .get(&pexels_url)
-                        .header("Authorization", &pexels_key_val)
-                        .send()
-                        .await
-                    else {
-                        continue;
-                    };
-                    if !resp.status().is_success() {
-                        continue;
-                    }
-                    let Ok(body) = resp.json::<serde_json::Value>().await else {
-                        continue;
-                    };
-                    let Some(videos) = body.get("videos").and_then(|v| v.as_array()) else {
-                        continue;
-                    };
-                    for video in videos {
-                        let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-                        if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
-                            continue;
-                        }
-                        let vid_dur = video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let Some(url) = pexels_file_url(video) else {
-                            continue;
-                        };
-                        // Strict float comparison: a clip counts as "covering"
-                        // only if it is genuinely at least the scene length
-                        // (integer truncation would admit 0.9s-short clips).
-                        if (vid_dur as f64) >= needed_dur && covering.len() < 6 {
-                            covering.push((url, vid_id));
-                        }
-                    }
-                    if !covering.is_empty() {
-                        break;
-                    }
-                }
-                // Pass 2 (fallback): only if no alternate covers the scene —
-                // keep the longest short clips to loop as a last resort.
-                if covering.is_empty() {
-                    for page in 1..=2 {
-                        let pexels_url = pexels_search_url(&query, orientation, page, 0.0, 0.0);
-                        let Ok(resp) = client
-                            .get(&pexels_url)
-                            .header("Authorization", &pexels_key_val)
-                            .send()
-                            .await
-                        else {
-                            continue;
-                        };
-                        if !resp.status().is_success() {
-                            continue;
-                        }
-                        let Ok(body) = resp.json::<serde_json::Value>().await else {
-                            continue;
-                        };
-                        let Some(videos) = body.get("videos").and_then(|v| v.as_array()) else {
-                            continue;
-                        };
-                        for video in videos {
-                            let vid_id = video.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
-                            if vid_id > 0 && used_pexels_ids.contains(&vid_id) {
-                                continue;
-                            }
-                            let vid_dur =
-                                video.get("duration").and_then(|v| v.as_i64()).unwrap_or(0);
-                            if vid_dur < 3 {
-                                continue;
-                            }
-                            let Some(url) = pexels_file_url(video) else {
-                                continue;
-                            };
-                            shorts.push((vid_dur, url, vid_id));
-                        }
-                    }
-                    shorts.sort_by(|a, b| b.0.cmp(&a.0));
-                    shorts.truncate(4);
-                    tracing::warn!(
-                        "[pexels stock] no clip covering scene {} (need {:.1}s); falling back to loop",
-                        scene_idx + 1,
-                        needed_dur
-                    );
-                }
-                let candidates: Vec<(String, i64)> = covering
-                    .into_iter()
-                    .chain(shorts.into_iter().map(|(_, u, i)| (u, i)))
-                    .collect();
-                for (url, vid_id) in candidates {
-                    let clip_path = format!(
-                        "{}/scene_{:03}.mp4",
-                        cache_dir,
-                        scene_idx + 1
-                    );
-                    let Ok(dl_resp) = client.get(url).send().await else {
-                        continue;
-                    };
-                    if !dl_resp.status().is_success() {
-                        continue;
-                    }
-                    let Ok(bytes) = dl_resp.bytes().await else {
-                        continue;
-                    };
-                    std::fs::write(&clip_path, &bytes).ok();
-                    let crop_filter = crop_filter_for_aspect(&spec.meta.aspect);
-                    let trimmed = format!(
-                        "{}/scene_{:03}_trim.mp4",
-                        cache_dir,
-                        scene_idx + 1
-                    );
-                    let trim_result = tokio::process::Command::new("ffmpeg")
-                        .arg("-y")
-                        .arg("-i")
-                        .arg(&clip_path)
-                        .arg("-t")
-                        .arg(dur.to_string())
-                        .arg("-vf")
-                        .arg(&crop_filter)
-                        .arg("-c:v")
-                        .arg("libx264")
-                        .arg("-preset")
-                        .arg("fast")
-                        .arg("-crf")
-                        .arg("23")
-                        .arg("-an")
-                        .arg(&trimmed)
-                        .stdin(std::process::Stdio::null())
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::piped())
-                        .kill_on_drop(true)
-                        .output()
-                        .await;
-                    let chosen = if trim_result
-                        .as_ref()
-                        .map(|o| o.status.success())
-                        .unwrap_or(false)
-                    {
-                        trimmed
-                    } else {
-                        clip_path
-                    };
-                    // Geometry gate (no stretch)
-                    let geo = crate::stock_signal::probe_geometry(&chosen, &spec.meta.aspect);
-                    if !geo.ok {
-                        tracing::warn!(
-                            "[pexels stock] geometry reject id={} {:?}",
-                            vid_id,
-                            geo.reasons
-                        );
-                        let _ = std::fs::remove_file(&chosen);
-                        continue;
-                    }
-                    // Fingerprint: reject if same bytes as prior scene
-                    if let Some(h) = file_content_fingerprint(&chosen) {
-                        if used_content_hashes.contains(&h) {
-                            let _ = std::fs::remove_file(&chosen);
-                            continue;
-                        }
-                        used_content_hashes.insert(h.clone());
-                        stock_meta = Some((
-                            format!("pexels_{}", vid_id),
-                            h,
-                            query.clone(),
-                            0.5,
-                            String::new(),
-                            0.5, // Pexels metadata is reliable; no vision gate
-                            None,
-                        ));
-                    }
-                    scene_bg = Some(chosen);
-                    used_pexels_ids.insert(vid_id);
-                    bg_source = "pexels";
-                    break;
-                }
+            // --- Unified acquisition (scene_media): user_library → Pexels →
+            //     Pixabay → YouTube (opt-in) → fallback_pool → procedural.
+            //     Every tier is attempted; `outcome.exhausted` records why each
+            //     tier failed so "why procedural" is answerable per scene. ---
+            let mut yt_q = query.clone();
+            if used_yt_queries.contains(&yt_q) {
+                yt_q = format!("{} scene{}", query, scene_idx + 1);
             }
-
-            // --- Priority 2: YouTube stock via yt-dlp (no API key) ---
-            if scene_bg.is_none() {
-                // Prefer non-procedural paths from script.fallback_pool if caller supplied stock
-                let pool_stock = spec
-                    .background
-                    .fallback_pool
-                    .iter()
-                    .find(|p| !is_procedural_media_path(p) && Path::new(p).exists());
-                if let Some(p) = pool_stock {
-                    scene_bg = Some(p.clone());
-                    bg_source = "fallback_pool_stock";
-                }
-            }
-            if scene_bg.is_none() {
-                // Query already includes stock/vertical bias from stock_signal.
-                // Diversify only if we already tried the exact same query string.
-                let mut yt_q = query.clone();
-                if used_yt_queries.contains(&yt_q) {
-                    yt_q = format!("{} scene{}", query, scene_idx + 1);
-                }
-                used_yt_queries.insert(yt_q.clone());
-                let yt_out = format!("{}/scene_{:03}_yt.mp4", cache_dir, scene_idx + 1);
-                // min_duration_s = dur (never accept a clip shorter than the
-                // scene — avoids looping), max_duration_s = 0 (no cap — the
-                // clip is trimmed to `-t dur` anyway). Passing dur as BOTH
-                // bounds required the video duration to EXACTLY equal the
-                // scene length, which rejected every YouTube candidate and
-                // silently degraded to procedural b-roll.
-                if let Some(fetch) = fetch_youtube_stock_clip_signal(
-                    &yt_q,
-                    &signal_tokens,
-                    dur,
-                    &spec.meta.aspect,
-                    &yt_out,
+            used_yt_queries.insert(yt_q.clone());
+            let outcome = crate::scene_media::fetch_scene_background(
+                crate::scene_media::SceneMediaRequest {
+                    query: yt_q,
+                    signal_tokens: signal_tokens.clone(),
+                    scene_text: scene_text.to_string(),
+                    duration_s: dur,
+                    min_duration_s: dur,
+                    max_duration_s: 0.0,
+                    aspect: spec.meta.aspect.clone(),
+                    cache_dir: cache_dir.to_string(),
+                    out_stem: format!("scene_{:03}", scene_idx + 1),
                     scene_idx,
-                    &mut used_video_ids,
-                    &mut used_content_hashes,
-                    scene_text,
-                    dur,
-                    0.0,
-                )
-                .await
-                {
-                    let lex = fetch.lexical_score;
-                    stock_meta = Some((
-                        fetch.video_id,
-                        fetch.content_hash,
-                        fetch.search_query,
-                        lex,
-                        fetch.source_title,
-                        fetch.vision_score.unwrap_or(lex),
-                        fetch.vision_reason,
-                    ));
-                    scene_bg = Some(fetch.path);
-                    bg_source = "youtube";
-                }
+                    enable_youtube: yt_enabled,
+                    fallback_pool: spec.background.fallback_pool.clone(),
+                    used_video_ids: &mut used_video_ids,
+                    used_content_hashes: &mut used_content_hashes,
+                    used_pexels_ids: &mut used_pexels_ids,
+                },
+            )
+            .await?;
+            if outcome.fell_to_procedural {
+                fell_to_procedural_any = true;
             }
-
-            // Phase B: query fan-out — one more attempt with scene nouns only
-            if scene_bg.is_none() && !signal_tokens.is_empty() {
-                let short_q = signal_tokens
-                    .iter()
-                    .take(4)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let yt_out2 = format!("{}/scene_{:03}_yt_b.mp4", cache_dir, scene_idx + 1);
-                if let Some(fetch) = fetch_youtube_stock_clip_signal(
-                    &format!("{} stock footage vertical", short_q),
-                    &signal_tokens,
-                    dur,
-                    &spec.meta.aspect,
-                    &yt_out2,
-                    scene_idx,
-                    &mut used_video_ids,
-                    &mut used_content_hashes,
-                    scene_text,
-                    dur,
-                    0.0,
-                )
-                .await
-                {
-                    let lex = fetch.lexical_score;
-                    stock_meta = Some((
-                        fetch.video_id,
-                        fetch.content_hash,
-                        fetch.search_query,
-                        lex,
-                        fetch.source_title,
-                        fetch.vision_score.unwrap_or(lex),
-                        fetch.vision_reason,
-                    ));
-                    scene_bg = Some(fetch.path);
-                    bg_source = "youtube";
-                }
-            }
-
-            scene_stock_meta.push(stock_meta);
-
-            if let Some(path) = scene_bg {
-                tracing::info!(
-                    "[script.to_video] Scene {} background source={} path={}",
-                    scene_idx + 1,
-                    bg_source,
-                    path
-                );
-                per_scene_backgrounds.push(path);
-            } else {
-                // Last resort: procedural (synthetic) — hard production quality fail.
-                // Rotate through ACTUAL files on disk (never assume a numbered
-                // clip exists — missing procedural_04/08 used to silently
-                // duplicate procedural_01 across scenes). Prefer a file not yet
-                // used this run so the anti-repeat KPI doesn't trip even on
-                // the fallback path.
-                let mut proc_candidates: Vec<String> = std::fs::read_dir("mcp/assets/backgrounds")
-                    .map(|rd| {
-                        rd.filter_map(|e| e.ok())
-                            .map(|e| e.path())
-                            .filter(|p| {
-                                p.file_name()
-                                    .and_then(|n| n.to_str())
-                                    .map(|n| n.starts_with("procedural_") && n.ends_with(".mp4"))
-                                    .unwrap_or(false)
-                            })
-                            .filter_map(|p| p.to_str().map(|s| s.to_string()))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                proc_candidates.sort();
-                let procedural_path = if proc_candidates.is_empty() {
-                    "mcp/assets/backgrounds/procedural_01.mp4".to_string()
-                } else {
-                    let unused = proc_candidates
-                        .iter()
-                        .find(|p| !per_scene_backgrounds.contains(p))
-                        .cloned()
-                        .unwrap_or_else(|| {
-                            // All used — rotate; pick the least-recently used
-                            // (first used, since we push in order) to maximize
-                            // distance between repeats.
-                            proc_candidates[scene_idx % proc_candidates.len()].clone()
-                        });
-                    unused
-                };
-                per_scene_backgrounds.push(procedural_path.clone());
+            tracing::info!(
+                "[script.to_video] Scene {} source={} exhausted={:?}",
+                scene_idx + 1,
+                outcome.source,
+                outcome.exhausted
+            );
+            if outcome.fell_to_procedural {
                 let allow_proc = std::env::var("OPENSCRIPT_ALLOW_PROCEDURAL")
                     .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                     .unwrap_or(false);
-                if !allow_proc {
-                    render_warnings.push(format!(
-                        "HARD stock_visuals scene {}: no relevant unique stock (Pexels/YT). Using procedural {}. Set PEXELS_API_KEY or OPENSCRIPT_ALLOW_PROCEDURAL=1. Production will hard-fail if ≥50% procedural.",
+                let warn = if !allow_proc {
+                    format!(
+                        "⚠️ PRODUCTION_FAIL stock_visuals scene {}: no relevant unique stock after exhausting {:?}. Using procedural {}. Set PEXELS_API_KEY/PIXABAY_API_KEY or OPENSCRIPT_ALLOW_PROCEDURAL=1.",
                         scene_idx + 1,
-                        procedural_path
-                    ));
+                        outcome.exhausted,
+                        outcome.clip_path
+                    )
                 } else {
-                    render_warnings.push(format!(
+                    format!(
                         "PRODUCTION_FAIL stock_visuals scene {}: synthetic procedural ({})",
                         scene_idx + 1,
-                        procedural_path
-                    ));
-                }
+                        outcome.clip_path
+                    )
+                };
+                render_warnings.push(warn);
             }
+            scene_stock_meta.push(Some((
+                outcome.provider_id.clone().unwrap_or_default(),
+                outcome.content_hash.clone(),
+                outcome.search_query.clone(),
+                outcome.lexical_score,
+                outcome.source_title.clone(),
+                outcome.vision_score.unwrap_or(outcome.lexical_score),
+                outcome.vision_reason.clone(),
+            )));
+            per_scene_backgrounds.push(outcome.clip_path);
         }
         let proc_n = per_scene_backgrounds
             .iter()
@@ -15952,6 +15367,13 @@ async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::V
         "rendered_production_fail"
     } else if is_draft {
         "draft"
+    } else if fell_to_procedural_any
+        && !std::env::var("OPENSCRIPT_ALLOW_PROCEDURAL")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    {
+        // Loud-warning procedural policy: render ships but the status says so.
+        "rendered_with_procedural"
     } else if !pq.hard_fails.is_empty() {
         "rendered_production_fail"
     } else if pq.production_score >= 70 {
@@ -20891,6 +20313,9 @@ mod background_search_tests {
     }
 
 
+// ---------------------------------------------------------------------------
+
+
 #[cfg(test)]
 mod srt_to_timeline_tests {
     use super::*;
@@ -21074,3 +20499,275 @@ Third and final segment
 }
 
 }
+
+// GROUP 2c HANDLERS: ASSET DEVELOPMENT — user-curated footage library
+// (asset-development pipeline; separate from the generation pipeline).
+// asset.* WRITES the library index; generation only READS it (Tier 1 in
+// scene_media::fetch_scene_background).
+// ---------------------------------------------------------------------------
+
+async fn handle_asset_library_status(_args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let lib = crate::asset_library::AssetLibrary::load()?;
+    let mut by_source: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut by_status: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for a in &lib.assets {
+        *by_source.entry(a.source.clone()).or_insert(0) += 1;
+        *by_status.entry(a.curation_status.clone()).or_insert(0) += 1;
+    }
+    Ok(json!({
+        "status": "success",
+        "version": lib.version,
+        "root": crate::asset_library::LIBRARY_ROOT,
+        "total_assets": lib.assets.len(),
+        "by_source": by_source,
+        "by_status": by_status,
+    }))
+}
+async fn handle_asset_ingest(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let dir = default_str(&args, "dir", crate::asset_library::LIBRARY_ROOT);
+    let mut lib = crate::asset_library::AssetLibrary::load()?;
+    let report = lib.ingest_dir(&dir).await?;
+    lib.save()?;
+    Ok(json!({
+        "status": "success",
+        "dir": dir,
+        "indexed": report.indexed,
+        "skipped_duplicates": report.skipped_duplicates,
+        "errors": report.errors,
+        "total_assets": lib.assets.len(),
+    }))
+}
+
+async fn handle_asset_probe(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let query = extract_str(&args, "query")?;
+    let aspect = default_str(&args, "aspect", "9:16");
+    let min_duration_s = default_f64(&args, "min_duration_s", 0.0);
+    let max_duration_s = default_f64(&args, "max_duration_s", 0.0);
+    let per_provider = default_f64(&args, "per_provider", 8.0) as usize;
+    let signal: Vec<String> = args
+        .get("signal")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_else(|| crate::stock_signal::signal_tokens_from_scene(query, &[]));
+    let q = crate::stock_pool::StockPoolQuery {
+        query: query.to_string(),
+        aspect: aspect.to_string(),
+        min_duration_s,
+        max_duration_s,
+        per_provider,
+        signal,
+    };
+    let outcome = crate::stock_pool::search_stock_pool(&q).await;
+    let candidates: Vec<serde_json::Value> = outcome
+        .candidates
+        .iter()
+        .map(|c| {
+            json!({
+                "provider": c.provider,
+                "id": c.id,
+                "title": c.title,
+                "duration_s": c.duration_s,
+                "width": c.width,
+                "height": c.height,
+                "thumbnail_url": c.thumbnail_url,
+                "page_url": c.page_url,
+                "direct_url": c.direct_url,
+                "lexical": c.lexical,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "status": "success",
+        "query": query,
+        "per_provider": outcome.per_provider,
+        "count": candidates.len(),
+        "candidates": candidates,
+    }))
+}
+
+async fn handle_asset_rate(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let id = extract_str(&args, "id")?;
+    let quality_rating = default_f64(&args, "quality_rating", 0.0);
+    let mood = default_str(&args, "mood", "");
+    let energy = default_str(&args, "energy", "");
+    let motion_intensity = default_str(&args, "motion_intensity", "");
+    let status = default_str(&args, "status", crate::asset_library::STATUS_CANDIDATE);
+    let tags: Vec<String> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let relevance: std::collections::HashMap<String, f64> = args
+        .get("relevance")
+        .and_then(|v| v.as_object())
+        .map(|o| o.iter().filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f))).collect())
+        .unwrap_or_default();
+    let mut lib = crate::asset_library::AssetLibrary::load()?;
+    let updated = lib.rate(
+        id,
+        relevance,
+        quality_rating,
+        &mood,
+        &energy,
+        &motion_intensity,
+        tags,
+        &status,
+    );
+    match updated {
+        Some(a) => {
+            let summary = (a.id.clone(), a.curation_status.clone(), a.quality_rating);
+            lib.save()?;
+            Ok(json!({
+                "status": "success",
+                "asset_id": summary.0,
+                "curation_status": summary.1,
+                "quality_rating": summary.2,
+            }))
+        }
+        None => Err(ToolError::NotFound(format!("asset id not found: {id}"))),
+    }
+}
+
+async fn handle_asset_import(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let source_url = default_str(&args, "url", "");
+    let local_path = default_str(&args, "path", "");
+    let title = default_str(&args, "title", "");
+    let source = default_str(&args, "source", "user_upload");
+    let provider_id = args
+        .get("provider_id")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let keywords: Vec<String> = args
+        .get("keywords")
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    std::fs::create_dir_all(crate::asset_library::LIBRARY_ROOT)?;
+    let dest_stem = format!(
+        "{}/import_{}",
+        crate::asset_library::LIBRARY_ROOT,
+        chrono::Utc::now().timestamp_millis()
+    );
+
+    let imported_path: String = if !source_url.is_empty() {
+        if source_url.contains("youtube") || source_url.contains("youtu.be") {
+            // YouTube: yt-dlp best ≤720p merged mp4.
+            let out_tpl = format!("{dest_stem}.%(ext)s");
+            let result = tokio::process::Command::new("yt-dlp")
+                .args([
+                    "--format",
+                    "best[height<=720][ext=mp4]/best[height<=720]/best",
+                    "--merge-output-format",
+                    "mp4",
+                    "--output",
+                    &out_tpl,
+                    "--no-playlist",
+                    "--quiet",
+                    "--no-warnings",
+                    "--socket-timeout",
+                    "25",
+                    &source_url,
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true)
+                .output()
+                .await
+                .map_err(|e| ToolError::Asset(format!("yt-dlp spawn error: {e}")))?;
+            if !result.status.success() {
+                let err = String::from_utf8_lossy(&result.stderr);
+                return Err(ToolError::Asset(format!(
+                    "yt-dlp import failed: {}",
+                    err.chars().take(300).collect::<String>()
+                )));
+            }
+            let mut found: Option<String> = None;
+            for entry in std::fs::read_dir(crate::asset_library::LIBRARY_ROOT)? {
+                let e = entry?;
+                if e.path().to_string_lossy().starts_with(&format!("{dest_stem}.")) {
+                    found = Some(e.path().to_string_lossy().to_string());
+                }
+            }
+            found.ok_or_else(|| ToolError::Asset("yt-dlp import produced no file".to_string()))?
+        } else {
+            // Direct file URL (Pexels/Pixabay).
+            let resp = reqwest::Client::new()
+                .get(&source_url)
+                .send()
+                .await
+                .map_err(|e| ToolError::Asset(format!("download error: {e}")))?;
+            if !resp.status().is_success() {
+                return Err(ToolError::Asset(format!(
+                    "download failed: HTTP {}",
+                    resp.status()
+                )));
+            }
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| ToolError::Asset(format!("download error: {e}")))?;
+            let path = format!("{dest_stem}.mp4");
+            std::fs::write(&path, &bytes)?;
+            path
+        }
+    } else if !local_path.is_empty() {
+        let path = format!("{dest_stem}.mp4");
+        std::fs::copy(&local_path, &path)?;
+        path
+    } else {
+        return Err(ToolError::InvalidArg(
+            "provide url or path".to_string(),
+        ));
+    };
+
+    let mut lib = crate::asset_library::AssetLibrary::load()?;
+    let id = lib
+        .add_external(&imported_path, &source, provider_id, &title, keywords)
+        .await?;
+    lib.save()?;
+    Ok(json!({
+        "status": "success",
+        "asset_id": id,
+        "path": imported_path,
+        "total_assets": lib.assets.len(),
+    }))
+}
+
+async fn handle_asset_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let keywords = extract_str(&args, "keywords")?;
+    let quality_floor = default_f64(
+        &args,
+        "quality_floor",
+        crate::scene_media::LIBRARY_QUALITY_FLOOR,
+    );
+    let lib = crate::asset_library::AssetLibrary::load()?;
+    let signal = crate::stock_signal::signal_tokens_from_scene(keywords, &[]);
+    let hits = lib.search(&signal, quality_floor);
+    let assets: Vec<serde_json::Value> = hits
+        .iter()
+        .map(|a| {
+            json!({
+                "id": a.id,
+                "path": a.path,
+                "title": a.title,
+                "keywords": a.keywords,
+                "mood": a.mood,
+                "energy": a.energy,
+                "quality_rating": a.quality_rating,
+                "duration_s": a.duration_s,
+                "aspect": a.aspect,
+                "relevance": a.relevance,
+                "usage_count": a.usage_count,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "status": "success",
+        "count": assets.len(),
+        "assets": assets,
+    }))
+}
+
+

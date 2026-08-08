@@ -20,6 +20,8 @@ test_fixtures/*.hinglish.wav
 # kept committed for now — to remove it, the test would need to regenerate it
 # at the start of the run.)
 mcp/assets/music_library_index.json
+mcp/assets/user_library/
+mcp/assets/user_library_index.json
 
 # Render output + TTS cache (never commit)
 *.reel.mp4

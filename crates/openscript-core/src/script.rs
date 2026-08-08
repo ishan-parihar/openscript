@@ -292,6 +292,14 @@ pub struct BackgroundSpec {
     /// When to change backgrounds: "scene", "speaker", "fixed".
     #[serde(default = "default_change_cadence")]
     pub change_cadence: String,
+
+    /// Opt-in YouTube footage for GENERATION (default false). When false the
+    /// acquisition chain stops at Pexels → Pixabay → fallback_pool and never
+    /// reaches YouTube (social-platform metadata is clickbait; curated stock
+    /// beats it). YouTube stays always-on for asset-development workflows
+    /// (asset.probe / broll.probe) regardless of this flag.
+    #[serde(default)]
+    pub enable_youtube: bool,
 }
 
 fn default_bg_type() -> String {
@@ -324,6 +332,7 @@ impl Default for BackgroundSpec {
             loop_: default_loop(),
             volume_db: default_bg_volume(),
             change_cadence: default_change_cadence(),
+            enable_youtube: false,
         }
     }
 }

@@ -5,7 +5,7 @@
 
 ---
 
-## Tool Families (27 families, 98 tools)
+## Tool Families (28 families, 104 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
@@ -22,6 +22,7 @@
 | library | 3 | search, download, build |
 | overlay | 2 | generate, assign |
 | background | 3 | fetch, assign, search |
+| asset | 6 | library.status, ingest, probe, rate, import, search |
 | sticker | 7 | presets, load_preset, render, keywords, validate_keywords, auto, auto_assign |
 | stock | 2 | fetch, search |
 | youtube | 2 | search, download |
@@ -36,6 +37,41 @@
 | voiceover | 1 | generate |
 | voices | 1 | list |
 | composition | 1 | render |
+
+---
+
+## Trajectory E — Asset Development (user-curated footage library)
+
+**Separate from the generation pipeline.** `asset.*` tools WRITE the library index
+(`mcp/assets/user_library_index.json`; media lives in gitignored
+`mcp/assets/user_library/`); generation only READS it as its Tier-1 footage source.
+
+```
+asset.library.status  →  asset.ingest  (index local footage: ffprobe + content-hash dedup + auto-keywords)
+                    →  asset.probe    (curation pool: Pexels + Pixabay + YouTube candidates WITH thumbnails, no download)
+                    →  asset.rate     (classify: relevance 0-1 per keyword, quality 0-5, mood/energy/motion, approved/rejected)
+                    →  asset.import   (download approved external candidates into the library)
+                    →  asset.search   (consumption side — generation Tier 1; approved + quality >= 3.0 only)
+```
+
+Only `approved` assets with `quality_rating >= 3.0` are eligible for generation.
+YouTube is always available to `asset.probe`/`broll.probe` (acquisition engine),
+independent of the generation opt-in flag.
+
+### Background acquisition fallback discipline (scene_media)
+
+All scene backgrounds flow through ONE chain (`scene_media::fetch_scene_background`):
+
+```
+user_library → Pexels → Pixabay → YouTube (opt-in only) → fallback_pool → procedural (NEVER silent)
+```
+
+- Every tier attempt is recorded in the response's `exhausted` array — "why procedural" is always answerable.
+- YouTube is opt-in for generation: `background.enable_youtube: true` in the script,
+  or `OPENSCRIPT_YT_FOR_GENERATION=1`. It requires a stricter lexical bar AND a passing
+  vision frame-gate (non-fail-open).
+- Procedural is the last resort; when it ships without `OPENSCRIPT_ALLOW_PROCEDURAL=1`,
+  `script.to_video` returns status `rendered_with_procedural` (loud warning + production-score penalty).
 
 ---
 

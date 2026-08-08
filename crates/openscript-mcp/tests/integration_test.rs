@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 98 tools: + broll.auto (one-call A2V orchestrator) + sticker.keywords (agentic GIPHY keyword gen) + sticker.validate_keywords (GIPHY relevance gate) + sticker.auto (one-call sticker pipeline) + broll.probe (all-engine stock candidate pool)
+    // 104 tools: 98 + asset.library.status + asset.ingest + asset.probe + asset.rate + asset.import + asset.search (asset-development pipeline)
     assert_eq!(
         tools.len(),
-        98,
-        "Expected 98 MCP tools, got {}",
+        104,
+        "Expected 104 MCP tools, got {}",
         tools.len()
     );
 
@@ -196,6 +196,13 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"broll.validate_keywords"));
     assert!(tool_names.contains(&"broll.repair"));
     assert!(tool_names.contains(&"broll.auto"));
+    // Asset-development pipeline (user-curated footage library)
+    assert!(tool_names.contains(&"asset.library.status"));
+    assert!(tool_names.contains(&"asset.ingest"));
+    assert!(tool_names.contains(&"asset.probe"));
+    assert!(tool_names.contains(&"asset.rate"));
+    assert!(tool_names.contains(&"asset.import"));
+    assert!(tool_names.contains(&"asset.search"));
     assert!(tool_names.contains(&"sticker.keywords"));
     assert!(tool_names.contains(&"sticker.validate_keywords"));
     assert!(tool_names.contains(&"sticker.auto"));
