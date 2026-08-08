@@ -25,7 +25,7 @@ openscript/
 │   ├── openscript-tts/         #   TTS clients: Audio8 (clone sidecar), Kokoro (presets), voicebox HTTP + voice profile registry
 │   ├── openscript-transcribe/  #   Apex transcription (whisper_timestamped wrapper (Apex transcription — stays))
 │   ├── openscript-assets/      #   Pexels client, music index, SFX index
-│   ├── openscript-mcp/         #   MCP server + 70 tool handlers (tools.rs + hf.rs)
+│   ├── openscript-mcp/         #   MCP server + 104 tools (tools.rs + tools/ 9 domain modules + hf.rs)
 │   ├── openscript-cli/         #   CLI (clap) — thin wrapper over route_tool()
 │   ├── openscript-tauri/       #   Tauri desktop app (Rust commands + React frontend)
 │   └── openscript-ui/          #   Legacy TUI (ratatui) — minimal maintenance
