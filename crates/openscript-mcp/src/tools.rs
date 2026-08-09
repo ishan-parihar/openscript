@@ -2211,12 +2211,21 @@ fn load_voice_profiles() -> Result<serde_json::Value, ToolError> {
 }
 
 fn save_voice_profiles(profiles: &serde_json::Value) -> Result<(), ToolError> {
-    let path = voice_profiles_path();
-    if let Some(parent) = Path::new(&path).parent() {
+    atomic_write_json(&voice_profiles_path(), profiles)
+}
+
+/// Atomically write a JSON value to `path`: write to `{path}.tmp` then rename
+/// over the target. Readers that don't take the RegistryLock (list tools,
+/// read-only validation phases) can therefore never observe a partially
+/// written/truncated file — the rename is atomic on POSIX. Also crash-safe.
+fn atomic_write_json(path: &str, value: &serde_json::Value) -> Result<(), ToolError> {
+    if let Some(parent) = Path::new(path).parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let data = serde_json::to_string_pretty(profiles)?;
-    std::fs::write(&path, data)?;
+    let tmp = format!("{}.tmp", path);
+    let data = serde_json::to_string_pretty(value)?;
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -7866,16 +7875,31 @@ Third and final segment
         let _ = std::fs::remove_file(&tmp);
         let target = tmp.clone();
 
-        // Thread A holds the lock for 150ms.
+        // Thread A acquires the lock, signals the handshake, holds 150ms.
+        // The handshake (not a sleep) guarantees A owns the lock before B
+        // starts timing — otherwise the assertion is scheduler-flaky.
         let a_target = target.clone();
+        let a_holds = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let a_signal = a_holds.clone();
         let a = std::thread::spawn(move || {
             let _l = RegistryLock::acquire(&a_target).unwrap();
+            a_signal.store(true, std::sync::atomic::Ordering::SeqCst);
             std::thread::sleep(std::time::Duration::from_millis(150));
         });
-        // Give A a head start so it acquires first.
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // Spin until A confirms it holds the lock (bounded — fail fast if the
+        // acquire itself is broken).
+        let spin_deadline =
+            std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !a_holds.load(std::sync::atomic::Ordering::SeqCst) {
+            assert!(
+                std::time::Instant::now() < spin_deadline,
+                "thread A never acquired the lock"
+            );
+            std::thread::yield_now();
+        }
 
-        // Thread B (this thread) must block until A releases.
+        // Thread B (this thread) must block until A releases: A holds for
+        // 150ms, so B's acquire must take at least ~100ms.
         let start = std::time::Instant::now();
         let _l = RegistryLock::acquire(&target).unwrap();
         let elapsed = start.elapsed();

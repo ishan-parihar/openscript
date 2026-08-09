@@ -32,12 +32,7 @@ fn load_characters() -> Result<serde_json::Value, ToolError> {
 }
 
 fn save_characters(chars: &serde_json::Value) -> Result<(), ToolError> {
-    let path = characters_path();
-    if let Some(parent) = Path::new(&path).parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&path, serde_json::to_string_pretty(chars)?)?;
-    Ok(())
+    atomic_write_json(&characters_path(), chars)
 }
 
 /// Sanitize an id for use in filenames — MUST match gepard's `_voice_path`
@@ -336,6 +331,21 @@ pub(crate) async fn handle_character_design_emotion(
         )));
     }
     let mut profiles = load_voice_profiles()?;
+    // Re-check the provider under the lock (a concurrent character.remove +
+    // recreate with a different provider between the read-only validation and
+    // here would otherwise attach takes to a non-gepard base).
+    let base_provider_locked = profiles
+        .get(&character_id)
+        .and_then(|p| p.get("provider"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if base_provider_locked != "gepard" {
+        return Err(ToolError::InvalidArg(format!(
+            "character '{}' base voice provider changed to '{}' while designing — character emotion takes require a gepard base",
+            character_id,
+            if base_provider_locked.is_empty() { "<missing>" } else { base_provider_locked }
+        )));
+    }
 
     // Attach to the character schema.
     if let Some(obj) = chars.get_mut(&character_id).and_then(|v| v.as_object_mut()) {
