@@ -126,12 +126,14 @@ def normalize_lufs(
         # Near-silent or unreadable: leave as-is rather than amplifying noise.
         return False
 
-    # Guard: a file far below the target is likely silence/noise — do not
-    # boost it into the mix. Only normalize files within a sane band of the
-    # target (e.g. anything between target-25 dB and target+3 dB).
-    if measured["input_i"] < target_lufs - 25.0:
+    # Guard: skip only TRUE digital silence, never quiet-but-real speech.
+    # A relative guard (e.g. >25 dB below target, i.e. < -41 LUFS) would skip
+    # whisper-quiet emotion-take clones at -42 LUFS — exactly the scenes that
+    # NEED lifting (they were the "second speaker inaudible" bug). Absolute
+    # -60 LUFS catches digital near-silence/dither without touching speech.
+    if measured["input_i"] < -60.0:
         _log(f"{Path(path).name} input {measured['input_i']:.1f} LUFS is "
-             f">25 dB below target — skipping (likely near-silent)")
+             f"true digital silence — skipping")
         return False
 
     tmp = p.with_suffix(p.suffix + ".loudnorm.tmp.wav")

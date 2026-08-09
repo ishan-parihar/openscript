@@ -59,8 +59,8 @@ def test_normalize_boosts_quiet_audio():
     assert np.max(np.abs(out)) <= 1.0, "clipped"
 
 
-def test_normalize_skips_near_silence():
-    """A >25 dB-below-target clip is near-silence and must NOT be boosted."""
+def test_normalize_skips_true_silence():
+    """Digital near-silence (-80 dB) must NOT be boosted into the mix."""
     t = np.arange(SR * 3) / SR
     sil = (0.0001 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
     path = os.path.join(tempfile.mkdtemp(), "sil.wav")
@@ -68,6 +68,23 @@ def test_normalize_skips_near_silence():
     before = _read_wav(path)
     assert tts_common.normalize_lufs(path) is False
     assert np.array_equal(_read_wav(path), before), "near-silence was modified"
+
+
+def test_normalize_lifts_quiet_whisper_speech():
+    """Whisper-quiet real speech (-42 LUFS, the muted emotion-take zone) MUST
+    be lifted — a relative guard would skip it and leave it buried."""
+    t = np.arange(SR * 3) / SR
+    # ~-43 LUFS: 0.01-amplitude sine (measured -49 at 0.005, -43 at 0.01).
+    # The old >25 dB-below-target guard skipped this band; the absolute -60
+    # guard must normalize it (a real whisper speech scene, the muted
+    # emotion-take zone).
+    quiet = (0.01 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
+    path = os.path.join(tempfile.mkdtemp(), "whisper.wav")
+    _write_wav(path, quiet)
+    assert tts_common.normalize_lufs(path) is True
+    out = _read_wav(path)
+    assert _rms_db(out) > _rms_db(quiet) + 15, "whisper speech was not lifted"
+    assert np.max(np.abs(out)) <= 1.0, "clipped"
 
 
 def test_crossfade_seam_blends_step():
