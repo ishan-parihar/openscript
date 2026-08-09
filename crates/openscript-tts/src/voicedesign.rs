@@ -393,8 +393,20 @@ pub fn voicedesign_available() -> bool {
     resolve_voicedesign_sidecar().exists() && python_candidate_resolves(&resolve_voicedesign_python())
 }
 
-/// Check whether the model directory exists (config.json present) — used by
+/// The int4 ONNX external-weight files that must all exist for the model to
+/// actually run (config.json downloads first and is NOT sufficient — the
+/// session fails at load if any `.onnx.data` weight file is missing).
+const INT4_REQUIRED_DATA_FILES: [&str; 4] = [
+    "int4/code_predictor.onnx.data",
+    "int4/talker_decode.onnx.data",
+    "int4/talker_prefill.onnx.data",
+    "int4/vocoder.onnx.data",
+];
+
+/// Check whether the model directory is fully provisioned — used by
 /// system.capabilities to report model_present separately from venv presence.
+/// Requires config.json AND all four int4 `.onnx.data` weight files so a
+/// partial download is never advertised as ready.
 pub fn voicedesign_model_present() -> bool {
     let dirs = [
         std::env::var("VOICEDESIGN_MODEL_DIR").ok().map(PathBuf::from),
@@ -405,9 +417,12 @@ pub fn voicedesign_model_present() -> bool {
             .map(|d| Path::new(d).join("../../mcp/assets/voicedesign")),
         Some(PathBuf::from("mcp/assets/voicedesign")),
     ];
-    dirs.iter()
-        .flatten()
-        .any(|d| d.join("config.json").exists())
+    dirs.iter().flatten().any(|d| {
+        d.join("config.json").exists()
+            && INT4_REQUIRED_DATA_FILES
+                .iter()
+                .all(|rel| d.join(rel).exists())
+    })
 }
 
 #[cfg(test)]

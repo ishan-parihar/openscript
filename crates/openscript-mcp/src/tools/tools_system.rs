@@ -588,10 +588,24 @@ pub(crate) async fn handle_system_capabilities(
     // NOVEL character voices from a text description, zero reference audio).
     let voicedesign_available = openscript_tts::voicedesign::voicedesign_available();
     let voicedesign_model_present = openscript_tts::voicedesign::voicedesign_model_present();
+    // Probe the resolved interpreter for the sidecar deps (onnxruntime, numpy,
+    // soundfile, transformers) — same pattern as the kokoro `python_module_ok`
+    // probe, so a python without the deps is never advertised as ready.
+    let voicedesign_python = openscript_tts::voicedesign::resolve_voicedesign_python();
+    let voicedesign_python_module_ok = std::process::Command::new(&voicedesign_python)
+        .arg("-c")
+        .arg("import onnxruntime, numpy, soundfile, transformers")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
     let voicedesign = json!({
-        "available": voicedesign_available && voicedesign_model_present,
+        "available": voicedesign_available && voicedesign_model_present && voicedesign_python_module_ok,
         "sidecar_available": voicedesign_available,
         "model_present": voicedesign_model_present,
+        "python_module_ok": voicedesign_python_module_ok,
+        "python_path": voicedesign_python,
         "model": "wavekat/Qwen3-TTS-1.7B-VoiceDesign-ONNX (int4)",
         "model_dir": "mcp/assets/voicedesign",
         "sample_rate": 24000,
