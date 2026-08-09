@@ -297,6 +297,11 @@ pub(crate) async fn handle_youtube_download(args: serde_json::Value) -> Result<s
                 let (crop_w, crop_h) = aspect_to_crop_dims(&aspect);
 
                 let cropped_path = format!("{}/{}_cropped.mp4", cache_dir, cache_key);
+                // NOTE: intentionally NOT GPU-accelerated (unlike the golden-path
+                // trims in tools::build_stock_trim_command). This is the legacy
+                // youtube.download crop — different shape (no -t, crop-only) and
+                // a ponytail path; keep it CPU until a caller migrates to the
+                // unified background.fetch chain.
                 let crop_result = tokio::process::Command::new("ffmpeg")
                     .arg("-y")
                     .arg("-i")

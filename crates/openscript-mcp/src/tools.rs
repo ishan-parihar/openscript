@@ -8,6 +8,7 @@ pub(crate) use openscript_core::sticker::{generate_sticker_composition, StickerP
 use openscript_core::timeline::Timeline;
 use openscript_core::types::TrackType;
 pub(crate) use openscript_transcribe::transcriber::transcribe_with_engine;
+use openscript_ffmpeg::gpu::GpuConfig;
 use serde_json::json;
 use std::future::Future;
 use std::path::Path;
@@ -1946,6 +1947,64 @@ pub(crate) fn pexels_file_url(video: &serde_json::Value) -> Option<String> {
 /// Delegates to `stock_signal::cover_crop_filter_for_aspect`.
 fn crop_filter_for_aspect(aspect: &str) -> String {
     crate::stock_signal::cover_crop_filter_for_aspect(aspect)
+}
+
+/// Build the ffmpeg command that cover-crops + re-encodes a downloaded stock
+/// clip into the render-ready trim (Pexels / YouTube / Pixabay tiers).
+///
+/// GPU-aware: when `OPENSCRIPT_FFMPEG_GPU` resolves to NVENC/NVDEC (default
+/// `auto`), the decode is CUDA-accelerated and the intermediate re-encode uses
+/// `h264_nvenc`. This is where the expensive aspect-ratio upscale actually
+/// happens — measured ~1.45x faster than `libx264 -preset fast` on the dev
+/// box, and it makes the render-stage `scale` a pass-through (why GPU filter
+/// graphs buy nothing downstream). Single-frame thumbnail extraction is
+/// deliberately NOT GPU-accelerated anywhere: CUDA context init makes GPU
+/// *slower* for one-frame grabs (measured ~2x).
+///
+/// `start_s` is applied as an input seek (`-ss` before `-i`) for fast seeks;
+/// pass `None` for clips that should start at 0 (Pexels/Pixabay stock loops).
+pub(crate) fn build_stock_trim_command(
+    gpu: &GpuConfig,
+    input: &str,
+    output: &str,
+    duration_s: f64,
+    start_s: Option<f64>,
+    crop_filter: &str,
+) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new("ffmpeg");
+    cmd.arg("-y");
+    if let Some(s) = start_s {
+        cmd.arg("-ss").arg(s.to_string());
+    }
+    gpu.add_input(&mut cmd);
+    cmd.arg("-i")
+        .arg(input)
+        .arg("-t")
+        .arg(duration_s.to_string())
+        .arg("-vf")
+        .arg(crop_filter);
+    // Intermediates are 30fps yuv420p to match the render path's frame-count
+    // assumptions (select='lte(n,K)' on trims assumes 30fps input).
+    gpu.add_encoder(&mut cmd, "fast", 23, 30, false);
+    cmd.arg("-an")
+        .arg(output)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    cmd
+}
+
+/// Last non-empty ffmpeg stderr lines, for the "why did this trim fail"
+/// diagnostic that feeds the scene-fall-to-procedural audit trail.
+pub(crate) fn trim_stderr_tail(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
 /// Resolve a repo-relative path CWD-independently.
@@ -4404,6 +4463,7 @@ pub(crate) async fn fetch_youtube_stock_clip_signal(
     }
 
     let scene_kw: Vec<String> = signal.clone();
+    let gpu = GpuConfig::resolve();
     for cand in ranked.into_iter().take(8) {
         let video_id = cand.id.clone();
         let title = cand.title.clone();
@@ -4550,34 +4610,22 @@ pub(crate) async fn fetch_youtube_stock_clip_signal(
         // Cover-crop (no stretch) + square SAR
         let start_s = 1.5 + (scene_idx as f64) * 2.7;
         let crop = crop_filter_for_aspect(aspect);
-        let trim = tokio::process::Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-ss",
-                &start_s.to_string(),
-                "-i",
-                &full_path,
-                "-t",
-                &duration_s.max(2.0).to_string(),
-                "-vf",
-                &crop,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-crf",
-                "23",
-                "-an",
-                out_path,
-            ])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output()
-            .await
-            .ok()?;
+        let trim = build_stock_trim_command(
+            &gpu,
+            &full_path,
+            out_path,
+            duration_s.max(2.0),
+            Some(start_s),
+            &crop,
+        )
+        .output()
+        .await
+        .ok()?;
         if !trim.status.success() || !Path::new(out_path).exists() {
+            tracing::warn!(
+                "[youtube stock] trim FAILED id={video_id} — skipped. ffmpeg: {}",
+                trim_stderr_tail(&trim)
+            );
             continue;
         }
 
@@ -4805,6 +4853,7 @@ pub(crate) async fn fetch_pixabay_stock_clip_signal(
             .map(|c| format!("{}:{:.2}:{}", c.id, c.lexical, truncate_utf8(&c.title, 40)))
             .unwrap_or_else(|| "none".into())
     );
+    let gpu = GpuConfig::resolve();
 
     for cand in ranked.into_iter().take(8) {
         let video_id = cand.id.clone();
@@ -4882,32 +4931,22 @@ pub(crate) async fn fetch_pixabay_stock_clip_signal(
         // Cover-crop (no stretch) + square SAR. Pixabay clips are stock loops;
         // start at 0 (no channel-intro skip needed like YouTube).
         let crop = crop_filter_for_aspect(aspect);
-        let trim = tokio::process::Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                &full_path,
-                "-t",
-                &duration_s.max(2.0).to_string(),
-                "-vf",
-                &crop,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-crf",
-                "23",
-                "-an",
-                out_path,
-            ])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .output()
-            .await
-            .ok()?;
+        let trim = build_stock_trim_command(
+            &gpu,
+            &full_path,
+            out_path,
+            duration_s.max(2.0),
+            None,
+            &crop,
+        )
+        .output()
+        .await
+        .ok()?;
         if !trim.status.success() || !Path::new(out_path).exists() {
+            tracing::warn!(
+                "[pixabay stock] trim FAILED id={video_id} — skipped. ffmpeg: {}",
+                trim_stderr_tail(&trim)
+            );
             continue;
         }
 
@@ -6531,6 +6570,76 @@ mod tests {
         let url3 = pexels_search_url("nature", "portrait", 1, 0.0, 0.0);
         assert!(!url3.contains("min_duration"), "no min when 0: {}", url3);
         assert!(!url3.contains("max_duration"), "no max when 0: {}", url3);
+    }
+
+    #[test]
+    fn stock_trim_command_gpu_mode_has_hwaccel_and_nvenc() {
+        // GPU path: NVDEC prelude BEFORE -i, NVENC encoder with p2 (fast) and
+        // cq=crf+2=25, plus the yuv420p/30fps intermediates the render assumes.
+        let gpu = GpuConfig {
+            decode: true,
+            encode_nvenc: true,
+        };
+        let cmd = build_stock_trim_command(
+            &gpu,
+            "/in/clip.mp4",
+            "/out/clip_trim.mp4",
+            5.5,
+            Some(1.25),
+            "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+        );
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        // Input seek lands before -i; hwaccel prelude must precede -i too.
+        // Sequence: -y -ss 1.25 -hwaccel cuda -i <input> ...
+        let i_idx = args.iter().position(|a| a == "-i").unwrap();
+        assert_eq!(args[i_idx - 4], "-ss");
+        assert_eq!(args[i_idx - 3], "1.25");
+        assert_eq!(args[i_idx - 2], "-hwaccel");
+        assert_eq!(args[i_idx - 1], "cuda");
+        assert_eq!(args[i_idx + 1], "/in/clip.mp4");
+        // NVENC encoder block.
+        assert!(args.windows(2).any(|w| w == ["-c:v", "h264_nvenc"]));
+        assert!(args.windows(2).any(|w| w == ["-preset", "p2"]));
+        assert!(args.windows(2).any(|w| w == ["-cq", "25"]));
+        assert!(args.windows(2).any(|w| w == ["-pix_fmt", "yuv420p"]));
+        assert!(args.windows(2).any(|w| w == ["-r", "30"]));
+        // -an then output path, in that order at the tail.
+        let an_idx = args.iter().position(|a| a == "-an").unwrap();
+        assert_eq!(args[an_idx + 1], "/out/clip_trim.mp4");
+    }
+
+    #[test]
+    fn stock_trim_command_cpu_mode_matches_legacy_shape() {
+        // CPU path: identical to the old inline libx264 fast crf23 command.
+        let cpu = GpuConfig {
+            decode: false,
+            encode_nvenc: false,
+        };
+        let cmd = build_stock_trim_command(
+            &cpu,
+            "/in/clip.mp4",
+            "/out/clip_trim.mp4",
+            5.5,
+            None,
+            "crop=1080:1920",
+        );
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert!(!args.contains(&"-hwaccel".to_string()), "no hwaccel in CPU mode");
+        assert!(args.windows(2).any(|w| w == ["-c:v", "libx264"]));
+        assert!(args.windows(2).any(|w| w == ["-preset", "fast"]));
+        assert!(args.windows(2).any(|w| w == ["-crf", "23"]));
+        // No -ss when start is None (Pexels/Pixabay start at 0).
+        assert!(!args.contains(&"-ss".to_string()));
+        let i_idx = args.iter().position(|a| a == "-i").unwrap();
+        assert_eq!(args[i_idx - 1], "-y", "-y immediately before -i when no -ss");
     }
 
     #[test]

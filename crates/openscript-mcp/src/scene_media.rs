@@ -389,6 +389,10 @@ async fn tier_pexels(
         return Ok(None);
     }
 
+    // Resolve once per tier attempt: the NVENC/NVDEC availability probe is
+    // OnceLock-cached, so this is an env read + two atomic loads after the
+    // first call in the process.
+    let gpu = openscript_ffmpeg::gpu::GpuConfig::resolve();
     for (url, vid_id) in candidates {
         let clip_path = format!("{cache_dir}/{out_stem}.mp4");
         let Ok(dl_resp) = client.get(url).send().await else {
@@ -405,31 +409,26 @@ async fn tier_pexels(
         }
         let crop_filter = crate::stock_signal::cover_crop_filter_for_aspect(aspect);
         let trimmed = format!("{cache_dir}/{out_stem}_trim.mp4");
-        let trim_result = tokio::process::Command::new("ffmpeg")
-            .arg("-y")
-            .arg("-i")
-            .arg(&clip_path)
-            .arg("-t")
-            .arg(duration_s.to_string())
-            .arg("-vf")
-            .arg(&crop_filter)
-            .arg("-c:v")
-            .arg("libx264")
-            .arg("-preset")
-            .arg("fast")
-            .arg("-crf")
-            .arg("23")
-            .arg("-an")
-            .arg(&trimmed)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .kill_on_drop(true)
-            .output()
-            .await;
+        let trim_result = crate::tools::build_stock_trim_command(
+            &gpu,
+            &clip_path,
+            &trimmed,
+            duration_s,
+            None,
+            &crop_filter,
+        )
+        .output()
+        .await;
         let chosen = if trim_result.as_ref().map(|o| o.status.success()).unwrap_or(false) {
             trimmed
         } else {
+            tracing::warn!(
+                "[pexels stock] trim FAILED id={vid_id} — falling back to untrimmed clip. ffmpeg: {}",
+                trim_result
+                    .as_ref()
+                    .map(crate::tools::trim_stderr_tail)
+                    .unwrap_or_default()
+            );
             clip_path
         };
         // Geometry gate (no stretch).
