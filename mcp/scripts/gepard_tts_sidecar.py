@@ -303,9 +303,56 @@ def handle_health(_req):
     }
 
 
+def _isolate_streams():
+    """Protect the JSON protocol on stdout from the Gepard library's chatter.
+
+    The Gepard runner/player/session print progress to STDOUT
+    (``[GepardRunner] model config: ...``), which would corrupt the JSON
+    protocol the Rust side parses. Worse, the NeMo codec logs a lot to
+    STDERR — if the Rust supervisor never drains that pipe it fills (64 KB)
+    and the sidecar deadlocks mid-load.
+
+    Fix: dup fd 1 into a private protocol handle, point ALL Python-level
+    stdout/stderr at a diagnostics log file, and redirect fd 2 (C-level
+    writes from torch/NeMo) to that same file. Only the protocol handle
+    writes to the real stdout pipe.
+    """
+    import os
+
+    log_path = Path(os.environ.get("GEPARD_LOG", "/tmp/gepard_tts_sidecar.log"))
+    log_path.parent.mkdir(parents=True, exist_ok=True)  # custom GEPARD_LOG may point into a new dir
+    log_fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(log_fd, 2)  # fd 2 -> log file (covers C-level stderr writes)
+    proto_fd = os.dup(1)  # keep a private handle to the real stdout pipe
+    # Reroute Python-level writes: sys.stderr -> log, sys.stdout -> log.
+    sys.stderr = os.fdopen(os.dup(2), "w", buffering=1)
+    sys.stdout = os.fdopen(os.dup(2), "w", buffering=1)
+    return os.fdopen(proto_fd, "w", buffering=1)
+
+
+def _proto_write(proto, obj) -> None:
+    """Write one JSON protocol line to the private stdout handle."""
+    proto.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    proto.flush()
+
+
+def _dispatch(req) -> dict:
+    op = req.get("op", "synth")
+    if op == "synth":
+        return handle_synth(req)
+    if op == "register":
+        return handle_register(req)
+    if op == "list":
+        return handle_list(req)
+    if op == "health":
+        return handle_health(req)
+    raise ValueError(f"unknown op: {op}")
+
+
 def serve() -> int:
+    proto = _isolate_streams()
     log(f"ready (checkpoint={CHECKPOINT}, voices_dir={VOICES_DIR})")
-    print(json.dumps({"ready": True}), flush=True)
+    _proto_write(proto, {"ready": True})
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -314,20 +361,11 @@ def serve() -> int:
         try:
             req = json.loads(line)
             op = req.get("op", "synth")
-            if op == "synth":
-                resp = handle_synth(req)
-            elif op == "register":
-                resp = handle_register(req)
-            elif op == "list":
-                resp = handle_list(req)
-            elif op == "health":
-                resp = handle_health(req)
-            else:
-                raise ValueError(f"unknown op: {op}")
+            resp = _dispatch(req)
         except Exception as exc:  # protocol-level error → structured response
             log(f"error handling {op!r}: {exc}")
             resp = {"status": "error", "error": str(exc)}
-        print(json.dumps(resp, ensure_ascii=False), flush=True)
+        _proto_write(proto, resp)
     return 0
 
 
@@ -342,8 +380,9 @@ def main() -> int:
     if args.serve:
         return serve()
     if args.text and args.voice and args.output:
+        proto = _isolate_streams()
         resp = handle_synth({"text": args.text, "voice": args.voice, "output_path": args.output})
-        print(json.dumps(resp, ensure_ascii=False))
+        _proto_write(proto, resp)
         return 0
     print("usage: gepard_tts_sidecar.py --serve   |   --text T --voice V --output OUT", file=sys.stderr)
     return 2

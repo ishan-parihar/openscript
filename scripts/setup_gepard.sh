@@ -41,6 +41,9 @@ echo "=== [0] Gepard inference venv setup (${VENV}) ==="
 # The upstream helpers operate relative to the gepard repo root.
 cd "${GEPARD_DIR}"
 
+# A re-run rebuilds from scratch (uv venv refuses to overwrite an existing
+# venv, and a half-installed one is not a usable cache).
+rm -rf "../../${VENV}"
 make_venv "../../${VENV}"          # uv-provisioned Python 3.12
 source "../../${VENV}/bin/activate"
 
