@@ -202,6 +202,23 @@ pub struct TtsSpec {
     /// Default pitch multiplier (1.0 = normal).
     #[serde(default = "default_pitch")]
     pub default_pitch: f64,
+
+    /// Default sampling temperature for clone engines (None = engine default:
+    /// 0.7 for gepard/audio8 — expressive but stable). Higher = more prosodic
+    /// variation/inflection; lower = flatter, more robotic. Production-grade
+    /// voices sit 0.6-0.8; the old flat 0.3 default produced "robotic, no
+    /// emotional nuance" clones (audit finding).
+    #[serde(default)]
+    pub default_temperature: Option<f64>,
+
+    /// Default top-k for clone engines (None = engine default).
+    #[serde(default)]
+    pub default_top_k: Option<u32>,
+
+    /// Default cfg_scale for gepard (reference-fidelity; higher clings closer
+    /// to the reference recording). None = 1.0.
+    #[serde(default)]
+    pub default_cfg_scale: Option<f64>,
 }
 
 fn default_tts_backend() -> String {
@@ -224,6 +241,9 @@ impl Default for TtsSpec {
             voice: None,
             default_speed: default_speed(),
             default_pitch: default_pitch(),
+            default_temperature: None,
+            default_top_k: None,
+            default_cfg_scale: None,
         }
     }
 }
@@ -629,6 +649,11 @@ pub struct SceneSpec {
     /// Per-scene pitch multiplier (overrides tts.default_pitch).
     #[serde(default)]
     pub pitch: Option<f64>,
+
+    /// Per-scene sampling temperature override (overrides tts.default_temperature).
+    /// Lets a single line be more/less expressive than the rest of the video.
+    #[serde(default)]
+    pub temperature: Option<f64>,
 
     /// Override background for this scene (preset name or null for auto).
     #[serde(default)]

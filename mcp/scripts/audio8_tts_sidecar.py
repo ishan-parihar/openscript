@@ -58,6 +58,11 @@ if _ONNX_RUNTIME.exists():
 else:
     sys.path.insert(0, str(_ONNX_RUNTIME))  # will fail loudly on import — that's fine
 
+# Shared TTS post-processing (loudness normalization + crossfade concat).
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from tts_common import crossfade_concat, normalize_lufs  # noqa: E402
+
 MODEL_DIR = Path(os.environ.get("AUDIO8_MODEL_DIR", _ROOT / "mcp/assets/audio8/model")).resolve()
 VOICES_DIR = Path(os.environ.get("AUDIO8_VOICES_DIR", _ROOT / "mcp/assets/audio8/voices")).resolve()
 REGISTRATION_DIR = MODEL_DIR / "registration"
@@ -212,10 +217,17 @@ def handle_synth(req):
         for chunk in chunks:
             part, _codes = runtime.synthesize(text=chunk, **kwargs)
             parts.append(np.asarray(part, dtype=np.float32))
-        audio = np.concatenate(parts) if len(parts) > 1 else parts[0]
+        # Crossfade chunk seams (hard concatenation leaves mute dips where a
+        # chunk's tail-off meets the next chunk's onset).
+        audio = crossfade_concat(parts, SAMPLE_RATE)
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out), audio, SAMPLE_RATE)
+    # Uniform per-scene loudness: clone output amplitude tracks the reference
+    # (which varies by up to 14 dB between takes), so some lines can be far
+    # quieter than others. Normalize every scene to the same target so all
+    # generated voices are realistically uniform (production-grade).
+    normalize_lufs(str(out))
     duration_ms = int(round(len(audio) / SAMPLE_RATE * 1000.0))
     resp = {"status": "ok", "duration_ms": duration_ms, "sample_rate": SAMPLE_RATE, "chunks": len(chunks)}
     if emotion:

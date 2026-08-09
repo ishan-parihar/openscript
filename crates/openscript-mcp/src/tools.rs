@@ -509,7 +509,11 @@ pub fn tool_definitions() -> serde_json::Value {
                     "speed": {"type": "number", "default": 1.0, "description": "Playback speed multiplier (1.0 = normal; applied post-synthesis for gepard/audio8 clone engines)"},
                     "pitch": {"type": "number", "default": 1.0, "description": "Pitch multiplier (applied post-synthesis for gepard/audio8 clone engines)"},
                     "volume": {"type": "number", "default": 1.0, "description": "Volume multiplier"},
-                    "format": {"type": "string", "default": "wav", "description": "Output audio format"}
+                    "format": {"type": "string", "default": "wav", "description": "Output audio format"},
+                    "temperature": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Sampling temperature (clone engines). Higher = more prosodic variation/inflection; lower = flatter. Default 0.7 (expressive but stable). 0.3+ is the robotic/flat zone."},
+                    "top_k": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Top-k sampling for clone engines (None = engine default)."},
+                    "top_p": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Top-p nucleus sampling (audio8; None = engine default 0.9)."},
+                    "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Gepard reference-fidelity knob (higher = clings closer to the reference recording; 1.0 default). Explicit value wins over the emotion take's cfg_scale."}
                 },
                 "required": ["voice_profile_id", "text", "output_path"],
                 "additionalProperties": false
@@ -2526,6 +2530,10 @@ async fn tts_generate_routed(
     format: &str,
     emotion: Option<&str>,
     tone: Option<&str>,
+    temperature: Option<f64>,
+    top_k: Option<u32>,
+    top_p: Option<f64>,
+    cfg_scale: Option<f64>,
     profile: &openscript_tts::profiles::VoiceProfile,
 ) -> Result<TtsGenResult, ToolError> {
     // Natural-language delivery direction — consumed here as a diagnostic so
@@ -2600,9 +2608,11 @@ async fn tts_generate_routed(
         let params = openscript_tts::gepard::GepardSynthParams {
             emotion: emotion.map(|s| s.to_string()),
             ref_audio: take.map(|t| t.ref_audio.clone()),
-            cfg_scale: take.and_then(|t| t.cfg_scale),
-            temperature: None,
-            top_k: None,
+            // Explicit request temperature/cfg_scale win; else the emotion
+            // take's own cfg_scale; else None (engine default 0.7 / 1.0).
+            cfg_scale: cfg_scale.or_else(|| take.and_then(|t| t.cfg_scale)),
+            temperature,
+            top_k,
             max_frames: None,
         };
         let (mut duration_ms, sample_rate) = openscript_tts::gepard::gepard_synthesize_params(
@@ -2649,9 +2659,9 @@ async fn tts_generate_routed(
         let params = openscript_tts::audio8::Audio8SynthParams {
             emotion: emotion.map(|s| s.to_string()),
             ref_audio: None,
-            temperature: None,
-            top_p: None,
-            top_k: None,
+            temperature,
+            top_p,
+            top_k,
             seed: None,
             max_new_tokens: None,
         };
@@ -2995,6 +3005,10 @@ async fn generate_commentary_segment(
         "wav",
         None, // commentary segments carry no scene emotion
         None, // nor tone
+        None, // temperature: engine default (expressive 0.7)
+        None, // top_k
+        None, // top_p
+        None, // cfg_scale
         profile,
     )
     .await?;

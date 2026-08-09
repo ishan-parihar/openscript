@@ -376,7 +376,14 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
     // Delegate to the shared provider router (audio8 / kokoro / faster-qwen3-tts).
     // tone: natural-language delivery direction (diagnostic + future engine
     // instruction channel; the emotion take carries tonality today).
+    // Expression knobs: optional temperature / top_k / top_p / cfg_scale
+    // override the engine defaults (production-grade: 0.7 temp for clones;
+    // explicit values here win).
     let tone = default_opt_str(&args, "tone");
+    let temperature = args.get("temperature").and_then(|v| v.as_f64());
+    let top_k = args.get("top_k").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let top_p = args.get("top_p").and_then(|v| v.as_f64());
+    let cfg_scale = args.get("cfg_scale").and_then(|v| v.as_f64());
 
     let result = tts_generate_routed(
         &voice_profile_id,
@@ -388,6 +395,10 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
         &format,
         emotion.as_deref(),
         tone.as_deref(),
+        temperature,
+        top_k,
+        top_p,
+        cfg_scale,
         &profile,
     )
     .await?;
@@ -909,6 +920,10 @@ pub(crate) async fn handle_voiceover_generate(
         "wav",
         emotion.as_deref(),
         None, // tone: voiceover.generate has no scene tone
+        None, // temperature: engine default (expressive 0.7)
+        None, // top_k
+        None, // top_p
+        None, // cfg_scale
         &profile,
     )
     .await?;

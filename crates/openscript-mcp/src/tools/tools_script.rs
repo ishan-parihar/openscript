@@ -429,6 +429,11 @@ pub(crate) async fn handle_script_generate_voices(
 
         let scene_speed = scene.speed.unwrap_or(spec.tts.default_speed);
         let scene_pitch = scene.pitch.unwrap_or(spec.tts.default_pitch);
+        // Expression knobs: scene-level temperature wins, else the script tts
+        // default, else None (engine default — expressive 0.7 for clones).
+        let scene_temperature = scene
+            .temperature
+            .or(spec.tts.default_temperature);
         let result = tts_generate_routed(
             &speaker.voice,
             &scene.text,
@@ -439,6 +444,10 @@ pub(crate) async fn handle_script_generate_voices(
             "wav",
             scene.emote.as_deref(),
             scene.tone.as_deref(),
+            scene_temperature,
+            spec.tts.default_top_k,
+            None, // top_p
+            spec.tts.default_cfg_scale,
             &profile,
         )
         .await?;

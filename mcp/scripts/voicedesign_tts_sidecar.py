@@ -50,6 +50,10 @@ import time
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from tts_common import normalize_lufs  # noqa: E402
+
 _ROOT = Path(os.environ.get("OPENSCRIPT_ROOT", _SCRIPT_DIR.parent.parent)).resolve()
 
 MODEL_DIR = Path(
@@ -364,6 +368,12 @@ class VoiceDesignEngine:
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         sf.write(str(out), wav, SAMPLE_RATE)
+        # Normalize the designed voice to the SAME target loudness as the
+        # base voice: emotion-take output amplitude varies by up to 14 dB with
+        # the instruct (audit finding: grave take at -33 LUFS vs -19 base),
+        # and cloned scenes inherit the reference's quiet. Normalizing here
+        # makes base + all emotion takes uniform AT THE SOURCE.
+        normalize_lufs(str(out))
         duration_ms = int(round(len(wav) / SAMPLE_RATE * 1000.0))
         return {
             "status": "ok",

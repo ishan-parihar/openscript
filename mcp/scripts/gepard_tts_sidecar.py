@@ -61,6 +61,11 @@ _VENDORED = _ROOT / "third_party" / "gepard-inference"
 if _VENDORED.exists():
     sys.path.insert(0, str(_VENDORED))
 
+# Shared TTS post-processing (loudness normalization + crossfade concat).
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from tts_common import crossfade_concat, normalize_lufs  # noqa: E402
+
 CHECKPOINT = os.environ.get("GEPARD_CHECKPOINT", "nineninesix/gepard-1.0")
 VOICES_DIR = Path(
     os.environ.get("GEPARD_VOICES_DIR", _ROOT / "mcp/assets/gepard/voices")
@@ -70,8 +75,14 @@ SAMPLE_RATE = 22050
 
 # Generation defaults — match the reference config.yaml (cfg_scale=1.0 =
 # single-pass DPO-distilled generation, the production default).
+#
+# temperature: raised from the reference 0.3 to 0.7 for natural prosody.
+#   At 0.3 the cloned voice is uniform but robotic/flat — no inflection or
+#   emotional nuance (audit finding: "sounds somewhat similar, still very
+#   robotic, less emotional nuances"). 0.7 keeps the cloned timbre stable
+#   while allowing the model to vary pitch/rhythm per sentence.
 GEN_DEFAULTS = {
-    "temperature": 0.3,
+    "temperature": 0.7,
     "top_k": 0,
     "cfg_scale": 1.0,
     "cfg_frames": None,
@@ -243,12 +254,19 @@ def handle_synth(req):
         if len(chunks) > 1:
             log(f"chunk ({len(chunk)} chars) -> {len(wave) / sr:.2f}s")
         parts.append(np.asarray(wave, dtype=np.float32))
-    audio = np.concatenate(parts) if len(parts) > 1 else parts[0]
+    # Crossfade chunk seams (hard concatenation leaves mute dips where a
+    # chunk's tail-off meets the next chunk's onset).
+    audio = crossfade_concat(parts, sr or SAMPLE_RATE)
     sr = sr or SAMPLE_RATE
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out), audio, sr)
+    # Uniform per-scene loudness: emotion takes / refs vary in amplitude by
+    # up to 14 dB, and cloned scenes inherit the quiet — some lines were
+    # effectively muted under the music bed. Normalize every scene to the
+    # same target so all voices are realistically uniform (production-grade).
+    normalize_lufs(str(out))
     duration_ms = int(round(len(audio) / sr * 1000.0))
     resp = {"status": "ok", "duration_ms": duration_ms, "sample_rate": sr, "chunks": len(chunks)}
     if emotion:
