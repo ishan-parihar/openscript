@@ -438,6 +438,7 @@ pub(crate) async fn handle_script_generate_voices(
             1.0, // volume
             "wav",
             scene.emote.as_deref(),
+            scene.tone.as_deref(),
             &profile,
         )
         .await?;

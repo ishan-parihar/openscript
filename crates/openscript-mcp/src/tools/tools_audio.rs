@@ -367,6 +367,10 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
     }
 
     // Delegate to the shared provider router (audio8 / kokoro / faster-qwen3-tts).
+    // tone: natural-language delivery direction (diagnostic + future engine
+    // instruction channel; the emotion take carries tonality today).
+    let tone = default_opt_str(&args, "tone");
+
     let result = tts_generate_routed(
         &voice_profile_id,
         &text,
@@ -376,6 +380,7 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
         volume,
         &format,
         emotion.as_deref(),
+        tone.as_deref(),
         &profile,
     )
     .await?;
@@ -896,6 +901,7 @@ pub(crate) async fn handle_voiceover_generate(
         volume,
         "wav",
         emotion.as_deref(),
+        None, // tone: voiceover.generate has no scene tone
         &profile,
     )
     .await?;

@@ -32,6 +32,7 @@ mod tools_script;
 mod tools_sticker;
 mod tools_system;
 mod tools_asset;
+mod tools_character;
 
 pub(crate) use tools_core::*;
 pub(crate) use tools_audio::*;
@@ -42,9 +43,11 @@ pub(crate) use tools_script::*;
 pub(crate) use tools_sticker::*;
 pub(crate) use tools_system::*;
 pub(crate) use tools_asset::*;
+pub(crate) use tools_character::*;
 
 // ---------------------------------------------------------------------------
-// Tool definitions (104 static tools): 43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto/broll.probe + sticker.keywords/sticker.validate_keywords/sticker.auto)
+// Tool definitions: 103 static in this array + 6 dynamic hf.* = 109 total
+// (43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto/broll.probe + sticker.keywords/sticker.validate_keywords/sticker.auto + asset.* + voice.design + character.*)
 // ---------------------------------------------------------------------------
 
 /// Resolve the fonts directory for ASS subtitle rendering.
@@ -439,6 +442,60 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "character.create",
+            "description": "PART 1 of the character-first voice-design workflow: define a character (schema + properties: name, role, personality, language) and design its BASE voice. When 'voice' is given, uses that existing profile; otherwise designs the base voice from personality + sample_text via VoiceDesign (Qwen3-TTS-1.7B-VoiceDesign ONNX int4) and registers it as a gepard clone profile. Characters are persisted in .openscript/characters.json. THEN design emotional takes with character.design_emotion and write the transcript referencing the character. Returns: character schema + voice_profile_id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "character_id": {"type": "string", "description": "Unique character id (also the base voice profile id)"},
+                    "name": {"type": "string", "default": "character_id", "description": "Character display name"},
+                    "role": {"type": "string", "default": "character", "description": "Character role (protagonist, narrator, villain, sidekick, ...)"},
+                    "personality": {"type": "string", "description": "Natural-language voice/persona description, e.g. 'grumpy old detective, low gravelly voice, slight rasp, slow deliberate pace'"},
+                    "sample_text": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "A line the base voice should speak (required unless 'voice' is given)"},
+                    "language": {"type": "string", "default": "english", "description": "Language: english, chinese, japanese, korean, german, french, russian, portuguese, spanish, italian"},
+                    "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional existing voice profile id to use as the base (skips VoiceDesign)"},
+                    "seed": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Optional sampling seed for reproducible base-voice design."}
+                },
+                "required": ["character_id", "personality"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "character.design_emotion",
+            "description": "Design ONE emotional delivery take for a character (the character's voice-design emotional range). Runs VoiceDesign with the character's personality + the emotion, writes the take WAV into the gepard voices dir, and attaches it to BOTH the character schema AND the character's base voice profile emotions map. After this, any scene with emote='<emotion>' on this character synthesizes with that emotional take (per-line tonality). Returns: ref_audio + how to trigger the take.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "character_id": {"type": "string", "description": "Character id (from character.create)"},
+                    "emotion": {"type": "string", "description": "Emotion-take id, e.g. 'angry', 'whisper', 'excited', 'sad', 'whisper'"},
+                    "sample_text": {"type": "string", "description": "A line the character speaks in this emotional delivery"},
+                    "instruct": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional natural-language description of this emotional delivery (default: personality + '<emotion> delivery')"},
+                    "language": {"type": "string", "default": "english", "description": "Language."},
+                    "seed": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Optional sampling seed for reproducibility."},
+                    "max_tokens": {"type": "integer", "default": 2048, "description": "Max codec frames."},
+                    "temperature": {"type": "number", "default": 0.9, "description": "Sampling temperature."},
+                    "top_k": {"type": "integer", "default": 50, "description": "Top-k sampling."}
+                },
+                "required": ["character_id", "emotion", "sample_text"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "character.list",
+            "description": "List all defined characters with their designed emotional takes (from .openscript/characters.json). Use to see what characters exist and which emotions each has before writing a script. Returns: characters array with character_id, name, role, voice, language, emotions.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "character.remove",
+            "description": "Delete a character: its schema entry AND its base voice profile (including emotion takes). WAV artifacts are left on disk (regenerable). Returns: character_id removed.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"character_id": {"type": "string", "description": "Character id to remove"}},
+                "required": ["character_id"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "tts.generate",
             "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
@@ -448,6 +505,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "text": {"type": "string", "description": "Text to synthesize"},
                     "output_path": {"type": "string", "description": "Output audio file path (WAV/MP3)"},
                     "emotion": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Emotion-take id registered on the profile (e.g. 'angry', 'whisper', 'excited'). When the profile has an emotions template (voice.profile.add with emotions), synthesizes with that emotional delivery's reference instead of the neutral base voice. Falls back to the base voice when no take matches."},
+                    "tone": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Natural-language delivery direction, e.g. 'low gravelly whisper, deliberate'. Recorded as a diagnostic and reserved for engines that gain an instruction channel; the emotion-take mechanism carries tonality today."},
                     "speed": {"type": "number", "default": 1.0, "description": "Playback speed multiplier (1.0 = normal; applied post-synthesis for gepard/audio8 clone engines)"},
                     "pitch": {"type": "number", "default": 1.0, "description": "Pitch multiplier (applied post-synthesis for gepard/audio8 clone engines)"},
                     "volume": {"type": "number", "default": 1.0, "description": "Volume multiplier"},
@@ -1644,6 +1702,10 @@ pub fn route_tool(
         "voice.profile.list" => Box::pin(handle_voice_profile_list(args)),
         "voice.profile.remove" => Box::pin(handle_voice_profile_remove(args)),
         "voice.design" => Box::pin(handle_voice_design(args)),
+        "character.create" => Box::pin(handle_character_create(args)),
+        "character.design_emotion" => Box::pin(handle_character_design_emotion(args)),
+        "character.list" => Box::pin(handle_character_list(args)),
+        "character.remove" => Box::pin(handle_character_remove(args)),
         "tts.generate" => Box::pin(handle_tts_generate(args)),
         "tts.estimate_duration" => Box::pin(handle_tts_estimate_duration(args)),
         "sfx.index" => Box::pin(handle_sfx_index(args)),
@@ -2130,7 +2192,12 @@ fn default_timeline_path(source_video: &str) -> String {
 }
 
 fn voice_profiles_path() -> String {
-    ".openscript/voice_profiles.json".to_string()
+    // Explicit env override first (AGENTS.md §9) — also lets integration
+    // tests point the registry at a known location regardless of CWD.
+    std::env::var("OPENSCRIPT_VOICE_PROFILES_PATH")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .unwrap_or_else(|| ".openscript/voice_profiles.json".to_string())
 }
 
 fn load_voice_profiles() -> Result<serde_json::Value, ToolError> {
@@ -2366,8 +2433,22 @@ async fn tts_generate_routed(
     volume: f64,
     format: &str,
     emotion: Option<&str>,
+    tone: Option<&str>,
     profile: &openscript_tts::profiles::VoiceProfile,
 ) -> Result<TtsGenResult, ToolError> {
+    // Natural-language delivery direction — consumed here as a diagnostic so
+    // it is not dead schema: logged per line and ready to feed any engine that
+    // gains an instruction channel (VoiceDesign at design-time today; the
+    // emotion-take mechanism carries the tonality at synth-time).
+    if let Some(t) = tone {
+        if !t.trim().is_empty() {
+            tracing::info!(
+                "[tts] tone direction for '{}': {}",
+                voice_profile_id,
+                t.trim()
+            );
+        }
+    }
     let cache_dir =
         std::env::var("OPENSCRIPT_TTS_CACHE").unwrap_or_else(|_| "artifacts/tts".to_string());
 
@@ -2821,6 +2902,7 @@ async fn generate_commentary_segment(
         1.0,
         "wav",
         None, // commentary segments carry no scene emotion
+        None, // nor tone
         profile,
     )
     .await?;

@@ -1546,7 +1546,8 @@ mod tests {
         }"#;
         let spec = parse_script(json).unwrap();
         assert_eq!(spec.output.theme, "neutral");
-    
+    }
+
     // ========================================================================
     // Regression tests: UX audit GAP fixes (Phase 21)
     // ========================================================================
@@ -1674,4 +1675,3 @@ mod tests {
         assert_eq!(spec.scenes[0].stock_query.as_deref(), Some("coffee beans"));
         assert_eq!(spec.scenes[0].background.as_deref(), Some("gameplay"));
     }
-}

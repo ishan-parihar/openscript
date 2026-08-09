@@ -6,12 +6,12 @@ MCP_BIN="./target/release/mcp-server"
 
 echo "=== 4. MCP server smoke test ==="
 
-# 4a. tools/list — verify all 105 tools are registered
+# 4a. tools/list — verify all 109 tools are registered
 TOOLS_RESPONSE=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | "$MCP_BIN" 2>/dev/null)
 TOOL_COUNT=$(echo "$TOOLS_RESPONSE" | python3 -c "import sys,json; r=json.load(sys.stdin); print(len(r['result']['tools']))")
-echo "Tool count: $TOOL_COUNT (expected 105)"
-if [ "$TOOL_COUNT" -ne 105 ]; then
-    echo "  ✗ Expected 105 tools, got $TOOL_COUNT"
+echo "Tool count: $TOOL_COUNT (expected 109)"
+if [ "$TOOL_COUNT" -ne 109 ]; then
+    echo "  ✗ Expected 109 tools, got $TOOL_COUNT"
     exit 1
 fi
 

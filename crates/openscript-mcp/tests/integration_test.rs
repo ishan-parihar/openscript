@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 105 tools: 99 + asset.library.status + asset.ingest + asset.probe + asset.rate + asset.import + asset.search (asset-development pipeline) + voice.design
+    // 109 tools: 99 + asset.library.status + asset.ingest + asset.probe + asset.rate + asset.import + asset.search (asset-development pipeline) + voice.design + character.create + character.design_emotion + character.list + character.remove
     assert_eq!(
         tools.len(),
-        105,
-        "Expected 105 MCP tools, got {}",
+        109,
+        "Expected 109 MCP tools, got {}",
         tools.len()
     );
 
@@ -238,6 +238,11 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"voice.profile.remove"));
     assert!(tool_names.contains(&"tts.generate"));
     assert!(tool_names.contains(&"tts.estimate_duration"));
+    // Character-first workflow (two-part voice-design)
+    assert!(tool_names.contains(&"character.create"));
+    assert!(tool_names.contains(&"character.design_emotion"));
+    assert!(tool_names.contains(&"character.list"));
+    assert!(tool_names.contains(&"character.remove"));
     assert!(tool_names.contains(&"tts.preview"));
 
     // Asset tools
@@ -612,6 +617,140 @@ fn test_mcp_missing_required_arg_returns_error() {
     assert!(
         response.get("error").is_some(),
         "Missing required arg should return an error"
+    );
+
+    cleanup(child);
+}
+
+/// RAII guard: restore an env var on drop — even when the test panics — so
+/// a mid-test failure can't leak mutated env to later tests in the same
+/// binary (the repo flags env-mutating tests as flaky, AGENTS.md §16).
+struct EnvGuard<'a> {
+    key: &'a str,
+    old: Option<String>,
+}
+
+impl<'a> EnvGuard<'a> {
+    fn set(key: &'a str, value: std::path::PathBuf) -> Self {
+        let old = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        EnvGuard { key, old }
+    }
+}
+
+impl Drop for EnvGuard<'_> {
+    fn drop(&mut self) {
+        match &self.old {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
+/// Character registry round-trip WITHOUT invoking VoiceDesign (the slow model):
+/// character.create with an existing voice profile → character.list sees it →
+/// character.remove deletes it. Exercises the .openscript/characters.json
+/// persistence path end-to-end through the MCP protocol.
+#[test]
+fn test_character_registry_roundtrip_with_existing_voice() {
+    // The spawned server inherits CWD = crate dir, so .openscript/* relative
+    // paths wouldn't resolve. Point the registries at the repo root (two
+    // levels up) via env overrides; the guards restore them on drop (panic-safe).
+    let cwd = std::env::current_dir().unwrap();
+    let repo_root = cwd
+        .ancestors()
+        .nth(2)
+        .unwrap_or(&cwd)
+        .to_path_buf();
+    let _vp_guard = EnvGuard::set(
+        "OPENSCRIPT_VOICE_PROFILES_PATH",
+        repo_root.join(".openscript/voice_profiles.json"),
+    );
+    let _cp_guard = EnvGuard::set(
+        "OPENSCRIPT_CHARACTERS_PATH",
+        repo_root.join(".openscript/characters.json"),
+    );
+
+    let (mut stdin, mut stdout, child) = start_mcp_server();
+
+    send_request(
+        &mut stdin,
+        &mut stdout,
+        "initialize",
+        serde_json::json!({}),
+        1,
+    );
+
+    let character_id = format!("itest_char_{}", std::process::id());
+    let personality = "integration-test persona, calm measured tone";
+
+    // create (no VoiceDesign — reuse the kokoro_af_heart profile as base voice)
+    let resp = send_request(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "character.create",
+            "arguments": {
+                "character_id": character_id,
+                "name": "Integration Tester",
+                "role": "protagonist",
+                "personality": personality,
+                "voice": "kokoro_af_heart"
+            }
+        }),
+        2,
+    );
+    let payload = extract_result_payload(&resp);
+    assert_eq!(
+        payload.get("status").unwrap().as_str().unwrap(),
+        "character_created",
+        "character.create failed: {}",
+        payload
+    );
+    assert_eq!(
+        payload.get("voice_profile_id").unwrap().as_str().unwrap(),
+        "kokoro_af_heart",
+        "existing voice must be reused verbatim"
+    );
+
+    // list sees it
+    let resp = send_request(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "character.list",
+            "arguments": {}
+        }),
+        3,
+    );
+    let payload = extract_result_payload(&resp);
+    let chars = payload.get("characters").unwrap().as_array().unwrap();
+    assert!(
+        chars.iter().any(|c| c.get("character_id").and_then(|v| v.as_str()) == Some(character_id.as_str())),
+        "created character missing from character.list"
+    );
+
+    // design_emotion requires a base voice profile; kokoro_af_heart is a kokoro
+    // preset, so the emotions-map attach would be wrong — skip it here and just
+    // verify remove.
+    let resp = send_request(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "character.remove",
+            "arguments": {"character_id": character_id}
+        }),
+        4,
+    );
+    let payload = extract_result_payload(&resp);
+    assert_eq!(
+        payload.get("status").unwrap().as_str().unwrap(),
+        "character_removed",
+        "character.remove failed: {}",
+        payload
     );
 
     cleanup(child);

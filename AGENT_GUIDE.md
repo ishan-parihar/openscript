@@ -5,7 +5,7 @@
 
 ---
 
-## Tool Families (28 families, 105 tools)
+## Tool Families (29 families, 109 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
@@ -136,6 +136,67 @@ voice.design {
 Official workflow for a stable comic cast: VoiceDesign synthesizes a ~15s persona
 clip → register it as a clone profile (as above) → every line of that character
 reuses the locked identity.
+
+### Emotion-take presets (per-line tonality — `voice.profile.add` `emotions`)
+
+A clone profile is a **tonality template**, not a single flat timbre. Attach
+separate reference recordings of the same speaker delivering each emotion, then
+any line can be spoken in that emotion:
+
+```
+voice.profile.add {
+  profile_id: "ishan", provider: "gepard",
+  ref_audio: "base.wav", ref_text: "...",
+  emotions: {
+    "angry":   { ref_audio: "ishan_angry.wav",   ref_text: "..." },
+    "whisper": { ref_audio: "ishan_whisper.wav", ref_text: "...", cfg_scale: 1.3 }
+  }
+}
+```
+
+- Scene `emote` (free-form: `"happy"`, `"angry"`, `"whisper"`, ...) selects the
+  matching take at synthesis; `tts.generate` takes an `emotion` arg.
+- Engine mechanics: gepard takes are used via a per-request reference override;
+  audio8 takes auto-register as `{profile_id}@{emotion}` compound voices.
+- Unmatched emotion → falls back to the base reference (never fails).
+- Per-scene `speed` / `pitch` overrides (previously silently dropped for clone
+  engines) are now applied post-synthesis.
+
+### Character-first workflow (two-part — `character.*`)
+
+For story/comic content, define characters FIRST (schema + properties), design
+each one's base voice and per-emotion takes, THEN write the transcript against
+those characters. The pipeline is deliberately two-part:
+
+**PART 1 — Character development (voice-design):**
+```
+character.create {
+  character_id: "detective", name: "Detective Marlow", role: "protagonist",
+  personality: "grumpy old detective, low gravelly voice, slight rasp, slow deliberate pace",
+  sample_text: "The evidence never lies.", language: "english"
+}
+character.design_emotion { character_id: "detective", emotion: "angry",
+  sample_text: "You messed with the wrong precinct!" }
+character.design_emotion { character_id: "detective", emotion: "whisper",
+  sample_text: "Keep your voice down..." }
+character.list   # inspect the cast + their emotional ranges
+```
+`character.create` designs the base voice via VoiceDesign and registers it as a
+gepard clone profile (`detective`). Each `character.design_emotion` designs one
+emotional delivery and attaches it as an emotion-take on that profile.
+
+**PART 2 — Transcript development (script-design):** speakers reference the
+character; each scene's `emote` picks the emotional take:
+```json
+{ "speakers": { "detective": { "voice": "detective", "preset": "default_person" } },
+  "scenes": [
+    { "speaker": "detective", "text": "I said the evidence never lies.", "emote": "angry" },
+    { "speaker": "detective", "text": "Now keep quiet about this.", "emote": "whisper" }
+  ] }
+```
+Audio generation then produces each line in the character's voice AND the
+scene's emotion. Characters persist in `.openscript/characters.json`;
+`character.remove` drops both the schema entry and the base voice profile.
 
 ---
 
