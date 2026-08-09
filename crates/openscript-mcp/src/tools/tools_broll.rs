@@ -2041,7 +2041,11 @@ pub(crate) async fn handle_background_fetch(args: serde_json::Value) -> Result<s
             max_duration_s,
             aspect: aspect.clone(),
             cache_dir: cache_dir.to_string(),
-            out_stem: "clip".to_string(),
+            // Per-call unique stem: the old fixed "clip" name meant every
+            // background.fetch call (or concurrent calls) overwrote the same
+            // {cache_dir}/clip.mp4, so timelines referenced whichever call
+            // wrote last. Hash the query so each fetch owns its file.
+            out_stem: format!("clip_{:x}", md5_hash(query.as_bytes())),
             scene_idx: 0,
             enable_youtube,
             fallback_pool,

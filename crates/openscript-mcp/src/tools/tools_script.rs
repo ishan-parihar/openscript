@@ -1084,8 +1084,77 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
                 .unwrap_or(false);
 
-        let cache_dir = "mcp/assets/background_cache";
-        std::fs::create_dir_all(cache_dir).ok();
+        // Per-render cache scoping: each render owns its clips under
+        // {output_dir}/broll_cache. The old global mcp/assets/background_cache
+        // with index-based scene_{:03} names meant parallel or sequential
+        // renders clobbered each other's files, and timelines only stored the
+        // shared paths — so a later render silently REPLACED earlier videos'
+        // b-roll references (the "same crowd clip 4-7 times" / wrong-clip bugs).
+        let cache_dir = format!("{}/broll_cache", output_dir);
+        std::fs::create_dir_all(&cache_dir).ok();
+
+        // === Agentic keyword unification (broll.keywords pipeline) ===
+        // script.to_video now drafts per-scene stock keywords through the SAME
+        // LLM pipeline as broll.keywords / broll.auto (the A2V path). The old
+        // golden path relied on the stock_signal heuristic alone, which
+        // degrades to generic Lifestyle anchors for abstract topics
+        // (psychology, politics, influence) — the reported "b-roll not
+        // relevant" failures. One batched LLM call covers all scenes; the
+        // topic-aware heuristic remains the fallback when the LLM cascade is
+        // down or returns too few keywords for a scene.
+        let mut llm_scene_keywords: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        {
+            let segs: Vec<serde_json::Value> = manifest
+                .get("segments")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .map(|s| {
+                    json!({
+                        "id": s.get("scene_id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "caption": s.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+                    })
+                })
+                .collect();
+            if !segs.is_empty() {
+                match handle_broll_keywords(json!({
+                    "segments": segs,
+                    "language": spec.language,
+                    "video_title": spec.title,
+                    "max_batch_size": 15,
+                }))
+                .await
+                {
+                    Ok(kw_res) => {
+                        if let Some(out_segs) = kw_res.get("segments").and_then(|v| v.as_array()) {
+                            for s in out_segs {
+                                let id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let kws: Vec<String> = s
+                                    .get("keywords")
+                                    .and_then(|v| v.as_array())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|k| k.as_str().map(String::from))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                if !id.is_empty() && !kws.is_empty() {
+                                    llm_scene_keywords.insert(id.to_string(), kws);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[script.to_video] agentic keyword draft failed ({}): using heuristic query builder",
+                            e
+                        );
+                    }
+                }
+            }
+        }
 
         // Track Pexels video IDs that have already been used to prevent
         // the same clip appearing in multiple scenes.
@@ -1126,13 +1195,33 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                     scene_idx,
                 }
             } else {
-                crate::stock_signal::build_scene_stock_query(
-                    scene_text,
-                    &spec.video_keywords,
-                    &spec.output.theme,
-                    &spec.meta.aspect,
-                    scene_idx,
-                )
+                // Agentic-first: prefer the LLM-drafted visual keywords (the
+                // same broll.keywords pipeline the A2V path uses) when the
+                // draft produced at least 2 searchable terms. The topic-aware
+                // heuristic is the fallback for LLM-down or abstract scenes.
+                let llm_q: Vec<String> = spec
+                    .scenes
+                    .get(scene_idx)
+                    .and_then(|s| llm_scene_keywords.get(&s.id))
+                    .cloned()
+                    .unwrap_or_default();
+                if llm_q.len() >= 2 {
+                    let joined = llm_q.iter().take(3).cloned().collect::<Vec<_>>().join(" ");
+                    crate::stock_signal::SceneStockQuery {
+                        query: joined.clone(),
+                        signal_tokens: llm_q,
+                        visual_anchor: joined,
+                        scene_idx,
+                    }
+                } else {
+                    crate::stock_signal::build_scene_stock_query(
+                        scene_text,
+                        &spec.video_keywords,
+                        &spec.output.theme,
+                        &spec.meta.aspect,
+                        scene_idx,
+                    )
+                }
             };
             // Keep unsafe-keyword rewrite for edge terms (blood → calm nature)
             let query = safe_search_query(&stock_q.query, &spec.output.theme);
@@ -2138,6 +2227,27 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                 let start_ms = cumulative_ms;
                 let end_ms = start_ms + scene_ms;
                 cumulative_ms = end_ms;
+                // Traceability: record the exact query + provider + title that
+                // produced each scene's clip so the timeline is auditable
+                // (previously concept/tags/provenance were all empty and the
+                // query lived only in ephemeral logs).
+                let stock_meta = scene_stock_meta.get(i).and_then(|m| m.as_ref());
+                let (meta_id, s_query, s_title) = match stock_meta {
+                    Some((mid, _h, q, _l, t, _v, _vr)) => (mid.clone(), q.clone(), t.clone()),
+                    None => (String::new(), String::new(), String::new()),
+                };
+                let concept = if s_query.is_empty() {
+                    format!("scene {}", i + 1)
+                } else {
+                    s_query.clone()
+                };
+                let source_provider = if meta_id.starts_with("pexels_") {
+                    "pexels"
+                } else if meta_id.is_empty() {
+                    "procedural"
+                } else {
+                    "stock"
+                };
                 tl.add_track_event(
                     TrackType::Broll,
                     TimelineEvent {
@@ -2149,11 +2259,15 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                         gain_db: 0.0,
                         fade_in_ms: 0,
                         fade_out_ms: 0,
-                        tags: vec![],
-                        provenance: None,
+                        tags: vec![concept.clone(), source_provider.to_string(), s_title.clone()],
+                        provenance: Some(openscript_core::timeline::Provenance {
+                            tool: "script.to_video".into(),
+                            editorial_role: None,
+                            concept: Some(concept.clone()),
+                        }),
                         kind: EventKind::Broll {
-                            concept: String::new(),
-                            source_provider: "multi_broll".into(),
+                            concept,
+                            source_provider: source_provider.into(),
                             transition_style: "cut".into(),
                             crop_mode: "center".into(),
                             orientation: "portrait".into(),
@@ -2268,10 +2382,26 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
             // Register broll assets for unique-visual-asset count
             for (i, bg) in bg_assignments.iter().enumerate() {
                 let asset_id = format!("broll_{}", i + 1);
+                let (meta_id, s_query, s_title, lex, v_score) =
+                    match scene_stock_meta.get(i).and_then(|m| m.as_ref()) {
+                        Some((mid, _h, q, l, t, v, _vr)) => {
+                            (mid.clone(), q.clone(), t.clone(), *l, *v)
+                        }
+                        None => (String::new(), String::new(), String::new(), 0.0, 0.0),
+                    };
                 tl.add_asset(
                     "broll",
                     asset_id,
-                    serde_json::json!({"path": bg.path, "start_ms": bg.start_ms, "end_ms": bg.end_ms}),
+                    serde_json::json!({
+                        "path": bg.path,
+                        "start_ms": bg.start_ms,
+                        "end_ms": bg.end_ms,
+                        "query": s_query,
+                        "provider_id": meta_id,
+                        "source_title": s_title,
+                        "lexical_score": lex,
+                        "vision_score": v_score,
+                    }),
                 );
             }
 
