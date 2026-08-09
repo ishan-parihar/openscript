@@ -20,6 +20,13 @@ use std::sync::RwLock;
 /// In-memory cache so we don't re-read disk on every tool call.
 static CONFIG_CACHE: RwLock<Option<OpenScriptConfig>> = RwLock::new(None);
 
+/// Serializes tests that mutate the process-global `OPENSCRIPT_TTS_*` env
+/// vars (config.rs tests + tools_script.rs apply_tts_config_defaults tests
+/// run in the same binary and would otherwise race on those vars).
+/// Only used under `#[cfg(test)]` — see the test modules.
+#[cfg(test)]
+pub(crate) static TTS_ENV_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Canonical user config directory: `$HOME/.openscript`
 pub fn config_dir() -> PathBuf {
     if let Ok(p) = std::env::var("OPENSCRIPT_CONFIG_DIR") {
@@ -79,6 +86,13 @@ pub struct OpenScriptConfig {
 
     #[serde(default)]
     pub render: RenderConfig,
+
+    /// TTS engine defaults for script→video voice generation.
+    /// `default_backend` picks the engine family (kokoro | audio8 | gepard |
+    /// sidecar); `default_voice` optionally pins a registered voice profile
+    /// that wins when a script's speaker uses the bare voice id "default".
+    #[serde(default)]
+    pub tts: TtsConfig,
 
     /// Flat legacy keys from `mcp/assets/.openscript_config.json`
     /// (e.g. `"pexels_api_key": "..."`). Merged into `api_keys` on load.
@@ -164,6 +178,36 @@ pub struct PathsConfig {
     pub workspace_root: Option<String>,
     #[serde(default)]
     pub assets_base: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsConfig {
+    /// Default TTS backend for script.to_video when the script omits
+    /// `tts.backend`. One of: kokoro (default), audio8, gepard, sidecar.
+    #[serde(default = "default_tts_backend")]
+    pub default_backend: String,
+    /// Default voice profile id (e.g. "ishan_gepard"). When set, a speaker
+    /// whose voice is the literal string "default" resolves to this profile.
+    #[serde(default)]
+    pub default_voice: Option<String>,
+}
+
+fn default_tts_backend() -> String {
+    "kokoro".to_string()
+}
+
+impl Default for TtsConfig {
+    fn default() -> Self {
+        Self {
+            // Manual impl: the derive would produce default_backend = ""
+            // (String::default()), but the serde default_tts_backend() only
+            // fires on deserialization. Callers that construct TtsConfig via
+            // Default (e.g. OpenScriptConfig::default when a config file
+            // omits the tts section) must still get "kokoro".
+            default_backend: default_tts_backend(),
+            default_voice: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -344,6 +388,10 @@ pub fn write_user_config(cfg: &OpenScriptConfig) -> Result<PathBuf, String> {
         },
         "paths": cfg.paths,
         "render": cfg.render,
+        "tts": {
+            "default_backend": cfg.tts.default_backend,
+            "default_voice": cfg.tts.default_voice,
+        },
     });
     let text = serde_json::to_string_pretty(&out)
         .map_err(|e| format!("serialize config: {}", e))?;
@@ -437,6 +485,20 @@ pub fn resolve_opencode_model() -> String {
         .unwrap_or_else(|| config().llm.opencode_model.clone())
 }
 
+/// Resolve the default TTS backend: env `OPENSCRIPT_TTS_BACKEND` → config
+/// `tts.default_backend` → "kokoro".
+pub fn resolve_tts_default_backend() -> String {
+    env_nonempty("OPENSCRIPT_TTS_BACKEND")
+        .unwrap_or_else(|| config().tts.default_backend.clone())
+}
+
+/// Resolve the default TTS voice profile: env `OPENSCRIPT_TTS_VOICE` → config
+/// `tts.default_voice`. Returns None when neither is configured — callers then
+/// fall back to the backend's built-in voice (e.g. kokoro:af_heart).
+pub fn resolve_tts_default_voice() -> Option<String> {
+    env_nonempty("OPENSCRIPT_TTS_VOICE").or_else(|| config().tts.default_voice.clone())
+}
+
 /// Redacted public view for system.capabilities / system.config.get
 pub fn config_public_view() -> Value {
     let cfg = config();
@@ -469,6 +531,10 @@ pub fn config_public_view() -> Value {
         },
         "paths": cfg.paths,
         "render": cfg.render,
+        "tts": {
+            "default_backend": resolve_tts_default_backend(),
+            "default_voice": resolve_tts_default_voice(),
+        },
     })
 }
 
@@ -499,5 +565,42 @@ mod tests {
         // Just ensure it serializes without panic
         let v = config_public_view();
         assert!(v.get("config_file").is_some());
+    }
+
+    #[test]
+    fn tts_env_resolution_serial() {
+        // Env vars are process-global, so both assertion directions run under
+        // a shared mutex with the tools_script apply_tts_config_defaults tests
+        // (the same pattern as test_find_conda_python_fake_env_falls_back).
+        let _guard = TTS_ENV_TEST_MUTEX.lock().unwrap();
+        std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
+        std::env::remove_var("OPENSCRIPT_TTS_VOICE");
+        assert_eq!(resolve_tts_default_backend(), "kokoro");
+        assert!(resolve_tts_default_voice().is_none());
+
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "gepard");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan_gepard");
+        assert_eq!(resolve_tts_default_backend(), "gepard");
+        assert_eq!(resolve_tts_default_voice().as_deref(), Some("ishan_gepard"));
+
+        std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
+        std::env::remove_var("OPENSCRIPT_TTS_VOICE");
+    }
+
+    #[test]
+    fn tts_config_roundtrips_through_write() {
+        // Ensure the tts section survives the persist/load cycle.
+        let mut cfg = OpenScriptConfig::default();
+        cfg.tts.default_backend = "gepard".into();
+        cfg.tts.default_voice = Some("ishan_gepard".into());
+        let out = json!({
+            "tts": {
+                "default_backend": cfg.tts.default_backend,
+                "default_voice": cfg.tts.default_voice,
+            },
+        });
+        let parsed: OpenScriptConfig = serde_json::from_value(out).unwrap();
+        assert_eq!(parsed.tts.default_backend, "gepard");
+        assert_eq!(parsed.tts.default_voice.as_deref(), Some("ishan_gepard"));
     }
 }

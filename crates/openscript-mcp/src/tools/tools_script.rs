@@ -5,6 +5,45 @@
 // ---------------------------------------------------------------------------
 use super::*;
 
+/// Apply user-level TTS config defaults to a script JSON string BEFORE parse:
+/// when the script omits `tts.backend` / `tts.voice`, inject the resolved
+/// config values (env `OPENSCRIPT_TTS_BACKEND`/`OPENSCRIPT_TTS_VOICE` →
+/// `~/.openscript/config.json` `tts.default_backend`/`default_voice` →
+/// built-in). Explicit script fields always win. This makes the configured
+/// audio model the default for script→video without forcing every script to
+/// repeat it — the "config-like" engine selection layer.
+pub(crate) fn apply_tts_config_defaults(json_str: &str) -> String {
+    let mut root: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(_) => return json_str.to_string(), // leave malformed JSON to parse_script's error
+    };
+    let obj = match root.as_object_mut() {
+        Some(o) => o,
+        None => return json_str.to_string(),
+    };
+    let tts_obj = obj
+        .entry("tts")
+        .or_insert_with(|| json!({}));
+    let tts = match tts_obj.as_object_mut() {
+        Some(t) => t,
+        None => return json_str.to_string(),
+    };
+    if !tts.contains_key("backend") {
+        let backend = crate::config::resolve_tts_default_backend();
+        if !backend.is_empty() {
+            tts.insert("backend".to_string(), json!(backend));
+        }
+    }
+    if !tts.contains_key("voice") {
+        if let Some(voice) = crate::config::resolve_tts_default_voice() {
+            if !voice.is_empty() {
+                tts.insert("voice".to_string(), json!(voice));
+            }
+        }
+    }
+    serde_json::to_string(&root).unwrap_or_else(|_| json_str.to_string())
+}
+
 /// Handle script.schema: return the full JSON schema for ScriptSpec.
 /// WARNING: dual-maintenance — update this handler when ScriptSpec/SceneSpec/SpeakerSpec/BackgroundSpec fields change.
 /// Agents call this to discover the correct format before writing a script.
@@ -32,9 +71,10 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
             },
             "tts": {
                 "type": "object",
-                "description": "TTS engine configuration.",
+                "description": "TTS engine configuration. Backend selects the audio model engine; a speaker voice of \"default\" resolves to tts.voice (or the user's ~/.openscript/config.json tts.default_voice, or OPENSCRIPT_TTS_VOICE).",
                 "properties": {
-                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "sidecar"]},
+                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "gepard", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), gepard (high-quality native-English clone), sidecar (faster-qwen3-tts)."},
+                    "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan_gepard'). Speakers whose voice is the literal string 'default' use this profile."},
                     "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
                     "default_pitch": {"type": "number", "default": 1.0}
                 }
@@ -153,7 +193,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "type": "object",
                 "required": ["voice"],
                 "properties": {
-                    "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', or bare 'af_heart'. Use tts.voices to discover all 54 Kokoro voices."},
+                    "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', bare 'af_heart', a registered clone profile (e.g. 'ishan_gepard'), or the literal 'default' to use tts.voice / the user's configured default voice."},
                     "preset": {"type": "string", "default": "default_person", "description": "SVG preset: default_person, robot, cat, etc."},
                     "position": {"type": "string", "default": "top-left", "enum": ["top-left", "top-right", "top-center", "center", "bottom-left", "bottom-right", "bottom-center"]},
                     "scale": {"type": "number", "default": 0.35, "description": "Sticker scale as fraction of canvas width (0.0-1.0)."}
@@ -221,8 +261,8 @@ pub(crate) async fn handle_script_parse(args: serde_json::Value) -> Result<serde
         std::fs::read_to_string(&path)?
     };
 
-    // Parse the script
-    let spec = parse_script(&json_str)
+    // Parse the script (config defaults for tts applied first)
+    let spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Failed to parse script JSON: {}", e)))?;
 
     // Validate
@@ -250,6 +290,7 @@ pub(crate) async fn handle_script_parse(args: serde_json::Value) -> Result<serde
             "aspect": spec.meta.aspect,
             "fps": spec.meta.fps,
             "tts_backend": spec.tts.backend,
+            "tts_voice": spec.tts.voice,
             "caption_style": spec.captions.style,
             "background_type": spec.background.r#type,
             "stickers_enabled": spec.stickers.enabled,
@@ -266,7 +307,7 @@ pub(crate) async fn handle_script_generate_voices(
 
     // Parse script
     let json_str = read_script_input(script_input)?;
-    let spec = parse_script(&json_str)
+    let spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
     let errors = validate_script(&spec);
     if !errors.is_empty() {
@@ -317,7 +358,36 @@ pub(crate) async fn handle_script_generate_voices(
         // Try to find the voice profile by ID or by voice field.
         // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
         // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
-        let voice_lookup = &speaker.voice;
+        // The literal voice id "default" resolves to the script-level
+        // tts.voice, then the user config default voice, then a backend
+        // built-in — the config-like engine/voice selection layer.
+        let resolved_voice: String = if speaker.voice == "default" {
+            let cfg_voice = spec
+                .tts
+                .voice
+                .clone()
+                .or_else(crate::config::resolve_tts_default_voice);
+            match cfg_voice {
+                Some(v) => v,
+                None if spec.tts.backend == "gepard" || spec.tts.backend == "audio8" => {
+                    // Clone engines cannot fall back to a built-in preset — a
+                    // speaker voice "default" with no configured voice profile
+                    // is a config gap, not a lookup miss. Error clearly instead
+                    // of fabricating a "gepard:default" profile id that would
+                    // fail the registry lookup with a misleading message.
+                    return Err(ToolError::InvalidArg(format!(
+                        "Speaker '{}' uses voice \"default\" but tts.backend '{}' requires a \
+                         registered clone profile — set tts.voice, OPENSCRIPT_TTS_VOICE, or \
+                         ~/.openscript/config.json tts.default_voice.",
+                        scene.speaker, spec.tts.backend
+                    )));
+                }
+                None => "kokoro:af_heart".to_string(),
+            }
+        } else {
+            speaker.voice.clone()
+        };
+        let voice_lookup = &resolved_voice;
         // Bare IDs resolve as-is first (audio8 clones are stored by bare name);
         // only kokoro presets fall back to the "kokoro:" prefix form.
         let normalized_voice = if !voice_lookup.starts_with("kokoro:")
@@ -462,7 +532,7 @@ pub(crate) async fn handle_script_build_captions(
 
     // Parse script
     let json_str = read_script_input(script_input)?;
-    let spec = parse_script(&json_str)
+    let spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
 
     // Load voiceover manifest
@@ -540,7 +610,7 @@ pub(crate) async fn handle_script_to_timeline(
 
     // Parse script
     let json_str = read_script_input(script_input)?;
-    let spec = parse_script(&json_str)
+    let spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
     let errors = validate_script(&spec);
     if !errors.is_empty() {
@@ -958,7 +1028,7 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
 
     // Parse script for render config
     let json_str = read_script_input(script_input)?;
-    let spec = parse_script(&json_str)
+    let spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
 
     report_progress(0.0, 100.0, "Phase 1/3: Building timeline...")
@@ -2848,6 +2918,68 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
             }))
         }
         Err(e) => Err(ToolError::Ffmpeg(format!("Render failed: {}", e))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_tts(json: &str) -> serde_json::Value {
+        let out = apply_tts_config_defaults(json);
+        serde_json::from_str(&out).unwrap()
+    }
+
+    /// Config defaults are injected when the script omits tts entirely.
+    #[test]
+    fn tts_defaults_injected_when_tts_absent() {
+        let _guard = crate::config::TTS_ENV_TEST_MUTEX.lock().unwrap();
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "gepard");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan_gepard");
+        let v = parse_tts(r#"{"speakers": {"n": {"voice": "default"}}, "scenes": [{"speaker": "n", "text": "Hi"}]}"#);
+        assert_eq!(v["tts"]["backend"], "gepard");
+        assert_eq!(v["tts"]["voice"], "ishan_gepard");
+        std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
+        std::env::remove_var("OPENSCRIPT_TTS_VOICE");
+    }
+
+    /// Config defaults are injected when tts exists but backend/voice omitted.
+    #[test]
+    fn tts_defaults_injected_when_fields_omitted() {
+        let _guard = crate::config::TTS_ENV_TEST_MUTEX.lock().unwrap();
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "audio8");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan");
+        let v = parse_tts(r#"{"tts": {"default_speed": 1.2}, "speakers": {"n": {"voice": "default"}}, "scenes": [{"speaker": "n", "text": "Hi"}]}"#);
+        assert_eq!(v["tts"]["backend"], "audio8");
+        assert_eq!(v["tts"]["voice"], "ishan");
+        // Explicit speed survives.
+        assert_eq!(v["tts"]["default_speed"], 1.2);
+        std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
+        std::env::remove_var("OPENSCRIPT_TTS_VOICE");
+    }
+
+    /// Explicit script fields always win over env config.
+    #[test]
+    fn tts_explicit_script_wins_over_env() {
+        let _guard = crate::config::TTS_ENV_TEST_MUTEX.lock().unwrap();
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "gepard");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan_gepard");
+        let v = parse_tts(r#"{"tts": {"backend": "kokoro"}, "speakers": {"n": {"voice": "af_heart"}}, "scenes": [{"speaker": "n", "text": "Hi"}]}"#);
+        // Explicit script backend always wins over env.
+        assert_eq!(v["tts"]["backend"], "kokoro");
+        // tts.voice is still injected as the script-level default (only
+        // consulted when a speaker uses the literal "default" — inert here
+        // because the speaker pins af_heart explicitly).
+        assert_eq!(v["tts"]["voice"], "ishan_gepard");
+        std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
+        std::env::remove_var("OPENSCRIPT_TTS_VOICE");
+    }
+
+    /// Malformed JSON passes through untouched — parse_script reports the error.
+    #[test]
+    fn tts_malformed_json_passthrough() {
+        let out = apply_tts_config_defaults("not json at all");
+        assert_eq!(out, "not json at all");
     }
 }
 

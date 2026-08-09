@@ -175,9 +175,25 @@ impl Default for MetaSpec {
 /// TTS engine configuration.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TtsSpec {
-    /// Backend: "kokoro" (default, native) or "sidecar" (faster-qwen3-tts).
+    /// Backend engine: "kokoro" (presets, default), "audio8" (zero-shot
+    /// clone, ONNX INT4), "gepard" (high-quality native-English clone),
+    /// "sidecar" (faster-qwen3-tts). This is the ENGINE SELECTION for voice
+    /// generation. Note: a speaker whose `voice` references a registered
+    /// profile (e.g. "ishan_gepard") routes by the profile's own provider
+    /// field, which always wins. This backend matters only when a speaker's
+    /// voice is the literal string "default": it then selects the fallback
+    /// built-in (kokoro → kokoro:af_heart) or errors for clone engines that
+    /// require a configured voice profile. Bare preset names ("af_heart")
+    /// always normalize to kokoro: regardless of this field.
     #[serde(default = "default_tts_backend")]
     pub backend: String,
+
+    /// Default voice profile id (e.g. "ishan_gepard", "ishan", "kokoro:af_heart").
+    /// When set, a speaker whose voice is the literal string "default"
+    /// resolves to this profile. Lets one script-level setting drive the
+    /// cloned voice for every speaker.
+    #[serde(default)]
+    pub voice: Option<String>,
 
     /// Default speech speed multiplier (1.0 = normal).
     #[serde(default = "default_speed")]
@@ -205,6 +221,7 @@ impl Default for TtsSpec {
     fn default() -> Self {
         Self {
             backend: default_tts_backend(),
+            voice: None,
             default_speed: default_speed(),
             default_pitch: default_pitch(),
         }
@@ -1456,6 +1473,22 @@ mod tests {
         assert_eq!(spec.captions.highlight_color, "#00ff88", "neutral theme should keep default neon green");
         assert_eq!(spec.captions.style, "word_highlight", "neutral theme should keep default word_highlight");
         assert!(spec.stickers.enabled, "neutral theme should keep stickers enabled");
+    }
+
+    /// Verify tts.voice parses and survives round-trip, and that a speaker
+    /// voice of "default" is preserved verbatim (resolution to a profile
+    /// happens in the MCP layer where config is visible).
+    #[test]
+    fn test_tts_voice_field() {
+        let json = r#"{
+            "tts": {"backend": "gepard", "voice": "ishan_gepard"},
+            "speakers": {"narrator": {"voice": "default"}},
+            "scenes": [{"speaker": "narrator", "text": "Hi"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.tts.backend, "gepard");
+        assert_eq!(spec.tts.voice.as_deref(), Some("ishan_gepard"));
+        assert_eq!(spec.speakers["narrator"].voice, "default");
     }
 
     /// Verify that omitting theme entirely defaults to "neutral".

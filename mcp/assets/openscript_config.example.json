@@ -20,5 +20,9 @@
   "render": {
     "default_aspect": "9:16",
     "normalize_lufs": -16.0
+  },
+  "tts": {
+    "default_backend": "kokoro",
+    "default_voice": null
   }
 }

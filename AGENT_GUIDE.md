@@ -89,6 +89,26 @@ user_library → Pexels → Pixabay → YouTube (opt-in only) → fallback_pool 
 script.generate_voices → script.build_captions → background.fetch → script.to_timeline → composition.render
 ```
 
+### Choosing the TTS audio model (script → video)
+
+`script.to_video` / `script.generate_voices` pick the TTS engine in this order:
+
+1. **Speaker voice pin** — a speaker whose `voice` references a registered
+   clone profile (e.g. `"ishan_gepard"`, `"ishan"`) routes by that profile's
+   own `provider` field (gepard / audio8 / kokoro / sidecar). This always wins.
+2. **Script `tts.backend`** — the engine default for the whole video
+   (`kokoro` | `audio8` | `gepard` | `sidecar`).
+3. **Script `tts.voice`** — a default voice profile id; a speaker whose voice
+   is the literal string `"default"` resolves to it.
+4. **User config** — `~/.openscript/config.json` → `tts.default_backend` and
+   `tts.default_voice`, or env `OPENSCRIPT_TTS_BACKEND` / `OPENSCRIPT_TTS_VOICE`.
+   (env wins over config file; explicit script fields win over both).
+5. **Built-in default** — `kokoro` / `kokoro:af_heart`.
+
+Example: to make every script use the Gepard clone by default, set
+`OPENSCRIPT_TTS_BACKEND=gepard OPENSCRIPT_TTS_VOICE=ishan_gepard` and write
+speakers with `"voice": "default"`.
+
 ---
 
 ## Trajectory B — NLE Editing (Existing Footage)
