@@ -3351,16 +3351,13 @@ fn compute_production_score(
 /// (this exact parse has regressed multiple times: stdout/stderr split,
 /// -v error suppression, trailing-summary parse failure).
 pub(crate) fn parse_loudnorm_input_i(stream: &str) -> Option<f64> {
-    for s in [stream] {
-        let anchor = s.find("\"input_i\"")?;
-        let start = s[..anchor].rfind('{')?;
-        let end = s.rfind('}')?;
-        let v: serde_json::Value = serde_json::from_str(&s[start..=end]).ok()?;
-        if let Some(i) = v.get("input_i").and_then(|x| x.as_str()).and_then(|s| s.parse::<f64>().ok()) {
-            return Some(i);
-        }
-    }
-    None
+    let anchor = stream.find("\"input_i\"")?;
+    let start = stream[..anchor].rfind('{')?;
+    let end = stream.rfind('}')?;
+    let v: serde_json::Value = serde_json::from_str(&stream[start..=end]).ok()?;
+    v.get("input_i")
+        .and_then(|x| x.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
 }
 
 /// Measure a WAV's integrated loudness (LUFS) via ffmpeg loudnorm JSON print.
@@ -3382,8 +3379,8 @@ pub(crate) async fn probe_audio_lufs(path: &str) -> Option<f64> {
         .output()
         .await
         .ok()?;
-    let stdout = String::from_utf8(out.stdout).ok()?;
-    if let Some(i) = parse_loudnorm_input_i(&stdout) {
+    let stdout = String::from_utf8(out.stdout).ok();
+    if let Some(i) = stdout.as_deref().and_then(parse_loudnorm_input_i) {
         return Some(i);
     }
     let stderr = String::from_utf8(out.stderr).ok()?;

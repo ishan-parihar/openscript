@@ -223,12 +223,8 @@ pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde
         None
     };
     // null when nothing was measured (a consumer must not read true as
-    // "verified" for an empty scene list).
-    let loudness_variance_ok: Option<bool> = if scene_wavs.is_empty() {
-        None
-    } else {
-        Some(loudness_spread_db.map_or(true, |s| s <= 6.0))
-    };
+    // "verified" for an empty scene list OR when every measurement failed).
+    let loudness_variance_ok: Option<bool> = loudness_spread_db.map(|s| s <= 6.0);
 
     let rms = mean_volume.unwrap_or(-99.0);
     let peak = max_volume.unwrap_or(-99.0);
