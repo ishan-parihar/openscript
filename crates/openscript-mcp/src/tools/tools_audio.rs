@@ -55,11 +55,38 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         }
     }
 
+    // Gepard (high-quality native-English zero-shot cloning): register the
+    // reference WAV with the gepard sidecar. ref_text is metadata only
+    // (Gepard's Q-Former cloning needs audio, not a transcript).
+    let mut registered_gepard = false;
+    let mut gepard_warning: Option<String> = None;
+    if provider == "gepard" {
+        if ref_audio.is_empty() {
+            gepard_warning = Some(
+                "gepard profile needs ref_audio for voice cloning; \
+                 registration skipped until it is provided."
+                    .into(),
+            );
+        } else {
+            match openscript_tts::gepard::gepard_register(&profile_id, &ref_audio, &ref_text) {
+                Ok(()) => registered_gepard = true,
+                Err(e) => {
+                    gepard_warning = Some(format!(
+                        "gepard voice registration failed (profile saved; retry later): {}",
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(json!({
         "status": "profile_added",
         "profile_id": profile_id,
         "audio8_registered": registered_audio8,
         "audio8_warning": audio8_warning,
+        "gepard_registered": registered_gepard,
+        "gepard_warning": gepard_warning,
     }))
 }
 
@@ -140,7 +167,11 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
         VoiceProfileRegistry::new(profiles_path).map_err(|e| ToolError::Tts(e.to_string()))?;
     // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
     // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
-    let normalized_id = if !voice_profile_id.starts_with("kokoro:") && !voice_profile_id.starts_with("faster-qwen") {
+    let normalized_id = if !voice_profile_id.starts_with("kokoro:")
+        && !voice_profile_id.starts_with("faster-qwen")
+        && !voice_profile_id.starts_with("audio8:")
+        && !voice_profile_id.starts_with("gepard:")
+    {
         format!("kokoro:{}", voice_profile_id)
     } else {
         voice_profile_id.to_string()
@@ -637,7 +668,11 @@ pub(crate) async fn handle_voiceover_generate(
         VoiceProfileRegistry::new(profiles_path).map_err(|e| ToolError::Tts(e.to_string()))?;
     // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
     // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
-    let normalized_id = if !voice_profile_id.starts_with("kokoro:") && !voice_profile_id.starts_with("faster-qwen") {
+    let normalized_id = if !voice_profile_id.starts_with("kokoro:")
+        && !voice_profile_id.starts_with("faster-qwen")
+        && !voice_profile_id.starts_with("audio8:")
+        && !voice_profile_id.starts_with("gepard:")
+    {
         format!("kokoro:{}", voice_profile_id)
     } else {
         voice_profile_id.to_string()
@@ -752,7 +787,11 @@ pub(crate) async fn handle_tts_commentary(args: serde_json::Value) -> Result<ser
         VoiceProfileRegistry::new(profiles_path).map_err(|e| ToolError::Tts(e.to_string()))?;
     // Normalize bare Kokoro IDs: if "af_heart" fails, try "kokoro:af_heart".
     // (UX audit GAP #6: agents wrote bare IDs like "af_heart".)
-    let normalized_id = if !voice_profile_id.starts_with("kokoro:") && !voice_profile_id.starts_with("faster-qwen") {
+    let normalized_id = if !voice_profile_id.starts_with("kokoro:")
+        && !voice_profile_id.starts_with("faster-qwen")
+        && !voice_profile_id.starts_with("audio8:")
+        && !voice_profile_id.starts_with("gepard:")
+    {
         format!("kokoro:{}", voice_profile_id)
     } else {
         voice_profile_id.to_string()

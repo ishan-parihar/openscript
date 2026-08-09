@@ -563,6 +563,27 @@ pub(crate) async fn handle_system_capabilities(
         "note": "Zero-shot voice cloning via Audio8 TTS Preview 0.6B (ONNX INT4). English default for the script-to-video workflow.",
     });
 
+    // Gepard TTS (high-quality native-English voice cloning — Qwen3.5 AR + NeMo
+    // NanoCodec via the .venv-gepard inference venv; Apache-2.0 weights).
+    let gepard_voices_dir = std::path::Path::new("mcp/assets/gepard/voices");
+    let gepard_voice_count = if gepard_voices_dir.exists() {
+        std::fs::read_dir(gepard_voices_dir)
+            .map(|d| d.filter_map(|e| e.ok()).filter(|e| e.path().extension().map(|x| x == "wav").unwrap_or(false)).count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let gepard = json!({
+        "available": openscript_tts::gepard::gepard_available(),
+        "model": "nineninesix/gepard-1.0",
+        "voice_count": gepard_voice_count,
+        "voices_dir": "mcp/assets/gepard/voices",
+        "sample_rate": 22050,
+        "languages": ["en", "es-MX", "pt-BR", "nl"],
+        "setup": "bash scripts/setup_gepard.sh (builds .venv-gepard: Python 3.12 + CUDA torch + NeMo codec + transformers 5.3.0)",
+        "note": "High-quality native-English zero-shot voice cloning (Gepard 1.0, Apache-2.0; NeMo NanoCodec under NVIDIA OML). Voice.profile.add with provider=gepard.",
+    });
+
     // Whisper word alignment (multilingual — primary alignment engine for
     // Hinglish/Hindi scripts; Parakeet TDT is English-only and drifts on
     // Hinglish). Used by script.generate_voices when script.language is
@@ -601,6 +622,7 @@ pub(crate) async fn handle_system_capabilities(
         "voicebox": voicebox,
         "kokoro": kokoro,
         "audio8": audio8,
+        "gepard": gepard,
         "transcription": transcription,
         "parakeet_align": parakeet_align,
         "whisper_align": whisper_align,

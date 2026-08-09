@@ -323,6 +323,7 @@ pub(crate) async fn handle_script_generate_voices(
         let normalized_voice = if !voice_lookup.starts_with("kokoro:")
             && !voice_lookup.starts_with("faster-qwen")
             && !voice_lookup.starts_with("audio8:")
+            && !voice_lookup.starts_with("gepard:")
         {
             format!("kokoro:{}", voice_lookup)
         } else {

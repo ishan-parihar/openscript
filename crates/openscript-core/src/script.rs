@@ -880,7 +880,7 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
     }
 
     // Validate TTS backend
-    let valid_tts_backends = ["kokoro", "sidecar", "audio8"];
+    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "gepard"];
     if !valid_tts_backends.contains(&spec.tts.backend.as_str()) {
         errors.push(ScriptValidationError {
             field: "tts.backend".into(),

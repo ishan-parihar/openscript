@@ -392,7 +392,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "profile_id": {"type": "string", "description": "Unique identifier for this voice profile"},
                     "ref_audio": {"type": "string", "description": "Path to reference audio file (clean speech sample)"},
                     "ref_text": {"type": "string", "description": "Transcript of the reference audio"},
-                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
+                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'gepard' (high-quality native-English zero-shot cloning — Gepard 1.0 Qwen3.5 AR + NeMo NanoCodec, 22.05kHz, requires .venv-gepard via scripts/setup_gepard.sh), 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
                     "mode": {"type": "string", "default": "clone", "description": "Voice mode: 'clone' for voice cloning, 'preset' for built-in voices"},
                     "model": {"type": "string", "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "description": "TTS model identifier"},
                     "language": {"type": "string", "default": "English", "description": "Voice language"},
@@ -419,7 +419,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "tts.generate",
-            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Returns: output_path, duration_ms, cached flag, backend.",
+            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2291,6 +2291,23 @@ async fn tts_generate_routed(
              Rebuild openscript-mcp with --features kokoro."
                 .to_string(),
         ));
+    }
+
+    // Gepard path (high-quality native-English voice cloning — Qwen3.5 AR + NeMo
+    // NanoCodec via the .venv-gepard sidecar; Apache-2.0 weights).
+    if profile.provider == "gepard" {
+        let (duration_ms, sample_rate) = openscript_tts::gepard::gepard_synthesize(
+            text,
+            &profile.id,
+            output_path,
+        )
+        .map_err(|e| ToolError::Tts(e))?;
+        return Ok(TtsGenResult {
+            output_path: output_path.to_string(),
+            duration_ms,
+            cached: false,
+            backend: format!("gepard:{}hz", sample_rate),
+        });
     }
 
     // Audio8 path (zero-shot voice cloning — default cloned-voice engine).

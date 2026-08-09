@@ -34,6 +34,11 @@ openscript-tts-cache/
 __pycache__/
 *.pyc
 .venv/
+.venv-gepard/
+# Gepard TTS registered voice clones (reference WAVs per voice)
+mcp/assets/gepard/voices/
+# Vendored gepard-inference git metadata (source is committed; .git is not)
+third_party/gepard-inference/.git/
 
 # IDE
 .vscode/
