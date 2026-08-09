@@ -1,1 +1,37 @@
-{}
+{
+  "air_analyst": {
+    "created_at": "2026-08-09T20:53:39.074404187+00:00",
+    "emotions": {
+      "firm": {
+        "instruct": "firm, resolute delivery, emphatic and direct, rising conviction",
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__firm.wav",
+        "sample_text": "Air abolishes the exit. The wealthy family breathes the same poison as the street vendor outside its gate.",
+        "seed": null
+      },
+      "grave": {
+        "instruct": "grave, somber delivery, slow and heavy, as if delivering an urgent warning",
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__grave.wav",
+        "sample_text": "One point seven million deaths a year. That is more than a pandemic, sustained every single year.",
+        "seed": null
+      },
+      "somber": {
+        "instruct": "somber, quiet, heavy pause delivery",
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__somber.wav",
+        "sample_text": "Delhi residents lose about eight years of life expectancy to this air.",
+        "seed": null
+      },
+      "urgent": {
+        "instruct": "urgent, pressing delivery, faster pace, rising alarm",
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__urgent.wav",
+        "sample_text": "Delhi recorded zero good air days in 2025. This is not a season, this is an emergency.",
+        "seed": null
+      }
+    },
+    "id": "air_analyst",
+    "language": "english",
+    "name": "Air Analyst",
+    "personality": "calm, authoritative documentary narrator, clear measured delivery, low steady pitch, serious but warm undertone",
+    "role": "documentary narrator",
+    "voice": "air_analyst"
+  }
+}

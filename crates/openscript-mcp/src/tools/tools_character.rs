@@ -116,7 +116,8 @@ pub(crate) async fn handle_character_create(
         ));
     }
 
-    let mut chars = load_characters()?;
+    // --- Read-only validation (no lock; the registry only grows here) ---
+    let chars = load_characters()?;
     if chars.get(&character_id).is_some() {
         return Err(ToolError::InvalidArg(format!(
             "Character '{}' already exists — use character.design_emotion to add emotional takes",
@@ -124,65 +125,83 @@ pub(crate) async fn handle_character_create(
         )));
     }
 
-    // Base voice: use an existing profile, or design one.
-    let base_voice: String = match existing_voice {
-        Some(v) if !v.is_empty() => {
-            // Validate the referenced profile exists.
-            let profiles = load_voice_profiles()?;
-            if profiles.get(&v).is_none() {
-                return Err(ToolError::NotFound(format!(
-                    "voice profile '{}' not found — create it first via voice.profile.add or voice.design",
-                    v
-                )));
-            }
-            v
-        }
-        _ => {
-            let sample = sample_text.as_deref().unwrap_or("");
-            if sample.trim().is_empty() {
-                return Err(ToolError::InvalidArg(
-                    "character.create needs 'sample_text' (a line the base voice should speak) when no existing 'voice' is given".into(),
-                ));
-            }
-            let wav = character_voice_path(&character_id);
-            if let Some(parent) = Path::new(&wav).parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            report_progress(0.0, 100.0, &format!("Designing base voice for '{}'...", character_id))
-                .await
-                .ok();
-            let (_dur, _sr) = design_voice_wav(
-                &personality, sample, &wav, &language, seed, None, None, None,
-            )?;
-            report_progress(100.0, 100.0, "Base voice designed").await.ok();
-
-            // Register as a gepard clone profile (base voice for emotion takes).
-            match openscript_tts::gepard::gepard_register(&character_id, &wav, sample) {
-                Ok(()) => {}
-                Err(e) => {
-                    tracing::warn!(
-                        "[character.create] gepard clone registration failed for '{}' ({}); re-run voice.profile.add later",
-                        character_id, e
-                    );
+    // Base voice: use an existing profile, or design one (VoiceDesign + gepard
+    // sidecar registration are registry-free; the JSON profile entry is written
+    // inside the lock below).
+    let (base_voice, wav_path, ref_text): (String, Option<String>, Option<String>) =
+        match existing_voice {
+            Some(v) if !v.is_empty() => {
+                // Validate the referenced profile exists.
+                let profiles = load_voice_profiles()?;
+                if profiles.get(&v).is_none() {
+                    return Err(ToolError::NotFound(format!(
+                        "voice profile '{}' not found — create it first via voice.profile.add or voice.design",
+                        v
+                    )));
                 }
+                (v, None, None)
             }
-            let mut profiles = load_voice_profiles()?;
-            profiles[&character_id] = json!({
-                "profile_id": character_id,
-                "ref_audio": wav,
-                "ref_text": sample,
-                "provider": "gepard",
-                "mode": "clone",
-                "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-                "language": language,
-                "description": format!("character base voice: {}", personality),
-                "emotions": {},
-            });
-            save_voice_profiles(&profiles)?;
-            character_id.to_string()
-        }
-    };
+            _ => {
+                let sample = sample_text.as_deref().unwrap_or("");
+                if sample.trim().is_empty() {
+                    return Err(ToolError::InvalidArg(
+                        "character.create needs 'sample_text' (a line the base voice should speak) when no existing 'voice' is given".into(),
+                    ));
+                }
+                let wav = character_voice_path(&character_id);
+                if let Some(parent) = Path::new(&wav).parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                report_progress(0.0, 100.0, &format!("Designing base voice for '{}'...", character_id))
+                    .await
+                    .ok();
+                let (_dur, _sr) = design_voice_wav(
+                    &personality, sample, &wav, &language, seed, None, None, None,
+                )?;
+                report_progress(100.0, 100.0, "Base voice designed").await.ok();
 
+                // Register as a gepard clone profile (base voice for emotion takes).
+                match openscript_tts::gepard::gepard_register(&character_id, &wav, sample) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        tracing::warn!(
+                            "[character.create] gepard clone registration failed for '{}' ({}); re-run voice.profile.add later",
+                            character_id, e
+                        );
+                    }
+                }
+                (character_id.to_string(), Some(wav), Some(sample.to_string()))
+            }
+        };
+
+    // --- Mutating phase: lock BOTH registries, re-read fresh state, write. ---
+    // Order: characters.json first, then voice_profiles.json (tools_audio
+    // handlers only lock profiles, so this ordering cannot deadlock).
+    let _lock_chars = RegistryLock::acquire(Path::new(&characters_path()))?;
+    let _lock_profiles = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
+
+    let mut chars = load_characters()?;
+    if chars.get(&character_id).is_some() {
+        return Err(ToolError::InvalidArg(format!(
+            "Character '{}' already exists — use character.design_emotion to add emotional takes",
+            character_id
+        )));
+    }
+    if let (Some(wav), Some(sample)) = (&wav_path, &ref_text) {
+        let mut profiles = load_voice_profiles()?;
+        profiles[&character_id] = json!({
+            "profile_id": character_id,
+            "ref_audio": wav,
+            "ref_text": sample,
+            "provider": "gepard",
+            "mode": "clone",
+            "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+            "language": language,
+            "description": format!("character base voice: {}", personality),
+            "emotions": {},
+        });
+        save_voice_profiles(&profiles)?;
+    }
     chars[&character_id] = json!({
         "id": character_id,
         "name": name,
@@ -230,7 +249,8 @@ pub(crate) async fn handle_character_design_emotion(
         ));
     }
 
-    let mut chars = load_characters()?;
+    // --- Read-only validation (no lock): fetch character + check provider. ---
+    let chars = load_characters()?;
     let character = chars.get(&character_id).cloned().ok_or_else(|| {
         ToolError::NotFound(format!(
             "Character '{}' not found — create it first via character.create",
@@ -258,7 +278,7 @@ pub(crate) async fn handle_character_design_emotion(
     // (kokoro's synth path never reads emotions) and to an audio8 base would
     // break at synth time (the compound voice is never registered here);
     // character.remove would then also delete a shared profile wholesale.
-    let mut profiles = load_voice_profiles()?;
+    let profiles = load_voice_profiles()?;
     let base_provider = profiles
         .get(&character_id)
         .and_then(|p| p.get("provider"))
@@ -300,6 +320,22 @@ pub(crate) async fn handle_character_design_emotion(
         Some(top_k),
     )?;
     report_progress(100.0, 100.0, "Emotion take designed").await.ok();
+
+    // --- Mutating phase: lock BOTH registries, re-read fresh state, write. ---
+    // The WAV is already on disk, so the lock only guards the JSON pointers.
+    // Lock order: characters.json first, then voice_profiles.json (no handler
+    // ever takes profiles-then-characters, so this cannot deadlock).
+    let _lock_chars = RegistryLock::acquire(Path::new(&characters_path()))?;
+    let _lock_profiles = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
+
+    let mut chars = load_characters()?;
+    if chars.get(&character_id).is_none() {
+        return Err(ToolError::NotFound(format!(
+            "Character '{}' not found — create it first via character.create",
+            character_id
+        )));
+    }
+    let mut profiles = load_voice_profiles()?;
 
     // Attach to the character schema.
     if let Some(obj) = chars.get_mut(&character_id).and_then(|v| v.as_object_mut()) {
@@ -405,6 +441,10 @@ pub(crate) async fn handle_character_remove(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
     let character_id = extract_str(&args, "character_id")?;
+    // Serialize registry mutations across processes (see RegistryLock). Both
+    // registries are written below; take characters.json first, then profiles.
+    let _lock_chars = RegistryLock::acquire(Path::new(&characters_path()))?;
+    let _lock_profiles = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
     let mut chars = load_characters()?;
     let existed = chars
         .as_object_mut()

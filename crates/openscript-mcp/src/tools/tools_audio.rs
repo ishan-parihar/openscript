@@ -49,6 +49,9 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         }
     }
 
+    // Serialize registry mutations across processes (see RegistryLock) —
+    // voice.profile.add races with character.design_emotion on this file.
+    let _lock = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
     let mut profiles = load_voice_profiles()?;
     let obj = json!({
         "profile_id": profile_id,
@@ -196,6 +199,8 @@ pub(crate) async fn handle_voice_profile_remove(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
     let profile_id = extract_str(&args, "profile_id")?;
+    // Serialize registry mutations across processes (see RegistryLock).
+    let _lock = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
     let mut profiles = load_voice_profiles()?;
     let existed = profiles
         .as_object_mut()
@@ -281,6 +286,8 @@ pub(crate) async fn handle_voice_design(
     let mut registered_profile: Option<String> = None;
     let mut registration_warning: Option<String> = None;
     if let Some(pid) = profile_id {
+        // Serialize registry mutations across processes (see RegistryLock).
+        let _lock = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
         let mut profiles = load_voice_profiles()?;
         let obj = json!({
             "profile_id": pid,

@@ -1,4 +1,36 @@
 {
+  "air_analyst": {
+    "description": "character base voice: calm, authoritative documentary narrator, clear measured delivery, low steady pitch, serious but warm undertone",
+    "emotions": {
+      "firm": {
+        "cfg_scale": null,
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__firm.wav",
+        "ref_text": "Air abolishes the exit. The wealthy family breathes the same poison as the street vendor outside its gate."
+      },
+      "grave": {
+        "cfg_scale": null,
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__grave.wav",
+        "ref_text": "One point seven million deaths a year. That is more than a pandemic, sustained every single year."
+      },
+      "somber": {
+        "cfg_scale": null,
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__somber.wav",
+        "ref_text": "Delhi residents lose about eight years of life expectancy to this air."
+      },
+      "urgent": {
+        "cfg_scale": null,
+        "ref_audio": "mcp/assets/gepard/voices/air_analyst__urgent.wav",
+        "ref_text": "Delhi recorded zero good air days in 2025. This is not a season, this is an emergency."
+      }
+    },
+    "language": "english",
+    "mode": "clone",
+    "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    "profile_id": "air_analyst",
+    "provider": "gepard",
+    "ref_audio": "mcp/assets/gepard/voices/air_analyst.wav",
+    "ref_text": "Air is the system where the human cost is largest, and the least escapable. No one can decline to breathe."
+  },
   "hero_sidekick": {
     "description": "voice.design persona: cheerful young female sidekick, bright energetic tone, quick laugh",
     "language": "english",

@@ -2220,6 +2220,89 @@ fn save_voice_profiles(profiles: &serde_json::Value) -> Result<(), ToolError> {
     Ok(())
 }
 
+/// Cross-process advisory lock for the JSON registries
+/// (`.openscript/voice_profiles.json`, `.openscript/characters.json`).
+///
+/// Guards read-modify-write cycles that can run concurrently from multiple
+/// MCP server processes (Tauri app, CLI, parallel agent sessions). Without a
+/// lock, two parallel `character.design_emotion` / `voice.profile.add` calls
+/// silently lose updates (last writer wins — the observed `firm` take loss).
+///
+/// Implemented as a `create_new`-only lockfile `<target>.lock` released by
+/// deletion on Drop. No new dependency (no fs2 in the tree).
+pub(crate) struct RegistryLock {
+    path: std::path::PathBuf,
+}
+
+impl RegistryLock {
+    /// Acquire the lock for `target` (a registry file path). Blocks up to 20s
+    /// retrying; steals stale locks older than 60s (crashed process).
+    pub(crate) fn acquire(target: &Path) -> Result<Self, ToolError> {
+        let lock_path = std::path::PathBuf::from(format!("{}.lock", target.display()));
+        if let Some(parent) = lock_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+            {
+                Ok(_) => {
+                    // Write the PID so stale locks are debuggable.
+                    let _ = std::fs::write(
+                        &lock_path,
+                        format!("pid={}", std::process::id()),
+                    );
+                    return Ok(RegistryLock { path: lock_path });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    // Stale lock (crashed holder): steal if older than 60s.
+                    let stale = std::fs::metadata(&lock_path)
+                        .and_then(|m| m.modified())
+                        .map(|t| {
+                            t.elapsed()
+                                .map(|d| d > std::time::Duration::from_secs(60))
+                                .unwrap_or(false)
+                        })
+                        .unwrap_or(false);
+                    if stale {
+                        let _ = std::fs::remove_file(&lock_path);
+                        continue;
+                    }
+                    if std::time::Instant::now() > deadline {
+                        return Err(ToolError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!(
+                                "timed out acquiring registry lock {}",
+                                lock_path.display()
+                            ),
+                        )));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => {
+                    return Err(ToolError::Io(std::io::Error::new(
+                        e.kind(),
+                        format!(
+                            "failed to acquire registry lock {}: {}",
+                            lock_path.display(),
+                            e
+                        ),
+                    )));
+                }
+            }
+        }
+    }
+}
+
+impl Drop for RegistryLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Handler: transcribe (native via openscript-transcribe)
 // ---------------------------------------------------------------------------
@@ -7768,6 +7851,48 @@ Third and final segment
         assert_eq!(ids, vec![2, 3], "short clip must be rejected (non-looping rule)");
         // Larger window → nothing qualifies.
         assert!(candidates_covering_window(&vids, 20.0, 0.5).is_empty());
+    }
+
+    #[test]
+    fn test_registry_lock_serializes_concurrent_writers() {
+        // Regression: parallel registry writers (character.design_emotion,
+        // voice.profile.add) lost updates without a cross-process lock. The
+        // lock must serialize: while one holder has it, another acquirer
+        // blocks, and the lock file must not leak after release.
+        let tmp = std::env::temp_dir().join(format!(
+            "os_registry_lock_test_{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&tmp);
+        let target = tmp.clone();
+
+        // Thread A holds the lock for 150ms.
+        let a_target = target.clone();
+        let a = std::thread::spawn(move || {
+            let _l = RegistryLock::acquire(&a_target).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        });
+        // Give A a head start so it acquires first.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Thread B (this thread) must block until A releases.
+        let start = std::time::Instant::now();
+        let _l = RegistryLock::acquire(&target).unwrap();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(100),
+            "second acquirer did not block: {:?}",
+            elapsed
+        );
+        drop(_l);
+        a.join().unwrap();
+
+        // Lock file must be gone after release (no stale locks accumulate).
+        assert!(
+            !std::path::Path::new(&format!("{}.lock", target.display())).exists(),
+            "lock file leaked after drop"
+        );
+        let _ = std::fs::remove_file(&tmp);
     }
 }
 
