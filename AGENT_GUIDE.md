@@ -333,11 +333,22 @@ before and after repair.
 ## Quality Checks
 
 ```
-verify.audio       — Audio quality (loudness, dialogue, silence)
+verify.audio       — Audio quality (loudness, dialogue, silence, per-scene variance)
 verify.captions    — Caption sync (coverage, gaps, readability)
 verify.render      — Technical integrity (duration, aspect, file size)
 verify.production  — Full production quality (stock, music, captions)
 ```
+
+**Per-scene loudness-variance KPI (Phase 170):** pass the per-scene voiceover
+WAVs to `verify.audio` (via `scene_wavs` array or a `script.generate_voices`
+`voiceover_manifest`) to measure each scene's integrated LUFS and get a
+`loudness` block: `spread_db`, `variance_ok` (threshold 6.0 dB), and
+`per_scene_lufs`. A >6 dB spread adds an issue and −20 pts (a >12 dB spread,
+the pre-fix mute range, −35 total). Every scene should sit within a few dB of
+−16 LUFS — the TTS sidecars normalize at the source; if this KPI fires,
+re-generate voices (or re-design emotion takes through the fixed voicedesign
+sidecar) instead of shipping a video where lines are buried under the music
+bed.
 
 **B-roll non-redundancy (Phase 143):**
 The same stock clip must NEVER appear twice in one video — dedup happens at the
