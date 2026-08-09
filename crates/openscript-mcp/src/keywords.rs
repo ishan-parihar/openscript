@@ -668,6 +668,9 @@ fn build_prompt(inputs: &[SegmentInput], language: &str) -> (String, String) {
         3. Translate Hinglish/Hindi (or any language) by MEANING, not word-for-word\n\
         4. Use the segment's duration (long window → wider shot term; short window → single-subject term) and position (hook/body/close) to pick specificity\n\
         5. Echo the EXACT segment id for every segment — one result per segment, no renumbering\n\
+        6. Vary phrasing ACROSS segments: never reuse the same query template for consecutive scenes \
+        (e.g. avoid 'person X person Y' chains) — give each scene distinct, concrete visual words \
+        (objects, settings, actions, close-ups, lighting) that match ITS OWN content.\n\
         Source language detected: {}{}{}{}\n\
         Output format: {{\"results\": [{{\"id\": \"seg_X\", \"visual\": [\"v1\",\"v2\"], \"reactions\": [\"r1\"], \"intent\": \"emphasis\", \"emphatic\": true}}]}}",
         language, title_ctx, topic_ctx, covered_ctx

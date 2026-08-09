@@ -1066,6 +1066,12 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
     // type:"static" is the explicit opt-out. type:"procedural" still TRIES stock first
     // so agents do not silently ship gradient-only videos when stock is reachable.
     // (Phase CF: production quality upgrade — never treat procedural as success.)
+    // Reactions from the unified keyword draft — populated inside the
+    // multi-broll block below, consumed by the per-scene sticker stage
+    // (declared here at function scope so both sibling blocks share it).
+    let mut llm_scene_reactions: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+
     if !skip_background && spec.background.r#type != "static" {
         report_progress(
             35.0,
@@ -1155,7 +1161,12 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                 let drafted = crate::keywords::draft_scene_keywords(&segs).await;
                 for d in drafted {
                     if !d.segment_id.is_empty() && !d.visual.is_empty() {
-                        llm_scene_keywords.insert(d.segment_id, d.visual);
+                        llm_scene_keywords.insert(d.segment_id.clone(), d.visual);
+                    }
+                    // Reactions feed the sticker stage (G8): stickers search
+                    // reaction/emotion/intent terms, never visual b-roll nouns.
+                    if !d.segment_id.is_empty() && !d.reactions.is_empty() {
+                        llm_scene_reactions.insert(d.segment_id, d.reactions);
                     }
                 }
             }
@@ -1638,6 +1649,20 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                     // candidate is tried — variation never silently collapses
                     // to one repeated sticker.
                     let mut sticker_candidates: Vec<String> = Vec::new();
+                    // Reactions from the unified keyword draft FIRST (G8 fix):
+                    // stickers search reaction/emotion/intent terms — never the
+                    // visual b-roll nouns that drive the footage search.
+                    if let Some(reacts) = spec
+                        .scenes
+                        .get(scene_idx)
+                        .and_then(|s| llm_scene_reactions.get(&s.id))
+                    {
+                        for r in reacts.iter() {
+                            if !r.trim().is_empty() {
+                                sticker_candidates.push(r.clone());
+                            }
+                        }
+                    }
                     if let Some(q) = scene_stock_queries.get(scene_idx) {
                         if !q.trim().is_empty() {
                             sticker_candidates.push(q.clone());
