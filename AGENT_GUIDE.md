@@ -120,12 +120,15 @@ script.generate_voices → script.build_captions → background.fetch → script
 1. transcribe             — Hinglish SRT from audio
 2. srt.prepare            — Group words into caption segments
 3. segment.analyze        — Sentence-aware segments (2–6s, docs/SEGMENTATION_ARCHITECTURE.md)
-4. broll.keywords         — STAGE 1 (draft): agent translates Hinglish → English visual keywords
+4. broll.keywords         — STAGE 1 (draft): unified keywords module — ONE batched LLM call emits
+                           BOTH visual stock keywords AND GIPHY reaction keywords per segment
+                           (id-echo + missing-id redraft + salience fallback; unicode-aware;
+                           auto-detects source language; auto-extracts video_keywords from title)
 5. broll.validate_keywords— STAGE 2 (relevance-validation): agent scores REAL Pexels candidates
                            (video names/durations) against the spoken caption → final keywords + best video
 6. broll.fetch            — Download + auto-place the validated clips on the timeline
-7. sticker.auto           — ONE-CALL sticker pipeline (parallel to broll): segment → sticker.keywords
-                           (agent drafts INTENT + EMPHATIC keywords) → sticker.validate_keywords
+7. sticker.auto           — ONE-CALL sticker pipeline (parallel to broll): consumes the SAME unified
+                           draft's reaction keywords (never visual b-roll nouns) → sticker.validate_keywords
                            (GIPHY relevance gate: only approved stickers) → download → place on the
                            Stickers track (spacing gate + position cycling, positioned PiP)
 8. music.assign           — Add background music
