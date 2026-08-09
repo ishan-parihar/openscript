@@ -13,6 +13,7 @@ to avoid code duplication.
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,30 @@ PHRASE_MAX_GAP_S = 0.6
 def _log(msg: str, prefix: str = "transcriber"):
     """Log a message to stderr with a prefix."""
     print(f"[{prefix}] {msg}", file=sys.stderr, flush=True)
+
+
+# ---------------------------------------------------------------------------
+# ONNX device selection (GPU-first)
+# ---------------------------------------------------------------------------
+
+def ort_providers():
+    """Return ONNX Runtime providers, preferring CUDA when available.
+
+    OPENSCRIPT_DEVICE=auto (default) | cuda | cpu forces the choice.
+    Requires onnxruntime-gpu for CUDAExecutionProvider; falls back to CPU.
+    Used by parakeet_align.py and any ONNX sidecar that imports this module.
+    """
+    dev = os.environ.get("OPENSCRIPT_DEVICE", "auto").strip().lower()
+    if dev == "cpu":
+        return ["CPUExecutionProvider"]
+    try:
+        import onnxruntime as _ort
+        available = _ort.get_available_providers()
+    except Exception:
+        return ["CPUExecutionProvider"]
+    if dev == "cuda" or (dev == "auto" and "CUDAExecutionProvider" in available):
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,23 @@ def _log(msg: str):
     print(f"[whisper-align] {msg}", file=sys.stderr, flush=True)
 
 
+def _resolve_device() -> str:
+    """GPU-first device for openai-whisper (OPENSCRIPT_DEVICE=auto|cuda|cpu)."""
+    dev = os.environ.get("OPENSCRIPT_DEVICE", "auto").strip().lower()
+    if dev == "cpu":
+        return "cpu"
+    if dev == "cuda":
+        return "cuda"
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
 # ---------------------------------------------------------------------------
 # Audio extraction
 # ---------------------------------------------------------------------------
@@ -88,7 +105,7 @@ def align_with_whisper(
     start = time.time()
 
     try:
-        model = whisper.load_model(model_name)
+        model = whisper.load_model(model_name, device=_resolve_device())
     except Exception as e:
         return {"error": f"Failed to load Whisper model: {e}", "status": "error"}
 

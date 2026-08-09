@@ -91,6 +91,8 @@ class VoiceRegistration:
         if target.exists() and not overwrite:
             raise FileExistsError(f"voice already exists: {voice_name}")
 
+        from .runtime import _providers
+
         options = ort.SessionOptions()
         options.log_severity_level = 3
         session = None
@@ -98,7 +100,7 @@ class VoiceRegistration:
             session = ort.InferenceSession(
                 str(self.encoder_path),
                 sess_options=options,
-                providers=["CPUExecutionProvider"],
+                providers=_providers(),
             )
             input_type = session.get_inputs()[0].type
             values = audio.astype(np.float16 if input_type == "tensor(float16)" else np.float32)

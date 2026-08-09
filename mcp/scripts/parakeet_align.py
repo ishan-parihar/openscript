@@ -14,6 +14,11 @@ import os
 import subprocess
 import numpy as np
 
+# GPU-first provider resolution (OPENSCRIPT_DEVICE=auto|cuda|cpu), shared with
+# the other ONNX sidecars. Falls back to CPU when onnxruntime-gpu is absent.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from transcribe_common import ort_providers
+
 try:
     import onnxruntime as ort
 except ImportError:
@@ -282,8 +287,8 @@ def run_serve(encoder_path, decoder_path, vocab_path):
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
         opts.intra_op_num_threads = 1
-        encoder_session = ort.InferenceSession(encoder_path, opts, providers=['CPUExecutionProvider'])
-        decoder_session = ort.InferenceSession(decoder_path, opts, providers=['CPUExecutionProvider'])
+        encoder_session = ort.InferenceSession(encoder_path, opts, providers=ort_providers())
+        decoder_session = ort.InferenceSession(decoder_path, opts, providers=ort_providers())
         vocab = load_vocab(vocab_path)
     except Exception as e:
         print(json.dumps({"ready": False, "error": f"Failed to load Parakeet model: {e}"}))
@@ -341,8 +346,8 @@ def main():
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = 1
         opts.intra_op_num_threads = 1
-        enc = ort.InferenceSession(args.encoder, opts, providers=['CPUExecutionProvider'])
-        dec = ort.InferenceSession(args.decoder, opts, providers=['CPUExecutionProvider'])
+        enc = ort.InferenceSession(args.encoder, opts, providers=ort_providers())
+        dec = ort.InferenceSession(args.decoder, opts, providers=ort_providers())
         vocab = load_vocab(args.vocab)
         result = align_wav(args.wav, enc, dec, vocab)
         # Fallback to Whisper if Parakeet returns no words

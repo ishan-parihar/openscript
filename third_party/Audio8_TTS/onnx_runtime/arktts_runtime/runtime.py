@@ -19,6 +19,26 @@ ORT_DTYPES = {
 }
 
 
+def _providers() -> list[str]:
+    """ONNX Runtime providers, CUDA-first when available.
+
+    OPENSCRIPT_DEVICE=auto (default) | cuda | cpu forces the choice. Requires
+    onnxruntime-gpu for CUDAExecutionProvider; falls back to CPU otherwise.
+    """
+    import os
+
+    dev = os.environ.get("OPENSCRIPT_DEVICE", "auto").strip().lower()
+    if dev == "cpu":
+        return ["CPUExecutionProvider"]
+    try:
+        available = ort.get_available_providers()
+    except Exception:
+        return ["CPUExecutionProvider"]
+    if dev == "cuda" or (dev == "auto" and "CUDAExecutionProvider" in available):
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+
+
 def _session(path: Path, threads: int | None = None) -> ort.InferenceSession:
     options = ort.SessionOptions()
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
@@ -26,7 +46,7 @@ def _session(path: Path, threads: int | None = None) -> ort.InferenceSession:
     if threads is not None:
         options.intra_op_num_threads = int(threads)
         options.inter_op_num_threads = max(1, int(threads) // 2)
-    return ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
+    return ort.InferenceSession(str(path), sess_options=options, providers=_providers())
 
 
 def _sample(logits: np.ndarray, temperature: float, top_p: float, top_k: int, rng) -> int:
