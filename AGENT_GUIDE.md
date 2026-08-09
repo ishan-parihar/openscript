@@ -162,6 +162,31 @@ voice.profile.add {
 - Per-scene `speed` / `pitch` overrides (previously silently dropped for clone
   engines) are now applied post-synthesis.
 
+### Expression knobs (prosody / emotion control)
+
+Clone engines support explicit sampling knobs for inflection and emotional
+nuance. Higher temperature = more prosodic variation; lower = flatter/more
+robotic (0.3 is the robotic zone — the old flat default). Production-grade
+clones sit at **0.6–0.8 temperature** (default 0.7).
+
+```
+tts.generate { temperature: 0.8, top_k: 50, top_p: 0.9, cfg_scale: 1.0 }
+```
+
+- **`tts.generate`**: `temperature` / `top_k` / `top_p` / `cfg_scale` — all
+  optional; explicit values win over emotion takes and engine defaults.
+- **Script-level** (`tts` block): `default_temperature` / `default_top_k` /
+  `default_cfg_scale` apply to every scene.
+- **Per-scene** (`scenes[].temperature`): overrides the script default for one
+  line (e.g. a whisper scene at 0.5, an outburst at 0.9).
+- **Precedence**: explicit request/scene value → emotion take's own cfg_scale
+  → engine default. A script-level `default_cfg_scale` is NOT applied when the
+  scene uses an emotion take (the take's tuned value wins).
+- **Loudness**: every sidecar now normalizes each output WAV to −16 LUFS
+  (two-pass ffmpeg loudnorm, original sample rate preserved) so all scenes are
+  uniform — emotion takes used to come out 4–14 dB quieter and get buried
+  under the music bed. Chunk seams are equal-power crossfaded (no mute dips).
+
 ### Character-first workflow (two-part — `character.*`)
 
 For story/comic content, define characters FIRST (schema + properties), design

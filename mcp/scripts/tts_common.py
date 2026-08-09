@@ -45,10 +45,30 @@ def _log(msg: str, prefix: str = "tts_common"):
     print(f"[{prefix}] {msg}", file=sys.stderr, flush=True)
 
 
+def _input_sample_rate(path: str) -> int | None:
+    """Read the input WAV's sample rate (loudnorm resamples to 192 kHz
+    internally, and the apply pass must force `-ar` back to the original or
+    every normalized scene would silently become 192 kHz — 4-12x the size and
+    a sample-rate mismatch against the mix's other tracks)."""
+    r = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=sample_rate", "-of", "csv=p=0",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        shell=False,
+    )
+    if r.returncode == 0 and r.stdout.strip().isdigit():
+        return int(r.stdout.strip())
+    return None
+
+
 def _measure_loudness(path: str) -> dict | None:
     """Run the loudnorm measurement pass; return the measured parameters."""
     cmd = [
-        "ffmpeg", "-y", "-v", "info", "-nostats", "-i", str(path),
+        "ffmpeg", "-hide_banner", "-y", "-v", "info", "-nostats", "-i", str(path),
         "-af", "loudnorm=print_format=json", "-f", "null", "-",
     ]
     r = subprocess.run(cmd, capture_output=True, text=True, shell=False)
@@ -59,11 +79,17 @@ def _measure_loudness(path: str) -> dict | None:
     # (>=4.4) and on stderr on older builds — check both. NOTE: it is printed
     # at info level, so `-v error` would suppress it entirely. On stderr the
     # block is followed by the muxing summary, so raw_decode the single JSON
-    # object and ignore trailing text.
+    # object and ignore trailing text. `-hide_banner` keeps earlier info lines
+    # brace-free so `find("{")` cannot mis-hit a log line before the block.
     decoder = json.JSONDecoder()
     for stream in (r.stdout, r.stderr):
         try:
-            start = stream.find("{")
+            # Anchor on the loudnorm JSON's unique "input_i" key rather than
+            # the first brace — robust to any info line containing "{".
+            anchor = stream.find('"input_i"')
+            if anchor < 0:
+                continue
+            start = stream.rfind("{", 0, anchor)
             if start < 0:
                 continue
             data, _ = decoder.raw_decode(stream[start:])
@@ -109,6 +135,10 @@ def normalize_lufs(
         return False
 
     tmp = p.with_suffix(p.suffix + ".loudnorm.tmp.wav")
+    # Force the ORIGINAL sample rate back onto the output — loudnorm resamples
+    # to 192 kHz internally (measured above), and without `-ar` every scene
+    # would silently become 192 kHz (12x size, sample-rate mismatch in mix).
+    in_sr = _input_sample_rate(str(p))
     cmd = [
         "ffmpeg", "-y", "-v", "error", "-i", str(p),
         "-af",
@@ -120,8 +150,10 @@ def normalize_lufs(
             f":measured_thresh={measured['input_thresh']}"
             ":linear=true"
         ),
-        "-c:a", "pcm_s16le", str(tmp),
     ]
+    if in_sr:
+        cmd += ["-ar", str(in_sr)]
+    cmd += ["-c:a", "pcm_s16le", str(tmp)]
     r = subprocess.run(cmd, capture_output=True, text=True, shell=False)
     if r.returncode == 0 and tmp.exists():
         os.replace(tmp, p)

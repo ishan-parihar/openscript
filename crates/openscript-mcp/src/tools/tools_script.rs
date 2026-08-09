@@ -434,6 +434,15 @@ pub(crate) async fn handle_script_generate_voices(
         let scene_temperature = scene
             .temperature
             .or(spec.tts.default_temperature);
+        // cfg_scale: only apply the script-level default when the scene does
+        // NOT use an emotion take — an emotion take carries its own tuned
+        // cfg_scale (set at design time), and a global default would silently
+        // clobber it. Explicit scene-level temperature still flows above.
+        let scene_cfg_scale = if scene.emote.is_some() {
+            None // emotion take's own cfg_scale wins
+        } else {
+            spec.tts.default_cfg_scale
+        };
         let result = tts_generate_routed(
             &speaker.voice,
             &scene.text,
@@ -447,7 +456,7 @@ pub(crate) async fn handle_script_generate_voices(
             scene_temperature,
             spec.tts.default_top_k,
             None, // top_p
-            spec.tts.default_cfg_scale,
+            scene_cfg_scale,
             &profile,
         )
         .await?;
