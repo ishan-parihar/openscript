@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv*/
+
+# Tooling / IDE
+.pytest_cache/
+.ruff_cache/
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Local artifacts (generated audio, HF cache if pointed here)
+
+.hf_home/
+flagged/
+gradio_cached_examples/

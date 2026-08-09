@@ -1,0 +1,32 @@
+# GEPARD — open-source text-to-speech demo.
+#
+# DEFAULTS, read once when the server starts. Every value here can be overridden
+# per session (see cli.py / the server's /synthesize request); a request never
+# mutates this file. The codec is NOT configured here — it is derived from the
+# checkpoint (gepard_config.json carries its id, FSQ geometry and sample rate).
+
+model:
+  # Self-describing checkpoint (carries gepard_config.json → backbone + codec).
+  # Private repos authorize via the HuggingFace token from `make login`.
+  checkpoint: nineninesix/gepard-1.0
+
+# Default generation parameters (initial values; overridable per session).
+# Mirrors the reference notebook. cfg_scale=1.0 disables text CFG; cfg_frames=0
+# means "guide the whole utterance".
+defaults:
+  temperature: 0.3
+  top_k: 0
+  cfg_scale: 1.0
+  cfg_frames: 0
+  stop_threshold: 0.5
+  max_frames: 2000
+  repetition_penalty: 1.0
+  repetition_window: 32
+
+  # Default voice. Tokenized ONCE at startup and cached — never recomputed per
+  # request. A session with no speaker reuses it; a session that passes its own
+  # audio path gets that clip tokenized on the fly and used as the reference.
+  # Demo clips available (swap the path to change the default voice):
+  #   ref_audio/audio_en.wav   ref_audio/audio_ru.wav
+  #   ref_audio/nurisa_en.wav  ref_audio/ulan_emo.wav
+  reference_audio: ref_audio/audio_ru.wav
