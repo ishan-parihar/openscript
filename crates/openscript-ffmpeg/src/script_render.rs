@@ -14,6 +14,7 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+use crate::gpu::GpuConfig;
 use crate::FfmpegError;
 
 /// Specification for a from-scratch render.
@@ -76,14 +77,20 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
     let mut cmd = Command::new("ffmpeg");
     cmd.arg("-y");
 
+    // Resolve GPU acceleration once (NVENC encode + CUDA decode when
+    // available, per OPENSCRIPT_FFMPEG_GPU). Filter graph stays CPU.
+    let gpu = GpuConfig::resolve();
+
     // Input 0: background video (looped)
     cmd.arg("-stream_loop").arg("-1"); // loop infinitely
     cmd.arg("-t").arg(spec.total_duration_s.to_string()); // but only read what we need
+    gpu.add_input(&mut cmd);
     cmd.arg("-i").arg(&spec.background_path);
 
     // Input 1: voiceover concatenation
     cmd.arg("-f").arg("concat");
     cmd.arg("-safe").arg("0");
+    gpu.add_input(&mut cmd);
     cmd.arg("-i").arg(&concat_list_path);
 
     // Input 2: music (optional)
@@ -93,6 +100,7 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
         if std::path::Path::new(music_path).exists() {
             cmd.arg("-stream_loop").arg("-1");
             cmd.arg("-t").arg(spec.total_duration_s.to_string());
+            gpu.add_input(&mut cmd);
             cmd.arg("-i").arg(music_path);
         }
     }
@@ -144,12 +152,8 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
     cmd.arg("-map").arg("[vcap]");
     cmd.arg("-map").arg("[aout_norm]");
 
-    // Video codec
-    cmd.arg("-c:v").arg("libx264");
-    cmd.arg("-preset").arg(&spec.preset);
-    cmd.arg("-crf").arg(spec.crf.to_string());
-    cmd.arg("-pix_fmt").arg("yuv420p");
-    cmd.arg("-r").arg(spec.fps.to_string());
+    // Video codec — NVENC (GPU) or libx264 (CPU) per OPENSCRIPT_FFMPEG_GPU
+    gpu.add_encoder(&mut cmd, &spec.preset, spec.crf, spec.fps, false);
 
     // Audio codec
     cmd.arg("-c:a").arg("aac");

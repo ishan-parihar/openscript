@@ -14,6 +14,7 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+use crate::gpu::GpuConfig;
 use crate::FfmpegError;
 
 /// A background clip with its time range.
@@ -229,6 +230,11 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut cmd = Command::new("ffmpeg");
     cmd.arg("-y");
 
+    // Resolve GPU acceleration once (NVENC encode + CUDA decode when
+    // available, per OPENSCRIPT_FFMPEG_GPU). The filter graph stays CPU;
+    // only the decode inputs and the encoder swap to the GPU path.
+    let gpu = GpuConfig::resolve();
+
     // Check if all backgrounds are the same file (single-background playback)
     let all_same_bg =
         filtered_bgs.len() > 1 && filtered_bgs.windows(2).all(|w| w[0].path == w[1].path);
@@ -240,6 +246,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             cmd.arg("-stream_loop").arg("-1");
         }
         cmd.arg("-t").arg(spec.total_duration_s.to_string());
+        gpu.add_input(&mut cmd);
         cmd.arg("-i").arg(&bg.path);
         1
     } else {
@@ -250,6 +257,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
                 cmd.arg("-stream_loop").arg("-1");
             }
             cmd.arg("-t").arg(bg.duration_s.to_string());
+            gpu.add_input(&mut cmd);
             cmd.arg("-i").arg(&bg.path);
         }
         count
@@ -259,6 +267,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let vo_input_idx = bg_count;
     cmd.arg("-f").arg("concat");
     cmd.arg("-safe").arg("0");
+    gpu.add_input(&mut cmd);
     cmd.arg("-i").arg(&concat_list_path);
 
     // Input: music
@@ -268,6 +277,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     if has_music {
         cmd.arg("-stream_loop").arg("-1");
         cmd.arg("-t").arg(spec.total_duration_s.to_string());
+        gpu.add_input(&mut cmd);
         cmd.arg("-i").arg(spec.music_path.as_ref().unwrap());
     }
 
@@ -289,6 +299,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut sticker_inputs = Vec::new();
     for sticker in &spec.stickers {
         if std::path::Path::new(&sticker.path).exists() {
+            gpu.add_input(&mut cmd);
             cmd.arg("-i").arg(&sticker.path);
             sticker_inputs.push((sticker_input_idx, sticker));
             sticker_input_idx += 1;
@@ -401,6 +412,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             // sometimes not, only a blank screen, and sometimes only a
             // single frame.")
             cmd.arg("-stream_loop").arg("-1");
+            gpu.add_input(&mut cmd);
             cmd.arg("-i").arg(&meme.path);
             meme_inputs.push((meme_input_start, meme));
             meme_input_start += 1;
@@ -414,6 +426,7 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     let mut sfx_idx = meme_input_start;
     for sfx in &spec.sfx {
         if std::path::Path::new(&sfx.path).exists() {
+            gpu.add_input(&mut cmd);
             cmd.arg("-i").arg(&sfx.path);
             sfx_inputs.push((sfx_idx, sfx));
             sfx_idx += 1;
@@ -673,12 +686,8 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
     cmd.arg("-map").arg("[vout]");
     cmd.arg("-map").arg("[aout]");
 
-    // Video codec
-    cmd.arg("-c:v").arg("libx264");
-    cmd.arg("-preset").arg(&spec.preset);
-    cmd.arg("-crf").arg(spec.crf.to_string());
-    cmd.arg("-pix_fmt").arg("yuv420p");
-    cmd.arg("-r").arg(spec.fps.to_string());
+    // Video codec — NVENC (GPU) or libx264 (CPU) per OPENSCRIPT_FFMPEG_GPU
+    gpu.add_encoder(&mut cmd, &spec.preset, spec.crf, spec.fps, false);
 
     // Audio codec
     cmd.arg("-c:a").arg("aac");

@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use crate::filter_graph::FilterGraphBuilder;
+use crate::gpu::GpuConfig;
 use crate::FfmpegError;
 use openscript_core::timeline::{Segment, Timeline};
 
@@ -195,15 +196,15 @@ pub async fn render_with_cancel(
 
     // Build ffmpeg command — only single input needed (overlay loaded via movie filter)
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-y").arg("-i").arg(&config.video_path);
+    cmd.arg("-y");
+    let gpu = GpuConfig::resolve();
+    gpu.add_input(&mut cmd);
+    cmd.arg("-i").arg(&config.video_path);
     cmd.arg("-filter_complex").arg(&filter_complex);
     cmd.arg("-map").arg(&vout);
     cmd.arg("-map").arg(&aout);
-    cmd.arg("-c:v").arg("libx264");
-    cmd.arg("-profile:v").arg("high");
-    cmd.arg("-pix_fmt").arg("yuv420p");
-    cmd.arg("-crf").arg(config.crf.to_string());
-    cmd.arg("-r").arg(config.fps.to_string());
+    // Video codec — NVENC (GPU) or libx264 (CPU) per OPENSCRIPT_FFMPEG_GPU
+    gpu.add_encoder(&mut cmd, "medium", config.crf, config.fps, true);
     cmd.arg("-c:a").arg("aac");
     cmd.arg("-b:a").arg("160k");
     cmd.arg("-movflags").arg("+faststart");
@@ -463,15 +464,15 @@ pub async fn render_from_timeline_with_cancel(
         source_video
     };
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-y").arg("-i").arg(ffmpeg_input);
+    cmd.arg("-y");
+    let gpu = GpuConfig::resolve();
+    gpu.add_input(&mut cmd);
+    cmd.arg("-i").arg(ffmpeg_input);
     cmd.arg("-filter_complex").arg(&filter_complex);
     cmd.arg("-map").arg(&vout);
     cmd.arg("-map").arg(&aout);
-    cmd.arg("-c:v").arg("libx264");
-    cmd.arg("-profile:v").arg("high");
-    cmd.arg("-pix_fmt").arg("yuv420p");
-    cmd.arg("-crf").arg(used_crf.to_string());
-    cmd.arg("-r").arg(timeline.target.fps.to_string());
+    // Video codec — NVENC (GPU) or libx264 (CPU) per OPENSCRIPT_FFMPEG_GPU
+    gpu.add_encoder(&mut cmd, "medium", used_crf, timeline.target.fps, true);
     cmd.arg("-c:a").arg("aac");
     cmd.arg("-b:a").arg("160k");
     // `-shortest` caps the output at the end of the SHORTEST stream. Without it,
