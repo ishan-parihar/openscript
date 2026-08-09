@@ -1800,41 +1800,7 @@ fn default_opt_bool(args: &serde_json::Value, key: &str) -> Option<bool> {
 /// Extract a meaningful b-roll concept from a caption string.
 /// Skips stopwords and short words to avoid garbage Pexels searches like
 /// "The" or "But". Falls back to the first 2 significant words.
-fn extract_broll_concept(caption: &str) -> String {
-    let stopwords = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has",
-        "had", "do", "does", "did", "will", "would", "could", "should", "can", "may",
-        "might", "this", "that", "these", "those", "your", "you", "they", "them",
-        "their", "with", "from", "into", "about", "what", "when", "where", "which",
-        "who", "how", "why", "for", "and", "but", "not", "all", "any", "some",
-        "more", "most", "other", "such", "only", "own", "same", "than", "too",
-        "very", "just", "also", "now", "then", "there", "here", "he", "she", "it",
-        "we", "us", "our", "my", "me", "i", "his", "her", "its", "or", "so",
-        "if", "in", "on", "at", "to", "of", "no", "up",
-        // Hinglish function words — no visual content, must never reach Pexels.
-        "hai", "ho", "hain", "ka", "ki", "ke", "ko", "se", "mein", "par",
-        "aur", "yeh", "woh", "jo", "kya", "kaise", "kyun", "nahi", "haan",
-        "bhi", "ab", "phir", "toh", "yaar", "dekho", "suno", "bolo",        "kar",
-        "karne", "kare", "hoga", "thi", "tha", "raha", "rah", "baat", "chahiye",
-        "hoon", "wala", "wale", "wali", "koi", "bahut", "saare", "log",
-        "logon", "bhai", "bhaiyo", "aap", "tum", "tera", "mera", "apna",
-        "kuchh", "kuch", "sab", "jab", "tab", "agar", "lekin", "jis", "jinki",
-    ];
-    let significant: Vec<String> = caption
-        .split_whitespace()
-        .map(|w| {
-            let clean: String = w.chars().filter(|c| c.is_alphanumeric()).collect();
-            clean.to_lowercase()
-        })
-        .filter(|w| w.len() > 2 && !stopwords.contains(&w.as_str()))
-        .take(3)
-        .collect();
-    if significant.is_empty() {
-        "b-roll".to_string()
-    } else {
-        significant.join(" ")
-    }
-}
+
 
 fn default_opt_str(args: &serde_json::Value, key: &str) -> Option<String> {
     args.get(key)
@@ -3700,60 +3666,37 @@ async fn llm_draft_keywords(
     avoid_concepts: &[String],
     language: &str,
 ) -> (Vec<String>, String, String) {
-    let avoid = if avoid_concepts.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\nAVOID repeating these already-covered visual concepts: {}\n",
-            avoid_concepts.join(", ")
-        )
+    // Delegates to the unified keywords module — one LLM call, id-echo,
+    // missing-id redraft, and the salience heuristic as the LLM-down fallback
+    // (replaces the old first-three-words extract_broll_concept path).
+    let input = crate::keywords::SegmentInput {
+        segment_id: "seg_0".into(),
+        caption: caption.to_string(),
+        language_hint: if language.is_empty() { None } else { Some(language.to_string()) },
+        duration_s: 0.0,
+        scene_idx: 0,
+        total_scenes: 1,
+        video_title: String::new(),
+        video_keywords: Vec::new(),
+        covered_concepts: avoid_concepts.to_vec(),
     };
-    let system = format!(
-        "You are a stock footage keyword drafter for a short-form video. \
-         Translate the spoken caption into 2-3 English VISUAL search keywords \
-         for Pexels (things a camera can film: objects, people, places, actions). \
-         Translate Hinglish/Hindi by MEANING, not word-for-word.{} \
-         Rules: keywords 1-3 words each; concrete and searchable; no abstractions. \
-         Output ONLY compact JSON: {{\"keywords\":[\"k1\",\"k2\",\"k3\"]}}",
-        avoid
-    );
-    let user = format!("Caption: \"{}\"\nSource language: {}", caption, language);
-    match crate::llm::chat_complete(&system, &user, None).await {
-        Ok(r) => {
-            let parsed = parse_loose_json_obj(&r.text);
-            let kws: Vec<String> = parsed
-                .get("keywords")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|k| k.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let kws: Vec<String> = kws.into_iter().filter(|k| k.len() >= 3).collect();
-            if kws.is_empty() {
-                let translated = crate::stock_signal::translate_hinglish_visuals(caption);
-                let concept = extract_broll_concept(&translated);
-                (
-                    concept.split_whitespace().map(String::from).collect(),
-                    r.backend,
-                    r.model,
-                )
+    let drafted = crate::keywords::draft_scene_keywords(&[input]).await;
+    let d = &drafted[0];
+    let kws = d.visual.clone();
+    let (backend, model) = match d.source {
+        crate::keywords::KeywordSource::Heuristic => {
+            ("fallback".to_string(), "salience-v1".to_string())
+        }
+        _ => {
+            let parts: Vec<&str> = d.backend.split('/').collect();
+            if parts.len() == 2 {
+                (parts[0].to_string(), parts[1].to_string())
             } else {
-                (kws, r.backend, r.model)
+                (d.backend.clone(), String::new())
             }
         }
-        Err(e) => {
-            tracing::warn!("[broll.repair] draft LLM failed: {} — using Hinglish-map fallback", e);
-            let translated = crate::stock_signal::translate_hinglish_visuals(caption);
-            let concept = extract_broll_concept(&translated);
-            (
-                concept.split_whitespace().map(String::from).collect(),
-                "fallback".into(),
-                "hinglish-map".into(),
-            )
-        }
-    }
+    };
+    (kws, backend, model)
 }
 
 /// Stage 2 — relevance-validation/alignment: the agent scores real Pexels
@@ -6251,70 +6194,9 @@ fn extract_salient_noun(text: &str) -> Option<String> {
 /// on-topic calming/meditation content.
 /// (Round-6 audit: "In the inhale section, the video was of someone
 /// inhaling a cigarette.")
-const UNSAFE_KEYWORD_MAP: &[(&str, &str)] = &[
-    ("inhale", "breathing meditation"),
-    ("exhale", "breathing relaxation"),
-    ("breathe", "breathing calm"),
-    ("breathing", "breathing meditation"),
-    ("drink", "drinking water wellness"),
-    ("smoke", "calm nature"),
-    ("drug", "calm nature"),
-    ("kill", "calm nature"),
-    ("blood", "calm nature"),
-    ("pain", "healing wellness"),
-    ("stress", "stress relief meditation"),
-    ("anxiety", "anxiety relief calm"),
-    ("fear", "courage calm nature"),
-    ("death", "calm nature peaceful"),
-    ("weapon", "calm nature"),
-];
 
-/// Enrich a Pexels search query with mood-aware context to bias results
-/// toward calming/energetic content. For theme:calm, prepend "calm" to
-/// the query so Pexels returns peaceful footage instead of literal matches
-/// that could be tonally wrong (e.g. "inhale" → cigarette).
-fn enrich_query_for_theme(query: &str, theme: &str) -> String {
-    // Don't double-enrich if the query already contains a mood word
-    let lower = query.to_lowercase();
-    let already_calm = lower.contains("calm") || lower.contains("peaceful") || lower.contains("meditation");
-    let already_energetic = lower.contains("energy") || lower.contains("action") || lower.contains("intense");
 
-    match theme {
-        "calm" if !already_calm => format!("calm {}", query),
-        "energetic" if !already_energetic => format!("energetic {}", query),
-        _ => query.to_string(),
-    }
-}
 
-/// Filter and enrich extracted keywords for Pexels search safety.
-/// 1. Replace unsafe keywords (inhale → breathing meditation)
-/// 2. Enrich with theme context (prepend "calm" for calm theme)
-fn safe_search_query(raw_keywords: &str, theme: &str) -> String {
-    // Check each word against the unsafe map
-    let mut safe_words: Vec<String> = Vec::new();
-    for word in raw_keywords.split_whitespace() {
-        let lower = word.to_lowercase();
-        let replaced = UNSAFE_KEYWORD_MAP
-            .iter()
-            .find(|(unsafe_word, _)| *unsafe_word == lower.as_str())
-            .map(|(_, safe)| safe.to_string())
-            .unwrap_or_else(|| word.to_string());
-        safe_words.push(replaced);
-    }
-    let safe_query = safe_words.join(" ");
-    enrich_query_for_theme(&safe_query, theme)
-}
-
-/// Legacy helper — prefer `stock_signal::build_scene_stock_query` for multi-broll.
-#[allow(dead_code)]
-fn extract_keywords(text: &str, fallback_query: &str) -> String {
-    let toks = crate::stock_signal::signal_tokens_from_scene(text, &[]);
-    if toks.is_empty() {
-        fallback_query.to_string()
-    } else {
-        toks.into_iter().take(5).collect::<Vec<_>>().join(" ")
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Handler: background.search — search procedural background index by mood

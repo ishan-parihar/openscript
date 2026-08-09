@@ -182,104 +182,11 @@ pub(crate) async fn handle_sticker_keywords(args: serde_json::Value) -> Result<s
     }
     let language = default_str(&args, "language", "hinglish");
     let max_batch_size = default_u32(&args, "max_batch_size", 15).max(1) as usize;
+    let _ = max_batch_size; // batching is owned by keywords::draft_scene_keywords
 
-    let system_prompt = format!(
-        "You are a GIPHY sticker search keyword drafter for a short-form video pipeline. \
-        Your job: translate transcript captions into short GIPHY sticker search keywords. \
-        GIPHY stickers are animated reaction/meme/emotion GIFs (e.g. 'mind blown', 'facepalm', \
-        'celebration', 'sad', 'thumbs up', 'laughing', 'shocked'). \
-        Rules:\n1. Output ONLY valid JSON — no markdown, no explanation\n2. For each segment, output 2-3 short \
-        sticker keywords (1-3 words each) describing the REACTION/EMOTION/MEME that fits the spoken content\n3. Translate \
-        Hinglish/Hindi by MEANING, not word-for-word\n4. Prefer common GIPHY searchable reaction phrases over abstract concepts\n5. \
-        Classify each segment's emotional weight:\n   - 'intent': one of anger, surprise, hype, celebration, sarcasm, sad, question, emphasis, none\n   - 'emphatic': true ONLY when the segment carries real emotional weight (shock, anger, hype, punchline, big claim, strong opinion). \
-        Calm/filler segments — plain statements, connectors, 'hai', 'bhai', mundane narration — are emphatic=false with sticker_keywords=[] \
-        (no sticker is better than an irrelevant one)\n6. Source language detected: {}\nOutput format: {{\"results\": [{{\"id\": \"seg_XXX\", \"intent\": \"anger\", \"emphatic\": true, \"sticker_keywords\": [\"angry eyes\", \"frustrated\"]}}]}}",
-        language
-    );
-
-    let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    let mut intent_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let mut emphatic_map: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
-    let mut last_backend = String::new();
-    let mut last_model = String::new();
-    let total = segments.len();
-    let num_batches = total.div_ceil(max_batch_size);
-
-    for batch_idx in 0..num_batches {
-        let start = batch_idx * max_batch_size;
-        let end = std::cmp::min(start + max_batch_size, total);
-        let batch = &segments[start..end];
-        report_progress(
-            5.0 + (batch_idx as f64 / num_batches as f64) * 70.0,
-            100.0,
-            &format!("Drafting sticker keywords batch {}/{}...", batch_idx + 1, num_batches),
-        )
-        .await
-        .ok();
-
-        let mut segment_descriptions = Vec::new();
-        for (j, seg) in batch.iter().enumerate() {
-            let i = start + j;
-            let caption = seg
-                .get("caption")
-                .or_else(|| seg.get("text"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let fallback_id = format!("seg_{}", i);
-            let id = seg.get("id").and_then(|v| v.as_str()).unwrap_or(&fallback_id);
-            segment_descriptions.push(format!("[{}] {}: \"{}\"", id, i + 1, caption));
-        }
-
-        let user_prompt = format!(
-            "Draft GIPHY sticker search keywords for each segment. Output ONLY the JSON object.\n\n{}",
-            segment_descriptions.join("\n")
-        );
-        let result = match crate::llm::chat_complete(&system_prompt, &user_prompt, None).await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("[sticker.keywords] Batch {} LLM failed: {} — using caption fallback", batch_idx + 1, e);
-                continue;
-            }
-        };
-        last_backend = result.backend.clone();
-        last_model = result.model.clone();
-
-        let response_text = result.text.trim();
-        let parsed: serde_json::Value = if let Some(start) = response_text.find('{') {
-            if let Some(end) = response_text.rfind('}') {
-                serde_json::from_str(&response_text[start..=end]).unwrap_or_else(|_| json!({"results": []}))
-            } else {
-                json!({"results": []})
-            }
-        } else {
-            json!({"results": []})
-        };
-
-        if let Some(results) = parsed.get("results").and_then(|v| v.as_array()) {
-            for r in results {
-                if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
-                    let kws = r.get("sticker_keywords").or_else(|| r.get("keywords"));
-                    if let Some(kws) = kws.and_then(|v| v.as_array()) {
-                        let keywords: Vec<String> = kws
-                            .iter()
-                            .filter_map(|k| k.as_str().map(String::from))
-                            .filter(|k| k.len() >= 2)
-                            .collect();
-                        keyword_map.insert(id.to_string(), keywords);
-                    }
-                    if let Some(intent) = r.get("intent").and_then(|v| v.as_str()) {
-                        intent_map.insert(id.to_string(), intent.to_string());
-                    }
-                    if let Some(emph) = r.get("emphatic").and_then(|v| v.as_bool()) {
-                        emphatic_map.insert(id.to_string(), emph);
-                    }
-                }
-            }
-        }
-    }
-
-    // Enrich segments: LLM keywords with caption-word fallback per segment.
-    let mut enriched = Vec::new();
+    // Unified draft — one batched LLM call emitting visual + reaction keywords
+    // (reactions/intent/emphatic are the sticker subset; visual is ignored here).
+    let mut draft_inputs: Vec<crate::keywords::SegmentInput> = Vec::with_capacity(segments.len());
     for (i, seg) in segments.iter().enumerate() {
         let id = seg
             .get("id")
@@ -290,45 +197,52 @@ pub(crate) async fn handle_sticker_keywords(args: serde_json::Value) -> Result<s
             .get("caption")
             .or_else(|| seg.get("text"))
             .and_then(|v| v.as_str())
-            .unwrap_or("");
-        // Resolve intent/emphatic with the same id-fallback ladder as keywords.
-        let intent = intent_map
-            .get(&id)
-            .or_else(|| intent_map.get(&format!("seg_{}", i)))
-            .or_else(|| intent_map.get(&format!("seg_{:03}", i)))
-            .cloned()
+            .unwrap_or("")
+            .to_string();
+        draft_inputs.push(crate::keywords::SegmentInput {
+            segment_id: id,
+            caption,
+            language_hint: if language.is_empty() { None } else { Some(language.to_string()) },
+            duration_s: 0.0,
+            scene_idx: i,
+            total_scenes: segments.len(),
+            video_title: String::new(),
+            video_keywords: Vec::new(),
+            covered_concepts: Vec::new(),
+        });
+    }
+
+    report_progress(30.0, 100.0, "Drafting sticker keywords (unified intent pass)...").await.ok();
+    let drafted = crate::keywords::draft_scene_keywords(&draft_inputs).await;
+
+    // Enrich segments: reactions/intent/emphatic from the unified draft.
+    let mut enriched = Vec::new();
+    let mut last_backend = String::new();
+    let mut last_model = String::new();
+    for (i, seg) in segments.iter().enumerate() {
+        let _id = seg
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&format!("seg_{}", i))
+            .to_string();
+        let d = drafted.get(i);
+        let reactions: Vec<String> = d.map(|d| d.reactions.clone()).unwrap_or_default();
+        let emphatic = d.map(|d| d.emphatic).unwrap_or(false);
+        let intent = d
+            .and_then(|d| d.intent.clone())
             .unwrap_or_else(|| "emphasis".to_string());
-        let emphatic = emphatic_map
-            .get(&id)
-            .or_else(|| emphatic_map.get(&format!("seg_{}", i)))
-            .or_else(|| emphatic_map.get(&format!("seg_{:03}", i)))
-            .copied()
-            // LLM-down path: the naive caption-word fallback is NOT auto-approved
-            // (that is exactly the irrelevance bug) — mark it non-emphatic so the
-            // validation gate rejects it. Better no sticker than a wrong one.
-            .unwrap_or(false);
-        let keywords: Vec<String> = if emphatic {
-            keyword_map
-                .get(&id)
-                .or_else(|| keyword_map.get(&format!("seg_{}", i)))
-                .or_else(|| keyword_map.get(&format!("seg_{:03}", i)))
-                .cloned()
-                .unwrap_or_else(|| {
-                    let words: Vec<String> = caption
-                        .split_whitespace()
-                        .filter(|w| w.len() > 3)
-                        .take(3)
-                        .map(String::from)
-                        .collect();
-                    if words.is_empty() {
-                        vec!["funny".to_string()]
-                    } else {
-                        words
-                    }
-                })
-        } else {
-            Vec::new()
-        };
+        if let Some(d) = d {
+            if d.source != crate::keywords::KeywordSource::Heuristic && last_backend.is_empty() {
+                let parts: Vec<&str> = d.backend.split('/').collect();
+                if parts.len() == 2 {
+                    last_backend = parts[0].to_string();
+                    last_model = parts[1].to_string();
+                }
+            }
+        }
+        // LLM-down path: the heuristic draft never auto-approves stickers
+        // (emphatic=false, reactions=[]) — better no sticker than a wrong one.
+        let keywords: Vec<String> = if emphatic { reactions } else { Vec::new() };
         let mut out = seg.clone();
         if let Some(obj) = out.as_object_mut() {
             obj.insert("sticker_keywords".into(), json!(keywords));

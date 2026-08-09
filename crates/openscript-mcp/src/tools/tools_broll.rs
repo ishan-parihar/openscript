@@ -34,7 +34,14 @@ pub(crate) async fn handle_broll_suggest(args: serde_json::Value) -> Result<serd
             .get("caption")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let concept = extract_broll_concept(caption);
+        let concept = {
+            let kws = crate::keywords::extract_salient_keywords(caption, 3);
+            if kws.is_empty() {
+                "b-roll".to_string()
+            } else {
+                kws.join(" ")
+            }
+        };
 
         if duration_ms > cadence_ms * 2 {
             let mut t = 0i64;
@@ -782,140 +789,87 @@ pub(crate) async fn handle_broll_keywords(args: serde_json::Value) -> Result<ser
     let max_batch_size = args.get("max_batch_size")
         .and_then(|v| v.as_u64())
         .unwrap_or(15).max(1) as usize;
+    let _ = max_batch_size; // batching is owned by keywords::draft_scene_keywords
 
-    let title_context = if !video_title.is_empty() {
-        format!("\nVideo title/context: \"{}\"\n", video_title)
-    } else {
-        String::new()
-    };
-
-    // Phase 136: when a timeline is provided, pass the already-covered b-roll
-    // concepts so the single-shot draft pass is NON-REDUNDANT across the video
-    // (each segment must get distinct, relevant footage).
-    let timeline_context = if let Some(tl_path) = default_opt_str(&args, "timeline_path") {
+    // Phase 158: covered concepts from the timeline (non-redundant draft pass).
+    let covered_concepts: Vec<String> = if let Some(tl_path) = default_opt_str(&args, "timeline_path") {
         match Timeline::load(&tl_path) {
             Ok(tl) => {
                 let mut concepts: Vec<String> = Vec::new();
                 if let Some(broll) = tl.tracks.get(&TrackType::Broll) {
                     for ev in broll {
-                        if let openscript_core::timeline::EventKind::Broll { concept, .. } = &ev.kind
-                        {
+                        if let openscript_core::timeline::EventKind::Broll { concept, .. } = &ev.kind {
                             if !concept.is_empty() && !concepts.contains(concept) {
                                 concepts.push(concept.clone());
                             }
                         }
                     }
                 }
-                if concepts.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        "\nB-roll concepts ALREADY COVERED in this timeline (AVOID repeating them — each segment needs DISTINCT relevant footage): {}\n",
-                        concepts.join(", ")
-                    )
-                }
+                concepts
             }
-            Err(_) => String::new(),
+            Err(_) => Vec::new(),
         }
     } else {
-        String::new()
+        Vec::new()
     };
 
-    // Build system prompt once (only user prompt changes per batch)
-    let system_prompt = format!(
-        "You are a stock footage search keyword extractor for a video production pipeline. \
-        Your job: translate transcript captions into English visual search keywords for stock video sites (Pexels, Pixabay). \
-        \
-        Rules:
-        1. Output ONLY valid JSON — no markdown, no explanation
-        2. For each segment, output 2-3 English keywords that describe what VISUAL CONTENT should appear on screen
-        3. Translate Hinglish/Hindi to English. Use the MEANING, not literal word-for-word translation
-        4. Keywords must be VISUAL — things you can see in stock footage (e.g., 'protest crowd', 'government building', 'social media icons')
-        5. Avoid abstract concepts — prefer concrete, searchable visual terms
-        6. Each keyword should be 1-3 words maximum
-        7. Source language detected: {}\n{}{}\
-        Output format: {{\"results\": [{{\"id\": \"seg_XXX\", \"keywords\": [\"keyword1\", \"keyword2\"]}}]}}",
-        language, title_context, timeline_context
-    );
+    // Unified draft: one batched LLM call (visual + reactions per segment) with
+    // id-echo, missing-id redraft, and the salience fallback — the SAME module
+    // used by script.to_video, sticker.keywords, and broll.auto.
+    let mut draft_inputs: Vec<crate::keywords::SegmentInput> = Vec::with_capacity(segments.len());
+    for (i, seg) in segments.iter().enumerate() {
+        let id = seg.get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&format!("seg_{}", i))
+            .to_string();
+        let caption = seg.get("caption")
+            .or_else(|| seg.get("text"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let start_s = seg.get("start_s")
+            .or_else(|| seg.get("start_ms"))
+            .or_else(|| seg.get("start"))
+            .and_then(|v| v.as_f64())
+            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+            .unwrap_or(0.0);
+        let end_s = seg.get("end_s")
+            .or_else(|| seg.get("end_ms"))
+            .or_else(|| seg.get("end"))
+            .and_then(|v| v.as_f64())
+            .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
+            .unwrap_or(start_s + 3.0);
+        draft_inputs.push(crate::keywords::SegmentInput {
+            segment_id: id,
+            caption,
+            language_hint: if language.is_empty() { None } else { Some(language.to_string()) },
+            duration_s: (end_s - start_s).max(0.0),
+            scene_idx: i,
+            total_scenes: segments.len(),
+            video_title: video_title.to_string(),
+            video_keywords: Vec::new(),
+            covered_concepts: covered_concepts.clone(),
+        });
+    }
 
-    // Build a lookup from segment id -> keywords (across all batches)
-    let mut keyword_map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    report_progress(30.0, 100.0, "Drafting visual keywords (unified)...").await.ok();
+    let drafted = crate::keywords::draft_scene_keywords(&draft_inputs).await;
+
     let mut last_backend = String::new();
     let mut last_model = String::new();
-    let total = segments.len();
-    let num_batches = total.div_ceil(max_batch_size);
-
-    for batch_idx in 0..num_batches {
-        let start = batch_idx * max_batch_size;
-        let end = std::cmp::min(start + max_batch_size, total);
-        let batch = &segments[start..end];
-
-        let progress_pct = 10.0 + (batch_idx as f64 / num_batches as f64) * 70.0;
-        report_progress(progress_pct, 100.0, &format!("Extracting keywords batch {}/{}...", batch_idx + 1, num_batches)).await.ok();
-
-        // Build segment descriptions for this batch
-        let mut segment_descriptions = Vec::new();
-        for (j, seg) in batch.iter().enumerate() {
-            let i = start + j;
-            let caption = seg.get("caption")
-                .or_else(|| seg.get("text"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let fallback_id = format!("seg_{}", i);
-            let id = seg.get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or(&fallback_id);
-            segment_descriptions.push(format!("[{}] {}: \"{}\"", id, i + 1, caption));
-        }
-
-        let user_prompt = format!(
-            "Extract visual search keywords for each segment. Output ONLY the JSON object.\n\n{}",
-            segment_descriptions.join("\n")
-        );
-
-        // Call the LLM cascade for this batch — continue on failure with fallback
-        let result = match crate::llm::chat_complete(&system_prompt, &user_prompt, None).await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::warn!("[broll.keywords] Batch {} LLM failed: {} — using naive fallback", batch_idx + 1, e);
-                continue;
-            }
-        };
-
-        // Parse the LLM response — extract JSON from the response
-        let response_text = result.text.trim();
-        let parsed: serde_json::Value = if let Some(start) = response_text.find('{') {
-            if let Some(end) = response_text.rfind('}') {
-                serde_json::from_str(&response_text[start..=end])
-                    .unwrap_or_else(|_| json!({"results": []}))
-            } else {
-                json!({"results": []})
-            }
-        } else {
-            json!({"results": []})
-        };
-
-        last_backend = result.backend;
-        last_model = result.model;
-
-        // Merge batch results into the keyword_map
-        if let Some(results) = parsed.get("results").and_then(|v| v.as_array()) {
-            for r in results {
-                if let Some(id) = r.get("id").and_then(|v| v.as_str()) {
-                    if let Some(kws) = r.get("keywords").and_then(|v| v.as_array()) {
-                        let keywords: Vec<String> = kws.iter()
-                            .filter_map(|k| k.as_str().map(String::from))
-                            .collect();
-                        keyword_map.insert(id.to_string(), keywords);
-                    }
-                }
+    for d in &drafted {
+        if d.source != crate::keywords::KeywordSource::Heuristic {
+            let parts: Vec<&str> = d.backend.split('/').collect();
+            if parts.len() == 2 && last_backend.is_empty() {
+                last_backend = parts[0].to_string();
+                last_model = parts[1].to_string();
             }
         }
     }
 
     report_progress(90.0, 100.0, "Assembling results...").await.ok();
 
-    // Build the output: enrich each segment with LLM-generated keywords
+    // Build the output: enrich each segment with the unified visual keywords.
     let mut enriched_segments = Vec::new();
     for (i, seg) in segments.iter().enumerate() {
         let id = seg.get("id")
@@ -939,23 +893,10 @@ pub(crate) async fn handle_broll_keywords(args: serde_json::Value) -> Result<ser
             .map(|v| if v > 1000.0 { v / 1000.0 } else { v })
             .unwrap_or(start_s + 3.0);
 
-        // Get keywords from LLM, fallback to naive extraction if LLM failed
-        // Try exact ID match first, then index-based match (LLM may renumber IDs)
-        let keywords = keyword_map.get(&id)
-            .or_else(|| keyword_map.get(&format!("seg_{}", i)))
-            .or_else(|| keyword_map.get(&format!("seg_{:03}", i)))
-            .cloned()
-            .unwrap_or_else(|| {
-                // Fallback: translate Hinglish→English visual concepts FIRST, then
-                // naive keyword extraction. Raw Hinglish words ("sarkar", "bhai")
-                // produce garbage Pexels queries; their English visual equivalents
-                // search cleanly. This is the LLM-down path for the single-shot
-                // keyword generation loop — relevance must not collapse when the
-                // model is unavailable (Phase 135).
-                let translated = crate::stock_signal::translate_hinglish_visuals(caption);
-                let concept = extract_broll_concept(&translated);
-                concept.split_whitespace().map(String::from).collect()
-            });
+        let keywords = drafted
+            .get(i)
+            .map(|d| d.visual.clone())
+            .unwrap_or_default();
 
         enriched_segments.push(json!({
             "id": id,
@@ -1570,16 +1511,64 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
         ));
     }
 
-    // ---- Stage B: draft keywords (agentic) ----
-    report_progress(35.0, 100.0, "3/6 broll.keywords (draft)").await.ok();
-    let drafts = handle_broll_keywords(json!({
-        "segments": segments,
-        "language": language,
-        "max_batch_size": max_batch_size,
-        "timeline_path": timeline_path,
-    }))
-    .await?;
-    let draft_segments = drafts.get("segments").cloned().unwrap_or_else(|| json!([]));
+    // ---- Stage B: draft keywords (agentic, unified) ----
+    // ONE draft call emits BOTH visual (stock) and reactions (GIPHY) keywords
+    // per segment via the shared keywords module. B-roll consumes `visual`;
+    // stickers consume `reactions` (Stage F) — the old path fed validated
+    // visual b-roll nouns into the GIPHY sticker search (the sticker-
+    // relevance bug).
+    let _ = max_batch_size; // draft batching is owned by keywords (MAX_DRAFT_BATCH)
+    report_progress(35.0, 100.0, "3/6 keywords.draft (visual + reactions)").await.ok();
+    let draft_inputs: Vec<crate::keywords::SegmentInput> = segments
+        .iter()
+        .enumerate()
+        .map(|(i, s)| crate::keywords::SegmentInput {
+            segment_id: s
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&format!("seg_{}", i))
+                .to_string(),
+            caption: s
+                .get("caption")
+                .or_else(|| s.get("text"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            language_hint: Some(language.clone()),
+            duration_s: (s
+                .get("end_s")
+                .or_else(|| s.get("end"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0)
+                - s.get("start_s")
+                    .or_else(|| s.get("start"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0))
+            .max(0.0),
+            scene_idx: i,
+            total_scenes: segments.len(),
+            video_title: String::new(),
+            video_keywords: Vec::new(),
+            covered_concepts: Vec::new(),
+        })
+        .collect();
+    let drafted = crate::keywords::draft_scene_keywords(&draft_inputs).await;
+    // Preserve each segment's timestamps/caption for the validation stage;
+    // attach the unified VISUAL keywords in input order.
+    let draft_segments: serde_json::Value = json!(
+        segments
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let mut seg = s.clone();
+                if let Some(obj) = seg.as_object_mut() {
+                    let visual = drafted.get(i).map(|d| d.visual.clone()).unwrap_or_default();
+                    obj.insert("keywords".into(), json!(visual));
+                }
+                seg
+            })
+            .collect::<Vec<serde_json::Value>>()
+    );
 
     // ---- Stage C: relevance validation (agent picks best real video) ----
     report_progress(50.0, 100.0, "4/6 broll.validate_keywords (relevance)").await.ok();
@@ -1684,33 +1673,30 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
 
     if run_stickers {
         report_progress(88.0, 100.0, "sticker.auto (agentic GIPHY stickers)").await.ok();
-        // Unification: the b-roll pipeline's VALIDATED keywords (final_keywords
-        // — agent-approved, Pexels-verified) also drive the GIPHY sticker search
-        // per segment, so b-roll and stickers share ONE keyword source instead
-        // of sticker.keywords re-drafting a separate intent pass.
-        let sticker_shared_keywords: Vec<serde_json::Value> = validated_segments
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| {
-                        let id = v.get("id").and_then(|i| i.as_str())?.to_string();
-                        let kws: Vec<String> = v
-                            .get("final_keywords")
-                            .and_then(|k| k.as_array())
-                            .map(|a| a.iter().filter_map(|s| s.as_str().map(String::from)).collect())
-                            .unwrap_or_default();
-                        if kws.is_empty() {
-                            return None;
-                        }
-                        Some(json!({
-                            "id": id,
-                            "caption": v.get("caption").cloned().unwrap_or_else(|| json!("")),
-                            "sticker_keywords": kws,
-                        }))
-                    })
-                    .collect()
+        // Unification (fixed): b-roll and stickers share ONE draft pass but
+        // consume DIFFERENT outputs — b-roll uses `visual`, stickers use
+        // `reactions` (reaction/meme keywords that GIPHY actually indexes).
+        // The old path fed validated visual b-roll nouns into the GIPHY
+        // sticker search, which produced irrelevant noun/crowd GIFs.
+        let sticker_shared_keywords: Vec<serde_json::Value> = drafted
+            .iter()
+            .filter_map(|d| {
+                if !d.emphatic || d.reactions.is_empty() {
+                    return None;
+                }
+                let caption = segments
+                    .iter()
+                    .find(|s| s.get("id").and_then(|v| v.as_str()) == Some(d.segment_id.as_str()))
+                    .and_then(|s| s.get("caption").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string();
+                Some(json!({
+                    "id": d.segment_id.clone(),
+                    "caption": caption,
+                    "sticker_keywords": d.reactions.clone(),
+                }))
             })
-            .unwrap_or_default();
+            .collect();
         // sticker.auto loads the timeline's segments directly (timeline_path
         // branch) and runs shared keywords → GIPHY relevance gate → Stickers track.
         let sticker_res = handle_sticker_auto(json!({
@@ -2030,7 +2016,20 @@ pub(crate) async fn handle_background_fetch(args: serde_json::Value) -> Result<s
     let mut used_stock_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut used_pexels: std::collections::HashSet<i64> = used_pexels_ids;
 
-    let signal = crate::stock_signal::signal_tokens_from_scene(&query, &[]);
+    // Phase 158: scene-text-aware signal — the old path derived the lexical
+    // signal from the raw query alone with EMPTY video_keywords, so topic
+    // detection collapsed to Lifestyle and ranking lost all scene context.
+    // When the caller supplies scene_text, merge its salient keywords with the
+    // query tokens (unicode-aware — works for any script system).
+    let mut signal = crate::keywords::extract_salient_keywords(&scene_text, 6);
+    for t in crate::keywords::extract_salient_keywords(&query, 4) {
+        if !signal.contains(&t) {
+            signal.push(t);
+        }
+    }
+    if signal.is_empty() {
+        signal = vec![query.to_string()];
+    }
     let outcome = crate::scene_media::fetch_scene_background(
         crate::scene_media::SceneMediaRequest {
             query: query.to_string(),

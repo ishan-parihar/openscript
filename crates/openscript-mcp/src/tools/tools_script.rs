@@ -1093,64 +1093,69 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
         let cache_dir = format!("{}/broll_cache", output_dir);
         std::fs::create_dir_all(&cache_dir).ok();
 
-        // === Agentic keyword unification (broll.keywords pipeline) ===
-        // script.to_video now drafts per-scene stock keywords through the SAME
-        // LLM pipeline as broll.keywords / broll.auto (the A2V path). The old
-        // golden path relied on the stock_signal heuristic alone, which
-        // degrades to generic Lifestyle anchors for abstract topics
-        // (psychology, politics, influence) — the reported "b-roll not
-        // relevant" failures. One batched LLM call covers all scenes; the
-        // topic-aware heuristic remains the fallback when the LLM cascade is
-        // down or returns too few keywords for a scene.
+        // === Agentic keyword unification (keywords module) ===
+        // script.to_video drafts per-scene stock keywords through the SAME
+        // unified keywords module as broll.keywords / broll.auto (A2V) and
+        // sticker.keywords. One batched LLM call emits visual + reaction
+        // keywords per scene; the topic-aware salience heuristic is the
+        // LLM-down fallback. `effective_video_keywords` implements the
+        // documented auto-extraction from the title when the script omitted
+        // them (previously a silent Lifestyle collapse).
+        let effective_video_keywords: Vec<String> = if spec.video_keywords.is_empty() {
+            let derived = crate::keywords::auto_extract_video_keywords(&spec.title);
+            if !derived.is_empty() {
+                tracing::info!(
+                    "[script.to_video] video_keywords omitted — auto-extracted from title: {:?}",
+                    derived
+                );
+                derived
+            } else {
+                spec.video_keywords.clone()
+            }
+        } else {
+            spec.video_keywords.clone()
+        };
+
         let mut llm_scene_keywords: std::collections::HashMap<String, Vec<String>> =
             std::collections::HashMap::new();
         {
-            let segs: Vec<serde_json::Value> = manifest
+            let mut segs: Vec<crate::keywords::SegmentInput> = manifest
                 .get("segments")
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default()
                 .iter()
-                .map(|s| {
-                    json!({
-                        "id": s.get("scene_id").and_then(|v| v.as_str()).unwrap_or(""),
-                        "caption": s.get("text").and_then(|v| v.as_str()).unwrap_or(""),
-                    })
+                .enumerate()
+                .map(|(i, s)| crate::keywords::SegmentInput {
+                    segment_id: s
+                        .get("scene_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    caption: s
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    language_hint: Some(spec.language.clone()),
+                    duration_s: 0.0,
+                    scene_idx: i,
+                    total_scenes: manifest
+                        .get("segments")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0),
+                    video_title: spec.title.clone(),
+                    video_keywords: effective_video_keywords.clone(),
+                    covered_concepts: Vec::new(),
                 })
                 .collect();
+            segs.retain(|s| !s.segment_id.is_empty());
             if !segs.is_empty() {
-                match handle_broll_keywords(json!({
-                    "segments": segs,
-                    "language": spec.language,
-                    "video_title": spec.title,
-                    "max_batch_size": 15,
-                }))
-                .await
-                {
-                    Ok(kw_res) => {
-                        if let Some(out_segs) = kw_res.get("segments").and_then(|v| v.as_array()) {
-                            for s in out_segs {
-                                let id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                let kws: Vec<String> = s
-                                    .get("keywords")
-                                    .and_then(|v| v.as_array())
-                                    .map(|arr| {
-                                        arr.iter()
-                                            .filter_map(|k| k.as_str().map(String::from))
-                                            .collect()
-                                    })
-                                    .unwrap_or_default();
-                                if !id.is_empty() && !kws.is_empty() {
-                                    llm_scene_keywords.insert(id.to_string(), kws);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "[script.to_video] agentic keyword draft failed ({}): using heuristic query builder",
-                            e
-                        );
+                let drafted = crate::keywords::draft_scene_keywords(&segs).await;
+                for d in drafted {
+                    if !d.segment_id.is_empty() && !d.visual.is_empty() {
+                        llm_scene_keywords.insert(d.segment_id, d.visual);
                     }
                 }
             }
@@ -1214,17 +1219,25 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                         scene_idx,
                     }
                 } else {
-                    crate::stock_signal::build_scene_stock_query(
+                    // De-biased fallback: content-derived salience keywords +
+                    // topic keywords (no Lifestyle collapse, no position rotation).
+                    let (q, sig) = crate::keywords::heuristic_scene_query(
                         scene_text,
-                        &spec.video_keywords,
+                        &effective_video_keywords,
                         &spec.output.theme,
                         &spec.meta.aspect,
                         scene_idx,
-                    )
+                    );
+                    crate::stock_signal::SceneStockQuery {
+                        query: q.clone(),
+                        signal_tokens: sig,
+                        visual_anchor: q,
+                        scene_idx,
+                    }
                 }
             };
             // Keep unsafe-keyword rewrite for edge terms (blood → calm nature)
-            let query = safe_search_query(&stock_q.query, &spec.output.theme);
+            let query = crate::keywords::sanitize_query(&stock_q.query, &spec.output.theme);
             scene_stock_queries.push(query.clone());
             let signal_tokens = stock_q.signal_tokens.clone();
             tracing::info!(
