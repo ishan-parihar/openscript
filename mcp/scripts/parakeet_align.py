@@ -251,12 +251,29 @@ def align_wav(wav_path, encoder_session, decoder_session, vocab):
     }
 
 
+def _whisper_device() -> str:
+    """GPU-first device for the Whisper fallback (OPENSCRIPT_DEVICE=auto|cuda|cpu)."""
+    dev = os.environ.get("OPENSCRIPT_DEVICE", "auto").strip().lower()
+    if dev == "cpu":
+        return "cpu"
+    if dev == "cuda":
+        return "cuda"
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
 def align_wav_whisper(wav_path, model_name="base"):
     """Fallback alignment using Whisper."""
     if not WHISPER_AVAILABLE:
         return {"status": "error", "error": "whisper not installed"}
     try:
-        model = whisper.load_model(model_name)
+        model = whisper.load_model(model_name, device=_whisper_device())
         result = model.transcribe(wav_path, word_timestamps=True, language="en")
         words = []
         for segment in result.get("segments", []):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -25,8 +27,6 @@ def _providers() -> list[str]:
     OPENSCRIPT_DEVICE=auto (default) | cuda | cpu forces the choice. Requires
     onnxruntime-gpu for CUDAExecutionProvider; falls back to CPU otherwise.
     """
-    import os
-
     dev = os.environ.get("OPENSCRIPT_DEVICE", "auto").strip().lower()
     if dev == "cpu":
         return ["CPUExecutionProvider"]
@@ -34,7 +34,17 @@ def _providers() -> list[str]:
         available = ort.get_available_providers()
     except Exception:
         return ["CPUExecutionProvider"]
-    if dev == "cuda" or (dev == "auto" and "CUDAExecutionProvider" in available):
+    if dev == "cuda":
+        if "CUDAExecutionProvider" in available:
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        print(
+            "[audio8] OPENSCRIPT_DEVICE=cuda requested but CUDAExecutionProvider is "
+            "not available (onnxruntime-gpu missing?) — falling back to CPU",
+            file=sys.stderr,
+            flush=True,
+        )
+        return ["CPUExecutionProvider"]
+    if dev == "auto" and "CUDAExecutionProvider" in available:
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 

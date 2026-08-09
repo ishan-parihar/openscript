@@ -56,7 +56,13 @@ def ort_providers():
         available = _ort.get_available_providers()
     except Exception:
         return ["CPUExecutionProvider"]
-    if dev == "cuda" or (dev == "auto" and "CUDAExecutionProvider" in available):
+    if dev == "cuda":
+        if "CUDAExecutionProvider" in available:
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        _log("OPENSCRIPT_DEVICE=cuda requested but CUDAExecutionProvider is not "
+             "available (onnxruntime-gpu missing?) — falling back to CPU", "device")
+        return ["CPUExecutionProvider"]
+    if dev == "auto" and "CUDAExecutionProvider" in available:
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 
