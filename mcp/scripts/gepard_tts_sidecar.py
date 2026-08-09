@@ -196,15 +196,27 @@ def handle_synth(req):
     text = req.get("text", "")
     voice = req.get("voice", "")
     output_path = req.get("output_path", "")
+    emotion = req.get("emotion") or None
     if not text or not voice or not output_path:
         raise ValueError("synth requires text, voice, output_path")
 
-    ref = _voice_path(voice)
-    if not ref.exists():
-        raise ValueError(
-            f"no registered gepard voice '{voice}' (expected {ref}). "
-            f"Register it first via voice.profile.add with provider=gepard."
-        )
+    # Emotion-take reference override: when the caller selects an emotion,
+    # synthesize with THAT reference recording (the profile's emotion take)
+    # instead of the registered neutral base voice. Gepard conditions on the
+    # reference at prefill, so swapping the WAV changes the delivered
+    # tonality — this is the per-line emotion mechanism.
+    ref_override = req.get("ref_audio") or None
+    if ref_override:
+        ref = Path(ref_override)
+        if not ref.exists():
+            raise ValueError(f"emotion reference audio not found: {ref_override}")
+    else:
+        ref = _voice_path(voice)
+        if not ref.exists():
+            raise ValueError(
+                f"no registered gepard voice '{voice}' (expected {ref}). "
+                f"Register it first via voice.profile.add with provider=gepard."
+            )
 
     session = get_session()
 
@@ -238,7 +250,11 @@ def handle_synth(req):
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out), audio, sr)
     duration_ms = int(round(len(audio) / sr * 1000.0))
-    return {"status": "ok", "duration_ms": duration_ms, "sample_rate": sr, "chunks": len(chunks)}
+    resp = {"status": "ok", "duration_ms": duration_ms, "sample_rate": sr, "chunks": len(chunks)}
+    if emotion:
+        resp["emotion"] = emotion
+        resp["ref_audio"] = str(ref)
+    return resp
 
 
 def handle_register(req):

@@ -218,8 +218,8 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "properties": {
                     "id": {"type": "string", "description": "Unique scene ID. Auto-generated if omitted."},
                     "speaker": {"type": "string", "description": "Speaker ID (must match a key in speakers)."},
-                    "text": {"type": "string", "description": "The spoken text for this scene."},
-                    "emote": {"type": ["string", "null"], "enum": ["neutral", "happy", "surprised", "thinking", null], "description": "Speaker emote for this scene."},
+                    "text": {"type": "string", "description": "The spoken text for this scene."},                    "emote": {"type": ["string", "null"], "description": "Emotion/emote for this scene (e.g. 'happy', 'angry', 'whisper', 'thinking'). Selects the speaker's emotion-take (tonality template) at synthesis when the voice profile registered one; also feeds sticker/GIPHY reaction search. Free-form; falls back to the base voice when no take matches."}
+,
                     "background": {"type": ["string", "null"], "description": "Override background for this scene (preset name or null for auto)."},
                     "duration_override_ms": {"type": ["integer", "null"], "description": "Override scene duration in milliseconds. Null = use TTS duration."},
                     "duration_seconds": {"type": ["number", "null"], "description": "Override scene duration in SECONDS. Null = use TTS duration. If both this and duration_override_ms are set, duration_override_ms wins."},
@@ -417,20 +417,27 @@ pub(crate) async fn handle_script_generate_voices(
                 ))
             })?;
 
-        // Generate TTS for this scene
+        // Generate TTS for this scene. Per-scene emotion/tone/speed/pitch are
+        // the line-level "performance direction": emote selects the profile's
+        // emotion-take (tonality template) when registered; tone is a
+        // natural-language refinement; speed/pitch override the script
+        // defaults (previously silently dropped for clone engines).
         let wav_path = format!("{}/{}_{}.wav", output_dir, scene.id, scene.speaker);
         if let Some(parent) = Path::new(&wav_path).parent() {
             std::fs::create_dir_all(parent).ok();
         }
 
+        let scene_speed = scene.speed.unwrap_or(spec.tts.default_speed);
+        let scene_pitch = scene.pitch.unwrap_or(spec.tts.default_pitch);
         let result = tts_generate_routed(
             &speaker.voice,
             &scene.text,
             &wav_path,
-            spec.tts.default_speed,
-            spec.tts.default_pitch,
+            scene_speed,
+            scene_pitch,
             1.0, // volume
             "wav",
+            scene.emote.as_deref(),
             &profile,
         )
         .await?;

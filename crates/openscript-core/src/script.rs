@@ -607,8 +607,28 @@ pub struct SceneSpec {
     pub text: String,
 
     /// Emote for this scene (e.g. "neutral", "happy", "surprised", "thinking").
+    /// When the speaker's voice profile carries an emotion-template map
+    /// (voice.profile.add with `emotions`), this selects the matching
+    /// emotional delivery take at synthesis time — the line is spoken in
+    /// that emotion's tonality, not the neutral clone timbre. Also feeds
+    /// sticker/GIPHY reaction search. Free-form string; the emotion-take
+    /// lookup falls back to the base voice when no take matches.
     #[serde(default)]
     pub emote: Option<String>,
+
+    /// Natural-language delivery direction for this line, e.g. "low gravelly
+    /// whisper, slow deliberate pace". Refines emote-take selection; engines
+    /// that accept instruction (VoiceDesign) receive it verbatim.
+    #[serde(default)]
+    pub tone: Option<String>,
+
+    /// Per-scene speech speed multiplier (overrides tts.default_speed).
+    #[serde(default)]
+    pub speed: Option<f64>,
+
+    /// Per-scene pitch multiplier (overrides tts.default_pitch).
+    #[serde(default)]
+    pub pitch: Option<f64>,
 
     /// Override background for this scene (preset name or null for auto).
     #[serde(default)]
@@ -1473,6 +1493,32 @@ mod tests {
         assert_eq!(spec.captions.highlight_color, "#00ff88", "neutral theme should keep default neon green");
         assert_eq!(spec.captions.style, "word_highlight", "neutral theme should keep default word_highlight");
         assert!(spec.stickers.enabled, "neutral theme should keep stickers enabled");
+    }
+
+    /// Per-scene performance direction: emote (free-form), tone, speed, pitch
+    /// must parse and survive round-trip — the line-level tonality plumbing.
+    #[test]
+    fn test_scene_performance_direction_fields() {
+        let json = r#"{
+            "speakers": {"narrator": {"voice": "ishan"}},
+            "scenes": [
+                {"speaker": "narrator", "text": "I am furious.", "emote": "angry", "tone": "low growl, teeth clenched", "speed": 1.3, "pitch": 1.1},
+                {"speaker": "narrator", "text": "Calm now.", "emote": "whisper"}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.scenes[0].emote.as_deref(), Some("angry"));
+        assert_eq!(
+            spec.scenes[0].tone.as_deref(),
+            Some("low growl, teeth clenched")
+        );
+        assert_eq!(spec.scenes[0].speed, Some(1.3));
+        assert_eq!(spec.scenes[0].pitch, Some(1.1));
+        // Defaults: no tone/speed/pitch → None.
+        assert_eq!(spec.scenes[1].tone, None);
+        assert_eq!(spec.scenes[1].speed, None);
+        assert_eq!(spec.scenes[1].pitch, None);
+        assert_eq!(spec.scenes[1].emote.as_deref(), Some("whisper"));
     }
 
     /// Verify tts.voice parses and survives round-trip, and that a speaker

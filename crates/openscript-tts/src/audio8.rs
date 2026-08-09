@@ -56,12 +56,42 @@ pub struct Sidecar {
     request_count: u64,
 }
 
+/// Optional per-request synthesis parameters. All fields default to None
+/// (= engine defaults / registered base voice).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Audio8SynthParams {
+    /// Emotion id (e.g. "angry"). Audio8 emotion takes are registered as
+    /// compound voices `{base}@{emotion}` at voice.profile.add time; the
+    /// router passes that compound id as `voice`. Kept for diagnostics.
+    pub emotion: Option<String>,
+    /// Override reference audio — NOT used by audio8 (its takes must be
+    /// pre-registered as compound voices); present for interface symmetry.
+    pub ref_audio: Option<String>,
+    pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    pub top_k: Option<u32>,
+    pub seed: Option<i64>,
+    pub max_new_tokens: Option<u32>,
+}
+
 #[derive(Serialize)]
 struct SynthRequest<'a> {
     op: &'static str,
     text: &'a str,
     voice: &'a str,
     output_path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    emotion: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seed: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_new_tokens: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -166,11 +196,28 @@ impl Sidecar {
     /// Synthesize `text` with the registered `voice`, writing WAV to `output_path`.
     /// Returns (duration_ms, sample_rate).
     pub fn synth(&mut self, text: &str, voice: &str, output_path: &str) -> Result<(i64, u32), SidecarFailure> {
+        self.synth_params(text, voice, output_path, &Audio8SynthParams::default())
+    }
+
+    /// Synthesize with per-request tonality knobs (sampling params).
+    pub fn synth_params(
+        &mut self,
+        text: &str,
+        voice: &str,
+        output_path: &str,
+        params: &Audio8SynthParams,
+    ) -> Result<(i64, u32), SidecarFailure> {
         let req = SynthRequest {
             op: "synth",
             text,
             voice,
             output_path,
+            emotion: params.emotion.as_deref(),
+            temperature: params.temperature,
+            top_p: params.top_p,
+            top_k: params.top_k,
+            seed: params.seed,
+            max_new_tokens: params.max_new_tokens,
         };
         let json = serde_json::to_string(&req)
             .map_err(|e| SidecarFailure::Transport(format!("Failed to serialize audio8 synth request: {}", e)))?;
@@ -259,6 +306,16 @@ fn with_sidecar<T>(
 /// Synthesize with an audio8 voice clone. Returns (duration_ms, sample_rate).
 pub fn audio8_synthesize(text: &str, voice: &str, output_path: &str) -> Result<(i64, u32), String> {
     with_sidecar(|s| s.synth(text, voice, output_path))
+}
+
+/// Synthesize with per-request tonality knobs (sampling params).
+pub fn audio8_synthesize_params(
+    text: &str,
+    voice: &str,
+    output_path: &str,
+    params: &Audio8SynthParams,
+) -> Result<(i64, u32), String> {
+    with_sidecar(|s| s.synth_params(text, voice, output_path, params))
 }
 
 /// Register (or overwrite) an audio8 voice clone from a reference WAV + transcript.

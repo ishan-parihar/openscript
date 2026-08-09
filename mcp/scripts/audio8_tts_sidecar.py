@@ -172,8 +172,16 @@ def handle_synth(req):
     text = req.get("text", "")
     voice = req.get("voice", "")
     output_path = req.get("output_path", "")
+    emotion = req.get("emotion") or None
     if not text or not voice or not output_path:
         raise ValueError("synth requires text, voice, output_path")
+    # Audio8 emotion takes are pre-registered compound voices `{base}@{emotion}`
+    # (the codec conditions on the reference at registration). A raw ref_audio
+    # override is not supported here — if the caller passed one, the router
+    # already resolved it to the compound voice id. Accept + ignore with a log.
+    if req.get("ref_audio"):
+        log(f"synth ref_audio override ignored for audio8 (voice='{voice}' used; "
+            f"register emotion takes via voice.profile.add emotions)")
     try:
         runtime = get_runtime()
     except Exception as exc:  # model load failure
@@ -209,7 +217,10 @@ def handle_synth(req):
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out), audio, SAMPLE_RATE)
     duration_ms = int(round(len(audio) / SAMPLE_RATE * 1000.0))
-    return {"status": "ok", "duration_ms": duration_ms, "sample_rate": SAMPLE_RATE, "chunks": len(chunks)}
+    resp = {"status": "ok", "duration_ms": duration_ms, "sample_rate": SAMPLE_RATE, "chunks": len(chunks)}
+    if emotion:
+        resp["emotion"] = emotion
+    return resp
 
 
 def handle_register(req):

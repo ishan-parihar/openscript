@@ -396,7 +396,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "mode": {"type": "string", "default": "clone", "description": "Voice mode: 'clone' for voice cloning, 'preset' for built-in voices"},
                     "model": {"type": "string", "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "description": "TTS model identifier"},
                     "language": {"type": "string", "default": "English", "description": "Voice language"},
-                    "description": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Human-readable description of this voice"}
+                    "description": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Human-readable description of this voice"},
+                    "emotions": {"anyOf": [{"type": "object", "additionalProperties": {"type": "object", "properties": {"ref_audio": {"type": "string", "description": "Reference WAV of this speaker delivering the emotion"}, "ref_text": {"type": "string", "description": "Exact transcript of the emotion reference audio"}, "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Gepard reference-fidelity knob for this take (higher = clings closer to this emotion reference)"}}, "required": ["ref_audio", "ref_text"]}}, {"type": "null"}], "description": "Emotion-template map: {emotion_id: {ref_audio, ref_text, cfg_scale?}}. Each entry is a SEPARATE reference recording of the same speaker delivering that emotion. Scene 'emote' / tts.generate 'emotion' then selects the matching take so every line is attuned to the required tonality. gepard takes are used via per-request ref override; audio8 takes are auto-registered as {profile_id}@{emotion} compound voices."}
                 },
                 "required": ["profile_id", "ref_audio", "ref_text"],
                 "additionalProperties": false
@@ -439,15 +440,16 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "tts.generate",
-            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Returns: output_path, duration_ms, cached flag, backend.",
+            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "voice_profile_id": {"type": "string", "description": "ID of the voice profile to use"},
                     "text": {"type": "string", "description": "Text to synthesize"},
                     "output_path": {"type": "string", "description": "Output audio file path (WAV/MP3)"},
-                    "speed": {"type": "number", "default": 1.0, "description": "Playback speed multiplier (1.0 = normal)"},
-                    "pitch": {"type": "number", "default": 1.0, "description": "Pitch multiplier"},
+                    "emotion": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Emotion-take id registered on the profile (e.g. 'angry', 'whisper', 'excited'). When the profile has an emotions template (voice.profile.add with emotions), synthesizes with that emotional delivery's reference instead of the neutral base voice. Falls back to the base voice when no take matches."},
+                    "speed": {"type": "number", "default": 1.0, "description": "Playback speed multiplier (1.0 = normal; applied post-synthesis for gepard/audio8 clone engines)"},
+                    "pitch": {"type": "number", "default": 1.0, "description": "Pitch multiplier (applied post-synthesis for gepard/audio8 clone engines)"},
                     "volume": {"type": "number", "default": 1.0, "description": "Volume multiplier"},
                     "format": {"type": "string", "default": "wav", "description": "Output audio format"}
                 },
@@ -2252,6 +2254,109 @@ struct TtsGenResult {
 
 /// Generate speech via the appropriate TTS backend (Kokoro or sidecar).
 /// `output_path` must be pre-validated (parent dir created).
+/// Resolve the emotion take for a profile + scene emote. Returns the take
+/// only when the profile registered one for this emotion id — otherwise
+/// None (synthesize with the neutral base reference).
+fn resolve_emotion_take<'p>(
+    profile: &'p openscript_tts::profiles::VoiceProfile,
+    emotion: Option<&str>,
+) -> Option<&'p openscript_tts::profiles::EmotionTake> {
+    match emotion {
+        Some(e) if !e.is_empty() => profile.emotions.get(e),
+        _ => None,
+    }
+}
+
+/// Build the ffmpeg `-af` filter graph for speed/pitch post-processing.
+/// Pure function so it is unit-testable. Uses the universally-available
+/// asetrate/aresample/atempo chain:
+///   pitch: asetrate=R*P,aresample=R,atempo=1/P  → pitch shifted, duration kept
+///   speed: atempo (chained past the 0.5–2.0 per-instance range)
+/// Returns an empty string when both are 1.0 (no-op).
+pub(crate) fn build_speed_pitch_filter(speed: f64, pitch: f64, sample_rate: u32) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if (pitch - 1.0).abs() > 1e-6 && pitch > 0.0 {
+        parts.push(format!(
+            "asetrate={}*{:.6},aresample={},atempo={:.6}",
+            sample_rate, pitch, sample_rate, 1.0 / pitch
+        ));
+    }
+    if (speed - 1.0).abs() > 1e-6 && speed > 0.0 {
+        let mut f = speed;
+        let mut chain: Vec<String> = Vec::new();
+        while f > 2.0 {
+            chain.push("atempo=2.0".to_string());
+            f /= 2.0;
+        }
+        while f < 0.5 {
+            chain.push("atempo=0.5".to_string());
+            f /= 0.5;
+        }
+        chain.push(format!("atempo={:.6}", f));
+        parts.push(chain.join(","));
+    }
+    parts.join(",")
+}
+
+/// Probe the first audio stream's sample rate via ffprobe (best-effort;
+/// falls back to 44100).
+fn probe_sample_rate(path: &str) -> u32 {
+    let out = std::process::Command::new("ffprobe")
+        .args([
+            "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=sample_rate", "-of", "csv=p=0", path,
+        ])
+        .output();
+    if let Ok(o) = out {
+        if let Ok(s) = String::from_utf8(o.stdout) {
+            if let Ok(rate) = s.trim().parse::<u32>() {
+                return rate;
+            }
+        }
+    }
+    44100
+}
+
+/// Apply speed/pitch to an audio file in place (atomically via temp + rename).
+/// Returns the new duration_ms (atempo math is exact: duration /= speed).
+/// Non-fatal callers may ignore the error and keep the unprocessed audio.
+pub(crate) fn apply_speed_pitch(path: &str, speed: f64, pitch: f64) -> Result<i64, String> {
+    let filter = build_speed_pitch_filter(speed, pitch, probe_sample_rate(path));
+    if filter.is_empty() {
+        let dur = probe_audio_duration_ms(path);
+        return Ok(dur);
+    }
+    let tmp = format!("{}.spstmp.wav", path);
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-i", path, "-af", &filter, &tmp])
+        .status()
+        .map_err(|e| format!("ffmpeg spawn failed for speed/pitch: {}", e))?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("ffmpeg speed/pitch post-processing failed for {}", path));
+    }
+    std::fs::rename(&tmp, path).map_err(|e| format!("rename {}: {}", tmp, e))?;
+    Ok(probe_audio_duration_ms(path))
+}
+
+/// Probe audio duration in ms via ffprobe (best-effort).
+fn probe_audio_duration_ms(path: &str) -> i64 {
+    let out = std::process::Command::new("ffprobe")
+        .args([
+            "-v", "error", "-show_entries", "format=duration",
+            "-of", "csv=p=0", path,
+        ])
+        .output();
+    if let Ok(o) = out {
+        if let Ok(s) = String::from_utf8(o.stdout) {
+            if let Ok(secs) = s.trim().parse::<f64>() {
+                return (secs * 1000.0).round() as i64;
+            }
+        }
+    }
+    0
+}
+
 async fn tts_generate_routed(
     voice_profile_id: &str,
     text: &str,
@@ -2260,6 +2365,7 @@ async fn tts_generate_routed(
     pitch: f64,
     volume: f64,
     format: &str,
+    emotion: Option<&str>,
     profile: &openscript_tts::profiles::VoiceProfile,
 ) -> Result<TtsGenResult, ToolError> {
     let cache_dir =
@@ -2317,12 +2423,39 @@ async fn tts_generate_routed(
     // Gepard path (high-quality native-English voice cloning — Qwen3.5 AR + NeMo
     // NanoCodec via the .venv-gepard sidecar; Apache-2.0 weights).
     if profile.provider == "gepard" {
-        let (duration_ms, sample_rate) = openscript_tts::gepard::gepard_synthesize(
+        let take = resolve_emotion_take(profile, emotion);
+        let params = openscript_tts::gepard::GepardSynthParams {
+            emotion: emotion.map(|s| s.to_string()),
+            ref_audio: take.map(|t| t.ref_audio.clone()),
+            cfg_scale: take.and_then(|t| t.cfg_scale),
+            temperature: None,
+            top_k: None,
+            max_frames: None,
+        };
+        let (mut duration_ms, sample_rate) = openscript_tts::gepard::gepard_synthesize_params(
             text,
             &profile.id,
             output_path,
+            &params,
         )
         .map_err(|e| ToolError::Tts(e))?;
+        if take.is_some() {
+            tracing::info!(
+                "[tts] gepard emotion '{}' take for voice '{}' (ref={})",
+                emotion.unwrap_or(""),
+                profile.id,
+                take.map(|t| t.ref_audio.as_str()).unwrap_or("")
+            );
+        }
+        // Speed/pitch were previously SILENTLY DROPPED for clone engines;
+        // apply them post-synthesis now (non-fatal on failure).
+        if (speed - 1.0).abs() > 1e-6 || (pitch - 1.0).abs() > 1e-6 {
+            match apply_speed_pitch(output_path, speed, pitch) {
+                Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
+                Ok(_) => {}
+                Err(e) => tracing::warn!("[tts] gepard speed/pitch post-processing failed: {}", e),
+            }
+        }
         return Ok(TtsGenResult {
             output_path: output_path.to_string(),
             duration_ms,
@@ -2332,13 +2465,37 @@ async fn tts_generate_routed(
     }
 
     // Audio8 path (zero-shot voice cloning — default cloned-voice engine).
+    // Emotion takes are pre-registered compound voices `{id}@{emotion}` at
+    // voice.profile.add time; the take's presence switches the voice id.
     if profile.provider == "audio8" {
-        let (duration_ms, sample_rate) = openscript_tts::audio8::audio8_synthesize(
+        let take = resolve_emotion_take(profile, emotion);
+        let synth_voice = match take {
+            Some(_) => format!("{}@{}", profile.id, emotion.unwrap_or("")),
+            None => profile.id.clone(),
+        };
+        let params = openscript_tts::audio8::Audio8SynthParams {
+            emotion: emotion.map(|s| s.to_string()),
+            ref_audio: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            seed: None,
+            max_new_tokens: None,
+        };
+        let (mut duration_ms, sample_rate) = openscript_tts::audio8::audio8_synthesize_params(
             text,
-            &profile.id,
+            &synth_voice,
             output_path,
+            &params,
         )
         .map_err(|e| ToolError::Tts(e))?;
+        if (speed - 1.0).abs() > 1e-6 || (pitch - 1.0).abs() > 1e-6 {
+            match apply_speed_pitch(output_path, speed, pitch) {
+                Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
+                Ok(_) => {}
+                Err(e) => tracing::warn!("[tts] audio8 speed/pitch post-processing failed: {}", e),
+            }
+        }
         return Ok(TtsGenResult {
             output_path: output_path.to_string(),
             duration_ms,
@@ -2663,6 +2820,7 @@ async fn generate_commentary_segment(
         1.0,
         1.0,
         "wav",
+        None, // commentary segments carry no scene emotion
         profile,
     )
     .await?;
@@ -6588,6 +6746,91 @@ async fn probe_http(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---------------------------------------------------------------------
+    // Emotion-take + speed/pitch plumbing tests (Phase: tonality templates)
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_build_speed_pitch_filter_no_op_when_defaults() {
+        assert_eq!(build_speed_pitch_filter(1.0, 1.0, 44100), "", "1.0/1.0 must be a no-op");
+    }
+
+    #[test]
+    fn test_build_speed_pitch_filter_speed_only() {
+        let f = build_speed_pitch_filter(1.5, 1.0, 22050);
+        assert_eq!(f, "atempo=1.500000", "speed-only filter: {}", f);
+    }
+
+    #[test]
+    fn test_build_speed_pitch_filter_pitch_chain() {
+        // Pitch 1.2 at 22050 Hz → asetrate up, resample back, atempo restores duration.
+        let f = build_speed_pitch_filter(1.0, 1.2, 22050);
+        assert!(f.contains("asetrate=22050*1.200000"), "pitch start: {}", f);
+        assert!(f.contains("aresample=22050"), "resample back: {}", f);
+        assert!(f.contains("atempo=0.833333"), "duration restore: {}", f);
+    }
+
+    #[test]
+    fn test_build_speed_pitch_filter_speed_chains_past_2x() {
+        // atempo supports only 0.5–2.0 per instance → 4x must chain two atempo=2.0.
+        let f = build_speed_pitch_filter(4.0, 1.0, 44100);
+        assert_eq!(f, "atempo=2.0,atempo=2.000000", "chained atempo: {}", f);
+    }
+
+    #[test]
+    fn test_build_speed_pitch_filter_combined() {
+        let f = build_speed_pitch_filter(1.25, 0.9, 44100);
+        assert!(f.starts_with("asetrate=44100*"), "pitch first: {}", f);
+        assert!(f.contains(",atempo=1.111111"), "pitch restore: {}", f);
+        assert!(f.ends_with("atempo=1.250000"), "speed last: {}", f);
+    }
+
+    #[test]
+    fn test_resolve_emotion_take_matches_profile_emotions() {
+        let mut profile = openscript_tts::profiles::VoiceProfile {
+            id: "ishan".into(),
+            provider: "gepard".into(),
+            mode: "clone".into(),
+            model: String::new(),
+            ref_audio: "base.wav".into(),
+            ref_text: String::new(),
+            language: "English".into(),
+            description: None,
+            sample_rate: 22050,
+            created_at: String::new(),
+            emotions: std::collections::HashMap::new(),
+        };
+        profile.emotions.insert(
+            "angry".into(),
+            openscript_tts::profiles::EmotionTake {
+                ref_audio: "angry.wav".into(),
+                ref_text: "I am furious!".into(),
+                cfg_scale: Some(1.5),
+                speed: None,
+            },
+        );
+        assert_eq!(
+            resolve_emotion_take(&profile, Some("angry")).map(|t| t.ref_audio.as_str()),
+            Some("angry.wav"),
+            "registered emotion resolves to its take"
+        );
+        assert_eq!(
+            resolve_emotion_take(&profile, Some("whisper")).map(|t| t.ref_audio.as_str()),
+            None,
+            "unregistered emotion falls back to base voice"
+        );
+        assert_eq!(
+            resolve_emotion_take(&profile, None).map(|t| t.ref_audio.as_str()),
+            None,
+            "no emotion = base voice"
+        );
+        assert_eq!(
+            resolve_emotion_take(&profile, Some("")).map(|t| t.ref_audio.as_str()),
+            None,
+            "empty emotion = base voice"
+        );
+    }
 
     #[test]
     fn test_pexels_search_url_min_max_duration_and_page() {

@@ -59,12 +59,42 @@ pub struct Sidecar {
     request_count: u64,
 }
 
+/// Optional per-request synthesis parameters — the "tonality" knobs.
+/// All fields default to None (= engine defaults / base voice reference).
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct GepardSynthParams {
+    /// Emotion id (e.g. "angry", "whisper"). Passed to the sidecar for
+    /// diagnostics; the actual emotion take is selected by `ref_audio`.
+    pub emotion: Option<String>,
+    /// Override the registered voice's reference WAV. Used for emotion
+    /// takes — the sidecar synthesizes with THIS reference instead of the
+    /// profile's neutral one.
+    pub ref_audio: Option<String>,
+    /// Reference-fidelity: higher = timbre clings closer to the reference.
+    pub cfg_scale: Option<f64>,
+    pub temperature: Option<f64>,
+    pub top_k: Option<u32>,
+    pub max_frames: Option<u32>,
+}
+
 #[derive(Serialize)]
 struct SynthRequest<'a> {
     op: &'static str,
     text: &'a str,
     voice: &'a str,
     output_path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    emotion: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ref_audio: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cfg_scale: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_frames: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -170,11 +200,29 @@ impl Sidecar {
     /// Synthesize `text` with the registered `voice`, writing WAV to `output_path`.
     /// Returns (duration_ms, sample_rate).
     pub fn synth(&mut self, text: &str, voice: &str, output_path: &str) -> Result<(i64, u32), SidecarFailure> {
+        self.synth_params(text, voice, output_path, &GepardSynthParams::default())
+    }
+
+    /// Synthesize with per-request tonality knobs (emotion take ref override,
+    /// cfg_scale, temperature, ...).
+    pub fn synth_params(
+        &mut self,
+        text: &str,
+        voice: &str,
+        output_path: &str,
+        params: &GepardSynthParams,
+    ) -> Result<(i64, u32), SidecarFailure> {
         let req = SynthRequest {
             op: "synth",
             text,
             voice,
             output_path,
+            emotion: params.emotion.as_deref(),
+            ref_audio: params.ref_audio.as_deref(),
+            cfg_scale: params.cfg_scale,
+            temperature: params.temperature,
+            top_k: params.top_k,
+            max_frames: params.max_frames,
         };
         let json = serde_json::to_string(&req)
             .map_err(|e| SidecarFailure::Transport(format!("Failed to serialize gepard synth request: {}", e)))?;
@@ -278,6 +326,17 @@ fn with_sidecar<T>(
 /// Synthesize with a gepard voice clone. Returns (duration_ms, sample_rate).
 pub fn gepard_synthesize(text: &str, voice: &str, output_path: &str) -> Result<(i64, u32), String> {
     with_sidecar(|s| s.synth(text, voice, output_path))
+}
+
+/// Synthesize with per-request tonality knobs (emotion take ref override,
+/// cfg_scale, temperature, ...).
+pub fn gepard_synthesize_params(
+    text: &str,
+    voice: &str,
+    output_path: &str,
+    params: &GepardSynthParams,
+) -> Result<(i64, u32), String> {
+    with_sidecar(|s| s.synth_params(text, voice, output_path, params))
 }
 
 /// Register (or overwrite) a gepard voice clone from a reference WAV + transcript.

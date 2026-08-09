@@ -15,6 +15,40 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
     let language = default_str(&args, "language", "English");
     let description = default_opt_str(&args, "description");
 
+    // Emotion-template map: {emotion_id -> {ref_audio, ref_text, cfg_scale?}}.
+    // Each entry is a SEPARATE reference recording of the same speaker
+    // delivering that emotion; scene `emote` / tts.generate `emotion` then
+    // selects the matching take at synthesis. Entries without ref_audio are
+    // dropped with a warning (they'd silently fail at synth time).
+    let mut emotions_map = serde_json::Map::new();
+    let mut emotion_warnings: Vec<String> = Vec::new();
+    if let Some(emotions_val) = args.get("emotions") {
+        if let Some(emotions_obj) = emotions_val.as_object() {
+            for (emotion_id, take_val) in emotions_obj {
+                let take_obj = take_val.as_object();
+                let take_ref = take_obj
+                    .and_then(|o| o.get("ref_audio"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if take_ref.is_empty() {
+                    emotion_warnings.push(format!(
+                        "emotion '{}' skipped: missing ref_audio",
+                        emotion_id
+                    ));
+                    continue;
+                }
+                let mut take = take_val.clone();
+                // Normalize: ensure cfg_scale is present as null when omitted.
+                if take.get("cfg_scale").is_none() {
+                    take["cfg_scale"] = serde_json::Value::Null;
+                }
+                emotions_map.insert(emotion_id.clone(), take);
+            }
+        } else {
+            emotion_warnings.push("emotions must be an object map {emotion_id: {ref_audio, ref_text}}".into());
+        }
+    }
+
     let mut profiles = load_voice_profiles()?;
     let obj = json!({
         "profile_id": profile_id,
@@ -25,6 +59,7 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         "model": model,
         "language": language,
         "description": description,
+        "emotions": serde_json::Value::Object(emotions_map.clone()),
     });
     profiles[profile_id] = obj;
     save_voice_profiles(&profiles)?;
@@ -57,7 +92,9 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
 
     // Gepard (high-quality native-English zero-shot cloning): register the
     // reference WAV with the gepard sidecar. ref_text is metadata only
-    // (Gepard's Q-Former cloning needs audio, not a transcript).
+    // (Gepard's Q-Former cloning needs audio, not a transcript). Emotion
+    // takes need NO registration — the router passes each take's ref_audio
+    // as a per-request override.
     let mut registered_gepard = false;
     let mut gepard_warning: Option<String> = None;
     if provider == "gepard" {
@@ -80,6 +117,36 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         }
     }
 
+    // Audio8 emotion takes: register each as a compound voice `{id}@{emotion}`
+    // so the router can select it at synth time (audio8 conditions on the
+    // reference at registration — a raw ref override is not supported).
+    let mut audio8_emotions_registered: Vec<String> = Vec::new();
+    if provider == "audio8" && !emotions_map.is_empty() {
+        for (emotion_id, take_val) in &emotions_map {
+            let take_ref = take_val
+                .get("ref_audio")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let take_text = take_val
+                .get("ref_text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if take_ref.is_empty() || take_text.is_empty() {
+                continue;
+            }
+            let compound = format!("{}@{}", profile_id, emotion_id);
+            match openscript_tts::audio8::audio8_register(&compound, take_ref, take_text) {
+                Ok(()) => audio8_emotions_registered.push(compound),
+                Err(e) => {
+                    emotion_warnings.push(format!(
+                        "audio8 emotion '{}' registration failed ({}); retry later",
+                        emotion_id, e
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(json!({
         "status": "profile_added",
         "profile_id": profile_id,
@@ -87,6 +154,9 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         "audio8_warning": audio8_warning,
         "gepard_registered": registered_gepard,
         "gepard_warning": gepard_warning,
+        "emotions_count": emotions_map.len(),
+        "emotions_registered_audio8": audio8_emotions_registered,
+        "emotion_warnings": emotion_warnings,
     }))
 }
 
@@ -262,6 +332,9 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
     let pitch = default_f64(&args, "pitch", 1.0);
     let volume = default_f64(&args, "volume", 1.0);
     let format = default_str(&args, "format", "wav");
+    // Emotion: selects the profile's emotion-take (tonality template) when
+    // one is registered, e.g. "angry", "whisper", "excited".
+    let emotion = default_opt_str(&args, "emotion");
 
     report_progress(0.0, 100.0, "Generating speech...")
         .await
@@ -302,6 +375,7 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
         pitch,
         volume,
         &format,
+        emotion.as_deref(),
         &profile,
     )
     .await?;
@@ -765,6 +839,8 @@ pub(crate) async fn handle_voiceover_generate(
     let gain_db = default_f64(&args, "gain_db", -6.0);
     let pitch = default_f64(&args, "pitch", 1.0);
     let volume = default_f64(&args, "volume", 1.0);
+    // Emotion: selects the profile's emotion-take when registered.
+    let emotion = default_opt_str(&args, "emotion");
 
     let mut timeline = Timeline::load(timeline_path)?;
 
@@ -819,6 +895,7 @@ pub(crate) async fn handle_voiceover_generate(
         pitch,
         volume,
         "wav",
+        emotion.as_deref(),
         &profile,
     )
     .await?;
