@@ -5,6 +5,74 @@
 // ---------------------------------------------------------------------------
 use super::*;
 
+/// Measure a WAV file's integrated loudness (LUFS) via ffmpeg loudnorm's
+/// JSON print. Mirrors probe_audio_metrics in tools.rs. Returns None when the
+/// file is missing/unreadable — the caller decides how to treat a gap.
+async fn measure_scene_lufs(path: &str) -> Option<f64> {
+    let out = tokio::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-i", path, "-af", "loudnorm=print_format=json", "-f", "null", "-"])
+        .output()
+        .await
+        .ok()?;
+    let s = String::from_utf8(out.stderr).ok()?;
+    // loudnorm prints its JSON block at info level; anchor on the "input_i"
+    // key rather than the first '{' so banner/log lines with braces can't
+    // break the parse (same hardening as tts_common.py).
+    let anchor = s.find("\"input_i\"")?;
+    // Find the '{' that opens the JSON block: the last '{' before the key.
+    let start = s[..anchor].rfind('{')?;
+    let v: serde_json::Value = serde_json::from_str(&s[start..]).ok()?;
+    v.get("input_i")
+        .and_then(|x| x.as_str())
+        .and_then(|s| s.parse::<f64>().ok())
+}
+
+/// Resolve the per-scene voiceover WAVs from either an explicit `scene_wavs`
+/// array or a script.generate_voices manifest (`voiceover_manifest` with
+/// `segments[].wav_path`). Returns (paths, scene_names) in order.
+fn resolve_scene_wavs(args: &serde_json::Value) -> (Vec<String>, Vec<String>) {
+    // Explicit array wins.
+    if let Some(arr) = args.get("scene_wavs").and_then(|v| v.as_array()) {
+        let paths: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+        if !paths.is_empty() {
+            let names: Vec<String> = paths
+                .iter()
+                .map(|p| {
+                    Path::new(p)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "scene".to_string())
+                })
+                .collect();
+            return (paths, names);
+        }
+    }
+    // Fall back to a generate_voices manifest.
+    if let Some(mp) = args.get("voiceover_manifest").and_then(|v| v.as_str()) {
+        if let Ok(raw) = std::fs::read_to_string(mp) {
+            if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if let Some(segs) = manifest.get("segments").and_then(|v| v.as_array()) {
+                    let paths: Vec<String> = segs
+                        .iter()
+                        .filter_map(|s| s.get("wav_path").and_then(|v| v.as_str()).map(String::from))
+                        .collect();
+                    let names: Vec<String> = segs
+                        .iter()
+                        .filter_map(|s| s.get("scene_id").and_then(|v| v.as_str()).map(String::from))
+                        .collect();
+                    if !paths.is_empty() {
+                        return (paths, names);
+                    }
+                }
+            }
+        }
+    }
+    (Vec::new(), Vec::new())
+}
+
 pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let video_path = sanitize_input_path(extract_str(&args, "video_path")?)?
         .to_string_lossy()
@@ -134,6 +202,42 @@ pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde
         }
     }
 
+    // --- Per-scene loudness-variance KPI (Phase 169d) ---
+    // When the caller supplies the per-scene voiceover WAVs (explicit
+    // `scene_wavs` array or a generate_voices `voiceover_manifest`), measure
+    // each scene's integrated LUFS and flag a >6 dB spread. This locks the
+    // production-grade invariant that every scene sits at uniform loudness:
+    // pre-fix emotion takes came out 10-20 dB quieter than the base voice,
+    // leaving lines effectively muted under the music bed ("second speaker
+    // inaudible" bug). The TTS sidecars now normalize at the source; this
+    // KPI makes the regression loud again instead of shipping silently.
+    let (scene_wavs, scene_names) = resolve_scene_wavs(&args);
+    let mut per_scene_lufs: Vec<serde_json::Value> = Vec::new();
+    let mut lufs_vals: Vec<f64> = Vec::new();
+    for (i, wav) in scene_wavs.iter().enumerate() {
+        let lufs = if Path::new(wav).exists() {
+            measure_scene_lufs(wav).await
+        } else {
+            None
+        };
+        if let Some(l) = lufs {
+            lufs_vals.push(l);
+        }
+        per_scene_lufs.push(json!({
+            "scene": scene_names.get(i).cloned().unwrap_or_else(|| format!("scene_{}", i + 1)),
+            "path": wav,
+            "lufs": lufs,
+        }));
+    }
+    let loudness_spread_db: Option<f64> = if lufs_vals.len() >= 2 {
+        let min = lufs_vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = lufs_vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        Some(max - min)
+    } else {
+        None
+    };
+    let loudness_variance_ok = loudness_spread_db.map_or(true, |s| s <= 6.0);
+
     let rms = mean_volume.unwrap_or(-99.0);
     let peak = max_volume.unwrap_or(-99.0);
     let has_good_level = (-30.0..=-12.0).contains(&rms);
@@ -153,6 +257,16 @@ pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde
         }
         if no_long_silence {
             score += 25;
+        }
+        // Loudness-variance KPI: >6 dB spread costs 20 pts (warning); a
+        // >12 dB spread (the pre-fix mute-range) costs another 15.
+        if let Some(spread) = loudness_spread_db {
+            if spread > 6.0 {
+                score -= 20;
+            }
+            if spread > 12.0 {
+                score -= 15;
+            }
         }
         score
     } else {
@@ -183,6 +297,14 @@ pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde
             max_silence_seconds
         ));
     }
+    if let Some(spread) = loudness_spread_db {
+        if spread > 6.0 {
+            issues.push(format!(
+                "Per-scene loudness variance {:.1} dB exceeds 6 dB — quiet scenes get buried under the music bed. Re-generate voices (TTS sidecars normalize each scene to -16 LUFS; emotion takes must be designed via the fixed voicedesign sidecar).",
+                spread
+            ));
+        }
+    }
 
     Ok(json!({
         "status": if quality_score >= 75 { "pass" } else if quality_score >= 50 { "warning" } else { "fail" },
@@ -194,6 +316,13 @@ pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde
         "issues": issues,
         "audio_codec": streams.first().and_then(|s| s.get("codec_name")).and_then(|v| v.as_str()).unwrap_or("unknown"),
         "sample_rate": streams.first().and_then(|s| s.get("sample_rate")).and_then(|v| v.as_str()).unwrap_or("unknown"),
+        "loudness": json!({
+            "scene_count": scene_wavs.len(),
+            "per_scene_lufs": per_scene_lufs,
+            "spread_db": loudness_spread_db,
+            "variance_ok": loudness_variance_ok,
+            "threshold_db": 6.0,
+        }),
     }))
 }
 
@@ -993,5 +1122,54 @@ pub(crate) async fn handle_director_run(args: serde_json::Value) -> Result<serde
         "verify_production": production,
         "output_path": video,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ---------------------------------------------------------------------
+    // Per-scene loudness-variance KPI tests (Phase 169d)
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn resolve_scene_wavs_accepts_explicit_array() {
+        let args = json!({
+            "video_path": "out.mp4",
+            "scene_wavs": ["/a/scene_1.wav", "/b/scene_2.wav"],
+        });
+        let (paths, names) = resolve_scene_wavs(&args);
+        assert_eq!(paths, vec!["/a/scene_1.wav", "/b/scene_2.wav"]);
+        assert_eq!(names, vec!["scene_1", "scene_2"]);
+    }
+
+    #[test]
+    fn resolve_scene_wavs_parses_manifest() {
+        let dir = std::env::temp_dir().join("os_verify_manifest_test");
+        std::fs::create_dir_all(&dir).ok();
+        let mp = dir.join("manifest.json");
+        std::fs::write(
+            &mp,
+            json!({
+                "segments": [
+                    {"scene_id": "s1", "wav_path": "/v/s1.wav"},
+                    {"scene_id": "s2", "wav_path": "/v/s2.wav"},
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let args = json!({"video_path": "out.mp4", "voiceover_manifest": mp.to_string_lossy()});
+        let (paths, names) = resolve_scene_wavs(&args);
+        assert_eq!(paths, vec!["/v/s1.wav", "/v/s2.wav"]);
+        assert_eq!(names, vec!["s1", "s2"]);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn resolve_scene_wavs_empty_when_no_input() {
+        let (paths, names) = resolve_scene_wavs(&json!({}));
+        assert!(paths.is_empty() && names.is_empty());
+    }
 }
 

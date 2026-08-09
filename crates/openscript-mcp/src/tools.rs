@@ -1026,13 +1026,15 @@ pub fn tool_definitions() -> serde_json::Value {
         // ===================================================================
         {
             "name": "verify.audio",
-            "description": "Analyze the audio track of a rendered video for quality issues. Checks: (1) RMS loudness — is the overall volume in acceptable range? (2) Dialogue presence — is there spoken content or just music? (3) Silence detection — are there unexpected gaps? (4) Peak levels — is there clipping? Use AFTER rendering to verify the voice is audible and music isn't drowning out dialogue. Returns: rms_lufs, peak_db, silence_segments, has_dialogue (boolean), quality_score (0-100).",
+            "description": "Analyze the audio track of a rendered video for quality issues. Checks: (1) RMS loudness — is the overall volume in acceptable range? (2) Dialogue presence — is there spoken content or just music? (3) Silence detection — are there unexpected gaps? (4) Peak levels — is there clipping? (5) Per-scene loudness variance — when scene voiceover WAVs are supplied (scene_wavs array or voiceover_manifest), flags a >6 dB LUFS spread between scenes (quiet scenes get buried under the music bed). Use AFTER rendering to verify the voice is audible and music isn't drowning out dialogue. Returns: rms_lufs, peak_db, silence_segments, has_dialogue (boolean), quality_score (0-100), loudness (per-scene variance KPI).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "Path to the rendered video to analyze"},
                     "expected_has_voice": {"type": "boolean", "default": true, "description": "Whether the video is expected to contain spoken voice"},
-                    "max_silence_seconds": {"type": "number", "default": 3.0, "description": "Threshold for flagging unexpected silence gaps"}
+                    "max_silence_seconds": {"type": "number", "default": 3.0, "description": "Threshold for flagging unexpected silence gaps"},
+                    "scene_wavs": {"type": "array", "items": {"type": "string"}, "description": "Optional per-scene voiceover WAV paths (e.g. artifacts/renders/air/voices/scene_*_narrator.wav). When provided, measures each scene's integrated LUFS and reports the spread — a >6 dB spread is flagged as an issue and costs score."},
+                    "voiceover_manifest": {"type": "string", "description": "Optional path to a script.generate_voices manifest.json (segments[].wav_path). Alternative to scene_wavs for supplying per-scene voiceover files."}
                 },
                 "required": ["video_path"],
                 "additionalProperties": false
