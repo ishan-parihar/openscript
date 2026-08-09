@@ -5,7 +5,7 @@
 
 ---
 
-## Tool Families (28 families, 104 tools)
+## Tool Families (28 families, 105 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
@@ -16,7 +16,7 @@
 | music | 4 | index, search, assign, ducking.plan |
 | broll | 9 | suggest, fetch, assign, plan, keywords, validate_keywords, repair, auto, probe |
 | srt | 4 | read, prepare, apply_edit, to_timeline |
-| voice | 3 | profile.add, profile.list, profile.remove |
+| voice | 4 | profile.add, profile.list, profile.remove, design |
 | sfx | 3 | index, search, assign |
 | verify | 4 | audio, captions, render, production |
 | library | 3 | search, download, build |
@@ -108,6 +108,34 @@ script.generate_voices → script.build_captions → background.fetch → script
 Example: to make every script use the Gepard clone by default, set
 `OPENSCRIPT_TTS_BACKEND=gepard OPENSCRIPT_TTS_VOICE=ishan_gepard` and write
 speakers with `"voice": "default"`.
+
+### Designing novel character voices (`voice.design`)
+
+`voice.design` creates a **brand-new fictional voice from a text description** —
+no reference audio needed (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4, Apache-2.0,
+~4.3 GB, provisioned by `bash scripts/setup_voicedesign.sh`). This is how you
+build comic / story casts where the characters don't exist on tape:
+
+```
+voice.design {
+  instruct: "Male, 17, tenor, gaining confidence — breath support deepens when nervous",
+  text:     "Give every small business the voice of a big one.",   // sample line
+  language: "english",
+  profile_id: "hero_teen"      // OPTIONAL: auto-register as a reusable gepard clone profile
+}
+```
+
+- **No `profile_id`** → returns just the persona WAV (`artifacts/voices/designed_*.wav`).
+- **With `profile_id`** → saves a `provider: gepard` voice profile AND registers the
+  WAV with the gepard sidecar, so the character voice is reusable via
+  `tts.generate` or a script speaker `"voice": "hero_teen"` (or `tts.voice` + `"default"`).
+  Registration failure is non-fatal — re-run `voice.profile.add` later.
+- Generation knobs: `max_tokens` (2048), `temperature` (0.9), `top_k` (50), `seed`.
+- `system.capabilities` reports `voicedesign.available` (sidecar + model present).
+
+Official workflow for a stable comic cast: VoiceDesign synthesizes a ~15s persona
+clip → register it as a clone profile (as above) → every line of that character
+reuses the locked identity.
 
 ---
 

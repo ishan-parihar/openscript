@@ -146,6 +146,111 @@ pub(crate) async fn handle_voice_profile_remove(
     }
 }
 
+/// Handle voice.design: design a NOVEL character voice from a natural-language
+/// description (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4 — no reference audio).
+/// Optionally auto-registers the designed voice as a reusable clone profile
+/// (provider=gepard) when `profile_id` is given, so the character voice can be
+/// used via tts.generate or script speakers (voice "default" + tts.voice).
+pub(crate) async fn handle_voice_design(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    let instruct = extract_str(&args, "instruct")?;
+    let text = extract_str(&args, "text")?;
+    let language = default_str(&args, "language", "english");
+    let profile_id = default_opt_str(&args, "profile_id");
+    let seed = args.get("seed").and_then(|v| v.as_i64());
+    let max_tokens = default_u32(&args, "max_tokens", 2048);
+    let temperature = args
+        .get("temperature")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.9);
+    let top_k = default_u32(&args, "top_k", 50);
+
+    if instruct.trim().is_empty() {
+        return Err(ToolError::InvalidArg(
+            "voice.design requires a non-empty 'instruct' voice description".into(),
+        ));
+    }
+    if text.trim().is_empty() {
+        return Err(ToolError::InvalidArg(
+            "voice.design requires a non-empty 'text' sample line".into(),
+        ));
+    }
+
+    // Output path: explicit, or a timestamped default under artifacts/voices.
+    let output_path = match default_opt_str(&args, "output_path") {
+        Some(p) if !p.trim().is_empty() => p,
+        _ => {
+            let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
+            format!("artifacts/voices/designed_{}.wav", ts)
+        }
+    };
+    if let Some(parent) = Path::new(&output_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| ToolError::Io(std::io::Error::new(e.kind(), format!("mkdir {}: {}", parent.display(), e))))?;
+    }
+
+    report_progress(0.0, 100.0, "Designing voice...").await.ok();
+    let (duration_ms, sample_rate, _written) = openscript_tts::voicedesign::voicedesign_design(
+        &instruct,
+        &text,
+        &output_path,
+        &language,
+        seed,
+        Some(max_tokens),
+        Some(temperature),
+        Some(top_k),
+    )
+    .map_err(|e| ToolError::Tts(e))?;
+    report_progress(100.0, 100.0, "Voice designed").await.ok();
+
+    // Optional: auto-register the designed voice as a reusable clone profile.
+    // Save the profile entry FIRST (so tts.generate can route to it), then
+    // best-effort register the reference WAV with the gepard sidecar — a
+    // registration failure is non-fatal (profile is saved; retry later).
+    let mut registered_profile: Option<String> = None;
+    let mut registration_warning: Option<String> = None;
+    if let Some(pid) = profile_id {
+        let mut profiles = load_voice_profiles()?;
+        let obj = json!({
+            "profile_id": pid,
+            "ref_audio": output_path,
+            "ref_text": text,
+            "provider": "gepard",
+            "mode": "clone",
+            "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+            "language": language,
+            "description": format!("voice.design persona: {}", instruct),
+        });
+        profiles[pid.clone()] = obj;
+        save_voice_profiles(&profiles)?;
+        registered_profile = Some(pid.clone());
+        match openscript_tts::gepard::gepard_register(&pid, &output_path, &text) {
+            Ok(()) => {}
+            Err(e) => {
+                registration_warning = Some(format!(
+                    "designed voice registered as profile '{}' but gepard clone \
+                     registration failed ({}); re-run voice.profile.add later to \
+                     register the reference.",
+                    pid, e
+                ));
+            }
+        }
+    }
+
+    Ok(json!({
+        "status": "designed",
+        "output_path": output_path,
+        "duration_ms": duration_ms,
+        "sample_rate": sample_rate,
+        "language": language,
+        "profile_id": registered_profile,
+        "registration_warning": registration_warning,
+        "engine": "qwen3-tts-1.7b-voicedesign-onnx-int4",
+        "note": "Reuse the designed voice by setting a script speaker's voice to this profile (or tts.voice + voice 'default').",
+    }))
+}
+
 pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     use openscript_tts::profiles::VoiceProfileRegistry;
     use std::path::Path;

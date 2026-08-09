@@ -418,6 +418,26 @@ pub fn tool_definitions() -> serde_json::Value {
             }
         },
         {
+            "name": "voice.design",
+            "description": "Design a NOVEL character voice from a natural-language description (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4, 24kHz) — no reference audio needed. Describe a persona (e.g. 'grumpy detective, low gravelly voice') and give a sample line; get back a WAV of a brand-new voice matching the description. Optionally auto-register the designed voice as a reusable clone profile (provider gepard) via profile_id. Use for comic/custom-character content where each character needs a distinct voice. Returns: output_path, duration_ms, sample_rate, and profile_id when registered.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "instruct": {"type": "string", "description": "Natural-language voice description, e.g. 'Speak in a warm and friendly female voice' or 'grumpy old detective, low gravelly voice, slight rasp'."},
+                    "text": {"type": "string", "description": "Sample line the designed voice should speak, e.g. 'Give every small business the voice of a big one.'"},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output WAV path (default: artifacts/voices/designed_<timestamp>.wav)"},
+                    "profile_id": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional. When set, auto-register the designed voice as a clone profile with this id (provider=gepard) so it can be reused via tts.generate / script speakers (voice 'default' + tts.voice). Requires the gepard engine."},
+                    "language": {"type": "string", "default": "english", "description": "Language: english, chinese, japanese, korean, german, french, russian, portuguese, spanish, italian"},
+                    "seed": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Optional sampling seed for reproducible designs."},
+                    "max_tokens": {"type": "integer", "default": 2048, "description": "Max codec frames to generate."},
+                    "temperature": {"type": "number", "default": 0.9, "description": "Sampling temperature."},
+                    "top_k": {"type": "integer", "default": 50, "description": "Top-k sampling."}
+                },
+                "required": ["instruct", "text"],
+                "additionalProperties": false
+            }
+        },
+        {
             "name": "tts.generate",
             "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
@@ -1621,6 +1641,7 @@ pub fn route_tool(
         "voice.profile.add" => Box::pin(handle_voice_profile_add(args)),
         "voice.profile.list" => Box::pin(handle_voice_profile_list(args)),
         "voice.profile.remove" => Box::pin(handle_voice_profile_remove(args)),
+        "voice.design" => Box::pin(handle_voice_design(args)),
         "tts.generate" => Box::pin(handle_tts_generate(args)),
         "tts.estimate_duration" => Box::pin(handle_tts_estimate_duration(args)),
         "sfx.index" => Box::pin(handle_sfx_index(args)),

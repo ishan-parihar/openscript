@@ -584,6 +584,22 @@ pub(crate) async fn handle_system_capabilities(
         "note": "High-quality native-English zero-shot voice cloning (Gepard 1.0, Apache-2.0; NeMo NanoCodec under NVIDIA OML). Voice.profile.add with provider=gepard.",
     });
 
+    // VoiceDesign TTS (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4 — designs
+    // NOVEL character voices from a text description, zero reference audio).
+    let voicedesign_available = openscript_tts::voicedesign::voicedesign_available();
+    let voicedesign_model_present = openscript_tts::voicedesign::voicedesign_model_present();
+    let voicedesign = json!({
+        "available": voicedesign_available && voicedesign_model_present,
+        "sidecar_available": voicedesign_available,
+        "model_present": voicedesign_model_present,
+        "model": "wavekat/Qwen3-TTS-1.7B-VoiceDesign-ONNX (int4)",
+        "model_dir": "mcp/assets/voicedesign",
+        "sample_rate": 24000,
+        "languages": ["english", "chinese", "japanese", "korean", "german", "french", "russian", "portuguese", "spanish", "italian"],
+        "setup": "bash scripts/setup_voicedesign.sh (builds .venv-voicedesign + downloads model ~4.3GB)",
+        "note": "Designs brand-new character voices from a natural-language description (voice.design). No reference audio needed — pair with gepard clone registration for reusable personas.",
+    });
+
     // Whisper word alignment (multilingual — primary alignment engine for
     // Hinglish/Hindi scripts; Parakeet TDT is English-only and drifts on
     // Hinglish). Used by script.generate_voices when script.language is
@@ -623,6 +639,7 @@ pub(crate) async fn handle_system_capabilities(
         "kokoro": kokoro,
         "audio8": audio8,
         "gepard": gepard,
+        "voicedesign": voicedesign,
         "transcription": transcription,
         "parakeet_align": parakeet_align,
         "whisper_align": whisper_align,

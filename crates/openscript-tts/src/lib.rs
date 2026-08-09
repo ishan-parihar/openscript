@@ -2,6 +2,7 @@ pub mod audio8;
 pub mod client;
 pub mod gepard;
 pub mod profiles;
+pub mod voicedesign;
 
 /// Native Kokoro TTS backend (preset-voice, ONNX-based).
 ///
