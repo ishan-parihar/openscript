@@ -3343,38 +3343,60 @@ fn compute_production_score(
 
 /// Probe actual audio metrics from a rendered video using ffmpeg.
 /// Returns (lufs, peak_dbfs, ducking_depth_db, music_gain_db).
-async fn probe_audio_metrics(video_path: &str) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
-    use std::process::Stdio;
+/// Parse the integrated-LUFS value from ffmpeg loudnorm's print_format=json
+/// output. The JSON block is printed at info level (so `-v error` suppresses
+/// it) and may land on stdout (modern ffmpeg >=4.4) or stderr, followed by
+/// the brace-free muxing summary on stderr. Anchor on the `"input_i"` key,
+/// take the last '{' before it .. last '}' in the stream. PURE — unit-tested
+/// (this exact parse has regressed multiple times: stdout/stderr split,
+/// -v error suppression, trailing-summary parse failure).
+pub(crate) fn parse_loudnorm_input_i(stream: &str) -> Option<f64> {
+    for s in [stream] {
+        let anchor = s.find("\"input_i\"")?;
+        let start = s[..anchor].rfind('{')?;
+        let end = s.rfind('}')?;
+        let v: serde_json::Value = serde_json::from_str(&s[start..=end]).ok()?;
+        if let Some(i) = v.get("input_i").and_then(|x| x.as_str()).and_then(|s| s.parse::<f64>().ok()) {
+            return Some(i);
+        }
+    }
+    None
+}
 
-    // LUFS via loudnorm filter with JSON output
-    let lufs = tokio::process::Command::new("ffmpeg")
+/// Measure a WAV's integrated loudness (LUFS) via ffmpeg loudnorm JSON print.
+/// Checks BOTH stdout and stderr (the block lands on stdout on modern ffmpeg
+/// >=4.4 and stderr on older builds; `-v info` is implied by the default
+/// level — `-v error` would suppress the print entirely).
+pub(crate) async fn probe_audio_lufs(path: &str) -> Option<f64> {
+    let out = tokio::process::Command::new("ffmpeg")
         .args([
+            "-hide_banner",
             "-i",
-            video_path,
+            path,
             "-af",
-            "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+            "loudnorm=print_format=json",
             "-f",
             "null",
             "-",
         ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
         .output()
         .await
-        .ok()
-        .and_then(|o| String::from_utf8(o.stderr).ok())
-        .and_then(|s| {
-            // Anchor on the "input_i" key; the JSON block opens at the last
-            // '{' before it and closes at the LAST '}' in the stream (the
-            // loudnorm block is followed by the brace-free muxing summary,
-            // which previously made from_str fail with trailing data and
-            // silently produced lufs: null).
-            let anchor = s.find("\"input_i\"")?;
-            let json_start = s[..anchor].rfind('{')?;
-            let json_end = s.rfind('}')?;
-            serde_json::from_str::<serde_json::Value>(&s[json_start..=json_end]).ok()
-        })
-        .and_then(|v| v.get("input_i").and_then(|x| x.as_str()).and_then(|s| s.parse::<f64>().ok()));
+        .ok()?;
+    let stdout = String::from_utf8(out.stdout).ok()?;
+    if let Some(i) = parse_loudnorm_input_i(&stdout) {
+        return Some(i);
+    }
+    let stderr = String::from_utf8(out.stderr).ok()?;
+    parse_loudnorm_input_i(&stderr)
+}
+
+async fn probe_audio_metrics(video_path: &str) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
+    use std::process::Stdio;
+
+    // LUFS via loudnorm filter with JSON output — shared probe_audio_lufs
+    // (checks stdout+stderr, anchored parse; previously lufs: null due to a
+    // trailing-muxing-summary parse failure).
+    let lufs = probe_audio_lufs(video_path).await;
 
     // Peak dBFS via volumedetect
     let peak = tokio::process::Command::new("ffmpeg")
@@ -6949,6 +6971,47 @@ mod tests {
     #[test]
     fn test_build_speed_pitch_filter_no_op_when_defaults() {
         assert_eq!(build_speed_pitch_filter(1.0, 1.0, 44100), "", "1.0/1.0 must be a no-op");
+    }
+
+    // ---------------------------------------------------------------------
+    // loudnorm JSON parse tests (Phase 170) — this exact parse regressed
+    // three times (stdout/stderr split, -v error suppression, trailing
+    // muxing summary); lock it with the real observed ffmpeg output format.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_parse_loudnorm_input_i_handles_trailing_muxing_summary() {
+        // Real ffmpeg stderr: loudnorm JSON block followed by the brace-free
+        // muxing summary — from_str on the whole stream fails with trailing
+        // data (the lufs: null bug).
+        let stderr = concat!(
+            "[Parsed_loudnorm_0 @ 0x55fb07cb04c0] {\n",
+            "\t\"input_i\" : \"-18.17\",\n",
+            "\t\"input_tp\" : \"-12.00\",\n",
+            "\t\"input_lra\" : \"6.00\",\n",
+            "\t\"input_thresh\" : \"-25.00\"\n",
+            "}\n[null @ 0x55fb07cb04c0] video:0KiB audio:3361KiB subtitle:0KiB ",
+            "muxing overhead: unknown\nsize=N/A time=00:00:09.00 bitrate=N/A speed=78.1x elapsed=0:00:00.11\n",
+        );
+        assert_eq!(parse_loudnorm_input_i(stderr), Some(-18.17));
+    }
+
+    #[test]
+    fn test_parse_loudnorm_input_i_stdout_block() {
+        // Modern ffmpeg can print the block on stdout with no trailing text.
+        let stdout = concat!(
+            "{\"input_i\" : \"-16.50\", ",
+            "\"input_tp\" : \"-9.2\", ",
+            "\"input_lra\" : \"7.0\", ",
+            "\"input_thresh\" : \"-23.0\"}\n",
+        );
+        assert_eq!(parse_loudnorm_input_i(stdout), Some(-16.50));
+    }
+
+    #[test]
+    fn test_parse_loudnorm_input_i_no_block_returns_none() {
+        assert_eq!(parse_loudnorm_input_i("no json here"), None);
+        assert_eq!(parse_loudnorm_input_i(""), None);
     }
 
     #[test]

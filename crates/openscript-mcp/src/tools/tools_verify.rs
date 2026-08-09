@@ -6,28 +6,11 @@
 use super::*;
 
 /// Measure a WAV file's integrated loudness (LUFS) via ffmpeg loudnorm's
-/// JSON print. Mirrors probe_audio_metrics in tools.rs. Returns None when the
-/// file is missing/unreadable — the caller decides how to treat a gap.
+/// JSON print — shared probe_audio_lufs helper (checks stdout+stderr,
+/// anchored parse). Returns None when the file is missing/unreadable — the
+/// caller decides how to treat a gap.
 async fn measure_scene_lufs(path: &str) -> Option<f64> {
-    let out = tokio::process::Command::new("ffmpeg")
-        .args(["-hide_banner", "-i", path, "-af", "loudnorm=print_format=json", "-f", "null", "-"])
-        .output()
-        .await
-        .ok()?;
-    let s = String::from_utf8(out.stderr).ok()?;
-    // loudnorm prints its JSON block at info level; anchor on the "input_i"
-    // key rather than the first '{' so banner/log lines with braces can't
-    // break the parse (same hardening as tts_common.py).
-    let anchor = s.find("\"input_i\"")?;
-    // Find the '{' that opens the JSON block: the last '{' before the key.
-    let start = s[..anchor].rfind('{')?;
-    // The loudnorm block is followed by the muxing summary (which contains
-    // no braces), so the LAST '}' in the stream closes the JSON object.
-    let end = s.rfind('}')?;
-    let v: serde_json::Value = serde_json::from_str(&s[start..=end]).ok()?;
-    v.get("input_i")
-        .and_then(|x| x.as_str())
-        .and_then(|s| s.parse::<f64>().ok())
+    probe_audio_lufs(path).await
 }
 
 /// Resolve the per-scene voiceover WAVs from either an explicit `scene_wavs`
@@ -239,7 +222,13 @@ pub(crate) async fn handle_verify_audio(args: serde_json::Value) -> Result<serde
     } else {
         None
     };
-    let loudness_variance_ok = loudness_spread_db.map_or(true, |s| s <= 6.0);
+    // null when nothing was measured (a consumer must not read true as
+    // "verified" for an empty scene list).
+    let loudness_variance_ok: Option<bool> = if scene_wavs.is_empty() {
+        None
+    } else {
+        Some(loudness_spread_db.map_or(true, |s| s <= 6.0))
+    };
 
     let rms = mean_volume.unwrap_or(-99.0);
     let peak = max_volume.unwrap_or(-99.0);
