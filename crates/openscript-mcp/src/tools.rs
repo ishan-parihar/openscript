@@ -3364,10 +3364,15 @@ async fn probe_audio_metrics(video_path: &str) -> (Option<f64>, Option<f64>, Opt
         .ok()
         .and_then(|o| String::from_utf8(o.stderr).ok())
         .and_then(|s| {
-            // Find the JSON block at the end
-            let json_start = s.rfind('{')?;
-            let json_str = &s[json_start..];
-            serde_json::from_str::<serde_json::Value>(json_str).ok()
+            // Anchor on the "input_i" key; the JSON block opens at the last
+            // '{' before it and closes at the LAST '}' in the stream (the
+            // loudnorm block is followed by the brace-free muxing summary,
+            // which previously made from_str fail with trailing data and
+            // silently produced lufs: null).
+            let anchor = s.find("\"input_i\"")?;
+            let json_start = s[..anchor].rfind('{')?;
+            let json_end = s.rfind('}')?;
+            serde_json::from_str::<serde_json::Value>(&s[json_start..=json_end]).ok()
         })
         .and_then(|v| v.get("input_i").and_then(|x| x.as_str()).and_then(|s| s.parse::<f64>().ok()));
 

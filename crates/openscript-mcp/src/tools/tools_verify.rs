@@ -21,7 +21,10 @@ async fn measure_scene_lufs(path: &str) -> Option<f64> {
     let anchor = s.find("\"input_i\"")?;
     // Find the '{' that opens the JSON block: the last '{' before the key.
     let start = s[..anchor].rfind('{')?;
-    let v: serde_json::Value = serde_json::from_str(&s[start..]).ok()?;
+    // The loudnorm block is followed by the muxing summary (which contains
+    // no braces), so the LAST '}' in the stream closes the JSON object.
+    let end = s.rfind('}')?;
+    let v: serde_json::Value = serde_json::from_str(&s[start..=end]).ok()?;
     v.get("input_i")
         .and_then(|x| x.as_str())
         .and_then(|s| s.parse::<f64>().ok())
