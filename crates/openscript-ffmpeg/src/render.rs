@@ -430,6 +430,15 @@ pub async fn render_from_timeline_with_cancel(
             .to_string(),
     };
 
+    // Defense-in-depth: create the output parent dir if missing, so a fresh
+    // output_path (e.g. output/videos/v3/foo.mp4) can't fail with a cryptic
+    // "No such file or directory" after all prep work is done.
+    if let Some(parent) = std::path::Path::new(&out_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
     let log_path = std::path::Path::new(&out_path)
         .with_extension("render.log")
         .to_string_lossy()

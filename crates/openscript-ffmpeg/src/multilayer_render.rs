@@ -174,6 +174,18 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         return Err(FfmpegError::NoSegments);
     }
 
+    // Defense-in-depth: ensure the output path's parent directory exists
+    // before ffmpeg (or the concat/debug/log sidecars) try to open it.
+    // Callers that pass a fresh output_path with a non-existent parent
+    // (e.g. `output/samples/v2/foo.mp4` when `output/samples/v2/` was never
+    // created) used to fail with a confusing "IO error: No such file or
+    // directory" AFTER all the expensive TTS/broll work was done.
+    if let Some(parent) = std::path::Path::new(&spec.output_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
     // Defense-in-depth: filter out placeholder or empty background paths
     // before they reach ffmpeg. The MCP `timeline.render` handler already
     // filters placeholder b-roll events, but callers that build a
