@@ -83,6 +83,14 @@ def _resolve_providers() -> list[str]:
     dev = os.environ.get("VOICEDESIGN_DEVICE", "auto").strip().lower()
     if dev == "cpu":
         return ["CPUExecutionProvider"]
+    # get_available_providers() reports only compile-time presence; a broken
+    # CUDA driver (NVML driver/library mismatch) makes every session fail with
+    # a ~30s EP retry storm + STDOUT banner. Probe libcuda cuInit once and
+    # force CPU so we skip the storm (mirrors audio8/transcribe_common).
+    if not cuda_usable():
+        log("CUDA driver probe failed (cuInit != 0) — forcing CPU providers "
+            "to skip the EP retry storm; fix the NVML driver/library mismatch to restore GPU TTS.")
+        return ["CPUExecutionProvider"]
     import onnxruntime as ort
 
     available = ort.get_available_providers()
@@ -91,6 +99,31 @@ def _resolve_providers() -> list[str]:
     if "CUDAExecutionProvider" in available:
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
+
+
+# --- CUDA probe ---------------------------------------------------------------
+# `ort.get_available_providers()` only checks compile-time availability; a
+# driver/library mismatch (NVML "Driver/library version mismatch") makes every
+# CUDAExecutionProvider session fail with a ~30s EP retry storm per session
+# before falling back to CPU — four sessions = ~2 min of dead time, plus the
+# EP banner printed to STDOUT. Probe libcuda cuInit once and memoize.
+
+_CUDA_OK = None
+
+
+def cuda_usable() -> bool:
+    """True when the CUDA driver actually works right now (memoized)."""
+    global _CUDA_OK
+    if _CUDA_OK is not None:
+        return _CUDA_OK
+    try:
+        import ctypes
+
+        lib = ctypes.CDLL("libcuda.so.1")
+        _CUDA_OK = lib.cuInit(0) == 0
+    except Exception:
+        _CUDA_OK = False
+    return _CUDA_OK
 
 
 def _resolve_device_name(providers: list[str]) -> str:
@@ -461,10 +494,11 @@ def handle_health(_req):
 def _isolate_streams():
     """Protect the JSON protocol on stdout from library chatter.
 
-    onnxruntime/transformers print progress to STDOUT/STDERR; reroute all
-    Python-level + C-level writes to a log file and keep a private handle to
-    the real stdout pipe for protocol JSON only (same pattern as the gepard
-    sidecar — prevents JSON corruption and pipe-fill deadlocks).
+    onnxruntime prints its EP-error banner to STDOUT when CUDA init fails
+    (fd 1, C-level) — the same corruption class that broke audio8. Reroute
+    BOTH fd 1 and fd 2 to a log file and keep a private handle to the real
+    stdout pipe for protocol JSON only (prevents JSON corruption and
+    pipe-fill deadlocks).
     """
     import os  # noqa: PLC0415
 
@@ -472,7 +506,9 @@ def _isolate_streams():
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     os.dup2(log_fd, 2)  # fd 2 -> log file (C-level stderr writes)
-    proto_fd = os.dup(1)  # private handle to the real stdout pipe
+    proto_fd = os.dup(1)  # keep a private handle to the real stdout pipe
+    os.dup2(log_fd, 1)  # fd 1 -> log file TOO (onnxruntime EP banner goes to STDOUT)
+    # Reroute Python-level writes: sys.stderr -> log, sys.stdout -> log.
     sys.stderr = os.fdopen(os.dup(2), "w", buffering=1)
     sys.stdout = os.fdopen(os.dup(2), "w", buffering=1)
     return os.fdopen(proto_fd, "w", buffering=1)
