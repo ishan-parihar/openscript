@@ -5,6 +5,7 @@
 AI-directed video editing pipeline — raw footage to polished 9:16 reel. Transcription → creative brief → timeline → FFmpeg render → verified output. Rust + Python + TypeScript. **109 MCP tools** (verified: 103 static + 6 dynamic in `openscript-mcp/src/tools.rs`). 9 Rust crates.
 
 [![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
+[![CI](https://github.com/ishan-parihar/openscript/actions/workflows/ci.yml/badge.svg)](https://github.com/ishan-parihar/openscript/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)](https://ffmpeg.org/)
