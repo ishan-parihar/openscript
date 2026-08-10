@@ -46,7 +46,7 @@ cargo build --release
 # One-call video from a script
 openscript script-to-video --script script.json --output final.mp4
 
-# Or start the MCP server (97 tools over stdio) for an AI agent
+# Or start the MCP server (109 tools over stdio) for an AI agent
 openscript run-mcp
 ```
 
@@ -72,7 +72,7 @@ A Rust workspace (8 crates) with Python ML sidecars and three render engines:
 | Voice | `openscript-tts` | Audio8/Kokoro sidecar client, voice-profile registry |
 | Transcribe | `openscript-transcribe` | Apex/Whisper STT + word alignment (Hinglish-aware) |
 | Media | `openscript-assets` | Pexels client, music/SFX indexes |
-| Integration | `openscript-mcp` | MCP server + tool handlers (97 tools, 27 families) |
+| Integration | `openscript-mcp` | MCP server + tool handlers (109 tools, 27 families) |
 | Binaries | `openscript-cli`, `openscript-tauri` | CLI wrapper / desktop app |
 | ML sidecars | `mcp/scripts/` | Audio8 TTS, Kokoro TTS, Apex transcribe, Whisper align |
 | Motion render | `hyperframes/` | HTML+GSAP composition engine (default motion graphics) |

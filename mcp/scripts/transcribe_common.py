@@ -41,6 +41,32 @@ def _log(msg: str, prefix: str = "transcriber"):
 # ONNX device selection (GPU-first)
 # ---------------------------------------------------------------------------
 
+_CUDA_OK = None
+
+
+def cuda_usable():
+    """True when the CUDA driver actually works right now (memoized).
+
+    `get_available_providers()` only reports compile-time availability; a
+    driver/library mismatch (NVML "Driver/library version mismatch") makes
+    every CUDAExecutionProvider session fail with a ~30s EP retry storm per
+    session plus an EP Error banner printed to STDOUT — which corrupts the
+    JSON stdout protocol of sidecars like parakeet_align. Probe libcuda
+    cuInit once and memoize.
+    """
+    global _CUDA_OK
+    if _CUDA_OK is not None:
+        return _CUDA_OK
+    try:
+        import ctypes
+
+        lib = ctypes.CDLL("libcuda.so.1")
+        _CUDA_OK = lib.cuInit(0) == 0
+    except Exception:
+        _CUDA_OK = False
+    return _CUDA_OK
+
+
 def ort_providers():
     """Return ONNX Runtime providers, preferring CUDA when available.
 
@@ -62,7 +88,7 @@ def ort_providers():
         _log("OPENSCRIPT_DEVICE=cuda requested but CUDAExecutionProvider is not "
              "available (onnxruntime-gpu missing?) — falling back to CPU", "device")
         return ["CPUExecutionProvider"]
-    if dev == "auto" and "CUDAExecutionProvider" in available:
+    if dev == "auto" and "CUDAExecutionProvider" in available and cuda_usable():
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 

@@ -75,6 +75,66 @@ def log(msg: str) -> None:
     sys.stderr.flush()
 
 
+# --- Protocol isolation -------------------------------------------------------
+# onnxruntime prints an `EP Error` banner to STDOUT whenever a provider fails
+# at session creation (e.g. CUDA driver/library mismatch). That banner corrupts
+# the JSON protocol line the Rust client parses, killing the sidecar with
+# "Failed to parse audio8 sidecar response: expected value at line 1 column 1".
+# Mirror gepard_tts_sidecar: dup fd 1 into a private protocol handle, point ALL
+# Python-level stdout/stderr at a diagnostics log file, redirect fd 2 (C-level
+# writes from onnxruntime) to that same file. Only the protocol handle writes
+# to the real stdout pipe.
+
+
+def _isolate_streams():
+    """Isolate the JSON protocol pipe from library stdout noise.
+
+    Returns a private file object that owns the real stdout fd. Call BEFORE
+    any library import that may print (the vendored runtime's EP banner).
+    """
+    log_path = Path(os.environ.get("AUDIO8_LOG", "/tmp/audio8_tts_sidecar.log"))
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_fd = os.open(str(log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(log_fd, 2)  # fd 2 -> log file (covers C-level stderr writes)
+    proto_fd = os.dup(1)  # keep a private handle to the real stdout pipe
+    os.dup2(log_fd, 1)  # fd 1 -> log file TOO (onnxruntime EP banner goes to STDOUT)
+    # Reroute Python-level writes: sys.stderr -> log, sys.stdout -> log.
+    sys.stderr = os.fdopen(os.dup(2), "w", buffering=1)
+    sys.stdout = os.fdopen(os.dup(2), "w", buffering=1)
+    return os.fdopen(proto_fd, "w", buffering=1)
+
+
+def _proto_write(proto, obj) -> None:
+    """Write one JSON protocol line to the private stdout handle."""
+    proto.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    proto.flush()
+
+
+# --- CUDA probe ---------------------------------------------------------------
+# `ort.get_available_providers()` reports only compile-time availability; a
+# driver/library mismatch (NVML "Driver/library version mismatch") makes every
+# CUDAExecutionProvider session fail with a ~30s EP retry storm per session
+# before falling back to CPU — three sessions = ~90s of dead time per render,
+# plus the stdout banner above. Probe libcuda cuInit once and memoize.
+
+_CUDA_OK = None
+
+
+def cuda_usable() -> bool:
+    """True when the CUDA driver actually works right now (memoized)."""
+    global _CUDA_OK
+    if _CUDA_OK is not None:
+        return _CUDA_OK
+    try:
+        import ctypes
+
+        lib = ctypes.CDLL("libcuda.so.1")
+        _CUDA_OK = lib.cuInit(0) == 0
+    except Exception:
+        _CUDA_OK = False
+    return _CUDA_OK
+
+
 # --- Chunking ----------------------------------------------------------------
 # The AR model stops generating at `max_new_tokens` (default 1024; the runtime
 # manifest caps the sequence at max_seq_len=2048 and the generator stops early
@@ -164,6 +224,13 @@ _runtime = None  # ArkTtsRuntime — created on first synth, kept alive
 def get_runtime():
     global _runtime
     if _runtime is None:
+        # CUDA driver/library mismatch (NVML 610.57) makes every CUDA session
+        # fail with a ~30s EP retry storm + stdout banner. Probe once and force
+        # CPU so ArkTtsRuntime picks CPU-only providers and skips the storm.
+        if os.environ.get("OPENSCRIPT_DEVICE", "auto").strip().lower() != "cpu" and not cuda_usable():
+            log("CUDA driver probe failed (cuInit != 0) — forcing CPU providers "
+                "to skip the EP retry storm; fix the NVML driver/library mismatch to restore GPU TTS.")
+            os.environ["OPENSCRIPT_DEVICE"] = "cpu"
         from arktts_runtime.runtime import ArkTtsRuntime  # noqa: PLC0415
 
         _runtime = ArkTtsRuntime(MODEL_DIR, VOICES_DIR, precision="int4", codec_precision="fp16", threads=THREADS)
@@ -275,8 +342,9 @@ def handle_health(_req):
 
 
 def serve() -> int:
+    proto = _isolate_streams()
     log(f"ready (model_dir={MODEL_DIR}, voices_dir={VOICES_DIR}, threads={THREADS})")
-    print(json.dumps({"ready": True}), flush=True)
+    _proto_write(proto, {"ready": True})
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -297,7 +365,7 @@ def serve() -> int:
         except Exception as exc:  # protocol-level error → structured response
             log(f"error handling {op!r}: {exc}")
             resp = {"status": "error", "error": str(exc)}
-        print(json.dumps(resp, ensure_ascii=False), flush=True)
+        _proto_write(proto, resp)
     return 0
 
 
