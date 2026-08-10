@@ -69,12 +69,37 @@ impl GpuMode {
     }
 }
 
-/// Probe once per process whether this ffmpeg build can actually accelerate:
-/// the `h264_nvenc` encoder AND the `cuda` hwaccel must both exist.
+/// Probe once per process whether the NVIDIA driver actually works at RUNTIME.
 ///
-/// Checking both matters: an ffmpeg compiled with `--enable-nvenc` running on
-/// a machine with a broken/absent NVIDIA driver passes the encoder grep but
-/// `-hwaccel cuda` fails at render time. Requiring `cuda` in `-hwaccels` makes
+/// `ffmpeg -encoders`/`-hwaccels` only prove the BINARY was compiled with
+/// NVENC/NVDEC support. A driver/library mismatch (nvidia-smi exits non-zero
+/// with "Failed to initialize NVML: Driver/library version mismatch") makes
+/// every `-hwaccel cuda` decode fail mid-render with
+/// "Hardware device setup failed for decoder: device type cuda needed for
+/// codec h264" — AFTER all the TTS/broll prep work. Probe the live driver:
+/// `nvidia-smi --query-gpu=name` must exit 0 AND return a non-empty name.
+/// If nvidia-smi is missing or fails, treat the GPU as unusable → CPU fallback.
+fn cuda_driver_usable() -> bool {
+    let out = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name", "--format=csv,noheader"])
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            let name = String::from_utf8_lossy(&o.stdout);
+            !name.trim().is_empty()
+        }
+        Ok(_) => false, // exit != 0 (e.g. NVML driver/library mismatch)
+        Err(_) => false, // nvidia-smi not installed
+    }
+}
+
+/// Probe once per process whether this ffmpeg build can actually accelerate:
+/// the `h264_nvenc` encoder AND the `cuda` hwaccel must both exist AND the
+/// live NVIDIA driver must be functional.
+///
+/// Checking all three matters: an ffmpeg compiled with `--enable-nvenc` on a
+/// machine with a broken/absent NVIDIA driver passes the encoder grep but
+/// `-hwaccel cuda` fails at render time. Requiring the live-driver probe makes
 /// `auto` mode degrade BEFORE spawning ffmpeg instead of mid-render.
 fn nvenc_available_once() -> &'static bool {
     static AVAIL: OnceLock<bool> = OnceLock::new();
@@ -89,7 +114,7 @@ fn nvenc_available_once() -> &'static bool {
             .output()
             .map(|o| String::from_utf8_lossy(&o.stdout).contains("cuda"))
             .unwrap_or(false);
-        has_encoder && has_cuda_hwaccel
+        has_encoder && has_cuda_hwaccel && cuda_driver_usable()
     })
 }
 
@@ -389,6 +414,21 @@ mod tests {
                 "-r", "30",
             ]
         );
+    }
+
+    #[test]
+    fn cuda_driver_usable_returns_bool_without_panicking() {
+        // Pure function — must never panic regardless of driver state.
+        // On CI (no GPU) it should be false; on a working box it may be true.
+        let _ = cuda_driver_usable();
+    }
+
+    #[test]
+    fn nvenc_available_once_is_cached_and_does_not_panic() {
+        // First call computes; subsequent calls hit the OnceLock cache.
+        let a = h264_nvenc_available();
+        let b = h264_nvenc_available();
+        assert_eq!(a, b);
     }
 
     #[test]
