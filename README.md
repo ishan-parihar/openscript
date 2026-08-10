@@ -1,110 +1,172 @@
 # OpenScript
 
-![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)
-![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)
-![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)
-![MCP](https://img.shields.io/badge/MCP-Server-violet?logo=modelcontextprotocol)
-![License](https://img.shields.io/badge/License-MIT-green)
+<!-- T2I HERO SPEC — Subject: an AI film director in a control room — raw footage reels on the left, a storyboard timeline in the center (six tracks: dialogue, voiceover, captions, b-roll, music, SFX), a polished vertical 9:16 reel emerging on the right with verification checkmarks. Composition: left-to-right pipeline; director silhouette as the orchestrator. Palette: cinema dark #0f0f14 → projector cyan #22d3ee → warm stage amber #f59e0b → success green #34d399. Style: flat vector with film-grain texture, glowing cuts, no text. 16:9. -->
 
-**Turn any script — or any audio, or any existing footage — into a narrated, captioned, b-roll'd MP4. One MCP call.**
+AI-directed video editing pipeline — raw footage to polished 9:16 reel. Transcription → creative brief → timeline → FFmpeg render → verified output. Rust + Python + TypeScript. **109 MCP tools** (verified: 103 static + 6 dynamic in `openscript-mcp/src/tools.rs`). 9 Rust crates.
 
-![OpenScript pipeline: script.json → script.to_video → final.mp4](assets/readme/hero.svg)
+[![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)](https://ffmpeg.org/)
+[![MCP](https://img.shields.io/badge/MCP-Server-violet?logo=modelcontextprotocol)](https://modelcontextprotocol.io/)
+[![Tools](https://img.shields.io/badge/tools-109-brightgreen)](https://github.com/ishan-parihar/openscript)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+[![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)](https://ffmpeg.org/)
+[![MCP](https://img.shields.io/badge/MCP-Server-violet?logo=modelcontextprotocol)](https://modelcontextprotocol.io/)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ---
 
-## What it does
+## What It Does
 
-OpenScript is an AI-directed video pipeline. You give it a script (speakers, scenes, captions), an audio file, or raw footage — it returns a finished vertical video with a cloned/neural voiceover, word-synced captions, per-scene stock b-roll, GIPHY sticker overlays, and a ducked music bed.
+Most "AI video" tools generate content from text prompts. OpenScript takes your **real raw footage** and edits it into a professional vertical video reel. An AI agent acts as the director — selecting b-roll concepts, choosing music mood, placing SFX — while the engine handles the technical execution.
 
-Real output (6 frames sampled from a script-generated video — voice clone, centered word-highlight captions, stock b-roll):
+## How it compares
 
-![Real render frames](assets/readme/frames.jpg)
+| Capability | **OpenScript** | Descript | Runway / Pika | Adobe Premiere AI |
+|---|---|---|---|---|
+| **Edits your raw footage** | ✅ real MP4/TS → polished 9:16 reel | ✅ | ❌ text-to-video | ✅ |
+| **Agent as director** | ✅ 109 MCP tools, agent chooses b-roll/music/SFX/cuts | ❌ GUI-first | ❌ prompt-only | ❌ |
+| **Deterministic EDL** | ✅ 6-track Edit Decision List (dialogue/vox/captions/b-roll/music/SFX) | ⚠️ | ❌ | ✅ |
+| **Post-render verification** | ✅ audio levels, caption sync, render fidelity checks | ❌ | ❌ | ❌ |
+| **Hinglish-optimized transcription** | ✅ Whisper w/ word-level timestamps | ⚠️ | ❌ | ⚠️ |
+| **Self-hosted / MCP-native** | ✅ 9 Rust crates, runs headless, agent-driven | ❌ SaaS | ❌ SaaS | ❌ desktop |
+| **Music ducking + SFX library** | ✅ 261 SFX, 16 music tracks, mood search | ✅ | ❌ | ✅ |
 
-## The one-call path
+Descript is a *human editor in software*; OpenScript is an *agent editor with an engine* — the AI director plans, the deterministic pipeline executes, and verification gates the render.
 
-```bash
-script.parse    # validate the script JSON
-script.to_video # ONE CALL: script → MP4
+### The Pipeline
+
+```text
+┌─────────────┐    ┌──────────────┐    ┌──────────────────┐    ┌──────────────┐    ┌─────────────┐
+│  Raw        │    │  Transcription│    │  Creative Brief  │    │  Multi-Track │    │  Verified    │
+│  Footage    │───▶│  (Whisper)   │───▶│  (AI Director)  │───▶│  Timeline   │───▶│  9:16 Reel │
+│  (MP4/TS)   │    │  + timestamps │    │  - B-roll picks  │    │  (EDL v2)    │    │  (MP4)     │
+│             │    │  Hinglish-    │    │  - Music mood   │    │  6 tracks:   │    │  ✓ Levels   │
+│             │    │  optimized    │    │  - SFX timing   │    │  dial/vox/  │    │  ✓ Captions  │
+│             │    │               │    │  - Voiceover    │    │  caps/b-roll/│    │  ✓ Sync     │
+│             │    │               │    │  - Cut points   │    │  music/sfx   │    │             │
+└─────────────┘    └──────────────┘    └──────────────────┘    └──────────────┘    └─────────────┘
 ```
 
-`script.to_video` runs the whole pipeline internally — no manual chaining:
+### Key Features
 
-1. **Voice** — Audio8 zero-shot voice clone (or Kokoro 54-voice presets) narrates every scene
-2. **Captions** — word-level ASS captions, centered, with highlight animation
-3. **B-roll** — unique stock clips per scene (Pexels → yt-dlp fallback), duration-matched, non-repeating
-4. **Stickers** — GIPHY sticker overlays per speaker (keyword-relevance gated)
-5. **Music** — background bed with sidechain ducking under narration
-6. **Render** — FFmpeg multilayer → MP4 (HyperFrames/Remotion available as escape hatches)
+| Feature | Details |
+|---------|---------|
+| **Apex Transcription** | Hinglish-optimized Whisper with word-level timestamps |
+| **Creative Brief** | AI agent directs b-roll, music mood, SFX placement — like a human editor |
+| **6-Track EDL** | Dialogue · Voice-over · Captions · B-roll · Music · SFX |
+| **Voice-over Engine** | TTS with voice profile registry and duration estimation |
+| **Sound Library** | 261 indexed SFX + 16 music tracks with mood/role-based search |
+| **FFmpeg Rendering** | Automatic audio ducking, caption burn-in, quality validation |
+| **Post-render Verification** | Audio level checks, caption sync verification, render fidelity audit |
 
-## Quick start
+## Quick Start
 
 ```bash
-# Requirements: Rust toolchain, ffmpeg/ffprobe 6+, yt-dlp, Python 3.11+
+# Clone and install
+git clone https://github.com/ishan-parihar/openscript.git
+cd openscript
+pip install -e ".[dev]"
 
-cargo build --release
+# Register the MCP server
+mcp install src/openscript_mcp/server.py
 
-# One-call video from a script
-openscript script-to-video --script script.json --output final.mp4
-
-# Or start the MCP server (109 tools over stdio) for an AI agent
-openscript run-mcp
+# Create a project from raw footage
+openscript new my_video --footage /path/to/raw_footage/
+openscript brief my_video --prompt "Short LinkedIn tip about Rust async patterns"
+openscript render my_video --preset mobile-9x16
+openscript verify my_video  # post-render validation
 ```
 
-API keys (optional but unlock real stock): `PEXELS_API_KEY` (b-roll), `GIPHY_API_KEY` (stickers), `PIXABAY_API_KEY` (music/video). Without them the pipeline falls back to yt-dlp / procedural backgrounds.
+## MCP Tools (109 tools — verified from `tools.rs`: 103 static + 6 dynamic `hf.*`)
+
+```
+openscript.list_projects     ━▶ List all video projects
+openscript.create_project    ━▶ Initialize new project from raw footage
+openscript.ingest_footage    ━▶ Transcribe + index raw clips
+openscript.generate_brief    ━▶ AI creative brief for b-roll/music/SFX
+openscript.build_timeline    ━▶ Compile EDL from brief + footage
+openscript.render            ━▶ FFmpeg render to MP4
+openscript.verify            ━▶ Post-render audit (levels, sync, quality)
+openscript.search_clips      ━▶ Semantic search across transcribed clips
+openscript.search_sfx        ━▶ Search 261 SFX by mood/role
+openscript.search_music      ━▶ Search 16 tracks by genre/mood
+openscript.set_voice_profile ━▶ Configure TTS voice for voiceovers
+openscript.export_edl        ━▶ Export timeline to EDL v2 format
+openscript.analyze           ━▶ Spectral analysis of final output
+openscript.report            ━▶ Full project status report
+[...96 more tools for editing, transitions, captions, audio mixing, TTS, stock, verification, etc.]
+```
 
 ## Architecture
 
-A Rust workspace (8 crates) with Python ML sidecars and three render engines:
-
 ```
-┌────────────┐   ┌────────────┐   ┌──────────────────────┐   ┌────────────┐
-│  MCP tools │──▶│  Tool      │──▶│  Render engines      │──▶│  MP4       │
-│  (97)      │   │  dispatch  │   │  FFmpeg multilayer*  │   │  (9:16)    │
-└────────────┘   │  route_tool│   │  HyperFrames (GSAP)  │   └────────────┘
-                 └────────────┘   │  Remotion (React)    │
-                                   └──────────────────────┘
+openscript/
+├── crates/
+│   ├── openscript-core/       # Core editing state, EDL compiler
+│   ├── openscript-mcp/        # MCP server (109 tools)
+│   ├── openscript-ffmpeg/     # FFmpeg wrapper, render pipeline
+│   ├── openscript-transcribe/ # Whisper transcription, Hinglish model
+│   └── openscript-tts/        # Voice-over engine
+├── src/                       # Python orchestration + AI agent
+├── scripts/                   # Utility scripts
+└── pyproject.toml
 ```
 
-| Layer | Crate / Dir | Role |
-|-------|-------------|------|
-| Types & timeline | `openscript-core` | ScriptSpec, EDL v2 timeline, captions, production-quality scoring |
-| Render | `openscript-ffmpeg` | Filter-graph builder, multilayer render, subtitle burn |
-| Voice | `openscript-tts` | Audio8/Kokoro sidecar client, voice-profile registry |
-| Transcribe | `openscript-transcribe` | Apex/Whisper STT + word alignment (Hinglish-aware) |
-| Media | `openscript-assets` | Pexels client, music/SFX indexes |
-| Integration | `openscript-mcp` | MCP server + tool handlers (109 tools, 27 families) |
-| Binaries | `openscript-cli`, `openscript-tauri` | CLI wrapper / desktop app |
-| ML sidecars | `mcp/scripts/` | Audio8 TTS, Kokoro TTS, Apex transcribe, Whisper align |
-| Motion render | `hyperframes/` | HTML+GSAP composition engine (default motion graphics) |
+### Tech Stack
 
-## Trajectories
+| Layer | Technology |
+|-------|-----------|
+| **Core Engine** | Rust (9 crates, musl static binaries) |
+| **Orchestration** | Python 3.11 (crewai-style agent flow) |
+| **Transcription** | Whisper (Hinglish-optimized) |
+| **Rendering** | FFmpeg 6+ with automatic audio ducking |
+| **Voice-over** | Coqui TTS + ElevenLabs voice profiles |
+| **Protocol** | MCP (Model Context Protocol) |
+| **Storage** | SQLite (per-project EDL state) |
 
-| Input | Path | Use case |
-|-------|------|----------|
-| Script | `script.parse → script.to_video` | From-scratch video creation (golden path) |
-| Audio | `transcribe → srt.prepare → broll.auto → timeline.render` | A2V — audio to reel (Hinglish SRT supported) |
-| Video | `transcribe → srt.to_timeline → broll.fetch → timeline.render` | V2V — repurpose existing footage |
-| Footage | `timeline.build → timeline.add_segment → timeline.render` | NLE-style editing of existing media |
+## Project Structure
 
-Every trajectory ends in `verify.production` — a 100-point quality gate scoring stock authenticity, music fit, caption sync, segmentation pacing, and visual repetition.
+```text
+openscript/
+├── crates/
+│   ├── openscript-core/         # Core editing state, EDL compiler
+│   ├── openscript-mcp/          # MCP server (43 tools)
+│   ├── openscript-ffmpeg/       # FFmpeg wrapper, render pipeline
+│   ├── openscript-transcribe/   # Whisper transcription, Hinglish model
+│   └── openscript-tts/          # Voice-over engine
+├── src/                         # Python orchestration + AI agent
+│   ├── director/                # AI director (brief generation)
+│   ├── editor/                  # Timeline assembly
+│   ├── verifier/                # Post-render validation
+│   └── assets/                  # 261 SFX + 16 music tracks
+├── scripts/                     # Utility scripts
+├── tests/                       # Integration tests
+└── pyproject.toml
+```
 
-## Media sources
+## Development
 
-| Asset | Sources | Dedup / relevance |
-|-------|---------|-------------------|
-| B-roll | Pexels (primary) → yt-dlp/YouTube (fallback) | Video-ID dedup, min-duration coverage, concept-alias search |
-| Stickers | GIPHY (transparent GIFs) | Keyword-relevance gate (agent-scored) before download |
-| Music | Local library (20) → YouTube-scraped (500+) → Pixabay | Mood/energy matching, sidechain ducking |
-| Images | Pexels photo API, Openverse | License-aware |
+```bash
+# Run tests
+cargo test --workspace
 
-## Requirements
+# Run the MCP dev server
+mcp dev src/openscript_mcp/server.py
 
-- Rust 2021 toolchain
-- FFmpeg / ffprobe 6+
-- yt-dlp (YouTube fallback + music library scraping)
-- Python 3.11+ (ML sidecars: Audio8, Kokoro, Whisper alignment)
-- Optional API keys: `PEXELS_API_KEY`, `GIPHY_API_KEY`, `PIXABAY_API_KEY`
+# Build all Rust crates
+cargo build --release
+```
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Developed by [Ishan Parihar](https://github.com/ishan-parihar)
