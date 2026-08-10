@@ -177,14 +177,18 @@ impl Default for MetaSpec {
 pub struct TtsSpec {
     /// Backend engine: "kokoro" (presets, default), "audio8" (zero-shot
     /// clone, ONNX INT4), "gepard" (high-quality native-English clone),
-    /// "sidecar" (faster-qwen3-tts). This is the ENGINE SELECTION for voice
-    /// generation. Note: a speaker whose `voice` references a registered
-    /// profile (e.g. "ishan_gepard") routes by the profile's own provider
-    /// field, which always wins. This backend matters only when a speaker's
-    /// voice is the literal string "default": it then selects the fallback
-    /// built-in (kokoro → kokoro:af_heart) or errors for clone engines that
-    /// require a configured voice profile. Bare preset names ("af_heart")
-    /// always normalize to kokoro: regardless of this field.
+    /// "voicedesign" (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT
+    /// natural-language-instruction synthesis, per-line emotion/tonality, NO
+    /// cloning), "sidecar" (faster-qwen3-tts). This is the ENGINE SELECTION
+    /// for voice generation. Note: a speaker whose `voice` references a
+    /// registered profile (e.g. "air_analyst") routes by the profile's own
+    /// provider field, which always wins — a character voice registered as a
+    /// `voicedesign` profile synthesizes with Qwen3 VoiceDesign even if this
+    /// field says "kokoro". This backend matters when a speaker's voice is the
+    /// literal string "default": it then selects the fallback built-in
+    /// (kokoro → kokoro:af_heart) or errors for engines that require a
+    /// configured voice profile. Bare preset names ("af_heart") always
+    /// normalize to kokoro: regardless of this field.
     #[serde(default = "default_tts_backend")]
     pub backend: String,
 
@@ -942,7 +946,7 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
     }
 
     // Validate TTS backend
-    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "gepard"];
+    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "gepard", "voicedesign"];
     if !valid_tts_backends.contains(&spec.tts.backend.as_str()) {
         errors.push(ScriptValidationError {
             field: "tts.backend".into(),
@@ -1385,6 +1389,29 @@ mod tests {
 
         let errors = validate_script(&spec);
         assert!(errors.iter().any(|e| e.field == "tts.backend"));
+    }
+
+    /// The voice-design engine is a first-class backend: scripts must be able
+    /// to declare `tts.backend = "voicedesign"` so character voices synthesize
+    /// directly with the Qwen3 VoiceDesign model (no cloning).
+    #[test]
+    fn test_validate_voicedesign_backend_is_valid() {
+        let spec = parse_script(
+            r#"{
+            "tts": {"backend": "voicedesign"},
+            "speakers": {"alice": {"voice": "air_analyst"}},
+            "scenes": [{"speaker": "alice", "text": "Hi"}]
+        }"#,
+        )
+        .unwrap();
+
+        assert_eq!(spec.tts.backend, "voicedesign");
+        let errors = validate_script(&spec);
+        assert!(
+            errors.iter().all(|e| e.field != "tts.backend"),
+            "voicedesign must be a valid TTS backend, got: {:?}",
+            errors
+        );
     }
 
     #[test]

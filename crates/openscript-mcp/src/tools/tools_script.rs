@@ -73,7 +73,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "type": "object",
                 "description": "TTS engine configuration. Backend selects the audio model engine; a speaker voice of \"default\" resolves to tts.voice (or the user's ~/.openscript/config.json tts.default_voice, or OPENSCRIPT_TTS_VOICE).",
                 "properties": {
-                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "gepard", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), gepard (high-quality native-English clone), sidecar (faster-qwen3-tts)."},
+                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "gepard", "voicedesign", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), gepard (high-quality native-English clone), voicedesign (Qwen3 VoiceDesign — direct NL-instruction synthesis with per-line emotion/tonality, NO cloning), sidecar (faster-qwen3-tts)."},
                     "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan_gepard'). Speakers whose voice is the literal string 'default' use this profile."},
                     "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
                     "default_pitch": {"type": "number", "default": 1.0}
@@ -369,7 +369,9 @@ pub(crate) async fn handle_script_generate_voices(
                 .or_else(crate::config::resolve_tts_default_voice);
             match cfg_voice {
                 Some(v) => v,
-                None if spec.tts.backend == "gepard" || spec.tts.backend == "audio8" => {
+                None if spec.tts.backend == "gepard"
+                    || spec.tts.backend == "audio8"
+                    || spec.tts.backend == "voicedesign" => {
                     // Clone engines cannot fall back to a built-in preset — a
                     // speaker voice "default" with no configured voice profile
                     // is a config gap, not a lookup miss. Error clearly instead

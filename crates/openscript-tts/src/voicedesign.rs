@@ -200,6 +200,41 @@ impl Sidecar {
         Ok((resp.duration_ms, resp.sample_rate, resp.output_path))
     }
 
+    /// Synthesize a LINE directly with the Qwen3 VoiceDesign model (op
+    /// `synth` — a protocol alias of `design`). `instruct` is the voice
+    /// description: the character's personality PLUS the line's emotion/tone,
+    /// so the same character voice stays consistent across scenes while each
+    /// line is attuned to its required delivery. This is the script.to_video
+    /// synthesis path for `voicedesign`-provider profiles — audio is generated
+    /// BY the voice-design model, never re-cloned through a cloning engine.
+    pub fn synth(
+        &mut self,
+        instruct: &str,
+        text: &str,
+        output_path: &str,
+        language: &str,
+        seed: Option<i64>,
+        max_tokens: Option<u32>,
+        temperature: Option<f64>,
+        top_k: Option<u32>,
+    ) -> Result<(i64, u32, String), SidecarFailure> {
+        let req = DesignRequest {
+            op: "synth",
+            instruct,
+            text,
+            output_path,
+            language,
+            seed,
+            max_tokens,
+            temperature,
+            top_k,
+        };
+        let json = serde_json::to_string(&req)
+            .map_err(|e| SidecarFailure::Transport(format!("Failed to serialize voicedesign synth request: {}", e)))?;
+        let resp = self.roundtrip(json)?;
+        Ok((resp.duration_ms, resp.sample_rate, resp.output_path))
+    }
+
     pub fn request_count(&self) -> u64 {
         self.request_count
     }
@@ -290,6 +325,24 @@ pub fn voicedesign_design(
     top_k: Option<u32>,
 ) -> Result<(i64, u32, String), String> {
     with_sidecar(|s| s.design(instruct, text, output_path, language, seed, max_tokens, temperature, top_k))
+}
+
+/// Synthesize a line DIRECTLY with the Qwen3 VoiceDesign model (op `synth`).
+/// Same generation as `voicedesign_design`, but named for the synthesis
+/// boundary: `instruct` carries the character personality + per-line
+/// emotion/tone, and `text` is the scene line. Returns
+/// (duration_ms, sample_rate, written_output_path).
+pub fn voicedesign_synthesize(
+    instruct: &str,
+    text: &str,
+    output_path: &str,
+    language: &str,
+    seed: Option<i64>,
+    max_tokens: Option<u32>,
+    temperature: Option<f64>,
+    top_k: Option<u32>,
+) -> Result<(i64, u32, String), String> {
+    with_sidecar(|s| s.synth(instruct, text, output_path, language, seed, max_tokens, temperature, top_k))
 }
 
 // ---------------------------------------------------------------------------

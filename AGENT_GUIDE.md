@@ -94,10 +94,12 @@ script.generate_voices → script.build_captions → background.fetch → script
 `script.to_video` / `script.generate_voices` pick the TTS engine in this order:
 
 1. **Speaker voice pin** — a speaker whose `voice` references a registered
-   clone profile (e.g. `"ishan_gepard"`, `"ishan"`) routes by that profile's
-   own `provider` field (gepard / audio8 / kokoro / sidecar). This always wins.
+   profile (e.g. `"ishan_gepard"`, `"air_analyst"`) routes by that profile's
+   own `provider` field (gepard / audio8 / voicedesign / kokoro / sidecar).
+   This always wins — a `voicedesign`-provider character voice synthesizes
+   DIRECTLY on the Qwen3 VoiceDesign model even if `tts.backend` says otherwise.
 2. **Script `tts.backend`** — the engine default for the whole video
-   (`kokoro` | `audio8` | `gepard` | `sidecar`).
+   (`kokoro` | `audio8` | `gepard` | `voicedesign` | `sidecar`).
 3. **Script `tts.voice`** — a default voice profile id; a speaker whose voice
    is the literal string `"default"` resolves to it.
 4. **User config** — `~/.openscript/config.json` → `tts.default_backend` and
@@ -121,21 +123,22 @@ voice.design {
   instruct: "Male, 17, tenor, gaining confidence — breath support deepens when nervous",
   text:     "Give every small business the voice of a big one.",   // sample line
   language: "english",
-  profile_id: "hero_teen"      // OPTIONAL: auto-register as a reusable gepard clone profile
+  profile_id: "hero_teen"      // OPTIONAL: auto-register as a reusable voicedesign profile
 }
 ```
 
 - **No `profile_id`** → returns just the persona WAV (`artifacts/voices/designed_*.wav`).
-- **With `profile_id`** → saves a `provider: gepard` voice profile AND registers the
-  WAV with the gepard sidecar, so the character voice is reusable via
-  `tts.generate` or a script speaker `"voice": "hero_teen"` (or `tts.voice` + `"default"`).
-  Registration failure is non-fatal — re-run `voice.profile.add` later.
+- **With `profile_id`** → saves a `provider: voicedesign` voice profile, so the
+  character voice is reusable via `tts.generate` or a script speaker
+  `"voice": "hero_teen"` — every line then synthesizes DIRECTLY on the Qwen3
+  VoiceDesign model (personality + per-line emotion/tone instruct, NO cloning).
 - Generation knobs: `max_tokens` (2048), `temperature` (0.9), `top_k` (50), `seed`.
 - `system.capabilities` reports `voicedesign.available` (sidecar + model present).
 
-Official workflow for a stable comic cast: VoiceDesign synthesizes a ~15s persona
-clip → register it as a clone profile (as above) → every line of that character
-reuses the locked identity.
+Official workflow for a stable comic cast: VoiceDesign designs the persona
+(→ register as a `voicedesign` profile as above) → each script line is generated
+BY the voice-design model with the character's personality + the scene's
+emotion/tone — the voice stays locked while every line gets its own delivery.
 
 ### Emotion-take presets (per-line tonality — `voice.profile.add` `emotions`)
 
@@ -207,8 +210,10 @@ character.design_emotion { character_id: "detective", emotion: "whisper",
 character.list   # inspect the cast + their emotional ranges
 ```
 `character.create` designs the base voice via VoiceDesign and registers it as a
-gepard clone profile (`detective`). Each `character.design_emotion` designs one
-emotional delivery and attaches it as an emotion-take on that profile.
+`voicedesign` profile (`detective`) — scene lines synthesize DIRECTLY on the
+Qwen3 model, never through a cloning engine. Each `character.design_emotion`
+designs one emotional delivery and stores its `instruct` (personality + emotion)
+so a scene's `emote` attunes the line's tonality at synthesis time.
 
 **PART 2 — Transcript development (script-design):** speakers reference the
 character; each scene's `emote` picks the emotional take:

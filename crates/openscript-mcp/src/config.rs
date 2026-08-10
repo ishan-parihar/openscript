@@ -183,7 +183,8 @@ pub struct PathsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsConfig {
     /// Default TTS backend for script.to_video when the script omits
-    /// `tts.backend`. One of: kokoro (default), audio8, gepard, sidecar.
+    /// `tts.backend`. One of: kokoro (default), audio8, gepard, voicedesign,
+    /// sidecar.
     #[serde(default = "default_tts_backend")]
     pub default_backend: String,
     /// Default voice profile id (e.g. "ishan_gepard"). When set, a speaker

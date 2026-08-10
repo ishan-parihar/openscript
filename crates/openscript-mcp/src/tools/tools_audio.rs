@@ -223,9 +223,11 @@ pub(crate) async fn handle_voice_profile_remove(
 
 /// Handle voice.design: design a NOVEL character voice from a natural-language
 /// description (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4 — no reference audio).
-/// Optionally auto-registers the designed voice as a reusable clone profile
-/// (provider=gepard) when `profile_id` is given, so the character voice can be
-/// used via tts.generate or script speakers (voice "default" + tts.voice).
+/// Optionally auto-registers the designed voice as a reusable `voicedesign`
+/// profile when `profile_id` is given, so the character voice can be used via
+/// tts.generate or script speakers — scene lines then synthesize DIRECTLY on
+/// the Qwen3 VoiceDesign model (personality + per-line emotion/tone instruct),
+/// never through a cloning engine.
 pub(crate) async fn handle_voice_design(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
@@ -279,12 +281,11 @@ pub(crate) async fn handle_voice_design(
     .map_err(|e| ToolError::Tts(e))?;
     report_progress(100.0, 100.0, "Voice designed").await.ok();
 
-    // Optional: auto-register the designed voice as a reusable clone profile.
-    // Save the profile entry FIRST (so tts.generate can route to it), then
-    // best-effort register the reference WAV with the gepard sidecar — a
-    // registration failure is non-fatal (profile is saved; retry later).
+    // Optional: auto-register the designed voice as a reusable voicedesign
+    // profile. The profile entry routes tts.generate / script speakers to
+    // DIRECT Qwen3 VoiceDesign synthesis (personality stored in description is
+    // the base instruct); the WAV is a design artifact, not a clone reference.
     let mut registered_profile: Option<String> = None;
-    let mut registration_warning: Option<String> = None;
     if let Some(pid) = profile_id {
         // Serialize registry mutations across processes (see RegistryLock).
         let _lock = RegistryLock::acquire(Path::new(&voice_profiles_path()))?;
@@ -293,8 +294,8 @@ pub(crate) async fn handle_voice_design(
             "profile_id": pid,
             "ref_audio": output_path,
             "ref_text": text,
-            "provider": "gepard",
-            "mode": "clone",
+            "provider": "voicedesign",
+            "mode": "design",
             "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
             "language": language,
             "description": format!("voice.design persona: {}", instruct),
@@ -302,17 +303,6 @@ pub(crate) async fn handle_voice_design(
         profiles[pid.clone()] = obj;
         save_voice_profiles(&profiles)?;
         registered_profile = Some(pid.clone());
-        match openscript_tts::gepard::gepard_register(&pid, &output_path, &text) {
-            Ok(()) => {}
-            Err(e) => {
-                registration_warning = Some(format!(
-                    "designed voice registered as profile '{}' but gepard clone \
-                     registration failed ({}); re-run voice.profile.add later to \
-                     register the reference.",
-                    pid, e
-                ));
-            }
-        }
     }
 
     Ok(json!({
@@ -322,9 +312,8 @@ pub(crate) async fn handle_voice_design(
         "sample_rate": sample_rate,
         "language": language,
         "profile_id": registered_profile,
-        "registration_warning": registration_warning,
         "engine": "qwen3-tts-1.7b-voicedesign-onnx-int4",
-        "note": "Reuse the designed voice by setting a script speaker's voice to this profile (or tts.voice + voice 'default').",
+        "note": "Reuse the designed voice by setting a script speaker's voice to this profile and tts.backend='voicedesign' — scene lines synthesize DIRECTLY with Qwen3 VoiceDesign (no cloning).",
     }))
 }
 

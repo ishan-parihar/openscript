@@ -24,20 +24,20 @@
       }
     },
     "language": "english",
-    "mode": "clone",
+    "mode": "design",
     "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
     "profile_id": "air_analyst",
-    "provider": "gepard",
+    "provider": "voicedesign",
     "ref_audio": "mcp/assets/gepard/voices/air_analyst.wav",
     "ref_text": "Air is the system where the human cost is largest, and the least escapable. No one can decline to breathe."
   },
   "hero_sidekick": {
     "description": "voice.design persona: cheerful young female sidekick, bright energetic tone, quick laugh",
     "language": "english",
-    "mode": "clone",
+    "mode": "design",
     "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
     "profile_id": "hero_sidekick",
-    "provider": "gepard",
+    "provider": "voicedesign",
     "ref_audio": "mcp/assets/gepard/voices/hero_sidekick.wav",
     "ref_text": "We can totally do this together. I found the clue!"
   },

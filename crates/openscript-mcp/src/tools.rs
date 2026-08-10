@@ -395,7 +395,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "profile_id": {"type": "string", "description": "Unique identifier for this voice profile"},
                     "ref_audio": {"type": "string", "description": "Path to reference audio file (clean speech sample)"},
                     "ref_text": {"type": "string", "description": "Transcript of the reference audio"},
-                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'gepard' (high-quality native-English zero-shot cloning — Gepard 1.0 Qwen3.5 AR + NeMo NanoCodec, 22.05kHz, requires .venv-gepard via scripts/setup_gepard.sh), 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
+                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'gepard' (high-quality native-English zero-shot cloning — Gepard 1.0 Qwen3.5 AR + NeMo NanoCodec, 22.05kHz, requires .venv-gepard via scripts/setup_gepard.sh), 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'voicedesign' (Qwen3 VoiceDesign — DIRECT NL-instruction synthesis, no cloning; profiles from voice.design / character.create carry the persona in description), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
                     "mode": {"type": "string", "default": "clone", "description": "Voice mode: 'clone' for voice cloning, 'preset' for built-in voices"},
                     "model": {"type": "string", "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "description": "TTS model identifier"},
                     "language": {"type": "string", "default": "English", "description": "Voice language"},
@@ -423,7 +423,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "voice.design",
-            "description": "Design a NOVEL character voice from a natural-language description (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4, 24kHz) — no reference audio needed. Describe a persona (e.g. 'grumpy detective, low gravelly voice') and give a sample line; get back a WAV of a brand-new voice matching the description. Optionally auto-register the designed voice as a reusable clone profile (provider gepard) via profile_id. Use for comic/custom-character content where each character needs a distinct voice. Returns: output_path, duration_ms, sample_rate, and profile_id when registered.",
+            "description": "Design a NOVEL character voice from a natural-language description (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4, 24kHz) — no reference audio needed. Describe a persona (e.g. 'grumpy detective, low gravelly voice') and give a sample line; get back a WAV of a brand-new voice matching the description. Optionally auto-register the designed voice as a reusable voicedesign profile via profile_id — scene lines then synthesize DIRECTLY with the Qwen3 VoiceDesign model (per-line emotion/tone instruct, no cloning). Use for comic/custom-character content where each character needs a distinct voice. Returns: output_path, duration_ms, sample_rate, and profile_id when registered.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -443,7 +443,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "character.create",
-            "description": "PART 1 of the character-first voice-design workflow: define a character (schema + properties: name, role, personality, language) and design its BASE voice. When 'voice' is given, uses that existing profile; otherwise designs the base voice from personality + sample_text via VoiceDesign (Qwen3-TTS-1.7B-VoiceDesign ONNX int4) and registers it as a gepard clone profile. Characters are persisted in .openscript/characters.json. THEN design emotional takes with character.design_emotion and write the transcript referencing the character. Returns: character schema + voice_profile_id.",
+            "description": "PART 1 of the character-first voice-design workflow: define a character (schema + properties: name, role, personality, language) and design its BASE voice. When 'voice' is given, uses that existing profile; otherwise designs the base voice from personality + sample_text via VoiceDesign (Qwen3-TTS-1.7B-VoiceDesign ONNX int4) and registers it as a voicedesign profile — scene lines synthesize DIRECTLY on the Qwen3 model with the character's personality + per-scene emotion instruct (no cloning). Characters are persisted in .openscript/characters.json. THEN design emotional takes with character.design_emotion and write the transcript referencing the character. Returns: character schema + voice_profile_id.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -462,7 +462,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "character.design_emotion",
-            "description": "Design ONE emotional delivery take for a character (the character's voice-design emotional range). Runs VoiceDesign with the character's personality + the emotion, writes the take WAV into the gepard voices dir, and attaches it to BOTH the character schema AND the character's base voice profile emotions map. After this, any scene with emote='<emotion>' on this character synthesizes with that emotional take (per-line tonality). Returns: ref_audio + how to trigger the take.",
+            "description": "Design ONE emotional delivery take for a character (the character's voice-design emotional range). Runs VoiceDesign with the character's personality + the emotion, writes the take WAV as a design artifact, and attaches its instruct to BOTH the character schema AND the character's base voice profile emotions map. After this, any scene with emote='<emotion>' on this character synthesizes with that emotional delivery directly on the Qwen3 VoiceDesign model (per-line tonality, no cloning). Returns: ref_audio + how to trigger the take.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -497,7 +497,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "tts.generate",
-            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
+            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'voicedesign' (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT NL-instruction synthesis with per-line emotion/tone, no cloning; profiles from voice.design / character.create), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2522,6 +2522,83 @@ fn probe_audio_duration_ms(path: &str) -> i64 {
     0
 }
 
+/// Build the Qwen3 VoiceDesign `instruct` for one scene line: the character's
+/// personality (base voice identity) + the scene's emotional-take instruct +
+/// any natural-language `tone` direction. Reading the character schema
+/// (`.openscript/characters.json`) keeps the SAME voice across scenes while
+/// each line is attuned to its required delivery at synthesis time. Falls
+/// back to the profile description (the persona stored by voice.design) when
+/// no character entry exists.
+fn build_voicedesign_instruct(
+    profile: &openscript_tts::profiles::VoiceProfile,
+    emotion: Option<&str>,
+    tone: Option<&str>,
+) -> String {
+    let chars_path = std::env::var("OPENSCRIPT_CHARACTERS_PATH")
+        .unwrap_or_else(|_| ".openscript/characters.json".to_string());
+    let mut base = String::new();
+    let mut emotion_instruct: Option<String> = None;
+    if let Ok(data) = std::fs::read_to_string(&chars_path) {
+        if let Ok(chars) = serde_json::from_str::<serde_json::Value>(&data) {
+            if let Some(c) = chars.get(&profile.id) {
+                if let Some(p) = c.get("personality").and_then(|v| v.as_str()) {
+                    base = p.trim().to_string();
+                }
+                if let Some(em) = emotion {
+                    if let Some(ei) = c
+                        .get("emotions")
+                        .and_then(|m| m.get(em))
+                        .and_then(|t| t.get("instruct"))
+                        .and_then(|v| v.as_str())
+                    {
+                        if !ei.trim().is_empty() {
+                            emotion_instruct = Some(ei.trim().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if base.is_empty() {
+        // Fall back to the persona stored on the profile (voice.design writes
+        // "voice.design persona: <instruct>"; character.create writes
+        // "character base voice: <personality>").
+        if let Some(d) = profile.description.as_deref() {
+            base = d
+                .strip_prefix("character base voice: ")
+                .or_else(|| d.strip_prefix("voice.design persona: "))
+                .unwrap_or(d)
+                .trim()
+                .to_string();
+        }
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if !base.is_empty() {
+        parts.push(base);
+    }
+    match emotion_instruct {
+        Some(ei) if !ei.is_empty() => parts.push(ei),
+        _ => {
+            if let Some(em) = emotion {
+                if !em.trim().is_empty() && em.trim() != "neutral" {
+                    parts.push(format!("{} delivery", em.trim()));
+                }
+            }
+        }
+    }
+    if let Some(t) = tone {
+        if !t.trim().is_empty() {
+            parts.push(t.trim().to_string());
+        }
+    }
+    let instruct = parts.join(". ");
+    if instruct.trim().is_empty() {
+        "calm, clear, natural speech".to_string()
+    } else {
+        instruct
+    }
+}
+
 async fn tts_generate_routed(
     voice_profile_id: &str,
     text: &str,
@@ -2686,6 +2763,58 @@ async fn tts_generate_routed(
             duration_ms,
             cached: false,
             backend: format!("audio8:{}hz", sample_rate),
+        });
+    }
+
+    // VoiceDesign path — Qwen3-TTS-1.7B-VoiceDesign ONNX int4, DIRECT
+    // natural-language-instruction synthesis. The `instruct` is the character
+    // personality + the scene's emotion/tone, so the same character voice
+    // stays consistent while every line is attuned to its required delivery
+    // BY THE VOICE-DESIGN MODEL itself. This is NOT cloning: gepard/audio8
+    // never touch a voicedesign profile (their reference WAVs were only ever
+    // design artifacts — the actual scene audio comes from Qwen3 here).
+    if profile.provider == "voicedesign" {
+        let instruct = build_voicedesign_instruct(profile, emotion, tone);
+        tracing::info!(
+            "[tts] voicedesign line for '{}': {}",
+            profile.id,
+            truncate_utf8(&instruct, 160)
+        );
+        // Stable per-character seed: Qwen3 VoiceDesign is zero-shot (the
+        // instruct IS the voice), so a fresh RNG per line lets the timbre
+        // drift scene-to-scene. Deriving the seed from the profile id locks
+        // the voice across scenes while `temperature` still varies prosody.
+        let char_seed = profile.id.bytes().fold(0i64, |acc, b| {
+            acc.wrapping_mul(31).wrapping_add(i64::from(b))
+        }) & 0x7fff_ffff;
+        let (mut duration_ms, sample_rate, _written) =
+            openscript_tts::voicedesign::voicedesign_synthesize(
+                &instruct,
+                text,
+                output_path,
+                &profile.language,
+                Some(char_seed),
+                None, // max_tokens — sidecar default (2048 ≈ 170 s @ 12 Hz codec)
+                temperature,
+                top_k,
+            )
+            .map_err(|e| ToolError::Tts(e))?;
+        // Speed/pitch are post-processed exactly like the clone engines
+        // (the Qwen3 pipeline has no native tempo/pitch knob).
+        if (speed - 1.0).abs() > 1e-6 || (pitch - 1.0).abs() > 1e-6 {
+            match apply_speed_pitch(output_path, speed, pitch) {
+                Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("[tts] voicedesign speed/pitch post-processing failed: {}", e)
+                }
+            }
+        }
+        return Ok(TtsGenResult {
+            output_path: output_path.to_string(),
+            duration_ms,
+            cached: false,
+            backend: format!("voicedesign:{}hz", sample_rate),
         });
     }
 
@@ -8001,6 +8130,87 @@ Third and final segment
     }
 }
 
+    #[test]
+    fn test_build_voicedesign_instruct_uses_personality_and_emotion() {
+        // Write a throwaway characters.json so the router can resolve the
+        // character's personality + per-emotion instruct.
+        let tmp = std::env::temp_dir().join(format!(
+            "vd_instruct_test_{}.json",
+            std::process::id()
+        ));
+        std::fs::write(
+            &tmp,
+            r#"{"detective":{"personality":"grumpy old detective, low gravelly voice","emotions":{"angry":{"instruct":"raised voice, clipped words"}}}}"#,
+        )
+        .unwrap();
+        std::env::set_var("OPENSCRIPT_CHARACTERS_PATH", &tmp);
+
+        let profile = openscript_tts::profiles::VoiceProfile {
+            id: "detective".into(),
+            provider: "voicedesign".into(),
+            mode: "design".into(),
+            model: String::new(),
+            ref_audio: String::new(),
+            ref_text: String::new(),
+            language: "English".into(),
+            description: None,
+            sample_rate: 24000,
+            created_at: String::new(),
+            emotions: std::collections::HashMap::new(),
+        };
+        let instruct = build_voicedesign_instruct(&profile, Some("angry"), Some("teeth clenched"));
+        assert!(
+            instruct.contains("grumpy old detective"),
+            "personality must anchor the instruct: {}",
+            instruct
+        );
+        assert!(
+            instruct.contains("raised voice, clipped words"),
+            "emotion instruct must flow in: {}",
+            instruct
+        );
+        assert!(
+            instruct.contains("teeth clenched"),
+            "tone must append: {}",
+            instruct
+        );
+
+        // Neutral emotion → no generic "neutral delivery" suffix.
+        let neutral = build_voicedesign_instruct(&profile, Some("neutral"), None);
+        assert!(!neutral.contains("neutral delivery"), "neutral: {}", neutral);
+
+        let _ = std::fs::remove_file(&tmp);
+        std::env::remove_var("OPENSCRIPT_CHARACTERS_PATH");
+    }
+
+    #[test]
+    fn test_build_voicedesign_instruct_falls_back_to_profile_description() {
+        std::env::remove_var("OPENSCRIPT_CHARACTERS_PATH");
+        let profile = openscript_tts::profiles::VoiceProfile {
+            id: "hero_teen".into(),
+            provider: "voicedesign".into(),
+            mode: "design".into(),
+            model: String::new(),
+            ref_audio: String::new(),
+            ref_text: String::new(),
+            language: "English".into(),
+            description: Some("voice.design persona: male teen, tenor, confident".into()),
+            sample_rate: 24000,
+            created_at: String::new(),
+            emotions: std::collections::HashMap::new(),
+        };
+        let instruct = build_voicedesign_instruct(&profile, None, None);
+        assert!(
+            instruct.contains("male teen"),
+            "persona fallback: {}",
+            instruct
+        );
+        assert!(
+            !instruct.contains("voice.design persona:"),
+            "prefix must be stripped: {}",
+            instruct
+        );
+    }
 }
 
 // GROUP 2c HANDLERS: ASSET DEVELOPMENT — user-curated footage library

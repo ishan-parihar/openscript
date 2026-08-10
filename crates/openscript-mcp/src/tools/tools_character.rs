@@ -8,10 +8,13 @@
 //      scene's `emote` selects the character's matching emotional take.
 //
 // Persistence: `.openscript/characters.json` (development-side schema). Each
-// character's base voice is a gepard clone profile (`{character_id}`) with an
-// `emotions` template map — the SAME tonality-template mechanism as Thread 1 —
-// so script.generate_voices / tts.generate pick the take with zero special
-// casing at the synthesis boundary.
+// character's base voice is a `voicedesign` profile (`{character_id}`) whose
+// provider routes synthesis DIRECTLY to the Qwen3 VoiceDesign model: the
+// character's personality + the scene's emotion instruct are passed as the
+// `instruct` at synth time, so the voice-design model generates every line
+// (no cloning — gepard/audio8 are separate clone engines and never touch a
+// voicedesign profile). The `emotions` map stores each take's `instruct`,
+// which the router uses to attune per-line tonality.
 // ---------------------------------------------------------------------------
 use super::*;
 
@@ -92,7 +95,9 @@ fn design_voice_wav(
 /// PART 1 of the two-part workflow: define a character and design its base
 /// voice. `voice` may reference an existing profile (skip design); otherwise
 /// the base voice is designed from `personality` + `sample_text` and
-/// registered as a gepard clone profile `{character_id}`.
+/// registered as a `voicedesign` profile `{character_id}` — scene synthesis
+/// then runs DIRECTLY on the Qwen3 VoiceDesign model (per-line instruct), not
+/// through a cloning engine.
 pub(crate) async fn handle_character_create(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, ToolError> {
@@ -155,16 +160,9 @@ pub(crate) async fn handle_character_create(
                 )?;
                 report_progress(100.0, 100.0, "Base voice designed").await.ok();
 
-                // Register as a gepard clone profile (base voice for emotion takes).
-                match openscript_tts::gepard::gepard_register(&character_id, &wav, sample) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        tracing::warn!(
-                            "[character.create] gepard clone registration failed for '{}' ({}); re-run voice.profile.add later",
-                            character_id, e
-                        );
-                    }
-                }
+                // No cloning-engine registration: the designed WAV is a design
+                // artifact. Synthesis happens DIRECTLY on Qwen3 VoiceDesign via
+                // the voicedesign provider (personality + per-line instruct).
                 (character_id.to_string(), Some(wav), Some(sample.to_string()))
             }
         };
@@ -188,8 +186,11 @@ pub(crate) async fn handle_character_create(
             "profile_id": character_id,
             "ref_audio": wav,
             "ref_text": sample,
-            "provider": "gepard",
-            "mode": "clone",
+            // voicedesign: scene lines synthesize DIRECTLY with the Qwen3
+            // VoiceDesign model (personality + emotion instruct) — the
+            // ref WAV is a design artifact, not a clone reference.
+            "provider": "voicedesign",
+            "mode": "design",
             "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
             "language": language,
             "description": format!("character base voice: {}", personality),
@@ -267,21 +268,23 @@ pub(crate) async fn handle_character_design_emotion(
         _ => character_lang,
     };
 
-    // Base profile must exist AND be a gepard clone — the character workflow
-    // is VoiceDesign→gepard by design (emotion takes are per-request ref
-    // overrides). Attaching takes to a kokoro base would be silently dead
-    // (kokoro's synth path never reads emotions) and to an audio8 base would
-    // break at synth time (the compound voice is never registered here);
-    // character.remove would then also delete a shared profile wholesale.
+    // Base profile must exist AND be a voicedesign (or legacy gepard) base —
+    // the character workflow is VoiceDesign-direct by design (emotion takes
+    // are per-line `instruct` overrides at synthesis time; the take WAV is a
+    // design artifact). Attaching takes to a kokoro base would be silently
+    // dead (kokoro's synth path never reads emotions) and to an audio8 base
+    // would break at synth time (the compound voice is never registered
+    // here); character.remove would then also delete a shared profile
+    // wholesale.
     let profiles = load_voice_profiles()?;
     let base_provider = profiles
         .get(&character_id)
         .and_then(|p| p.get("provider"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if base_provider != "gepard" {
+    if base_provider != "voicedesign" && base_provider != "gepard" {
         return Err(ToolError::InvalidArg(format!(
-            "character '{}' base voice provider is '{}' — character emotion takes require a gepard base. Re-run character.create WITHOUT an explicit 'voice' (designs a gepard base) or with a gepard voice profile.",
+            "character '{}' base voice provider is '{}' — character emotion takes require a voicedesign (Qwen3 VoiceDesign) base. Re-run character.create WITHOUT an explicit 'voice' (designs a voicedesign base) or with a voicedesign voice profile.",
             character_id, if base_provider.is_empty() { "<missing>" } else { base_provider }
         )));
     }
@@ -339,9 +342,9 @@ pub(crate) async fn handle_character_design_emotion(
         .and_then(|p| p.get("provider"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if base_provider_locked != "gepard" {
+    if base_provider_locked != "voicedesign" && base_provider_locked != "gepard" {
         return Err(ToolError::InvalidArg(format!(
-            "character '{}' base voice provider changed to '{}' while designing — character emotion takes require a gepard base",
+            "character '{}' base voice provider changed to '{}' while designing — character emotion takes require a voicedesign base",
             character_id,
             if base_provider_locked.is_empty() { "<missing>" } else { base_provider_locked }
         )));
@@ -367,8 +370,9 @@ pub(crate) async fn handle_character_design_emotion(
     save_characters(&chars)?;
 
     // Attach to the base voice profile's emotions template (the runtime side
-    // that script.generate_voices / tts.generate read). gepard takes are used
-    // via per-request ref override — no registration needed.
+    // that script.generate_voices / tts.generate read). For voicedesign bases
+    // the router reads the CHARACTER schema's per-emotion `instruct`; the
+    // profile entry mirrors it for tooling/registry completeness.
     if let Some(obj) = profiles.get_mut(&character_id).and_then(|v| v.as_object_mut()) {
         if let Some(emotions) = obj
             .get_mut("emotions")
