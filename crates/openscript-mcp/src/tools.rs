@@ -2677,10 +2677,47 @@ pub(crate) fn higgs_control_tags_from(
         }
     }
     if tags.is_empty() {
-        None
-    } else {
-        Some(tags.join(" "))
+        return None;
     }
+    // Dedupe token-by-token: the same tag can arrive from BOTH the tone scan
+    // and the raw control_tags passthrough (e.g. scene 3's tone "hushed
+    // grave" AND control_tags "<|style:whispering|>"). Doubling a style tag
+    // doubles the effect (an over-whisper that slows speech and shifts the
+    // spectrum). Extract every <|category:tag|> token and drop exact dupes,
+    // while preserving inline text ("<|sfx:laughter|>Haha,") untouched.
+    let mut seen = std::collections::HashSet::new();
+    let mut uniq: Vec<String> = Vec::new();
+    for tag in tags {
+        if tag.starts_with("<|") && tag.ends_with("|>") && !tag.contains(' ') {
+            // A single pure tag token — dedupe it.
+            if seen.insert(tag) {
+                uniq.push(tag.to_string());
+            }
+        } else {
+            // Inline text (tag + onomatopoeia, or multiple tokens): dedupe
+            // each <|...|> token inside, keep the rest verbatim.
+            let mut out = String::new();
+            let mut rest = tag;
+            while let Some(start) = rest.find("<|") {
+                out.push_str(&rest[..start]);
+                if let Some(end_rel) = rest[start..].find("|>") {
+                    let token = &rest[start..start + end_rel + 2];
+                    if seen.insert(token) {
+                        out.push_str(token);
+                    }
+                    rest = &rest[start + end_rel + 2..];
+                } else {
+                    out.push_str(&rest[start..]);
+                    rest = "";
+                }
+            }
+            out.push_str(rest);
+            if !out.trim().is_empty() {
+                uniq.push(out);
+            }
+        }
+    }
+    Some(uniq.join(" "))
 }
 
 async fn tts_generate_routed(
@@ -7341,6 +7378,27 @@ mod tests {
     // 43 tags; free text would be read aloud, so the tone scan is a strict
     // keyword allowlist and everything else is dropped.
     // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_higgs_control_tags_dedupes_tone_and_raw_overlap() {
+        // Tone "hushed grave" AND control_tags both carry the whisper style —
+        // the tag must appear exactly once (doubling over-whispers and slows
+        // speech).
+        let tags = higgs_control_tags_from(
+            Some("hushed grave"),
+            Some("<|style:whispering|>"),
+        );
+        let t = tags.unwrap_or_default();
+        assert_eq!(t.matches("<|style:whispering|>").count(), 1, "got {t}");
+        // Raw control_tags inline effects must survive dedup untouched.
+        let tags2 = higgs_control_tags_from(
+            Some("hushed grave"),
+            Some("<|prosody:pause|> mid, <|style:whispering|>"),
+        );
+        let t2 = tags2.unwrap_or_default();
+        assert_eq!(t2.matches("<|style:whispering|>").count(), 1, "got {t2}");
+        assert!(t2.contains("<|prosody:pause|>"), "got {t2}");
+    }
 
     #[test]
     fn test_higgs_control_tags_whisper_tone_maps_to_style_tag() {
