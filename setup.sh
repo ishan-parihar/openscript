@@ -18,6 +18,7 @@
 #   - tts.voicedesign   → scripts/setup_voicedesign.sh (int4 model ~4.3GB + venv)
 #   - tts.gepard        → scripts/setup_gepard.sh (CUDA torch + NeMo venv)
 #   - tts.audio8        → scripts/setup_audio8.sh (int4 model ~1GB + pip deps)
+#   - tts.higgs         → scripts/setup_higgs.sh (cuda_int4 model ~3.6GB + .venv-higgs)
 #   - transcription.hinglish_ggml → whisper.cpp build + GGML model
 #   - transcription.parakeet_align→ Parakeet ONNX (~320MB) + onnxruntime/librosa
 #   - frontend          → npm install (Tauri/React web UI)
@@ -96,7 +97,7 @@ def enabled(cat, name):
         return 0 if str(v).strip().lower() in ("0", "false", "no", "off") else 1
     return 1 if cfg.get(cat, {}).get(name, True) else 0
 cats = {
-    "TTS": ["kokoro", "audio8", "gepard", "voicedesign", "sidecar"],
+    "TTS": ["kokoro", "audio8", "gepard", "voicedesign", "higgs", "sidecar"],
     "TRANSCRIPTION": ["hinglish_ggml", "whisper_align", "parakeet_align"],
     "MEDIA": ["pexels", "giphy", "pixabay", "youtube"],
     "LLM": ["opencode", "openrouter"],
@@ -109,7 +110,7 @@ print("F_FRONTEND=%d" % enabled("frontend", "frontend"))
 PY
 )"
   else
-    F_TTS_KOKORO=1; F_TTS_AUDIO8=1; F_TTS_GEPARD=1; F_TTS_VOICEDESIGN=1; F_TTS_SIDECAR=1
+    F_TTS_KOKORO=1; F_TTS_AUDIO8=1; F_TTS_GEPARD=1; F_TTS_VOICEDESIGN=1; F_TTS_HIGGS=1; F_TTS_SIDECAR=1
     F_TRANSCRIPTION_HINGLISH_GGML=1; F_TRANSCRIPTION_WHISPER_ALIGN=1; F_TRANSCRIPTION_PARAKEET_ALIGN=1
     F_MEDIA_PEXELS=1; F_MEDIA_GIPHY=1; F_MEDIA_PIXABAY=1; F_MEDIA_YOUTUBE=1
     F_LLM_OPENCODE=1; F_LLM_OPENROUTER=1
@@ -130,6 +131,7 @@ print_features() {
   printf "  %-42s %s\n" "tts.audio8"       "$F_TTS_AUDIO8 / Audio8 int4 model (~1GB) + pip deps"
   printf "  %-42s %s\n" "tts.gepard"       "$F_TTS_GEPARD / .venv-gepard (CUDA torch + NeMo, heavy)"
   printf "  %-42s %s\n" "tts.voicedesign"  "$F_TTS_VOICEDESIGN / Qwen3 VoiceDesign int4 (~4.3GB) + venv"
+  printf "  %-42s %s\n" "tts.higgs"        "$F_TTS_HIGGS / Higgs Audio v3 4B cuda_int4 (~3.6GB) + .venv-higgs"
   printf "  %-42s %s\n" "tts.sidecar"      "$F_TTS_SIDECAR / remote voicebox server (no local deps)"
   printf "  %-42s %s\n" "transcription.hinglish_ggml" "$F_TRANSCRIPTION_HINGLISH_GGML / whisper.cpp build + GGML model"
   printf "  %-42s %s\n" "transcription.whisper_align" "$F_TRANSCRIPTION_WHISPER_ALIGN / openai-whisper pip pkg"
@@ -230,6 +232,15 @@ for opt in yt-dlp pip3; do
 done
 if [ "$OPT_MISSING" = "1" ]; then
   info "Optional tools missing — library.build and pip installs will be skipped."
+fi
+
+# NVIDIA GPU driver sanity check — self-heals the driver/library version
+# mismatch that silently drops ORT/ffmpeg-NVENC to CPU (see
+# scripts/ensure_gpu_cuda.sh). Runs whenever an NVIDIA userspace is present;
+# a healthy machine is untouched and this adds ~1s.
+if command -v nvidia-smi >/dev/null 2>&1 && [ -x "scripts/ensure_gpu_cuda.sh" ]; then
+  info "Checking NVIDIA GPU driver/library alignment..."
+  bash scripts/ensure_gpu_cuda.sh || warn "GPU driver check reported issues (see above)"
 fi
 
 # ----------------------------------------------------------------------------
@@ -372,6 +383,17 @@ if [ "${F_TTS_AUDIO8:-1}" = "1" ]; then
   fi
 else
   warn "Skipping Audio8 provision — tts.audio8 is disabled."
+fi
+
+if [ "${F_TTS_HIGGS:-1}" = "1" ]; then
+  if [ -x "scripts/setup_higgs.sh" ]; then
+    info "Provisioning Higgs Audio v3 (cuda_int4 4B ~3.6GB + .venv-higgs)..."
+    bash scripts/setup_higgs.sh || warn "setup_higgs.sh reported issues (see above)"
+  else
+    warn "tts.higgs is enabled but scripts/setup_higgs.sh is missing"
+  fi
+else
+  warn "Skipping Higgs provision — tts.higgs is disabled."
 fi
 
 # ----------------------------------------------------------------------------
