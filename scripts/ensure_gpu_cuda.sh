@@ -19,8 +19,12 @@
 # Idempotent and safe: only touches nvidia userspace packages, never the
 # kernel module, never needs a reboot, and never touches a live desktop
 # session (running processes keep their in-memory libs).
+#
+# NOTE: if sudo is not passwordless, the alignment step will prompt for a
+# password — run it in a terminal you can interact with.
 
 set -u
+set -o pipefail
 
 MODE="${1:-auto}"            # auto | --check | --force
 SUDO="${SUDO:-sudo}"
@@ -39,16 +43,16 @@ if ! command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Does NVML initialize cleanly?
+# 2. Does NVML initialize cleanly? Treat ONLY a clean query as healthy —
+#    any other NVML failure (mismatch, no devices, driver error) is suspect.
 # ---------------------------------------------------------------------------
-smi_out="$(nvidia-smi 2>&1 || true)"
-if ! printf '%s' "$smi_out" | grep -qiE 'driver/library version mismatch|failed to initialize nvml'; then
+if smi_out="$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1)" \
+   && printf '%s' "$smi_out" | grep -q 'NVIDIA-SMI\|, [0-9]'; then
     say "GPU healthy: nvidia-smi initializes."
     if [ "$MODE" = "--force" ]; then
         :
     else
-        nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null | head -1 \
-            | sed 's/^/  GPU: /'
+        printf '  GPU: %s\n' "$(printf '%s' "$smi_out" | head -1)"
         exit 0
     fi
 fi
@@ -56,9 +60,13 @@ fi
 # ---------------------------------------------------------------------------
 # 3. Mismatch (or forced). Resolve versions.
 # ---------------------------------------------------------------------------
-mod_ver="$(grep -oE 'NVRM version: NVIDIA[^ ]* [0-9]+\.[0-9]+\.[0-9]+' /proc/driver/nvidia/version 2>/dev/null \
+# /proc/driver/nvidia/version line:
+#   NVRM version: NVIDIA UNIX Open Kernel Module for x86_64  610.43.03  Release Build
+# Anchor extraction to the NVRM line, then take its first dotted triple
+# (the version) — the anchored grep keeps other lines' numbers (GCC, etc.)
+# from winning.
+mod_ver="$(grep -E 'NVRM version:' /proc/driver/nvidia/version 2>/dev/null \
            | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-mod_ver="${mod_ver:-$(cat /proc/driver/nvidia/version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)}"
 
 if [ -z "$mod_ver" ]; then
     err "loaded nvidia kernel module version not found (/proc/driver/nvidia/version)."
@@ -80,63 +88,76 @@ if [ "$MODE" != "--force" ] && [ "$usr_ver" = "$mod_ver" ]; then
     exit 0
 fi
 
-# ---------------------------------------------------------------------------
-# 4. Find the matching userspace packages.
-#    Prefer the pacman cache (offline, no network). Fall back to the package
-#    manager if the exact version is unavailable locally.
-# ---------------------------------------------------------------------------
 if ! command -v pacman >/dev/null 2>&1; then
     err "non-pacman system; cannot auto-heal. Install nvidia userspace matching $mod_ver manually."
     exit 1
 fi
 
-pkgs=""
+# ---------------------------------------------------------------------------
+# 4. Resolve the matching userspace packages — as FILE PATHS only.
+#    Prefer the pacman cache (offline). If any package is missing from the
+#    cache, fall back to a version-pinned `pacman -S` (network) — pacman -U
+#    requires file paths, so a bare name would silently fail.
+# ---------------------------------------------------------------------------
+cached_pkgs=""
+need_net=0
 for p in nvidia-utils lib32-nvidia-utils nvidia-settings; do
     if ! pacman -Q "$p" >/dev/null 2>&1; then
         continue    # not installed — nothing to align
     fi
-    cached="$(ls "$CACHE"/${p}-${mod_ver}-1-*.pkg.tar.zst 2>/dev/null | head -1)"
+    cached="$(ls "$CACHE"/${p}-${mod_ver}-*-*.pkg.tar.zst 2>/dev/null | head -1)"
     if [ -n "$cached" ]; then
-        pkgs="$pkgs $cached"
+        cached_pkgs="$cached_pkgs $cached"
     else
-        warn "no cached ${p}-${mod_ver}; will ask pacman (needs network)"
-        pkgs="$pkgs $p"
+        warn "no cached ${p}-${mod_ver}; will fetch via pacman (needs network)"
+        need_net=1
     fi
 done
 
-if [ -z "$pkgs" ]; then
-    err "no nvidia userspace packages installed to align."
-    exit 1
-fi
-
-# ---------------------------------------------------------------------------
-# 5. Apply. -Udd skips the dependency check so the module packages' pinned
-#    nvidia-utils requirement doesn't block re-alignment to the loaded
-#    module (the loaded module is ground truth, not the .PKGINFO pins).
-# ---------------------------------------------------------------------------
-say "aligning userspace to loaded module $mod_ver ..."
-# shellcheck disable=SC2086
 if [ "$MODE" = "--check" ]; then
-    say "would run: $SUDO pacman -Udd --noconfirm$pkgs"
+    if [ "$need_net" = "1" ]; then
+        say "would run: $SUDO pacman -Sdd --needed nvidia-utils=$mod_ver lib32-nvidia-utils=$mod_ver nvidia-settings=$mod_ver"
+    else
+        say "would run: $SUDO pacman -Udd --noconfirm$cached_pkgs"
+    fi
     exit 0
 fi
 
-if ! $SUDO pacman -Udd --noconfirm $pkgs 2>&1 | tail -6; then
-    err "pacman failed to re-align userspace. Fix manually:"
-    err "  sudo pacman -Udd --noconfirm $pkgs"
+say "aligning userspace to loaded module $mod_ver ..."
+rc=0
+if [ "$need_net" = "1" ]; then
+    # Version-pinned network fetch (matches the loaded module exactly).
+    $SUDO pacman -Sdd --needed --noconfirm \
+        "nvidia-utils=$mod_ver" "lib32-nvidia-utils=$mod_ver" "nvidia-settings=$mod_ver" 2>&1 | tail -6
+    rc=${PIPESTATUS[0]}
+elif [ -n "$cached_pkgs" ]; then
+    # Offline re-alignment from cache (-Udd skips the module packages' pinned
+    # nvidia-utils requirement; the loaded module is ground truth).
+    $SUDO pacman -Udd --noconfirm $cached_pkgs 2>&1 | tail -6
+    rc=${PIPESTATUS[0]}
+fi
+
+if [ "$rc" -ne 0 ]; then
+    err "pacman failed to re-align userspace (exit $rc). Fix manually:"
+    if [ "$need_net" = "1" ]; then
+        err "  sudo pacman -Sdd --needed nvidia-utils=$mod_ver lib32-nvidia-utils=$mod_ver nvidia-settings=$mod_ver"
+    else
+        err "  sudo pacman -Udd --noconfirm $cached_pkgs"
+    fi
     exit 1
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Verify.
+# 5. Verify.
 # ---------------------------------------------------------------------------
 sleep 1
-if nvidia-smi >/dev/null 2>&1; then
+if smi_out="$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1)" \
+   && printf '%s' "$smi_out" | grep -q 'NVIDIA-SMI\|, [0-9]'; then
     say "GPU usable after alignment:"
-    nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null | head -1 | sed 's/^/  /'
+    printf '  %s\n' "$(printf '%s' "$smi_out" | head -1)"
     exit 0
 else
-    err "alignment applied but nvidia-smi still fails. Check:"
+    err "alignment applied but nvidia-smi still fails:"
     nvidia-smi 2>&1 | tail -2
     exit 1
 fi
