@@ -106,6 +106,11 @@ pub(crate) async fn handle_character_create(
     let role = default_str(&args, "role", "character");
     let personality = extract_str(&args, "personality")?;
     let language = default_str(&args, "language", "english");
+    // Gender metadata (male/female/nonbinary/auto). Persisted on the
+    // character schema AND its base voice profile so the content-format
+    // alternation strategy (format.alternation=male_female) can resolve it
+    // for voicedesign characters (no Kokoro prefix to infer from).
+    let gender = default_str(&args, "gender", "auto");
     let sample_text = default_opt_str(&args, "sample_text");
     let existing_voice = default_opt_str(&args, "voice");
     let seed = args.get("seed").and_then(|v| v.as_i64());
@@ -194,6 +199,7 @@ pub(crate) async fn handle_character_create(
             "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
             "language": language,
             "description": format!("character base voice: {}", personality),
+            "gender": gender,
             "emotions": {},
         });
         save_voice_profiles(&profiles)?;
@@ -205,6 +211,7 @@ pub(crate) async fn handle_character_create(
         "personality": personality,
         "language": language,
         "voice": base_voice,
+        "gender": gender,
         "emotions": {},
         "created_at": chrono::Utc::now().to_rfc3339(),
     });
@@ -434,6 +441,7 @@ pub(crate) async fn handle_character_list(
                         "role": v.get("role").and_then(|r| r.as_str()).unwrap_or(""),
                         "voice": v.get("voice").and_then(|x| x.as_str()).unwrap_or(""),
                         "language": v.get("language").and_then(|x| x.as_str()).unwrap_or(""),
+                        "gender": v.get("gender").and_then(|x| x.as_str()).unwrap_or("auto"),
                         "emotions": emotions,
                     })
                 })

@@ -122,7 +122,25 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                     "path": {"type": ["string", "null"], "description": "Music file path. Omit to auto-select from library by mood."},
                     "gain_db": {"type": "number", "default": -10.0, "description": "Music volume in dB. Recommended: -8 to -14. Above -8 overpowers voice."},
                     "ducking": {"type": "boolean", "default": true, "description": "Auto-lower music during speech."},
-                    "ducking_depth_db": {"type": "number", "default": 12.0}
+                    "ducking_depth_db": {"type": "number", "default": 12.0},
+                    "mood": {"type": ["string", "null"], "default": null, "description": "Music mood hint for auto-select (neutral | calm | energetic). Set by the content format's music_mood when the agent didn't pick a track."}
+                }
+            },
+            "format": {
+                "type": "object",
+                "description": "Content-format configuration: correlated defaults + scene-structure playbook (presentation | podcast | dialogue | comedy_sketch | romcom | meme_reel | documentary) plus the speaker alternation strategy. Accepts string shorthand: \"format\": \"podcast\".",
+                "properties": {
+                    "type": {"type": "string", "default": "presentation", "enum": ["presentation", "podcast", "dialogue", "comedy_sketch", "romcom", "meme_reel", "documentary"], "description": "Format kind. presentation = linear single-narrator (default)."},
+                    "alternation": {"type": "string", "default": "none", "enum": ["none", "male_female", "auto"], "description": "Speaker alternation strategy. male_female alternates male/female speakers every scene and requires >=2 distinct genders (validated by script.format.validate)."},
+                    "min_speakers": {"type": "integer", "default": 0, "description": "Minimum speakers required (0 = none)."},
+                    "max_speakers": {"type": "integer", "default": 0, "description": "Maximum speakers allowed (0 = none)."},
+                    "min_scenes": {"type": "integer", "default": 0, "description": "Minimum scenes required (0 = none)."},
+                    "max_scenes": {"type": "integer", "default": 0, "description": "Maximum scenes allowed (0 = none)."},
+                    "default_speed": {"type": "number", "default": 0.0, "description": "Correlated default speech speed (0 = no override)."},
+                    "default_temperature": {"type": ["number", "null"], "default": null, "description": "Correlated default synthesis temperature."},
+                    "reaction_memes": {"type": "boolean", "default": false, "description": "Enable GIPHY reaction meme pop-ins by default."},
+                    "sticker_mode": {"type": "string", "default": "character", "enum": ["character", "reaction", "none"], "description": "Correlated sticker behavior."},
+                    "music_mood": {"type": ["string", "null"], "default": null, "description": "Correlated music mood hint (neutral | calm | energetic)."}
                 }
             },
             "captions": {
@@ -196,7 +214,8 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                     "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', bare 'af_heart', a registered clone profile (e.g. 'ishan_gepard'), or the literal 'default' to use tts.voice / the user's configured default voice."},
                     "preset": {"type": "string", "default": "default_person", "description": "SVG preset: default_person, robot, cat, etc."},
                     "position": {"type": "string", "default": "top-left", "enum": ["top-left", "top-right", "top-center", "center", "bottom-left", "bottom-right", "bottom-center"]},
-                    "scale": {"type": "number", "default": 0.35, "description": "Sticker scale as fraction of canvas width (0.0-1.0)."}
+                    "scale": {"type": "number", "default": 0.35, "description": "Sticker scale as fraction of canvas width (0.0-1.0)."},
+                    "gender": {"type": "string", "default": "auto", "enum": ["male", "female", "nonbinary", "auto"], "description": "Speaker gender. 'auto' infers from the Kokoro voice prefix (af_/am_/bf_/bm_) or free text. Drives format.alternation=male_female; script.format.validate resolves it against the voice profile registry."}
                 }
             },
             "BackgroundSpec": {
@@ -296,6 +315,162 @@ pub(crate) async fn handle_script_parse(args: serde_json::Value) -> Result<serde
             "stickers_enabled": spec.stickers.enabled,
             "lip_sync_mode": spec.stickers.lip_sync,
         },
+    }))
+}
+
+/// Validate a script against its DECLARED content format: format-type
+/// validity, speaker-count range, male/female alternation (resolving speaker
+/// genders from voice-profile registry gender fields + Kokoro prefixes +
+/// description free-text), and scene-speaker alternation pattern (dialogic
+/// formats warn on 3+ consecutive scenes from one speaker). Returns issues,
+/// suggestions, and the alternation diagnostics.
+pub(crate) async fn handle_script_format_validate(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, ToolError> {
+    use std::collections::HashMap;
+
+    let script_input = extract_str(&args, "script")?;
+    let json_str: String = if script_input.trim_start().starts_with('{') {
+        script_input.to_string()
+    } else {
+        let path = sanitize_input_path(script_input)?;
+        if !path.exists() {
+            return Err(ToolError::NotFound(format!(
+                "Script file not found: {}",
+                path.display()
+            )));
+        }
+        std::fs::read_to_string(&path)?
+    };
+    let spec = parse_script(&apply_tts_config_defaults(&json_str))
+        .map_err(|e| ToolError::InvalidArg(format!("Failed to parse script JSON: {}", e)))?;
+
+    // Base validation (includes format type / alternation / count checks).
+    let errors = validate_script(&spec);
+    let mut issues: Vec<String> = errors
+        .iter()
+        .map(|e| format!("{}: {}", e.field, e.message))
+        .collect();
+    let mut suggestions: Vec<String> = Vec::new();
+
+    // Resolve each speaker's gender: explicit > voice-profile gender field >
+    // Kokoro-prefix inference > profile-description free-text inference.
+    let profiles = load_voice_profiles().unwrap_or_else(|_| json!({}));
+    let mut gender_by_speaker: HashMap<String, String> = HashMap::new();
+    for (id, spk) in &spec.speakers {
+        let mut g = spk.gender.clone();
+        if let Some(p) = profiles.get(&spk.voice) {
+            if let Some(pg) = p.get("gender").and_then(|x| x.as_str()) {
+                if !pg.is_empty() && pg != "auto" {
+                    g = pg.to_string();
+                }
+            }
+            if g == "auto" || g == "unknown" {
+                let desc = p.get("description").and_then(|x| x.as_str()).unwrap_or("");
+                let inferred = openscript_core::script::infer_gender(&spk.voice, desc);
+                if inferred != "unknown" {
+                    g = inferred;
+                }
+            }
+        }
+        gender_by_speaker.insert(id.clone(), g);
+    }
+
+    // Scene speaker alternation pattern.
+    let pattern: Vec<String> = spec.scenes.iter().map(|s| s.speaker.clone()).collect();
+    let mut max_run = 1usize;
+    let mut run = 1usize;
+    for w in pattern.windows(2) {
+        if w[0] == w[1] {
+            run += 1;
+            max_run = max_run.max(run);
+        } else {
+            run = 1;
+        }
+    }
+
+    let fmt_type = spec.format.r#type.clone();
+    let dialogic = matches!(
+        fmt_type.as_str(),
+        "podcast" | "dialogue" | "comedy_sketch" | "romcom"
+    );
+    let speaker_count = spec.speakers.len();
+
+    // Dialogic formats need ≥2 speakers and alternating turns.
+    if dialogic && speaker_count < 2 {
+        suggestions.push(format!(
+            "Format '{}' is a dialogue format — add a second speaker (see director.format for the speaker blueprint with gender + voice.design instructs).",
+            fmt_type
+        ));
+    }
+    if dialogic && speaker_count >= 2 && max_run >= 3 {
+        suggestions.push(format!(
+            "{} consecutive scenes from the same speaker (max run {}) — alternate speakers every scene for engagement.",
+            max_run, max_run
+        ));
+    }
+    if dialogic && speaker_count >= 2 && max_run >= 2 && spec.scenes.len() >= 6 {
+        suggestions.push(
+            "No speaker should hold more than 2 consecutive scenes in a dialogue format — swap turns.".into(),
+        );
+    }
+
+    // Alternation gender check (mirrors validate_script but with resolved
+    // genders so voicedesign profiles count too).
+    let distinct: Vec<&String> = gender_by_speaker
+        .values()
+        .filter(|g| **g != "unknown" && **g != "auto")
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let alternation_ok = if spec.format.alternation == "male_female" {
+        let ok = distinct.len() >= 2;
+        // Drop the PRE-resolution alternation error from validate_script (it
+        // ran on unknown/auto genders); this profile-aware resolution is the
+        // authoritative check and would otherwise contradict itself.
+        issues.retain(|i| !i.starts_with("format.alternation:"));
+        if !ok {
+            issues.push(format!(
+                "format.alternation: male_female requested but only {} distinct speaker gender(s) resolved ({:?}). Design a counterpart voice with voice.design (e.g. a female host) or set speaker gender explicitly.",
+                distinct.len(),
+                gender_by_speaker
+            ));
+        }
+        ok
+    } else {
+        true
+    };
+
+    // Pacing suggestion: format prescribes a speed the script hasn't adopted.
+    if spec.format.default_speed > 0.0 && (spec.tts.default_speed - 1.0).abs() < f64::EPSILON {
+        suggestions.push(format!(
+            "Format '{}' correlates default_speed {} — set tts.default_speed for that pacing.",
+            fmt_type, spec.format.default_speed
+        ));
+    }
+
+    let status = if !issues.is_empty() {
+        "fail"
+    } else if !suggestions.is_empty() {
+        "warning"
+    } else {
+        "pass"
+    };
+
+    Ok(json!({
+        "status": status,
+        "format": spec.format,
+        "issues": issues,
+        "suggestions": suggestions,
+        "alternation": {
+            "strategy": spec.format.alternation,
+            "distinct_genders": distinct,
+            "gender_by_speaker": gender_by_speaker,
+            "scene_speaker_pattern": pattern,
+            "max_consecutive_same_speaker": max_run,
+            "ok": alternation_ok,
+        },
+        "next_steps": "Fix the issues, then re-run script.format.validate before script.to_video.",
     }))
 }
 
@@ -2430,7 +2605,11 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                         tags: music_sel_tags.clone(),
                         provenance: None,
                         kind: EventKind::Music {
-                            mood: spec.output.theme.clone(),
+                            mood: spec
+                                .music
+                                .as_ref()
+                                .and_then(|m| m.mood.clone())
+                                .unwrap_or_else(|| spec.output.theme.clone()),
                             energy: "low".into(),
                             bpm: None,
                             loopability: true,
@@ -2816,7 +2995,12 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                     path: p.clone(),
                     gain_db,
                     ducking: render_spec.ducking,
-                    mood: Some(spec.output.theme.clone()),
+                    mood: Some(
+                        spec.music
+                            .as_ref()
+                            .and_then(|m| m.mood.clone())
+                            .unwrap_or_else(|| spec.output.theme.clone()),
+                    ),
                     energy: None,
                     tags: music_sel_tags.clone(),
                     selection_query: music_sel_query.clone(),

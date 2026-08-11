@@ -2,6 +2,7 @@
 
 pub mod asset_library;
 pub mod config;
+pub mod content_formats;
 pub mod error;
 pub mod hf;
 pub mod keywords;

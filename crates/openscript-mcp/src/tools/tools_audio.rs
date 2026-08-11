@@ -14,6 +14,10 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
     let model = default_str(&args, "model", "Qwen/Qwen3-TTS-12Hz-0.6B-Base");
     let language = default_str(&args, "language", "English");
     let description = default_opt_str(&args, "description");
+    // Speaker gender metadata (male/female/nonbinary/auto). Drives the
+    // content-format alternation strategy — scripts can resolve this field
+    // for voicedesign/clone profiles that have no Kokoro-prefix hint.
+    let gender = default_str(&args, "gender", "auto");
 
     // Emotion-template map: {emotion_id -> {ref_audio, ref_text, cfg_scale?}}.
     // Each entry is a SEPARATE reference recording of the same speaker
@@ -62,6 +66,7 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         "model": model,
         "language": language,
         "description": description,
+        "gender": gender,
         "emotions": serde_json::Value::Object(emotions_map.clone()),
     });
     profiles[profile_id] = obj;
@@ -182,6 +187,7 @@ pub(crate) async fn handle_voice_profile_list(
                         "profile_id": profile_id,
                         "provider": v.get("provider").and_then(|x| x.as_str()).unwrap_or(""),
                         "language": v.get("language").and_then(|x| x.as_str()).unwrap_or(""),
+                        "gender": v.get("gender").and_then(|x| x.as_str()).unwrap_or("auto"),
                     })
                 })
                 .collect::<Vec<_>>()
@@ -235,6 +241,9 @@ pub(crate) async fn handle_voice_design(
     let text = extract_str(&args, "text")?;
     let language = default_str(&args, "language", "english");
     let profile_id = default_opt_str(&args, "profile_id");
+    // Explicit gender metadata for the designed voice (default "auto" =
+    // infer from the instruct free-text at parse time).
+    let gender = default_str(&args, "gender", "auto");
     let seed = args.get("seed").and_then(|v| v.as_i64());
     let max_tokens = default_u32(&args, "max_tokens", 2048);
     let temperature = args
@@ -299,6 +308,7 @@ pub(crate) async fn handle_voice_design(
             "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
             "language": language,
             "description": format!("voice.design persona: {}", instruct),
+            "gender": gender,
         });
         profiles[pid.clone()] = obj;
         save_voice_profiles(&profiles)?;

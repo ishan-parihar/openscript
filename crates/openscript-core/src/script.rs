@@ -9,7 +9,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ---------------------------------------------------------------------------
 // Top-level ScriptSpec
@@ -85,6 +85,13 @@ pub struct ScriptSpec {
     /// Sticker behavior configuration.
     #[serde(default)]
     pub stickers: StickersSpec,
+
+    /// Content-format configuration: correlated defaults + a scene-structure
+    /// playbook (presentation | podcast | dialogue | comedy_sketch | romcom |
+    /// meme_reel | documentary) plus the speaker alternation strategy.
+    /// Agent-friendly shorthand "format": "podcast" normalizes at parse time.
+    #[serde(default)]
+    pub format: ContentFormatSpec,
 
     /// Meme b-roll configuration (GIPHY reaction GIFs per scene).
     /// When enabled, each scene gets a short contextual reaction GIF
@@ -275,6 +282,18 @@ pub struct SpeakerSpec {
     /// Sticker scale relative to canvas width (0.0–1.0).
     #[serde(default = "default_scale")]
     pub scale: f64,
+
+    /// Speaker gender: "male" | "female" | "nonbinary" | "auto" (default).
+    /// "auto" is inferred at parse time from the Kokoro voice id prefix
+    /// (af_/am_/bf_/bm_/...) or a free-text personality hint, else "unknown".
+    /// Drives the format.alternation="male_female" strategy and the
+    /// content-format speaker blueprints (male/female alternation).
+    #[serde(default = "default_gender")]
+    pub gender: String,
+}
+
+fn default_gender() -> String {
+    "auto".to_string()
 }
 
 fn default_preset() -> String {
@@ -288,6 +307,98 @@ fn default_scale() -> f64 {
     // always very small and badly compositioned." 0.35 = 35% of canvas width
     // = 378px on 1080px canvas — large enough to be clearly visible.
     0.35
+}
+
+// ---------------------------------------------------------------------------
+// Content Format
+// ---------------------------------------------------------------------------
+
+/// Content-format configuration: correlated defaults + a scene-structure
+/// playbook that shapes HOW a script is authored (speaker count, alternation,
+/// pacing, reactions) without changing the render pipeline.
+///
+/// `type` is the format kind; `alternation` drives the male/female speaker
+/// alternation strategy. All fields are correlated DEFAULTS — anything the
+/// agent set explicitly always wins (same philosophy as `apply_theme`).
+///
+/// Agent-friendly shorthand is accepted at parse time: `"format": "podcast"`
+/// normalizes to `{"type": "podcast"}`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ContentFormatSpec {
+    /// Format kind: "presentation" (default), "podcast", "dialogue",
+    /// "comedy_sketch", "romcom", "meme_reel", "documentary".
+    #[serde(default = "default_format_type")]
+    pub r#type: String,
+
+    /// Speaker alternation strategy:
+    /// - "none" (default): no constraint; scenes may repeat speakers freely.
+    /// - "male_female": requires ≥2 distinct speaker genders; the agent
+    ///   authors scenes alternating male/female voices for engagement.
+    /// - "auto": alternates available genders where possible; never errors.
+    #[serde(default = "default_alternation")]
+    pub alternation: String,
+
+    /// Expected speaker count range (0 = no constraint). Validated at parse.
+    #[serde(default)]
+    pub min_speakers: u32,
+    #[serde(default)]
+    pub max_speakers: u32,
+
+    /// Expected scene count range (0 = no constraint). Validated at parse.
+    #[serde(default)]
+    pub min_scenes: u32,
+    #[serde(default)]
+    pub max_scenes: u32,
+
+    /// Correlated default speech speed (0.0 = no override).
+    #[serde(default)]
+    pub default_speed: f64,
+
+    /// Correlated default synthesis temperature (None = engine default).
+    #[serde(default)]
+    pub default_temperature: Option<f64>,
+
+    /// Correlated default for GIPHY reaction meme pop-ins (meme_brolls).
+    #[serde(default)]
+    pub reaction_memes: bool,
+
+    /// Correlated sticker behavior: "character" (speaker-identifier stickers,
+    /// default), "reaction" (reaction-driven stickers), "none".
+    #[serde(default = "default_sticker_mode")]
+    pub sticker_mode: String,
+
+    /// Correlated music mood hint (auto-select). Stays within the library
+    /// vocabulary: neutral | calm | energetic.
+    #[serde(default)]
+    pub music_mood: Option<String>,
+}
+
+fn default_format_type() -> String {
+    "presentation".to_string()
+}
+fn default_alternation() -> String {
+    "none".to_string()
+}
+fn default_sticker_mode() -> String {
+    "character".to_string()
+}
+
+impl Default for ContentFormatSpec {
+    fn default() -> Self {
+        Self {
+            r#type: default_format_type(),
+            alternation: default_alternation(),
+            min_speakers: 0,
+            max_speakers: 0,
+            min_scenes: 0,
+            max_scenes: 0,
+            default_speed: 0.0,
+            default_temperature: None,
+            reaction_memes: false,
+            sticker_mode: default_sticker_mode(),
+            music_mood: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +511,24 @@ pub struct MusicSpec {
     /// Ducking depth in dB (how much to lower music during speech).
     #[serde(default = "default_ducking_depth")]
     pub ducking_depth_db: f64,
+
+    /// Music mood hint (e.g. "neutral", "calm", "energetic") for
+    /// auto-selection from the library. Set by the content format's
+    /// `music_mood` when the agent did not pick a track.
+    #[serde(default)]
+    pub mood: Option<String>,
+}
+
+impl Default for MusicSpec {
+    fn default() -> Self {
+        Self {
+            path: None,
+            gain_db: default_music_gain(),
+            ducking: default_ducking(),
+            ducking_depth_db: default_ducking_depth(),
+            mood: None,
+        }
+    }
 }
 
 fn default_music_gain() -> f64 {
@@ -971,6 +1100,92 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
         });
     }
 
+    // Validate content-format declaration.
+    let valid_formats = [
+        "presentation",
+        "podcast",
+        "dialogue",
+        "comedy_sketch",
+        "romcom",
+        "meme_reel",
+        "documentary",
+    ];
+    if !valid_formats.contains(&spec.format.r#type.as_str()) {
+        errors.push(ScriptValidationError {
+            field: "format.type".into(),
+            message: format!(
+                "Invalid format type '{}'. Must be one of: {}",
+                spec.format.r#type,
+                valid_formats.join(", ")
+            ),
+        });
+    }
+    let valid_alternations = ["none", "male_female", "auto"];
+    if !valid_alternations.contains(&spec.format.alternation.as_str()) {
+        errors.push(ScriptValidationError {
+            field: "format.alternation".into(),
+            message: format!(
+                "Invalid alternation '{}'. Must be one of: {}",
+                spec.format.alternation,
+                valid_alternations.join(", ")
+            ),
+        });
+    }
+    // Format speaker/scene count constraints.
+    let speaker_count = spec.speakers.len();
+    if spec.format.min_speakers > 0 && speaker_count < spec.format.min_speakers as usize {
+        errors.push(ScriptValidationError {
+            field: "format.min_speakers".into(),
+            message: format!(
+                "Format '{}' needs at least {} speakers (found {})",
+                spec.format.r#type, spec.format.min_speakers, speaker_count
+            ),
+        });
+    }
+    if spec.format.max_speakers > 0 && speaker_count > spec.format.max_speakers as usize {
+        errors.push(ScriptValidationError {
+            field: "format.max_speakers".into(),
+            message: format!(
+                "Format '{}' allows at most {} speakers (found {})",
+                spec.format.r#type, spec.format.max_speakers, speaker_count
+            ),
+        });
+    }
+    let scene_count = spec.scenes.len();
+    if spec.format.min_scenes > 0 && scene_count < spec.format.min_scenes as usize {
+        errors.push(ScriptValidationError {
+            field: "format.min_scenes".into(),
+            message: format!(
+                "Format '{}' needs at least {} scenes (found {})",
+                spec.format.r#type, spec.format.min_scenes, scene_count
+            ),
+        });
+    }
+    if spec.format.max_scenes > 0 && scene_count > spec.format.max_scenes as usize {
+        errors.push(ScriptValidationError {
+            field: "format.max_scenes".into(),
+            message: format!(
+                "Format '{}' allows at most {} scenes (found {})",
+                spec.format.r#type, spec.format.max_scenes, scene_count
+            ),
+        });
+    }
+    // Alternation requires ≥2 distinct genders when explicitly requested.
+    if spec.format.alternation == "male_female" {
+        let genders: HashSet<&str> =
+            spec.speakers.values().map(|s| s.gender.as_str()).collect();
+        let distinct = genders.iter().filter(|g| **g != "unknown").count();
+        if distinct < 2 {
+            errors.push(ScriptValidationError {
+                field: "format.alternation".into(),
+                message: format!(
+                    "format.alternation='male_female' needs speakers of two distinct genders (male + female). Declare speaker 'gender' or use a counterpart voice (e.g. voice.design a female host). Found genders: {:?}",
+                    genders
+                ),
+            });
+        }
+    }
+
     errors
 }
 
@@ -1022,6 +1237,17 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
             }
         }
 
+        // --- Normalize format: string → object ---
+        // Agents write: "format": "podcast"
+        // Schema expects: {"type": "podcast"}
+        if let Some(fmt_val) = obj.get("format") {
+            if let Some(s) = fmt_val.as_str() {
+                let mut fmt_obj = serde_json::Map::new();
+                fmt_obj.insert("type".into(), serde_json::Value::String(s.to_string()));
+                obj.insert("format".into(), serde_json::Value::Object(fmt_obj));
+            }
+        }
+
         // --- Normalize per-scene background: object → string ---
         // Agents write per-scene: {"type": "gameplay", "stock_query": "octopus", "orientation": "9:16"}
         // SceneSpec.background expects: Option<String> (just the type or preset name).
@@ -1067,7 +1293,31 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
         }
     }
 
+    // Track explicitly-set top-level fields so correlated format defaults
+    // never clobber an explicit agent choice — e.g. "meme_brolls": {"enabled":
+    // false} must beat a format's reaction_memes=true even though the value
+    // happens to equal the default (value-based checks cannot tell the
+    // difference; presence-based ones can).
+    let mut explicitly_set: HashSet<String> = HashSet::new();
+    if let Some(obj) = root.as_object() {
+        for key in obj.keys() {
+            explicitly_set.insert(key.clone());
+        }
+    }
+
     let mut spec: ScriptSpec = serde_json::from_value(root)?;
+
+    // Infer speaker genders declared "auto" (Kokoro voice id prefix; the MCP
+    // layer enriches voicedesign profiles with their registered gender).
+    for speaker in spec.speakers.values_mut() {
+        if speaker.gender.is_empty() || speaker.gender == "auto" {
+            speaker.gender = infer_gender(&speaker.voice, "");
+        }
+    }
+
+    // Apply content-format correlated defaults (pacing / reactions / music).
+    // Runs BEFORE apply_theme so the theme's caption colors still win.
+    apply_format(&mut spec, &explicitly_set);
 
     // Auto-assign scene IDs if missing
     for (i, scene) in spec.scenes.iter_mut().enumerate() {
@@ -1108,6 +1358,118 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
     apply_theme(&mut spec);
 
     Ok(spec)
+}
+
+/// Infer a speaker's gender from a Kokoro voice id prefix or free-text
+/// description. Kokoro voice ids encode gender in the locale prefix
+/// (e.g. "af_" = American female, "am_" = American male, "bm_" = British
+/// male — `<language><gender>_<name>`). Free-text heuristics look for explicit
+/// gendered tokens in personality or instruct strings. Returns "male",
+/// "female", or "unknown".
+pub fn infer_gender(voice: &str, free_text: &str) -> String {
+    // 1. Kokoro voice id prefix: "kokoro:af_heart" or "af_heart" or
+    //    registry-id form "kokoro_af_heart".
+    let bare = match voice.rsplit(':').next() {
+        Some(v) => v,
+        None => voice,
+    };
+    let bare = bare.strip_prefix("kokoro_").unwrap_or(bare);
+    if let Some(locale) = bare.split('_').next() {
+        if locale.len() >= 2 {
+            let gender_char = locale.as_bytes()[locale.len() - 1];
+            let language = &locale[..locale.len() - 1];
+            if !language.is_empty() && language.chars().all(|c| c.is_ascii_alphabetic()) {
+                match gender_char {
+                    b'f' | b'F' => return "female".to_string(),
+                    b'm' | b'M' => return "male".to_string(),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // 2. Free-text token heuristics (explicit gendered vocabulary only).
+    let female_tokens = [
+        "female", "woman", "women", "girl", "she", "her", "lady", "queen",
+        "mother", "feminine", "mrs", "madam", "sister", "daughter", "herself",
+    ];
+    let male_tokens = [
+        "male", "man", "men", "boy", "he", "him", "his", "sir", "king",
+        "father", "masculine", "mr", "brother", "son", "uncle", "himself",
+    ];
+    let text = free_text.to_lowercase();
+    let mut female_hits = 0usize;
+    let mut male_hits = 0usize;
+    for token in text.split(|c: char| !c.is_alphanumeric()) {
+        if token.is_empty() {
+            continue;
+        }
+        if female_tokens.contains(&token) {
+            female_hits += 1;
+        } else if male_tokens.contains(&token) {
+            male_hits += 1;
+        }
+    }
+    if female_hits > male_hits {
+        "female".to_string()
+    } else if male_hits > female_hits {
+        "male".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Apply the content-format correlated defaults from `spec.format` to the
+/// rest of the spec — but ONLY for fields the agent did not explicitly set
+/// (presence-based: `explicitly_set` holds the top-level keys the agent wrote;
+/// a value that merely equals a default is still an explicit choice).
+fn apply_format(spec: &mut ScriptSpec, explicitly_set: &HashSet<String>) {
+    let f = &spec.format;
+    // Pacing: only when the script-level TTS block was not touched.
+    if f.default_speed > 0.0
+        && spec.tts.default_speed == 1.0
+        && !explicitly_set.contains("tts")
+    {
+        spec.tts.default_speed = f.default_speed;
+    }
+    if let Some(t) = f.default_temperature {
+        if spec.tts.default_temperature.is_none() && !explicitly_set.contains("tts") {
+            spec.tts.default_temperature = Some(t);
+        }
+    }
+    // Reaction memes (GIPHY pop-ins) — never override an explicit choice.
+    if f.reaction_memes
+        && !spec.meme_brolls.enabled
+        && !explicitly_set.contains("meme_brolls")
+    {
+        spec.meme_brolls.enabled = true;
+    }
+    // Sticker behavior.
+    match f.sticker_mode.as_str() {
+        "none" if !explicitly_set.contains("stickers") => spec.stickers.enabled = false,
+        "reaction" => {
+            // Stickers stay enabled — the sticker.auto pipeline is already
+            // reaction-driven (intent + emphatic keywords).
+        }
+        _ => {}
+    }
+    // Music mood (auto-select hint). Fill a missing mood on an explicit music
+    // block, or create one when the agent supplied no music at all. A mood the
+    // agent set explicitly is never overwritten.
+    if let Some(mood) = &f.music_mood {
+        match spec.music.as_mut() {
+            Some(m) => {
+                if m.mood.is_none() {
+                    m.mood = Some(mood.clone());
+                }
+            }
+            None => {
+                let mut m = MusicSpec::default();
+                m.mood = Some(mood.clone());
+                spec.music = Some(m);
+            }
+        }
+    }
 }
 
 /// Extract topic keywords from a video title.
@@ -1726,4 +2088,233 @@ mod tests {
         // Existing stock_query should NOT be overwritten by background object's stock_query
         assert_eq!(spec.scenes[0].stock_query.as_deref(), Some("coffee beans"));
         assert_eq!(spec.scenes[0].background.as_deref(), Some("gameplay"));
+    }
+
+    // ========================================================================
+    // Content-format + gender alternation tests (Phase 176)
+    // ========================================================================
+
+    /// Agent-friendly "format": "podcast" shorthand normalizes to a full spec.
+    #[test]
+    fn test_format_shorthand_normalized() {
+        let json = r#"{
+            "format": "podcast",
+            "speakers": {
+                "host": {"voice": "kokoro:am_michael", "gender": "male"},
+                "guest": {"voice": "kokoro:af_heart", "gender": "female"}
+            },
+            "scenes": [
+                {"speaker": "host", "text": "Welcome."},
+                {"speaker": "guest", "text": "Thanks!"}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.format.r#type, "podcast");
+        assert_eq!(spec.format.alternation, "none");
+        assert_eq!(spec.format.sticker_mode, "character");
+    }
+
+    /// Full format object with alternation parses and validates cleanly.
+    #[test]
+    fn test_format_object_alternation_valid() {
+        let json = r#"{
+            "format": {"type": "podcast", "alternation": "male_female"},
+            "speakers": {
+                "host": {"voice": "kokoro:am_michael", "gender": "male"},
+                "guest": {"voice": "kokoro:af_heart", "gender": "female"}
+            },
+            "scenes": [
+                {"speaker": "host", "text": "Welcome."},
+                {"speaker": "guest", "text": "Thanks!"}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.format.r#type, "podcast");
+        assert_eq!(spec.format.alternation, "male_female");
+        let errors = validate_script(&spec);
+        assert!(errors.is_empty(), "got: {:?}", errors);
+    }
+
+    /// Correlated defaults are applied when the agent didn't set them.
+    #[test]
+    fn test_format_correlated_defaults_applied() {
+        let json = r#"{
+            "format": {
+                "type": "meme_reel",
+                "default_speed": 1.1,
+                "default_temperature": 0.85,
+                "reaction_memes": true,
+                "sticker_mode": "reaction",
+                "music_mood": "energetic"
+            },
+            "speakers": {"narrator": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "narrator", "text": "Short punchline."}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.tts.default_speed, 1.1);
+        assert_eq!(spec.tts.default_temperature, Some(0.85));
+        assert!(spec.meme_brolls.enabled, "reaction_memes should enable meme brolls");
+        assert!(spec.stickers.enabled, "reaction sticker mode keeps stickers on");
+        let music = spec.music.expect("music_mood should create a music spec");
+        assert_eq!(music.mood.as_deref(), Some("energetic"));
+    }
+
+    /// Explicit agent fields always beat format correlated defaults.
+    #[test]
+    fn test_format_explicit_fields_win() {
+        let json = r#"{
+            "tts": {"default_speed": 1.3},
+            "meme_brolls": {"enabled": false},
+            "format": {"type": "meme_reel", "default_speed": 1.1, "reaction_memes": true},
+            "speakers": {"narrator": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "narrator", "text": "Hi."}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.tts.default_speed, 1.3, "explicit tts speed must win");
+        assert!(
+            !spec.meme_brolls.enabled,
+            "explicit meme_brolls.enabled=false must win"
+        );
+    }
+
+    /// Kokoro prefix + free-text gender inference.
+    #[test]
+    fn test_gender_inference_kokoro_prefix() {
+        assert_eq!(infer_gender("kokoro:af_heart", ""), "female");
+        assert_eq!(infer_gender("af_heart", ""), "female");
+        assert_eq!(infer_gender("kokoro_af_bella", ""), "female");
+        assert_eq!(infer_gender("kokoro:am_michael", ""), "male");
+        assert_eq!(infer_gender("kokoro:bm_george", ""), "male");
+        assert_eq!(infer_gender("air_analyst", ""), "unknown");
+        assert_eq!(
+            infer_gender("ishan", "warm and friendly female voice"),
+            "female"
+        );
+        assert_eq!(infer_gender("ishan", "deep male narrator"), "male");
+        // "her" inside a word must NOT count as a female signal.
+        assert_eq!(infer_gender("x", "heritage"), "unknown");
+    }
+
+    /// Speakers with gender "auto" get inference applied at parse time.
+    #[test]
+    fn test_speaker_gender_auto_inferred_at_parse() {
+        let json = r#"{
+            "speakers": {
+                "a": {"voice": "kokoro:af_heart"},
+                "b": {"voice": "kokoro:am_michael"}
+            },
+            "scenes": [
+                {"speaker": "a", "text": "Hi"},
+                {"speaker": "b", "text": "Hi"}
+            ]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.speakers["a"].gender, "female");
+        assert_eq!(spec.speakers["b"].gender, "male");
+    }
+
+    /// Explicit speaker gender is preserved verbatim.
+    #[test]
+    fn test_speaker_gender_explicit_preserved() {
+        let json = r#"{
+            "speakers": {
+                "lead": {"voice": "air_analyst", "gender": "nonbinary"}
+            },
+            "scenes": [{"speaker": "lead", "text": "Hi"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.speakers["lead"].gender, "nonbinary");
+    }
+
+    /// male_female alternation errors when all speakers share one gender.
+    #[test]
+    fn test_alternation_male_female_validates() {
+        // Two distinct genders → valid.
+        let ok_json = r#"{
+            "format": {"type": "podcast", "alternation": "male_female"},
+            "speakers": {
+                "host": {"voice": "kokoro:am_michael", "gender": "male"},
+                "guest": {"voice": "kokoro:af_heart", "gender": "female"}
+            },
+            "scenes": [
+                {"speaker": "host", "text": "Welcome."},
+                {"speaker": "guest", "text": "Thanks."}
+            ]
+        }"#;
+        let spec = parse_script(ok_json).unwrap();
+        let errors = validate_script(&spec);
+        assert!(
+            errors.iter().all(|e| e.field != "format.alternation"),
+            "got: {:?}",
+            errors
+        );
+
+        // One gender → error.
+        let bad_json = r#"{
+            "format": {"type": "podcast", "alternation": "male_female"},
+            "speakers": {
+                "host": {"voice": "kokoro:am_michael", "gender": "male"},
+                "cohost": {"voice": "kokoro:am_george", "gender": "male"}
+            },
+            "scenes": [
+                {"speaker": "host", "text": "Welcome."},
+                {"speaker": "cohost", "text": "Thanks."}
+            ]
+        }"#;
+        let spec = parse_script(bad_json).unwrap();
+        let errors = validate_script(&spec);
+        assert!(
+            errors.iter().any(|e| e.field == "format.alternation"),
+            "got: {:?}",
+            errors
+        );
+    }
+
+    /// Format speaker-count constraints are validated.
+    #[test]
+    fn test_format_speaker_count_validated() {
+        let json = r#"{
+            "format": {"type": "podcast", "min_speakers": 2, "max_speakers": 4},
+            "speakers": {"only": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "only", "text": "Hi"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        let errors = validate_script(&spec);
+        assert!(
+            errors.iter().any(|e| e.field == "format.min_speakers"),
+            "got: {:?}",
+            errors
+        );
+    }
+
+    /// Unknown format types are rejected.
+    #[test]
+    fn test_invalid_format_type_rejected() {
+        let json = r#"{
+            "format": {"type": "fireside"},
+            "speakers": {"narrator": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "narrator", "text": "Hi"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        let errors = validate_script(&spec);
+        assert!(
+            errors.iter().any(|e| e.field == "format.type"),
+            "got: {:?}",
+            errors
+        );
+    }
+
+    /// No format key = presentation, no constraints (backward compatible).
+    #[test]
+    fn test_default_format_is_presentation() {
+        let json = r#"{
+            "speakers": {"narrator": {"voice": "kokoro:af_heart"}},
+            "scenes": [{"speaker": "narrator", "text": "Hi"}]
+        }"#;
+        let spec = parse_script(json).unwrap();
+        assert_eq!(spec.format.r#type, "presentation");
+        assert_eq!(spec.format.alternation, "none");
+        assert_eq!(spec.format.sticker_mode, "character");
+        let errors = validate_script(&spec);
+        assert!(errors.is_empty(), "got: {:?}", errors);
     }

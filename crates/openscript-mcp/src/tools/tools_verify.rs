@@ -1013,12 +1013,68 @@ pub(crate) async fn handle_verify_production(args: serde_json::Value) -> Result<
     }))
 }
 
+/// Content-format playbook (director.format). Returns the playbook for a
+/// format type — or the full list when type is missing/'list'. This is the
+/// MCP harness surface that shapes HOW agents author scripts (speaker
+/// blueprint with gender alternation, scene structure, pacing, reactions).
+pub(crate) async fn handle_director_format(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let r#type = default_str(&args, "type", "list");
+    if r#type == "list" || r#type.is_empty() {
+        return Ok(json!({
+            "status": "success",
+            "formats": crate::content_formats::format_list(),
+            "note": "Call director.format {type: '<format>', topic: '<topic>'} for the full playbook (speaker blueprint, scene structure, worked example).",
+        }));
+    }
+    if !crate::content_formats::is_valid_format(&r#type) {
+        return Err(ToolError::InvalidArg(format!(
+            "Unknown format '{}'. Must be one of: {}",
+            r#type,
+            crate::content_formats::FORMAT_TYPES.join(", ")
+        )));
+    }
+    let topic = default_str(&args, "topic", "");
+    let playbook = crate::content_formats::playbook(&r#type, &topic);
+    Ok(json!({
+        "status": "success",
+        "playbook": playbook,
+        "next_steps": playbook.get("next_steps").cloned().unwrap_or(json!(null)),
+    }))
+}
+
 /// ONE-SHOT director: preflight → parse → to_video → verify.production.
 pub(crate) async fn handle_director_run(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
-    let script = extract_str(&args, "script")?;
+    let mut script = extract_str(&args, "script")?.to_string();
     let output_path = default_str(&args, "output_path", "artifacts/director_out.mp4");
     let output_dir = default_str(&args, "output_dir", "artifacts/director_run");
     let min_grade = default_str(&args, "min_grade", "B");
+
+    // Optional content-format injection: when the caller declares a format
+    // and the script lacks a format block, inject the format's correlated
+    // defaults so parse applies the pacing/reaction/music guidance.
+    if let Some(fmt) = default_opt_str(&args, "format") {
+        if crate::content_formats::is_valid_format(&fmt) {
+            let defaults = crate::content_formats::playbook(&fmt, "")
+                .get("defaults")
+                .cloned()
+                .unwrap_or_else(|| json!({ "type": fmt }));
+            let raw = if script.trim_start().starts_with('{') {
+                script.clone()
+            } else {
+                std::fs::read_to_string(&script).unwrap_or_else(|_| script.clone())
+            };
+            if let Ok(mut root) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if let Some(obj) = root.as_object_mut() {
+                    if !obj.contains_key("format") {
+                        obj.insert("format".into(), defaults);
+                        if let Ok(serialized) = serde_json::to_string(&root) {
+                            script = serialized;
+                        }
+                    }
+                }
+            }
+        }
+    }
     let _ = std::fs::create_dir_all(&output_dir);
 
     // Preflight

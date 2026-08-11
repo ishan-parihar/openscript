@@ -746,6 +746,7 @@ pub(crate) async fn handle_system_capabilities(
     Ok(json!({
         "status": "success",
         "features": crate::config::feature_flags_view(),
+        "formats": crate::content_formats::FORMAT_TYPES,
         "voicebox": voicebox,
         "kokoro": kokoro,
         "audio8": audio8,

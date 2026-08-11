@@ -1109,14 +1109,39 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "director.run",
-            "description": "ONE-SHOT director: system preflight + script.parse + script.to_video + verify.production. Returns video path, production grade, hard_fails, next_actions. Prefer this for cold agents. Fails closed when majority procedural or music topic mismatch.",
+            "description": "ONE-SHOT director: system preflight + script.parse + script.to_video + verify.production. Returns video path, production grade, hard_fails, next_actions. Prefer this for cold agents. Fails closed when majority procedural or music topic mismatch. Optional 'format' injects the format's correlated defaults into the script before parse.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "script": {"type": "string", "description": "Script JSON string or path to .json"},
                     "output_path": {"type": "string", "default": "artifacts/director_out.mp4"},
                     "output_dir": {"type": "string", "default": "artifacts/director_run"},
-                    "min_grade": {"type": "string", "default": "B"}
+                    "min_grade": {"type": "string", "default": "B"},
+                    "format": {"type": "string", "description": "Optional content format (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary). When set and the script lacks a format block, the format's correlated defaults are injected before parse."}
+                },
+                "required": ["script"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "director.format",
+            "description": "Return the content-format playbook for a format type (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary): anatomy, scene-structure rules, speaker blueprint (archetypes with gender + ready-to-use voice.design instructs), pacing/reaction guidance, correlated script defaults, and a worked example script draft. Call BEFORE authoring a script so the harness shapes the content — podcast = M/F host+guest alternation, comedy = punchline + reaction memes, etc. Pass type='list' to enumerate all formats. Returns: playbook JSON.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "default": "list", "description": "Format type, or 'list' to enumerate all formats"},
+                    "topic": {"type": "string", "default": "", "description": "Topic to weave into the worked example scene texts"}
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "script.format.validate",
+            "description": "Validate a script against its DECLARED content format: speaker-count range, male/female alternation (resolving speaker genders from voice profiles + Kokoro prefixes), scene pairing/pacing suggestions, and format-type validity. Returns issues + suggestions + the actual alternation pattern. Call after script.parse when the script declares a format.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "script": {"type": "string", "description": "Script JSON string or path to .json"}
                 },
                 "required": ["script"],
                 "additionalProperties": false
@@ -1753,6 +1778,7 @@ pub fn route_tool(
         "system.config.get" => Box::pin(handle_system_config_get(args)),
         "system.config.set" => Box::pin(handle_system_config_set(args)),
         "director.run" => Box::pin(handle_director_run(args)),
+        "director.format" => Box::pin(handle_director_format(args)),
         // HyperFrames tools
         "hf.lint" => Box::pin(async move {
             crate::hf::handle_hf_lint(args)
@@ -1786,6 +1812,7 @@ pub fn route_tool(
         }),
         "script.schema" => Box::pin(handle_script_schema(args)),
         "script.parse" => Box::pin(handle_script_parse(args)),
+        "script.format.validate" => Box::pin(handle_script_format_validate(args)),
         "script.generate_voices" => Box::pin(handle_script_generate_voices(args)),
         "script.build_captions" => Box::pin(handle_script_build_captions(args)),
         "background.fetch" => Box::pin(handle_background_fetch(args)),

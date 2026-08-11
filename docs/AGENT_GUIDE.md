@@ -5,12 +5,13 @@
 
 ---
 
-## Tool Families (29 families, 109 tools)
+## Tool Families (29 families, 111 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
 | timeline | 11 | build, load, validate, add_segment, add_track_event, diff, preview, inspect, autofill_broll, render, upgrade |
-| script | 6 | schema, parse, generate_voices, build_captions, to_timeline, to_video |
+| script | 7 | schema, parse, format.validate, generate_voices, build_captions, to_timeline, to_video |
+| director | 2 | run, format |
 | hf | 6 | classify, lint, validate, snapshot, render |
 | tts | 4 | generate, estimate_duration, preview, commentary |
 | music | 4 | index, search, assign, ducking.plan |
@@ -227,6 +228,39 @@ character; each scene's `emote` picks the emotional take:
 Audio generation then produces each line in the character's voice AND the
 scene's emotion. Characters persist in `.openscript/characters.json`;
 `character.remove` drops both the schema entry and the base voice profile.
+
+### Content formats — shape HOW you author the script
+
+The `format` block (or `director.format`) tells the agent how to structure the
+script: speaker count, **male/female alternation**, pacing, reactions, music
+mood. Formats: `presentation` (default), `podcast`, `dialogue`, `comedy_sketch`,
+`romcom`, `meme_reel`, `documentary`.
+
+**Alternation rule:** for `podcast` / `dialogue` / `comedy_sketch` / `romcom`,
+alternate a male and a female voice every scene — set
+`format.alternation: "male_female"` and declare `gender` on each speaker
+(voicedesign profiles also carry `gender`; Kokoro `af_`/`am_`/`bf_`/`bm_`
+prefixes infer automatically). `script.format.validate` enforces it.
+
+**Workflow:**
+```
+director.format { type: "podcast", topic: "AI agents" }  # get the playbook
+  → speaker blueprint (gender + voice.design instructs), scene structure, defaults
+voice.design / character.create  →  build the speaker voices
+script.parse → script.format.validate → script.to_video
+```
+
+**CLI:** `openscript video new --format podcast --topic "AI agents"` scaffolds
+a draft script; `openscript format list` enumerates formats. Full playbooks
+are also loadable as skills: `skills/content-formats/<format>/SKILL.md`.
+
+Correlated defaults (applied only when the agent left the field unset):
+- `podcast`: 2–4 speakers, speed 1.02, temp 0.88, reaction memes, energetic music
+- `dialogue`: exactly 2 speakers, temp 0.9, neutral music
+- `comedy_sketch`: 2 speakers, speed 1.05, punchline reaction memes, energetic
+- `romcom`: 2 speakers (M/F leads), emote chemistry pairs, calm music
+- `meme_reel`: 1–2 speakers, speed 1.1, heavy reaction memes, energetic
+- `documentary`: 1–2 speakers, speed 0.95, temp 0.75, no stickers, calm
 
 ---
 

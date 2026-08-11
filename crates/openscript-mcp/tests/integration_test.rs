@@ -176,11 +176,11 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 109 tools: 99 + asset.library.status + asset.ingest + asset.probe + asset.rate + asset.import + asset.search (asset-development pipeline) + voice.design + character.create + character.design_emotion + character.list + character.remove
+    // 111 tools: 109 + director.format + script.format.validate (content-format harness)
     assert_eq!(
         tools.len(),
-        109,
-        "Expected 109 MCP tools, got {}",
+        111,
+        "Expected 111 MCP tools, got {}",
         tools.len()
     );
 

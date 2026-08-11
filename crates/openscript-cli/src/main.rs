@@ -138,6 +138,20 @@ enum Commands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// List available content formats (mirrors director.format {type:list})
+    FormatList,
+    /// Scaffold a content-format draft script (mirrors director.format worked example)
+    VideoNew {
+        /// Content format: presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary
+        #[arg(long)]
+        format: String,
+        /// Topic woven into the draft scene texts
+        #[arg(long)]
+        topic: String,
+        /// Output path (default artifacts/drafts/<format>-<topic>.json)
+        #[arg(long, default_value = "")]
+        output: String,
+    },
     /// Verify audio quality of a rendered video (mirrors verify.audio)
     VerifyAudio {
         #[arg(short, long)]
@@ -403,6 +417,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = openscript_mcp::tools::route_tool("youtube.download", args).await;
             print_cli_result("youtube.download", result);
         }
+        Commands::FormatList => {
+            let result = openscript_mcp::tools::route_tool(
+                "director.format",
+                serde_json::json!({"type": "list"}),
+            )
+            .await;
+            print_cli_result("director.format", result);
+        }
+        Commands::VideoNew { format, topic, output } => {
+            let args = serde_json::json!({"type": format, "topic": topic});
+            match openscript_mcp::tools::route_tool("director.format", args).await {
+                Ok(val) => {
+                    let example = val
+                        .get("playbook")
+                        .and_then(|p| p.get("example_script"))
+                        .cloned();
+                    match example {
+                        Some(example) => {
+                            let out_path = if output.trim().is_empty() {
+                                format!(
+                                    "artifacts/drafts/{}_{}.json",
+                                    format.replace('_', "-"),
+                                    slugify(&topic)
+                                )
+                            } else {
+                                output.clone()
+                            };
+                            if let Some(parent) = std::path::Path::new(&out_path).parent() {
+                                std::fs::create_dir_all(parent).ok();
+                            }
+                            std::fs::write(
+                                &out_path,
+                                serde_json::to_string_pretty(&example).unwrap(),
+                            )?;
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&serde_json::json!({
+                                    "status": "scaffolded",
+                                    "output_path": out_path,
+                                    "format": format,
+                                    "next_steps": "Design the speaker voice profiles with voice.design (ready-to-use instructs in the director.format playbook), fill in the scene texts, then run script.parse → script.to_video.",
+                                }))
+                                .unwrap()
+                            );
+                        }
+                        None => println!("{}", serde_json::to_string_pretty(&val).unwrap()),
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error (director.format): {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::ScriptExample { format } => {
             // Output an example ScriptSpec JSON
             let example = serde_json::json!({
@@ -441,6 +509,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Turn a free-text topic into a filesystem-safe slug for draft filenames.
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            out.push(c);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 /// Print a CLI tool result as JSON, or the error message.
