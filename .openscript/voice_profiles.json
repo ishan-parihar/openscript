@@ -110,5 +110,16 @@
     "ref_audio": "",
     "ref_text": "",
     "sample_rate": 24000
+  },
+  "listicle_narrator": {
+    "description": "voice.design persona: energetic listicle narrator, punchy curiosity-driven delivery, bright engaging voice",
+    "gender": "auto",
+    "language": "en",
+    "mode": "design",
+    "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+    "profile_id": "listicle_narrator",
+    "provider": "voicedesign",
+    "ref_audio": "artifacts/voices/designed_20260811_055638.wav",
+    "ref_text": "There are five signs you're dealing with burnout — and number three is the one nobody sees coming."
   }
 }

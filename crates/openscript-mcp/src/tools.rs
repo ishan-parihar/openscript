@@ -430,7 +430,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "instruct": {"type": "string", "description": "Natural-language voice description, e.g. 'Speak in a warm and friendly female voice' or 'grumpy old detective, low gravelly voice, slight rasp'."},
                     "text": {"type": "string", "description": "Sample line the designed voice should speak, e.g. 'Give every small business the voice of a big one.'"},
                     "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Output WAV path (default: artifacts/voices/designed_<timestamp>.wav)"},
-                    "profile_id": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional. When set, auto-register the designed voice as a clone profile with this id (provider=gepard) so it can be reused via tts.generate / script speakers (voice 'default' + tts.voice). Requires the gepard engine."},
+                    "profile_id": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional. When set, auto-register the designed voice as a reusable profile with this id (provider=voicedesign — DIRECT Qwen3 VoiceDesign synthesis, no cloning; the persona instruct is stored in the profile description) so it can be reused via tts.generate / script speakers. Requires the voicedesign engine (scripts/setup_voicedesign.sh)."},
                     "language": {"type": "string", "default": "english", "description": "Language: english, chinese, japanese, korean, german, french, russian, portuguese, spanish, italian"},
                     "seed": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Optional sampling seed for reproducible designs."},
                     "max_tokens": {"type": "integer", "default": 2048, "description": "Max codec frames to generate."},
@@ -1117,7 +1117,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "output_path": {"type": "string", "default": "artifacts/director_out.mp4"},
                     "output_dir": {"type": "string", "default": "artifacts/director_run"},
                     "min_grade": {"type": "string", "default": "B"},
-                    "format": {"type": "string", "description": "Optional content format (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to). When set and the script lacks a format block, the format's correlated defaults are injected before parse."}
+                    "format": {"type": "string", "description": "Optional content format (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to|listicle|storytime|debate|newsflash|review). When set and the script lacks a format block, the format's correlated defaults are injected before parse."}
                 },
                 "required": ["script"],
                 "additionalProperties": false
@@ -1125,7 +1125,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "director.format",
-            "description": "Return the content-format playbook for a format type (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to): anatomy, scene-structure rules, speaker blueprint (archetypes with gender + ready-to-use voice.design instructs), pacing/reaction guidance, correlated script defaults, and a worked example script draft. Each format has a UNIQUE signature (structure_kind, speaker range, pacing, reactions, music mood) — read the differentiator field to pick correctly (e.g. podcast ≠ dialogue, documentary ≠ presentation, how_to = numbered instructional steps). Call BEFORE authoring a script so the harness shapes the content. Pass type='list' to enumerate all formats with differentiators. Returns: playbook JSON.",
+            "description": "Return the content-format playbook for a format type (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to|listicle|storytime|debate|newsflash|review): anatomy, scene-structure rules, speaker blueprint (archetypes with gender + ready-to-use voice.design instructs), pacing/reaction guidance, correlated script defaults, and a worked example script draft. Each format has a UNIQUE signature (structure_kind, speaker range, pacing, reactions, music mood) — read the differentiator field to pick correctly (e.g. podcast ≠ dialogue, documentary ≠ presentation, how_to = numbered steps, listicle = ranked countdown, debate = adversarial versus format). Call BEFORE authoring a script so the harness shapes the content. Pass type='list' to enumerate all formats with differentiators. Returns: playbook JSON.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1370,7 +1370,8 @@ pub fn tool_definitions() -> serde_json::Value {
                     "skip_background": {"type": "boolean", "default": false, "description": "Skip background fetching"},
                     "skip_stickers": {"type": "boolean", "default": false, "description": "Skip sticker rendering"},
                     "preview_mode": {"type": "boolean", "default": false, "description": "If true, use draft quality for faster iteration"},
-                    "voiceover_manifest_path": {"type": "string", "description": "Optional: path to a pre-existing voiceover manifest JSON. When provided, skips TTS generation (script.generate_voices) and uses the supplied manifest instead. Use this when you have pre-recorded WAV files and want to bypass TTS. Manifest format: {total_duration_ms, segments: [{scene_id, speaker, text, start_ms, end_ms, duration_ms, wav_path, words: [{word, start_ms, end_ms}]}]}"}
+                    "voiceover_manifest_path": {"type": "string", "description": "Optional: path to a pre-existing voiceover manifest JSON. When provided, skips TTS generation (script.generate_voices) and uses the supplied manifest instead. Use this when you have pre-recorded WAV files and want to bypass TTS. Manifest format: {total_duration_ms, segments: [{scene_id, speaker, text, start_ms, end_ms, duration_ms, wav_path, words: [{word, start_ms, end_ms}]}]}"},
+                    "auto_design_voices": {"type": "boolean", "default": true, "description": "When a speaker references a voice id missing from voice_profiles.json AND that speaker id matches the format playbook blueprint, auto-design + register the voice (Qwen3 VoiceDesign, provider=voicedesign) using the blueprint persona and the speaker's first line. Newly designed profiles persist in voice_profiles.json (reusable). Set false to hard-fail on missing voices instead (e.g. while iterating on a script)."}
                 },
                 "required": ["script"],
                 "additionalProperties": false

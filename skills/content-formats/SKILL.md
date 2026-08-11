@@ -2,11 +2,14 @@
 name: content-formats
 description: >
   Use this skill to choose and apply a CONTENT FORMAT to any script-to-video
-  creation. The harness supports eight formats — presentation (default linear
-  explainer), podcast (host + guest, M/F alternation), dialogue (interactive
-  Q&A session), comedy_sketch (setup → punchline + reaction memes), romcom
-  (two-lead beat structure), meme_reel (fast punchy takes + memes),
-  documentary (measured chapters), and how_to (numbered instructional steps).
+  creation. The harness supports thirteen formats — presentation (default
+  linear explainer), podcast (host + guest, M/F alternation), dialogue
+  (interactive Q&A session), comedy_sketch (setup → punchline + reaction
+  memes), romcom (two-lead beat structure), meme_reel (fast punchy takes +
+  memes), documentary (measured chapters), how_to (numbered instructional
+  steps), listicle (ranked countdown), storytime (first-person narrative),
+  debate (adversarial versus format), newsflash (urgent briefing), and review
+  (verdict critique).
   Each format shapes the SCRIPT the agent authors: speaker count, male/female
   alternation, pacing, reactions, music mood — before any rendering. Read this
   router first, pick the format that matches the user's intent, then load
@@ -34,6 +37,11 @@ the lines should be, where reaction memes land, and what music mood fits.
 | Short viral punchline reels | `meme_reel` | solo_comedic | none |
 | Serious, measured long-form | `documentary` | solo_narrated | none |
 | Step-by-step instructions / tutorial | `how_to` | solo_narrated | none |
+| "5 signs you're X" ranked countdown | `listicle` | solo_narrated | none |
+| First-person personal story | `storytime` | solo_narrated | none |
+| Two sides arguing a motion | `debate` | duo_conversational | **male_female** |
+| Urgent breaking-news briefing | `newsflash` | solo_narrated | none |
+| Pros/cons verdict on one subject | `review` | solo_narrated | none |
 
 ## The differentiators (what makes each format unique)
 
@@ -47,6 +55,11 @@ the lines should be, where reaction memes land, and what music mood fits.
 | `meme_reel` | ≠ comedy_sketch: solo rapid-fire takes, reaction-driven stickers |
 | `romcom` | ≠ dialogue: emotional beat structure driven by emote pairs |
 | `how_to` | ≠ presentation: numbered actionable steps, instructs rather than persuades |
+| `listicle` | ≠ how_to: ranked observational signs/things, not actionable steps |
+| `storytime` | ≠ documentary: first-person lived journey, not third-person evidence |
+| `debate` | ≠ dialogue: adversarial claimers + verdict, not cooperative Q&A |
+| `newsflash` | ≠ presentation: urgent verified-fact briefing, no persuasion |
+| `review` | ≠ listicle: one subject, pros/cons + rating, not N ranked things |
 
 Each format also has a **unique signature** (`structure_kind`, speaker range,
 pacing, reaction behavior, sticker mode, music mood) — enforced by a CI test,

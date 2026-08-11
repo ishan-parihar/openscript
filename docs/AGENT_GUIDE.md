@@ -234,7 +234,8 @@ scene's emotion. Characters persist in `.openscript/characters.json`;
 The `format` block (or `director.format`) tells the agent how to structure the
 script: speaker count, **male/female alternation**, pacing, reactions, music
 mood. Formats: `presentation` (default), `podcast`, `dialogue`, `comedy_sketch`,
-`romcom`, `meme_reel`, `documentary`, `how_to`.
+`romcom`, `meme_reel`, `documentary`, `how_to`, `listicle`, `storytime`,
+`debate`, `newsflash`, `review`.
 
 Each format has a **unique signature** (structure_kind, speaker range, pacing,
 reactions, sticker mode, music mood) enforced by a CI test. Use the
@@ -250,6 +251,11 @@ reactions, sticker mode, music mood) enforced by a CI test. Use the
 | `meme_reel` | solo_comedic | comedy_sketch — solo rapid-fire takes, reaction stickers |
 | `romcom` | duo_dramatic | dialogue — emotional beat structure via emote pairs |
 | `how_to` | solo_narrated | presentation — numbered actionable steps, instructs not persuades |
+| `listicle` | solo_narrated | how_to — ranked observational signs/things, not actionable steps |
+| `storytime` | solo_narrated | documentary — first-person lived journey, not third-person evidence |
+| `debate` | duo_conversational | dialogue — adversarial claimers + verdict, not cooperative Q&A |
+| `newsflash` | solo_narrated | presentation — urgent verified-fact briefing, no persuasion |
+| `review` | solo_narrated | listicle — one subject, pros/cons + rating, not N ranked things |
 
 **Alternation rule:** for `podcast` / `dialogue` / `comedy_sketch` / `romcom`,
 alternate a male and a female voice every scene — set

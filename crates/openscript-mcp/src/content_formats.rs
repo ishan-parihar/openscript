@@ -29,6 +29,11 @@ pub const FORMAT_TYPES: &[&str] = &[
     "meme_reel",
     "documentary",
     "how_to",
+    "listicle",
+    "storytime",
+    "debate",
+    "newsflash",
+    "review",
 ];
 
 /// Music moods understood by the library/music pipeline — canonical set lives
@@ -75,6 +80,11 @@ pub fn playbook(r#type: &str, topic: &str) -> Value {
         "meme_reel" => meme_reel(t),
         "documentary" => documentary(t),
         "how_to" => how_to(t),
+        "listicle" => listicle(t),
+        "storytime" => storytime(t),
+        "debate" => debate(t),
+        "newsflash" => newsflash(t),
+        "review" => review(t),
         _ => presentation(t),
     }
 }
@@ -572,6 +582,244 @@ fn how_to(topic: &str) -> Value {
         "defaults": defaults,
         "next_steps": "Number the steps out loud in the text ('Step one: ...'). Keep each step one concrete action. End with a recap that chains steps into a single sentence.",
         "example_script": example_script("how_to", "none", &format!("{} — How-To", t), &[("narrator", "Instructor", "auto", "how_to_narrator")], &scenes, &defaults),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// listicle — ranked enumeration with curiosity hooks ("5 signs you're X")
+// ---------------------------------------------------------------------------
+fn listicle(topic: &str) -> Value {
+    let t = if topic.is_empty() { "the topic" } else { topic };
+    let scenes = vec![
+        ("narrator", format!("There are five signs you're dealing with {} — and number three is the one nobody sees coming.", t)),
+        ("narrator", format!("Sign number one: you keep noticing {} in places it shouldn't be.", t)),
+        ("narrator", format!("Sign number two: the people around you mention it — unprompted.")),
+        ("narrator", format!("Sign number three — the big one — you've started planning your life around {}.", t)),
+        ("narrator", format!("Signs four and five: it follows you into decisions, and it shows up in your sleep.")),
+        ("narrator", format!("If three of these fit, you're already living with {} — here's what to do next.", t)),
+    ];
+    let defaults = json!({
+        "type": "listicle", "alternation": "none",
+        "min_speakers": 1, "max_speakers": 1,
+        "min_scenes": 6, "max_scenes": 10,
+        "default_speed": 1.05, "default_temperature": 0.85,
+        "reaction_memes": false, "sticker_mode": "character", "music_mood": "neutral"
+    });
+    json!({
+        "type": "listicle",
+        "title": "Listicle",
+        "summary": "Ranked countdown with curiosity hooks (\"5 signs you're X\"). Each item is one escalating idea; the number-three reveal is the peak.",
+        "differentiator": "≠ how_to: steps are DIRECTIVES to do; listicle is observational ranked signs/things. ≠ presentation: ranked countdown with a tease, not sequential points.",
+        "family": "solo_narrated",
+        "structure_kind": "ranked_enumeration",
+        "anatomy": "Curiosity hook → N ranked items (each one idea, escalating) → payoff/recap. Number the items out loud; keep the middle item as the biggest reveal.",
+        "scene_structure": {"hook": 1, "body_min": 4, "body_max": 8, "closing": 1, "pair_based": false},
+        "recommended_speakers": {"min": 1, "max": 1, "default": 1},
+        "alternation": "none",
+        "speaker_blueprint": [
+            {
+                "id": "narrator",
+                "role": "Listicle Narrator",
+                "gender": "auto",
+                "voice_design_instruct": "energetic listicle narrator, punchy curiosity-driven delivery, bright engaging voice",
+                "emote_vocab": ["curious", "shocked", "amused", "emphatic"]
+            }
+        ],
+        "defaults": defaults,
+        "next_steps": "Number the items out loud ('Sign number one: ...'). Tease the big one early and land it mid-list. End with the 'if N fit, do this' hook.",
+        "example_script": example_script("listicle", "none", &format!("{} — Listicle", t), &[("narrator", "Listicle Narrator", "auto", "listicle_narrator")], &scenes, &defaults),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// storytime — first-person narrative arc: hook → journey → lesson
+// ---------------------------------------------------------------------------
+fn storytime(topic: &str) -> Value {
+    let t = if topic.is_empty() { "the topic" } else { topic };
+    let scenes = vec![
+        ("narrator", format!("The day I really learned about {}, I had exactly forty dollars and a terrible plan.", t)),
+        ("narrator", format!("It started the way these stories always do — with me ignoring every warning sign.")),
+        ("narrator", format!("By week two I was all in. That's when everything started to go sideways.")),
+        ("narrator", format!("The turning point came at two in the morning, in a place I definitely shouldn't have been.")),
+        ("narrator", format!("In that moment I understood what {} was really about — and it wasn't what I'd thought.", t)),
+        ("narrator", format!("Looking back, I wouldn't trade it. {} taught me more than any course ever could.", t)),
+    ];
+    let defaults = json!({
+        "type": "storytime", "alternation": "none",
+        "min_speakers": 1, "max_speakers": 1,
+        "min_scenes": 5, "max_scenes": 9,
+        "default_speed": 0.98, "default_temperature": 0.85,
+        "reaction_memes": false, "sticker_mode": "character", "music_mood": "calm"
+    });
+    json!({
+        "type": "storytime",
+        "title": "Storytime",
+        "summary": "First-person personal narrative: hook → setup → rising tension → turning point → lesson. Intimate, conversational, emotional arc.",
+        "differentiator": "≠ documentary: first-person lived journey with an emotional arc — documentary is third-person evidence with chapter markers.",
+        "family": "solo_narrated",
+        "structure_kind": "personal_narrative",
+        "anatomy": "Hook (grab in one line) → setup → rising tension → turning point → lesson/reflection. Present tense at the peak, past tense in the frame.",
+        "scene_structure": {"hook": 1, "body_min": 3, "body_max": 7, "closing": 1, "pair_based": false},
+        "recommended_speakers": {"min": 1, "max": 1, "default": 1},
+        "alternation": "none",
+        "speaker_blueprint": [
+            {
+                "id": "narrator",
+                "role": "Storyteller",
+                "gender": "auto",
+                "voice_design_instruct": "warm storytelling narrator, intimate conversational delivery, slight dramatic range",
+                "emote_vocab": ["neutral", "thoughtful", "surprised", "sincere"]
+            }
+        ],
+        "defaults": defaults,
+        "next_steps": "Open with a concrete, odd detail. Build tension scene by scene, peak at the turning point, then land one honest lesson.",
+        "example_script": example_script("storytime", "none", &format!("{} — Storytime", t), &[("narrator", "Storyteller", "auto", "storytime_narrator")], &scenes, &defaults),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// debate — two adversarial claimers + verdict (the "versus" format)
+// ---------------------------------------------------------------------------
+fn debate(topic: &str) -> Value {
+    let t = if topic.is_empty() { "the motion" } else { topic };
+    let scenes = vec![
+        ("claim_a", format!("The motion tonight: {} is the biggest problem we're ignoring. I'm arguing yes.", t)),
+        ("claim_b", format!("And I'm arguing no — because the evidence points somewhere else entirely.")),
+        ("claim_a", format!("Let's start with the numbers: {} costs more than the fix would, every single year.", t)),
+        ("claim_b", format!("Those numbers only work if you ignore who actually pays. Context matters.")),
+        ("claim_a", format!("Context? The context is that we've waited a decade while {} got worse.", t)),
+        ("claim_b", format!("We haven't waited — we've built. The real win is already underway.")),
+        ("claim_a", format!("Then show it. Because what I see on the ground is the opposite.")),
+        ("claim_b", format!("Then look closer. The problem isn't {} — it's the story we tell about it.", t)),
+    ];
+    let defaults = json!({
+        "type": "debate", "alternation": "male_female",
+        "min_speakers": 2, "max_speakers": 3,
+        "min_scenes": 8, "max_scenes": 14,
+        "default_speed": 1.03, "default_temperature": 0.9,
+        "reaction_memes": true, "sticker_mode": "character", "music_mood": "energetic"
+    });
+    json!({
+        "type": "debate",
+        "title": "Debate",
+        "summary": "Two adversarial claimers argue opposite sides of a motion, then land a verdict. The 'versus' format — sharp, fast, high temperature.",
+        "differentiator": "≠ dialogue: dialogue is COOPERATIVE Q&A (interviewer + expert); debate is two OPPOSING claimers with rebuttals and a verdict.",
+        "family": "duo_conversational",
+        "structure_kind": "oppositional_exchange",
+        "anatomy": "Motion (hook) → claim A position → claim B rebuttal → 2-3 escalation rounds → verdict/close. Every scene alternates sides; the closing scene lands the verdict.",
+        "scene_structure": {"hook": 1, "body_min": 6, "body_max": 12, "closing": 1, "pair_based": true},
+        "recommended_speakers": {"min": 2, "max": 3, "default": 2},
+        "alternation": "male_female",
+        "speaker_blueprint": [
+            {
+                "id": "claim_a",
+                "role": "Claimant A (For)",
+                "gender": "male",
+                "voice_design_instruct": "sharp articulate debater, confident male voice, persuasive crisp delivery",
+                "emote_vocab": ["confident", "forceful", "skeptical", "resolved"]
+            },
+            {
+                "id": "claim_b",
+                "role": "Claimant B (Against)",
+                "gender": "female",
+                "voice_design_instruct": "sharp articulate debater, confident female voice, quick-witted and forceful",
+                "emote_vocab": ["sharp", "dismissive", "emphatic", "triumphant"]
+            }
+        ],
+        "defaults": defaults,
+        "next_steps": "Open with the motion. Rebuttals answer the OTHER side directly ('those numbers only work if...'). End with one side landing the verdict.",
+        "example_script": example_script("debate", "male_female", &format!("Debate — {}", t), &[("claim_a", "Claimant A (For)", "male", "debate_claim_a"), ("claim_b", "Claimant B (Against)", "female", "debate_claim_b")], &scenes, &defaults),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// newsflash — urgent factual briefing (breaking-news cadence)
+// ---------------------------------------------------------------------------
+fn newsflash(topic: &str) -> Value {
+    let t = if topic.is_empty() { "the situation" } else { topic };
+    let scenes = vec![
+        ("narrator", format!("We're coming to you with a breaking update on {} — here's what we know so far.", t)),
+        ("narrator", format!("Minutes ago, the latest reports confirmed the core of what's happening.")),
+        ("narrator", format!("What we can verify: three key facts, in order of importance.")),
+        ("narrator", format!("What's still unconfirmed: the timeline, and who is responsible.")),
+        ("narrator", format!("We'll keep this updated as it develops. Stay with us for what comes next.")),
+    ];
+    let defaults = json!({
+        "type": "newsflash", "alternation": "none",
+        "min_speakers": 1, "max_speakers": 1,
+        "min_scenes": 3, "max_scenes": 7,
+        "default_speed": 1.08, "default_temperature": 0.8,
+        "reaction_memes": false, "sticker_mode": "none", "music_mood": "neutral"
+    });
+    json!({
+        "type": "newsflash",
+        "title": "Newsflash",
+        "summary": "Urgent factual briefing with breaking-news cadence: confirmed facts vs unconfirmed, status + what-next. Fast, neutral, no persuasion.",
+        "differentiator": "≠ presentation: no persuasion arc — urgency, verification tiers, and a follow signal. ≠ meme_reel: serious and factual, no comedy.",
+        "family": "solo_narrated",
+        "structure_kind": "urgent_briefing",
+        "anatomy": "Breaking hook → 3-4 factual updates → verified vs unconfirmed split → status/what-next.",
+        "scene_structure": {"hook": 1, "body_min": 2, "body_max": 5, "closing": 1, "pair_based": false},
+        "recommended_speakers": {"min": 1, "max": 1, "default": 1},
+        "alternation": "none",
+        "speaker_blueprint": [
+            {
+                "id": "narrator",
+                "role": "News Anchor",
+                "gender": "auto",
+                "voice_design_instruct": "urgent news anchor, crisp factual delivery, serious measured urgency",
+                "emote_vocab": ["neutral", "grave", "urgent", "calm"]
+            }
+        ],
+        "defaults": defaults,
+        "next_steps": "Label verification tiers out loud ('what we can verify' vs 'what's still unconfirmed'). Short factual lines; end with a follow signal.",
+        "example_script": example_script("newsflash", "none", &format!("{} — Newsflash", t), &[("narrator", "News Anchor", "auto", "newsflash_narrator")], &scenes, &defaults),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// review — verdict critique of a single subject (pros → cons → rating)
+// ---------------------------------------------------------------------------
+fn review(topic: &str) -> Value {
+    let t = if topic.is_empty() { "the subject" } else { topic };
+    let scenes = vec![
+        ("narrator", format!("Today I'm reviewing {} — and after three weeks with it, I have a verdict.", t)),
+        ("narrator", format!("First, the setup: what it is, who it's for, and what it promises.")),
+        ("narrator", format!("The good: it nails the fundamentals — speed, polish, and the core experience.")),
+        ("narrator", format!("The not-so-good: setup friction, a missing feature, and a price that stings.")),
+        ("narrator", format!("The verdict: if you fit the profile, it's worth it — if you don't, skip it.")),
+        ("narrator", format!("My rating: eight out of ten — brilliant in the middle, rough at the edges.")),
+    ];
+    let defaults = json!({
+        "type": "review", "alternation": "none",
+        "min_speakers": 1, "max_speakers": 1,
+        "min_scenes": 5, "max_scenes": 9,
+        "default_speed": 1.0, "default_temperature": 0.85,
+        "reaction_memes": false, "sticker_mode": "character", "music_mood": "neutral"
+    });
+    json!({
+        "type": "review",
+        "title": "Review",
+        "summary": "Single-subject verdict critique: context → pros → cons → verdict → rating. Conversational, opinionated, decisive.",
+        "differentiator": "≠ listicle: reviews ONE subject with pros/cons + a rating — a listicle enumerates N ranked things. ≠ how_to: evaluates, doesn't instruct.",
+        "family": "solo_narrated",
+        "structure_kind": "verdict_critique",
+        "anatomy": "Hook/context → what it is → pros → cons → verdict → rating. The verdict scene is decisive; the rating closes the loop.",
+        "scene_structure": {"hook": 1, "body_min": 3, "body_max": 7, "closing": 1, "pair_based": false},
+        "recommended_speakers": {"min": 1, "max": 1, "default": 1},
+        "alternation": "none",
+        "speaker_blueprint": [
+            {
+                "id": "narrator",
+                "role": "Reviewer",
+                "gender": "auto",
+                "voice_design_instruct": "engaging reviewer, clear opinionated delivery, conversational confident voice",
+                "emote_vocab": ["neutral", "impressed", "skeptical", "decisive"]
+            }
+        ],
+        "defaults": defaults,
+        "next_steps": "Give a rating out of ten in the final line. Keep the verdict binary ('worth it / skip it') so the takeaway is one sentence.",
+        "example_script": example_script("review", "none", &format!("{} — Review", t), &[("narrator", "Reviewer", "auto", "review_narrator")], &scenes, &defaults),
     })
 }
 

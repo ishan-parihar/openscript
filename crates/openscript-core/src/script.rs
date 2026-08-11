@@ -333,7 +333,8 @@ pub const VALID_MUSIC_MOODS: &[&str] = &[
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ContentFormatSpec {
     /// Format kind: "presentation" (default), "podcast", "dialogue",
-    /// "comedy_sketch", "romcom", "meme_reel", "documentary", "how_to".
+    /// "comedy_sketch", "romcom", "meme_reel", "documentary", "how_to",
+    /// "listicle", "storytime", "debate", "newsflash", "review".
     #[serde(default = "default_format_type")]
     pub r#type: String,
 
@@ -1117,6 +1118,11 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
         "meme_reel",
         "documentary",
         "how_to",
+        "listicle",
+        "storytime",
+        "debate",
+        "newsflash",
+        "review",
     ];
     if !valid_formats.contains(&spec.format.r#type.as_str()) {
         errors.push(ScriptValidationError {

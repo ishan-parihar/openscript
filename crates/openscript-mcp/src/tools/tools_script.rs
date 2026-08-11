@@ -128,9 +128,9 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
             },
             "format": {
                 "type": "object",
-                "description": "Content-format configuration: correlated defaults + scene-structure playbook (presentation | podcast | dialogue | comedy_sketch | romcom | meme_reel | documentary | how_to) plus the speaker alternation strategy. Accepts string shorthand: \"format\": \"podcast\".",
+                "description": "Content-format configuration: correlated defaults + scene-structure playbook (presentation | podcast | dialogue | comedy_sketch | romcom | meme_reel | documentary | how_to | listicle | storytime | debate | newsflash | review) plus the speaker alternation strategy. Accepts string shorthand: \"format\": \"podcast\".",
                 "properties": {
-                    "type": {"type": "string", "default": "presentation", "enum": ["presentation", "podcast", "dialogue", "comedy_sketch", "romcom", "meme_reel", "documentary"], "description": "Format kind. presentation = linear single-narrator (default)."},
+                    "type": {"type": "string", "default": "presentation", "enum": ["presentation", "podcast", "dialogue", "comedy_sketch", "romcom", "meme_reel", "documentary", "how_to", "listicle", "storytime", "debate", "newsflash", "review"], "description": "Format kind. presentation = linear single-narrator (default)."},
                     "alternation": {"type": "string", "default": "none", "enum": ["none", "male_female", "auto"], "description": "Speaker alternation strategy. male_female alternates male/female speakers every scene and requires >=2 distinct genders (validated by script.format.validate)."},
                     "min_speakers": {"type": "integer", "default": 0, "description": "Minimum speakers required (0 = none)."},
                     "max_speakers": {"type": "integer", "default": 0, "description": "Maximum speakers allowed (0 = none)."},
@@ -470,7 +470,11 @@ pub(crate) async fn handle_script_format_validate(
     };
 
     // Pacing suggestion: format prescribes a speed the script hasn't adopted.
-    if spec.format.default_speed > 0.0 && (spec.tts.default_speed - 1.0).abs() < f64::EPSILON {
+    // Compare against the format's OWN speed (not 1.0) — a format whose
+    // default_speed IS 1.0 and was correctly adopted must not warn.
+    if spec.format.default_speed > 0.0
+        && (spec.tts.default_speed - spec.format.default_speed).abs() > 1e-3
+    {
         suggestions.push(format!(
             "Format '{}' correlates default_speed {} — set tts.default_speed for that pacing.",
             fmt_type, spec.format.default_speed
@@ -1235,6 +1239,84 @@ pub(crate) async fn handle_script_to_timeline(
     }))
 }
 
+/// Phase A: auto-design missing speaker voices from the format's speaker
+/// blueprint so scaffolded drafts (director.format worked examples) are
+/// immediately renderable without manual voice.design. Only voices that are
+/// BOTH missing from voice_profiles.json AND match a speaker id in the format
+/// playbook blueprint are designed — typo'd ids never produce accidental
+/// voices, and existing profiles are never touched.
+pub(crate) async fn ensure_speaker_voices(
+    spec: &openscript_core::script::ScriptSpec,
+) -> Result<Vec<String>, ToolError> {
+    let profiles = load_voice_profiles().unwrap_or_else(|_| json!({}));
+    let fmt_type = spec.format.r#type.clone();
+    if !crate::content_formats::is_valid_format(&fmt_type) {
+        return Ok(Vec::new());
+    }
+    let blueprint = crate::content_formats::playbook(&fmt_type, "")
+        .get("speaker_blueprint")
+        .and_then(|b| b.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut designed: Vec<String> = Vec::new();
+    for (speaker_id, spk) in &spec.speakers {
+        if profiles.get(&spk.voice).is_some() {
+            continue;
+        }
+        let Some(entry) = blueprint
+            .iter()
+            .find(|b| b.get("id").and_then(|i| i.as_str()) == Some(speaker_id.as_str()))
+        else {
+            continue;
+        };
+        let Some(instruct) = entry.get("voice_design_instruct").and_then(|i| i.as_str()) else {
+            continue;
+        };
+        let sample = spec
+            .scenes
+            .iter()
+            .find(|s| s.speaker == *speaker_id && !s.text.trim().is_empty())
+            .map(|s| s.text.clone())
+            .unwrap_or_else(|| {
+                format!(
+                    "Hello, this is the {} voice.",
+                    entry.get("role").and_then(|r| r.as_str()).unwrap_or("speaker")
+                )
+            });
+        // Infer the design language from the sample text (Devanagari → hi),
+        // defaulting to en — never hardcode an English persona for hinglish.
+        let language = if sample.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)) {
+            "hi"
+        } else {
+            "en"
+        };
+        tracing::info!(
+            "Auto-designing missing voice profile '{}' (speaker '{}') from format blueprint (language {})",
+            spk.voice,
+            speaker_id,
+            language
+        );
+        route_tool(
+            "voice.design",
+            json!({
+                "instruct": instruct,
+                "text": sample,
+                "profile_id": spk.voice.clone(),
+                "language": language,
+            }),
+        )
+        .await
+        .map_err(|e| {
+            ToolError::Asset(format!(
+                "Voice profile '{}' (speaker '{}') is not registered and auto-design from the format blueprint failed: {}. Register the voice with voice.design / voice.profile.add, or pass auto_design_voices=false to script.to_video for a hard fail.",
+                spk.voice, speaker_id, e
+            ))
+        })?;
+        designed.push(spk.voice.clone());
+    }
+    Ok(designed)
+}
+
 pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let script_input = extract_str(&args, "script")?;
     let mut output_path = default_str(&args, "output_path", "output.mp4");
@@ -1255,12 +1337,24 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
     let skip_background = default_bool(&args, "skip_background", false);
     let skip_stickers = default_bool(&args, "skip_stickers", false);
     let preview_mode = default_bool(&args, "preview_mode", false);
+    // Opt-out for auto-designing missing speaker voices: an agent iterating on
+    // a script with a genuinely missing voice may want the hard fail instead.
+    let auto_design_voices = default_bool(&args, "auto_design_voices", true);
     let voiceover_manifest_path = default_opt_str(&args, "voiceover_manifest_path");
 
     // Parse script for render config
     let json_str = read_script_input(script_input)?;
     let spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Script parse error: {}", e)))?;
+
+    // Phase A: auto-design missing speaker voices from the format blueprint so
+    // scaffolded drafts render out of the box (no manual voice.design needed).
+    // Newly designed profiles persist in voice_profiles.json (reusable).
+    let designed_voices = if auto_design_voices {
+        ensure_speaker_voices(&spec).await?
+    } else {
+        Vec::new()
+    };
 
     report_progress(0.0, 100.0, "Phase 1/3: Building timeline...")
         .await
@@ -3154,6 +3248,7 @@ pub(crate) async fn handle_script_to_video(args: serde_json::Value) -> Result<se
                 "background_sources": bg_paths,
                 "music_path": render_spec.music_path,
                 "production_quality": pq,
+                "designed_voices": designed_voices,
                 "warnings": merged_warnings,
             }))
         }
