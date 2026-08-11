@@ -127,7 +127,7 @@ REPEAT_BREAK_AFTER = 8              # consecutive identical code vectors => stuc
 # rambling far past the text without ever sampling cb0 EOC. Each draw is
 # independent (global RNG), so retrying a degenerate chunk with a fresh sample
 # is cheap and recovers the vast majority of failures.
-SILENCE_RMS = 0.015               # decoded float32 RMS below this = dead air
+SILENCE_RMS = 0.008               # decoded float32 RMS below this = dead air
 MAX_CHUNK_RETRIES = 2             # attempts beyond the first per chunk
 
 # Emote -> Higgs control-tag mapping. Keys are the emotes used across the
@@ -398,6 +398,36 @@ def sample_from_logits(logits, temperature: float, top_k: int) -> int:
     return int(np.random.choice(probs.size, p=probs))
 
 
+def sampler_step(codes, delay_count, eoc_countdown,
+                 num_codebooks: int = NUM_CODEBOOKS,
+                 boc: int = BOC, eoc: int = EOC):
+    """One step of the reference Higgs sampler state machine.
+
+    EXACTLY mirrors ``sglang_omni/models/higgs_tts/sampler.py::step``: during
+    the delay window (``delay_count < N``) codebooks above ``delay_count`` are
+    forced to BOC and the counter advances; once codebook 0 samples EOC a
+    wind-down of ``N - 2`` further rows runs; ``done`` becomes True when the
+    wind-down completes. The caller appends the row on which ``done`` first
+    fires (the reference returns that row too).
+
+    ``codes`` is a mutable [N] list of sampled ids. Returns
+    ``(codes, delay_count, eoc_countdown, done)``. Pure — unit-testable.
+    """
+    n = num_codebooks
+    if delay_count < n:
+        next_cb = delay_count + 1
+        if next_cb < n:
+            for k in range(next_cb, n):
+                codes[k] = boc            # forced pad
+        return codes, delay_count + 1, eoc_countdown, False
+    if eoc_countdown is not None:
+        eoc_countdown -= 1
+        return codes, delay_count, eoc_countdown, eoc_countdown <= 0
+    if codes[0] == eoc:
+        return codes, delay_count, n - 2, False
+    return codes, delay_count, None, False
+
+
 # ---------------------------------------------------------------------------
 # Runtime (lazy) — model + sessions
 # ---------------------------------------------------------------------------
@@ -582,22 +612,29 @@ class HiggsPipeline:
         for i, chunk in enumerate(chunks):
             chunk_txt = compose_prompt(chunk, emote=emote, default_speed=default_speed)
             audio = None
-            last_meta = None
+            meta = None
             for attempt in range(MAX_CHUNK_RETRIES + 1):
-                audio, meta = self._synth_chunk(
-                    chunk_txt, ref_path=ref_path, ref_text=ref_text or None,
-                    temperature=temperature, top_k=top_k,
-                    max_new_tokens=max_new_tokens)
-                last_meta = meta
+                try:
+                    audio, meta = self._synth_chunk(
+                        chunk_txt, ref_path=ref_path, ref_text=ref_text or None,
+                        temperature=temperature, top_k=top_k,
+                        max_new_tokens=max_new_tokens)
+                except RuntimeError as exc:
+                    # A draw that fails structurally (too few rows, codec
+                    # failure) is just another degenerate attempt — retry.
+                    log(f"chunk {i + 1} attempt {attempt + 1} raised: {exc}")
+                    meta = {"degenerate": True, "wind_down": False,
+                            "rms": 0.0, "rows": 0, "leaked": 0}
                 if not meta["degenerate"]:
                     break
                 log(f"degenerate chunk {i + 1} attempt {attempt + 1}/"
                     f"{MAX_CHUNK_RETRIES + 1} (wind_down={meta['wind_down']} "
-                    f"rms={meta['rms']:.4f} rows={meta['rows']}); retrying")
-            if meta["degenerate"]:
+                    f"rms={meta['rms']:.4f} rows={meta['rows']}"
+                    f" leaked={meta.get('leaked', 0)}); retrying")
+            if meta and meta["degenerate"]:
                 log(f"WARNING: chunk {i + 1} still degenerate after "
                     f"{MAX_CHUNK_RETRIES + 1} attempts (wind_down="
-                    f"{last_meta['wind_down']}, rms={last_meta['rms']:.4f}); "
+                    f"{meta['wind_down']}, rms={meta['rms']:.4f}); "
                     f"using last output")
             if len(chunks) > 1:
                 log(f"chunk {i + 1}/{len(chunks)} ({len(chunk)} chars) -> "
@@ -683,24 +720,15 @@ class HiggsPipeline:
             for k in range(NUM_CODEBOOKS):
                 c = sample_from_logits(l[k], temperature, top_k)
                 codes.append(int(c))
-            # --- reference sampler state machine ---
-            if delay_count < NUM_CODEBOOKS:
-                next_cb = delay_count + 1
-                if next_cb < NUM_CODEBOOKS:
-                    for k in range(next_cb, NUM_CODEBOOKS):
-                        codes[k] = BOC                # forced pad
-                delay_count += 1
-            elif eoc_countdown is not None:
-                eoc_countdown -= 1
-                if eoc_countdown <= 0:
-                    delayed_rows.append(codes)
-                    wind_down = True
-                    log(f"wind-down complete after cb0 EOC "
-                        f"(total {len(delayed_rows)} rows)")
-                    break
-            elif codes[0] == EOC:
-                eoc_countdown = NUM_CODEBOOKS - 2
+            # --- reference sampler state machine (pure helper) ---
+            codes, delay_count, eoc_countdown, done = sampler_step(
+                codes, delay_count, eoc_countdown)
             delayed_rows.append(codes)
+            if done:
+                wind_down = True
+                log(f"wind-down complete after cb0 EOC "
+                    f"(total {len(delayed_rows)} rows)")
+                break
             # Degenerate-loop guard (safety net only): if the full code vector
             # is identical for REPEAT_BREAK_AFTER consecutive positions, the
             # model is stuck in a sustained-tone state and never samples EOC.
@@ -730,18 +758,28 @@ class HiggsPipeline:
             raise RuntimeError(
                 f"de-delay produced too few audio frames ({raw.shape[0]}); "
                 "model likely failed to emit audio (check log for OOM/NaN)")
+        # Misalignment guard: with clean geometry each column's EOC lands just
+        # outside its extraction window. If any BOC/EOC id reaches this point,
+        # the model misaligned its termination — treat the draw as degenerate
+        # (the codec would otherwise decode a special id as a real code).
+        leaked = int(np.isin(raw, [BOC, EOC]).sum())
+        if leaked:
+            log(f"WARNING: {leaked} BOC/EOC ids leaked into de-delayed codes "
+                f"(misaligned termination); treating draw as degenerate")
         codes_mat = raw.T[None]                                        # [1,8,T]
         wave = self.audio_tokenizer.run(None, {"audio_codes": codes_mat})[0]
         audio = np.asarray(wave).reshape(-1)
         rms = float(np.sqrt((audio ** 2).mean())) if audio.size else 0.0
         # Degenerate = the sampler never ran its EOC wind-down (cap hit or
-        # guard fired) OR the decoded waveform is dead-air silence.
-        degenerate = (not wind_down) or guard_fired or rms < SILENCE_RMS
+        # guard fired), the codec would see special ids, OR the waveform is
+        # dead-air silence.
+        degenerate = (not wind_down) or guard_fired or leaked > 0 or rms < SILENCE_RMS
         meta = {
             "degenerate": degenerate,
             "wind_down": wind_down,
             "rows": len(delayed_rows),
             "rms": rms,
+            "leaked": leaked,
         }
         return audio, meta
 

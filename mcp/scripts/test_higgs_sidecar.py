@@ -196,41 +196,50 @@ check("reverse(apply(codes)) == codes", np.array_equal(_rt, _rc))
 check("reverse drops exactly N-1 rows", _rt.shape == _rc.shape)
 
 # --- Reference sampler state machine (cb0 EOC + wind-down) ------------------
-print("== sampler termination (cb0 EOC + N-2 wind-down) ==")
-# Simulate: delay window for 8 rows, then cb0 emits EOC at row 10, then the
-# 6-row wind-down. Total rows appended = EOC row + 6 = 7 after row 9.
+print("== sampler_step (cb0 EOC + N-2 wind-down) ==")
+# Drive the REAL pure helper: delay window for 8 rows, inject cb0 EOC at row
+# 10, then the 6-row wind-down. Total rows = 10 + 1 (EOC row) + 6 = 17.
 N = higgs.NUM_CODEBOOKS
 rows = []
 delay_count = 0
 eoc_countdown = None
 for step in range(30):
     codes = [step * 11 + k for k in range(N)]      # fake sampled codes
-    if delay_count < N:
-        next_cb = delay_count + 1
-        if next_cb < N:
-            for k in range(next_cb, N):
-                codes[k] = higgs.BOC
-        delay_count += 1
-    elif eoc_countdown is not None:
-        eoc_countdown -= 1
-        if eoc_countdown <= 0:
-            rows.append(codes)
-            break
-    elif codes[0] == higgs.EOC:
-        eoc_countdown = N - 2
+    if step == 10:
+        codes[0] = higgs.EOC                       # inject cb0 EOC
+    codes, delay_count, eoc_countdown, done = higgs.sampler_step(
+        codes, delay_count, eoc_countdown)
     rows.append(codes)
-    # inject cb0 EOC after the delay window (row 10 == step 10)
-    if step == 10 and delay_count >= N:
-        rows[-1][0] = higgs.EOC
-        eoc_countdown = N - 2
+    if done:
+        break
+check("delay window forces BOC on upper codebooks",
+      rows[0][1:] == [higgs.BOC] * (N - 1) and rows[3][4:] == [higgs.BOC] * 4)
 check("terminates 6 rows after cb0 EOC", len(rows) == 10 + 1 + 6)
 check("cb0 EOC present at row 10", rows[10][0] == higgs.EOC)
-check("wind-down rows are appended (not cut)", rows[-1][0] != higgs.STOP_CODE if hasattr(higgs, 'STOP_CODE') else rows[-1][0] >= 0)
-# reverse-delay of the simulated output must contain no BOC/EOC ids
+check("wind-down rows are appended (not cut)", len(rows) > 11)
+# no BOC/EOC ids survive the fixed-geometry reverse delay
 _dm = np.array(rows, dtype=np.int64)
 _raw = higgs.reverse_delay_pattern(_dm)
 check("no BOC/EOC in de-delayed codes",
       not np.isin(_raw, [higgs.BOC, higgs.EOC]).any())
+
+# EOC never sampled -> sampler_step never sets done (the token-cap/guard
+# backstops handle it; the helper itself stays open).
+_delay, _eoc = 0, None
+for _s in range(25):
+    _c = [_s + k for k in range(N)]
+    _c, _delay, _eoc, _done = higgs.sampler_step(_c, _delay, _eoc)
+check("no EOC -> never done", not _done)
+# cb0 EOC during the delay window must NOT terminate (delay branch wins)
+_delay, _eoc, _done_at = 0, None, None
+for _s in range(20):
+    _c = [higgs.EOC if _s == 2 else _s + k for k in range(N)]
+    _c, _delay, _eoc, _done = higgs.sampler_step(_c, _delay, _eoc)
+    if _done:
+        _done_at = _s
+        break
+check("EOC inside delay window does not terminate",
+      _done_at is None and _delay == N)
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
