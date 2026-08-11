@@ -238,12 +238,22 @@ impl Sidecar {
         let resp: SidecarResponse = serde_json::from_str(resp_line.trim()).map_err(|e| {
             SidecarFailure::Transport(format!("Failed to parse higgs sidecar response: {}", e))
         })?;
-        if resp.status != "ok" {
+        // "ok" and "warning" are both successful roundtrips: "warning"
+        // means the sidecar shipped a still-degenerate draw (surfaced via
+        // `resp.degenerate` + `resp.warning`), NOT a protocol failure —
+        // failing the whole render on it would discard every prior scene.
+        if resp.status == "error" {
             return Err(SidecarFailure::Response(if resp.error.is_empty() {
-                format!("Higgs sidecar returned status={}", resp.status)
+                "Higgs sidecar returned status=error".to_string()
             } else {
                 resp.error
             }));
+        }
+        if resp.status != "ok" && resp.status != "warning" {
+            return Err(SidecarFailure::Response(format!(
+                "Higgs sidecar returned unknown status={}",
+                resp.status
+            )));
         }
         Ok(resp)
     }
