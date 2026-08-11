@@ -9,6 +9,10 @@ metadata: { "tags": "content-format, documentary, narration, evidence, chapters,
 
 # Documentary format playbook
 
+> **≠ presentation:** documentary is a CHAPTERED long-form evidence narrative —
+> 3-5 clause lines, grave/somber emotes, no stickers, calm music. Presentation
+> is the short persuasive explainer.
+
 ## Anatomy (scene structure)
 
 ```
@@ -20,7 +24,7 @@ metadata: { "tags": "content-format, documentary, narration, evidence, chapters,
 
 - 1–2 narrators. Longer sentences (3–5 clauses), slower pacing.
 - Chapter markers in the text keep the structure audible.
-- `format.alternation: "none"` (a second narrator is optional for texture).
+- Contract: 1–2 speakers, 5–8 scenes (`script.format.validate` enforces it).
 
 ## Speaker blueprint (voice.design instructs)
 
@@ -37,28 +41,12 @@ metadata: { "tags": "content-format, documentary, narration, evidence, chapters,
 - `default_speed: 0.95`, `default_temperature: 0.75` (steady, serious delivery)
 - `reaction_memes: false` · `sticker_mode: "none"` · `music_mood: "calm"`
 
-## Worked example skeleton
+## Authoring loop
 
-```json
-{
-  "schema": "openscript-video/v1",
-  "title": "<topic> — Documentary",
-  "format": {"type": "documentary", "alternation": "none",
-             "default_speed": 0.95, "default_temperature": 0.75,
-             "reaction_memes": false, "sticker_mode": "none",
-             "music_mood": "calm"},
-  "tts": {"backend": "voicedesign"},
-  "speakers": {
-    "narrator": {"voice": "documentary_narrator", "gender": "auto", "position": "top-left"}
-  },
-  "background": {"type": "procedural", "change_cadence": "scene"},
-  "stickers": {"enabled": false},
-  "scenes": [
-    {"speaker": "narrator", "text": "There's a story hidden inside <topic> that almost nobody was told.", "emote": "neutral"},
-    {"speaker": "narrator", "text": "Chapter one: the evidence nobody collected. It was there all along.", "emote": "grave"},
-    {"speaker": "narrator", "text": "Chapter two: the institutions that looked away, and why they did.", "emote": "somber"},
-    {"speaker": "narrator", "text": "Chapter three: the people who saw it clearly anyway — and what they did next.", "emote": "hopeful"},
-    {"speaker": "narrator", "text": "The conclusion writes itself: <topic> was never one story. It was a thousand.", "emote": "neutral"}
-  ]
-}
-```
+1. Fetch the canonical playbook + worked-example draft:
+   `director.format {type: "documentary", topic: "<topic>"}` or
+   `openscript video new --format documentary --topic "<topic>"` — the registry
+   is the single source of truth; don't hand-copy JSON from this file.
+2. Design `documentary_narrator` with `voice.design`.
+3. Write the thesis, numbered chapters in the text, and a synthesis.
+4. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.

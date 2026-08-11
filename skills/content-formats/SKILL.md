@@ -2,16 +2,16 @@
 name: content-formats
 description: >
   Use this skill to choose and apply a CONTENT FORMAT to any script-to-video
-  creation. The harness supports seven formats — presentation (default linear
+  creation. The harness supports eight formats — presentation (default linear
   explainer), podcast (host + guest, M/F alternation), dialogue (interactive
   Q&A session), comedy_sketch (setup → punchline + reaction memes), romcom
-  (two-lead beat structure), meme_reel (fast punchy takes + memes), and
-  documentary (measured chapters). Each format shapes the SCRIPT the agent
-  authors: speaker count, male/female alternation, pacing, reactions, music
-  mood — before any rendering. Read this router first, pick the format that
-  matches the user's intent, then load skills/content-formats/<format>/SKILL.md
-  for the full playbook.
-metadata: { "tags": "content, format, podcast, dialogue, comedy, romcom, meme, documentary, script-authoring, routing" }
+  (two-lead beat structure), meme_reel (fast punchy takes + memes),
+  documentary (measured chapters), and how_to (numbered instructional steps).
+  Each format shapes the SCRIPT the agent authors: speaker count, male/female
+  alternation, pacing, reactions, music mood — before any rendering. Read this
+  router first, pick the format that matches the user's intent, then load
+  skills/content-formats/<format>/SKILL.md for the full playbook.
+metadata: { "tags": "content, format, podcast, dialogue, comedy, romcom, meme, documentary, how-to, script-authoring, routing" }
 ---
 
 # Content Formats — start here
@@ -24,15 +24,33 @@ the lines should be, where reaction memes land, and what music mood fits.
 
 ## Choosing a format
 
-| User intent | Format | Speakers | Alternation |
+| User intent | Format | Family | Alternation |
 |---|---|---|---|
-| Explainer / one-narrator rundown | `presentation` | 1 | none |
-| Two people talking about a topic | `podcast` | 2–4 | **male_female** |
-| Interview / Q&A / interactive session | `dialogue` | 2 | **male_female** |
-| Sketch comedy, jokes, punchlines | `comedy_sketch` | 2 | **male_female** |
-| Love story with two leads | `romcom` | 2 | **male_female** |
-| Short viral punchline reels | `meme_reel` | 1–2 | none |
-| Serious, measured long-form | `documentary` | 1–2 | none |
+| Explainer / one-narrator rundown | `presentation` | solo_narrated | none |
+| Two people talking about a topic | `podcast` | duo_conversational | **male_female** |
+| Interview / Q&A / interactive session | `dialogue` | duo_conversational | **male_female** |
+| Sketch comedy, jokes, punchlines | `comedy_sketch` | duo_comedic | **male_female** |
+| Love story with two leads | `romcom` | duo_dramatic | **male_female** |
+| Short viral punchline reels | `meme_reel` | solo_comedic | none |
+| Serious, measured long-form | `documentary` | solo_narrated | none |
+| Step-by-step instructions / tutorial | `how_to` | solo_narrated | none |
+
+## The differentiators (what makes each format unique)
+
+| Format | ≠ (sibling it is often confused with) |
+|---|---|
+| `presentation` | ≠ documentary: short persuasive explainer, one idea per line |
+| `documentary` | ≠ presentation: chaptered long-form evidence narrative |
+| `podcast` | ≠ dialogue: informal 2-4 speaker roundtable WITH reaction memes |
+| `dialogue` | ≠ podcast: formal interviewer/expert Q&A, NO memes, exactly 2 speakers |
+| `comedy_sketch` | ≠ meme_reel: duo setup→punchline arc with a meme on the punchline |
+| `meme_reel` | ≠ comedy_sketch: solo rapid-fire takes, reaction-driven stickers |
+| `romcom` | ≠ dialogue: emotional beat structure driven by emote pairs |
+| `how_to` | ≠ presentation: numbered actionable steps, instructs rather than persuades |
+
+Each format also has a **unique signature** (`structure_kind`, speaker range,
+pacing, reaction behavior, sticker mode, music mood) — enforced by a CI test,
+so no two formats can silently collapse into one.
 
 ## The alternation rule
 
@@ -46,10 +64,15 @@ script so `script.format.validate` enforces it.
 ## Authoring loop
 
 1. Load the format skill for the chosen format.
-2. Get the speaker blueprint → design the voices with `voice.design`
+2. **Fetch the canonical playbook + worked-example draft** with
+   `director.format {type: "<format>", topic: "<topic>"}` (MCP) or
+   `openscript video new --format <format> --topic "<topic>"` (CLI) — the
+   registry is the SINGLE SOURCE OF TRUTH for defaults and the example script.
+   Do NOT hand-copy JSON from this skill; the registry output is authoritative.
+3. Get the speaker blueprint → design the voices with `voice.design`
    (or `character.create` + `character.design_emotion` for emotional range).
-3. Write the script following the format's scene structure; alternate speakers.
-4. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.
+4. Write the script following the format's scene structure; alternate speakers.
+5. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.
 
 ## Quick reference
 
@@ -59,3 +82,5 @@ script so `script.format.validate` enforces it.
   min_scenes, max_scenes, default_speed, default_temperature, reaction_memes,
   sticker_mode, music_mood}` — all optional, all default-on only when the agent
   left the field unset.
+- `script.format.validate` enforces the format contract (counts, alternation,
+  gender resolution, music mood) — call it before `script.to_video`.

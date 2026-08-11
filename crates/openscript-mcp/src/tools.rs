@@ -1117,7 +1117,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "output_path": {"type": "string", "default": "artifacts/director_out.mp4"},
                     "output_dir": {"type": "string", "default": "artifacts/director_run"},
                     "min_grade": {"type": "string", "default": "B"},
-                    "format": {"type": "string", "description": "Optional content format (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary). When set and the script lacks a format block, the format's correlated defaults are injected before parse."}
+                    "format": {"type": "string", "description": "Optional content format (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to). When set and the script lacks a format block, the format's correlated defaults are injected before parse."}
                 },
                 "required": ["script"],
                 "additionalProperties": false
@@ -1125,7 +1125,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "director.format",
-            "description": "Return the content-format playbook for a format type (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary): anatomy, scene-structure rules, speaker blueprint (archetypes with gender + ready-to-use voice.design instructs), pacing/reaction guidance, correlated script defaults, and a worked example script draft. Call BEFORE authoring a script so the harness shapes the content — podcast = M/F host+guest alternation, comedy = punchline + reaction memes, etc. Pass type='list' to enumerate all formats. Returns: playbook JSON.",
+            "description": "Return the content-format playbook for a format type (presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to): anatomy, scene-structure rules, speaker blueprint (archetypes with gender + ready-to-use voice.design instructs), pacing/reaction guidance, correlated script defaults, and a worked example script draft. Each format has a UNIQUE signature (structure_kind, speaker range, pacing, reactions, music mood) — read the differentiator field to pick correctly (e.g. podcast ≠ dialogue, documentary ≠ presentation, how_to = numbered instructional steps). Call BEFORE authoring a script so the harness shapes the content. Pass type='list' to enumerate all formats with differentiators. Returns: playbook JSON.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

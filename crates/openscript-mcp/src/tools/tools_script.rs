@@ -128,7 +128,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
             },
             "format": {
                 "type": "object",
-                "description": "Content-format configuration: correlated defaults + scene-structure playbook (presentation | podcast | dialogue | comedy_sketch | romcom | meme_reel | documentary) plus the speaker alternation strategy. Accepts string shorthand: \"format\": \"podcast\".",
+                "description": "Content-format configuration: correlated defaults + scene-structure playbook (presentation | podcast | dialogue | comedy_sketch | romcom | meme_reel | documentary | how_to) plus the speaker alternation strategy. Accepts string shorthand: \"format\": \"podcast\".",
                 "properties": {
                     "type": {"type": "string", "default": "presentation", "enum": ["presentation", "podcast", "dialogue", "comedy_sketch", "romcom", "meme_reel", "documentary"], "description": "Format kind. presentation = linear single-narrator (default)."},
                     "alternation": {"type": "string", "default": "none", "enum": ["none", "male_female", "auto"], "description": "Speaker alternation strategy. male_female alternates male/female speakers every scene and requires >=2 distinct genders (validated by script.format.validate)."},
@@ -342,8 +342,36 @@ pub(crate) async fn handle_script_format_validate(
         }
         std::fs::read_to_string(&path)?
     };
-    let spec = parse_script(&apply_tts_config_defaults(&json_str))
+    let mut spec = parse_script(&apply_tts_config_defaults(&json_str))
         .map_err(|e| ToolError::InvalidArg(format!("Failed to parse script JSON: {}", e)))?;
+
+    // Backfill missing format COUNT constraints from the canonical playbook
+    // defaults so hand-written format blocks (e.g. `format: {type: podcast}`)
+    // enforce the same min/max speaker+scene contract as scaffolded drafts
+    // from director.run / openscript video new. Only keys the agent did NOT
+    // write are filled — explicit agent values always win.
+    let raw_fmt_keys: std::collections::HashSet<String> = serde_json::from_str::<serde_json::Value>(&json_str)
+        .ok()
+        .and_then(|v| v.get("format").and_then(|f| f.as_object()).cloned())
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default();
+    let fmt_type = spec.format.r#type.clone();
+    if crate::content_formats::is_valid_format(&fmt_type) {
+        if let Some(d) = crate::content_formats::playbook(&fmt_type, "").get("defaults") {
+            if !raw_fmt_keys.contains("min_speakers") && spec.format.min_speakers == 0 {
+                spec.format.min_speakers = d["min_speakers"].as_u64().unwrap_or(0) as u32;
+            }
+            if !raw_fmt_keys.contains("max_speakers") && spec.format.max_speakers == 0 {
+                spec.format.max_speakers = d["max_speakers"].as_u64().unwrap_or(0) as u32;
+            }
+            if !raw_fmt_keys.contains("min_scenes") && spec.format.min_scenes == 0 {
+                spec.format.min_scenes = d["min_scenes"].as_u64().unwrap_or(0) as u32;
+            }
+            if !raw_fmt_keys.contains("max_scenes") && spec.format.max_scenes == 0 {
+                spec.format.max_scenes = d["max_scenes"].as_u64().unwrap_or(0) as u32;
+            }
+        }
+    }
 
     // Base validation (includes format type / alternation / count checks).
     let errors = validate_script(&spec);

@@ -234,7 +234,22 @@ scene's emotion. Characters persist in `.openscript/characters.json`;
 The `format` block (or `director.format`) tells the agent how to structure the
 script: speaker count, **male/female alternation**, pacing, reactions, music
 mood. Formats: `presentation` (default), `podcast`, `dialogue`, `comedy_sketch`,
-`romcom`, `meme_reel`, `documentary`.
+`romcom`, `meme_reel`, `documentary`, `how_to`.
+
+Each format has a **unique signature** (structure_kind, speaker range, pacing,
+reactions, sticker mode, music mood) enforced by a CI test. Use the
+`differentiator` field from `director.format {type:"list"}` to pick correctly:
+
+| Format | Family | ≠ (don't confuse with) |
+|---|---|---|
+| `presentation` | solo_narrated | documentary — short persuasive explainer, one idea per line |
+| `documentary` | solo_narrated | presentation — chaptered long-form evidence narrative |
+| `podcast` | duo_conversational | dialogue — informal 2-4 speaker roundtable WITH memes |
+| `dialogue` | duo_conversational | podcast — formal interviewer/expert Q&A, NO memes |
+| `comedy_sketch` | duo_comedic | meme_reel — duo setup→punchline arc, meme on the punchline |
+| `meme_reel` | solo_comedic | comedy_sketch — solo rapid-fire takes, reaction stickers |
+| `romcom` | duo_dramatic | dialogue — emotional beat structure via emote pairs |
+| `how_to` | solo_narrated | presentation — numbered actionable steps, instructs not persuades |
 
 **Alternation rule:** for `podcast` / `dialogue` / `comedy_sketch` / `romcom`,
 alternate a male and a female voice every scene — set

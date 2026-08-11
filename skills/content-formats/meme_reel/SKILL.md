@@ -9,6 +9,10 @@ metadata: { "tags": "content-format, meme, reel, short-form, viral, reaction-mem
 
 # Meme Reel format playbook
 
+> **≠ comedy_sketch:** meme_reel is ONE fast narrator with 3-7s takes and
+> reaction-driven stickers — no character arc. Sketch needs a duo and a
+> setup→punchline beat.
+
 ## Anatomy (scene structure)
 
 ```
@@ -20,16 +24,17 @@ metadata: { "tags": "content-format, meme, reel, short-form, viral, reaction-mem
 - **Shortest lines of any format.** Every line 3–7 seconds.
 - Reaction memes are HEAVY here — `reaction_memes: true` + `sticker_mode:
   "reaction"` (reaction-driven stickers, not character stickers).
-- `format.alternation: "none"` (single narrator by default).
+- Contract: 1–2 speakers, 4–7 scenes (`script.format.validate` enforces it).
 
 ## Speaker blueprint (voice.design instructs)
 
 | id | role | gender | voice_design_instruct |
 |---|---|---|---|
-| `narrator` | Meme Narrator | auto | "meme narrator, quick snappy delivery, slightly sarcastic, high energy male voice" |
+| `narrator` | Meme Narrator | auto | "meme narrator, quick snappy delivery, slightly sarcastic, high energy" |
 
-(Swap to a female voice for variety: "...slightly sarcastic, high energy
-female voice".)
+The blueprint is gender-neutral by design (`auto`). To fix the narrator's
+gender, append **"male voice"** or **"female voice"** to the instruct when you
+design the voice.
 
 ## Emote vocabulary
 
@@ -40,28 +45,12 @@ female voice".)
 - `default_speed: 1.1`, `default_temperature: 0.85`
 - `reaction_memes: true` · `sticker_mode: "reaction"` · `music_mood: "energetic"`
 
-## Worked example skeleton
+## Authoring loop
 
-```json
-{
-  "schema": "openscript-video/v1",
-  "title": "<topic> — Meme Reel",
-  "format": {"type": "meme_reel", "alternation": "none",
-             "default_speed": 1.1, "default_temperature": 0.85,
-             "reaction_memes": true, "sticker_mode": "reaction",
-             "music_mood": "energetic"},
-  "tts": {"backend": "voicedesign"},
-  "speakers": {
-    "narrator": {"voice": "meme_narrator", "gender": "auto", "position": "top-left"}
-  },
-  "background": {"type": "procedural", "change_cadence": "scene"},
-  "meme_brolls": {"enabled": true},
-  "scenes": [
-    {"speaker": "narrator", "text": "Everyone's lying to you about <topic>.", "emote": "sarcastic"},
-    {"speaker": "narrator", "text": "The experts? They read one article. I read ZERO and I'm right.", "emote": "amused"},
-    {"speaker": "narrator", "text": "Point one: it's not complicated. Point two: nobody wants it to be.", "emote": "deadpan"},
-    {"speaker": "narrator", "text": "Point three — the spicy one — the fix is obvious and nobody will say it.", "emote": "shocked"},
-    {"speaker": "narrator", "text": "Ignore the noise on <topic>, follow the pattern, and you'll see it too.", "emote": "sarcastic"}
-  ]
-}
-```
+1. Fetch the canonical playbook + worked-example draft:
+   `director.format {type: "meme_reel", topic: "<topic>"}` or
+   `openscript video new --format meme_reel --topic "<topic>"` — the registry
+   is the single source of truth; don't hand-copy JSON from this file.
+2. Design `meme_narrator` with `voice.design` (append a gender to the instruct).
+3. Write zero-context hook, 3-4 rapid takes, spicy punchline.
+4. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.

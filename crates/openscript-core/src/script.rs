@@ -88,7 +88,7 @@ pub struct ScriptSpec {
 
     /// Content-format configuration: correlated defaults + a scene-structure
     /// playbook (presentation | podcast | dialogue | comedy_sketch | romcom |
-    /// meme_reel | documentary) plus the speaker alternation strategy.
+    /// meme_reel | documentary | how_to) plus the speaker alternation strategy.
     /// Agent-friendly shorthand "format": "podcast" normalizes at parse time.
     #[serde(default)]
     pub format: ContentFormatSpec,
@@ -323,10 +323,17 @@ fn default_scale() -> f64 {
 ///
 /// Agent-friendly shorthand is accepted at parse time: `"format": "podcast"`
 /// normalizes to `{"type": "podcast"}`.
+///
+/// Music moods understood by the library/music pipeline. Formats and scripts
+/// should only reference these — validate_script rejects anything else.
+pub const VALID_MUSIC_MOODS: &[&str] = &[
+    "neutral", "calm", "energetic", "dark", "uplifting", "upbeat", "dramatic", "sad",
+];
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ContentFormatSpec {
     /// Format kind: "presentation" (default), "podcast", "dialogue",
-    /// "comedy_sketch", "romcom", "meme_reel", "documentary".
+    /// "comedy_sketch", "romcom", "meme_reel", "documentary", "how_to".
     #[serde(default = "default_format_type")]
     pub r#type: String,
 
@@ -1109,6 +1116,7 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
         "romcom",
         "meme_reel",
         "documentary",
+        "how_to",
     ];
     if !valid_formats.contains(&spec.format.r#type.as_str()) {
         errors.push(ScriptValidationError {
@@ -1130,6 +1138,25 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
                 valid_alternations.join(", ")
             ),
         });
+    }
+    // Music mood must be one of the moods the library/music pipeline knows.
+    // Check BOTH the format-level hint and the applied music block (a
+    // hand-written `music: {mood: "bogus"}` must not pass silently).
+    let mood_candidates = [
+        spec.format.music_mood.as_deref(),
+        spec.music.as_ref().and_then(|m| m.mood.as_deref()),
+    ];
+    for mood in mood_candidates.into_iter().flatten() {
+        if !VALID_MUSIC_MOODS.contains(&mood) {
+            errors.push(ScriptValidationError {
+                field: "music.mood".into(),
+                message: format!(
+                    "Unknown music mood '{}'. Must be one of: {}",
+                    mood,
+                    VALID_MUSIC_MOODS.join(", ")
+                ),
+            });
+        }
     }
     // Format speaker/scene count constraints.
     let speaker_count = spec.speakers.len();

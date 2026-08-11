@@ -10,6 +10,10 @@ metadata: { "tags": "content-format, podcast, conversation, host-guest, alternat
 
 # Podcast format playbook
 
+> **≠ dialogue:** podcast is the INFORMAL 2-4 speaker entertainment roundtable
+> with reaction memes on punchlines. Dialogue is the formal interviewer/expert
+> Q&A with exactly 2 speakers and no memes.
+
 ## Anatomy (scene structure)
 
 ```
@@ -22,7 +26,7 @@ metadata: { "tags": "content-format, podcast, conversation, host-guest, alternat
 
 - Scenes alternate host/guest. **Never give one speaker 3+ consecutive scenes.**
 - Lines are 8–15 seconds of speech (2–4 sentences).
-- `format.alternation: "male_female"`.
+- Contract: 2–4 speakers, 6–14 scenes (`script.format.validate` enforces it).
 
 ## Speaker blueprint (voice.design instructs)
 
@@ -41,37 +45,18 @@ Swap genders for variety (female host / male guest). For 3-4 speakers add a
 
 ## Correlated defaults
 
-- `default_speed: 1.02`, `default_temperature: 0.88` (set via format block)
+- `default_speed: 1.02`, `default_temperature: 0.88`
 - `reaction_memes: true` (reaction GIFs at punchline moments)
 - `sticker_mode: "character"` (each speaker gets a character sticker, L/R)
 - `music_mood: "energetic"` · `background.change_cadence: "speaker"`
 
-## Worked example skeleton
+## Authoring loop
 
-```json
-{
-  "schema": "openscript-video/v1",
-  "title": "Podcast — <topic>",
-  "format": {"type": "podcast", "alternation": "male_female",
-             "default_speed": 1.02, "default_temperature": 0.88,
-             "reaction_memes": true, "sticker_mode": "character",
-             "music_mood": "energetic"},
-  "tts": {"backend": "voicedesign"},
-  "speakers": {
-    "host":  {"voice": "podcast_host",  "gender": "male",   "position": "top-left"},
-    "guest": {"voice": "podcast_guest", "gender": "female", "position": "top-right"}
-  },
-  "background": {"type": "procedural", "change_cadence": "speaker"},
-  "scenes": [
-    {"speaker": "host",  "text": "Welcome to the show — today we're digging into <topic>.", "emote": "warm"},
-    {"speaker": "guest", "text": "Honestly? The real story behind <topic> is much stranger.", "emote": "thoughtful"},
-    {"speaker": "host",  "text": "Where does <topic> actually begin?", "emote": "curious"},
-    {"speaker": "guest", "text": "It starts with a handful of people noticing something that didn't fit.", "emote": "excited"},
-    {"speaker": "host",  "text": "And the takeaway for our listeners?", "emote": "serious"},
-    {"speaker": "guest", "text": "One line: <topic> isn't what we were told.", "emote": "sincere"}
-  ]
-}
-```
-
-Design `podcast_host` + `podcast_guest` with `voice.design` first (instructs
-above), then run `script.parse` → `script.format.validate` → `script.to_video`.
+1. Fetch the canonical playbook + worked-example draft:
+   `director.format {type: "podcast", topic: "<topic>"}` or
+   `openscript video new --format podcast --topic "<topic>"` — the registry is
+   the single source of truth; don't hand-copy JSON from this file.
+2. Design `podcast_host` + `podcast_guest` with `voice.design` using the
+   instructs above (they synthesize DIRECTLY on Qwen3 VoiceDesign — no cloning).
+3. Fill scene texts with real substance on the topic, alternating speakers.
+4. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.

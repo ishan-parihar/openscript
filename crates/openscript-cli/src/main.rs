@@ -142,7 +142,7 @@ enum Commands {
     FormatList,
     /// Scaffold a content-format draft script (mirrors director.format worked example)
     VideoNew {
-        /// Content format: presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary
+        /// Content format: presentation|podcast|dialogue|comedy_sketch|romcom|meme_reel|documentary|how_to
         #[arg(long)]
         format: String,
         /// Topic woven into the draft scene texts

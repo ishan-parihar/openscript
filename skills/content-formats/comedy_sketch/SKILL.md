@@ -9,6 +9,10 @@ metadata: { "tags": "content-format, comedy, sketch, punchline, reaction-meme, a
 
 # Comedy Sketch format playbook
 
+> **≠ meme_reel:** sketch is a TWO-speaker setup→escalation→punchline arc with
+> a reaction meme landing on the punchline beat. Meme_reel is a solo
+> rapid-fire narrator.
+
 ## Anatomy (scene structure)
 
 ```
@@ -22,9 +26,8 @@ metadata: { "tags": "content-format, comedy, sketch, punchline, reaction-meme, a
 
 - Setup lines 5–8s; **punchline clipped at 3–5s**. The contrast between the
   two voices IS the comedy: deadpan vs. big energy.
-- The punchline scene carries `emote: "surprised"` (or `"excited"`) and the
-  reaction meme pops in on that exact scene.
-- `format.alternation: "male_female"`.
+- The punchline scene carries `emote: "surprised"` (or `"excited"`).
+- Contract: 2–3 speakers, 6–10 scenes (`script.format.validate` enforces it).
 
 ## Speaker blueprint (voice.design instructs)
 
@@ -44,29 +47,13 @@ metadata: { "tags": "content-format, comedy, sketch, punchline, reaction-meme, a
 - `reaction_memes: true` (punchline reaction GIFs are the payoff)
 - `sticker_mode: "character"` · `music_mood: "energetic"`
 
-## Worked example skeleton
+## Authoring loop
 
-```json
-{
-  "schema": "openscript-video/v1",
-  "title": "Sketch — <topic>",
-  "format": {"type": "comedy_sketch", "alternation": "male_female",
-             "default_speed": 1.05, "default_temperature": 0.9,
-             "reaction_memes": true, "sticker_mode": "character",
-             "music_mood": "energetic"},
-  "tts": {"backend": "voicedesign"},
-  "speakers": {
-    "straight": {"voice": "comedy_straight", "gender": "male",   "position": "top-left"},
-    "comic":    {"voice": "comedy_comic",    "gender": "female", "position": "top-right"}
-  },
-  "background": {"type": "procedural", "change_cadence": "speaker"},
-  "meme_brolls": {"enabled": true},
-  "scenes": [
-    {"speaker": "straight", "text": "So you're telling me <topic> is a serious problem?", "emote": "deadpan"},
-    {"speaker": "comic",    "text": "Serious? It's a CRISIS. A man lost his entire morning to it.", "emote": "excited"},
-    {"speaker": "comic",    "text": "Simple. We ban <topic>, and if that fails, we blame the weather.", "emote": "triumphant"},
-    {"speaker": "straight", "text": "That is not a solution.", "emote": "flat"},
-    {"speaker": "comic",    "text": "It's better than what the experts came up with.", "emote": "shocked"}
-  ]
-}
-```
+1. Fetch the canonical playbook + worked-example draft:
+   `director.format {type: "comedy_sketch", topic: "<topic>"}` or
+   `openscript video new --format comedy_sketch --topic "<topic>"` — the
+   registry is the single source of truth; don't hand-copy JSON from this file.
+2. Design `comedy_straight` + `comedy_comic` with `voice.design`.
+3. Write short setup lines, clipped punchlines, and put the reaction meme on
+   the punchline scene.
+4. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.

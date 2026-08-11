@@ -9,6 +9,10 @@ metadata: { "tags": "content-format, romcom, romance, two-leads, banter, alterna
 
 # Romcom format playbook
 
+> **≠ dialogue:** romcom is an EMOTIONAL beat structure (meet-cute→banter→
+> tension→resolution) driven by emote pairs with calm music. Dialogue is
+> intellectual Q&A.
+
 ## Anatomy (scene structure)
 
 ```
@@ -20,7 +24,7 @@ metadata: { "tags": "content-format, romcom, romance, two-leads, banter, alterna
 
 - **Two leads only** (male + female). Alternate every scene.
 - Lines 6–10s. The tension beat stays short so the warm resolution lands.
-- `format.alternation: "male_female"`.
+- Contract: exactly 2 speakers, 8–10 scenes (`script.format.validate` enforces it).
 
 ## Speaker blueprint (voice.design instructs)
 
@@ -42,31 +46,12 @@ The tension beat uses `nervous`/`serious` on both.
 - `default_speed: 1.0`, `default_temperature: 0.9`
 - `reaction_memes: false` · `sticker_mode: "character"` · `music_mood: "calm"`
 
-## Worked example skeleton
+## Authoring loop
 
-```json
-{
-  "schema": "openscript-video/v1",
-  "title": "Romcom — <topic>",
-  "format": {"type": "romcom", "alternation": "male_female",
-             "default_speed": 1.0, "default_temperature": 0.9,
-             "reaction_memes": false, "sticker_mode": "character",
-             "music_mood": "calm"},
-  "tts": {"backend": "voicedesign"},
-  "speakers": {
-    "lead_m": {"voice": "romcom_lead_m", "gender": "male",   "position": "top-left"},
-    "lead_f": {"voice": "romcom_lead_f", "gender": "female", "position": "top-right"}
-  },
-  "background": {"type": "procedural", "change_cadence": "speaker"},
-  "scenes": [
-    {"speaker": "lead_m", "text": "I wasn't looking for <topic> that day. Nobody ever is.", "emote": "nervous"},
-    {"speaker": "lead_f", "text": "And yet there we were — me, a coffee, and the worst pickup line I'd ever heard.", "emote": "amused"},
-    {"speaker": "lead_m", "text": "Worst? That line was carefully workshopped.", "emote": "flirty"},
-    {"speaker": "lead_f", "text": "By whom? A committee of pigeons?", "emote": "shy"},
-    {"speaker": "lead_m", "text": "Okay, fair. But you laughed.", "emote": "hopeful"},
-    {"speaker": "lead_f", "text": "I laughed AT you. There's a difference.", "emote": "amused"},
-    {"speaker": "lead_m", "text": "Still a laugh. That's the first date sorted.", "emote": "sincere"},
-    {"speaker": "lead_f", "text": "Fine. One coffee. And you're telling me the real story behind <topic>.", "emote": "tender"}
-  ]
-}
-```
+1. Fetch the canonical playbook + worked-example draft:
+   `director.format {type: "romcom", topic: "<topic>"}` or
+   `openscript video new --format romcom --topic "<topic>"` — the registry is
+   the single source of truth; don't hand-copy JSON from this file.
+2. Design `romcom_lead_m` + `romcom_lead_f` with `voice.design`.
+3. Write the beat structure; keep the tension beat short; resolve warm.
+4. `script.parse` → `script.format.validate` → fix issues → `script.to_video`.
