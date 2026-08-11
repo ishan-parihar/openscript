@@ -417,6 +417,30 @@ system.capabilities — Probe available subsystems
 help.tool           — Natural-language tool discovery
 ```
 
+### Feature toggles (config-driven gating)
+
+Every subsystem is toggleable via `~/.openscript/config.json` →
+`features.<category>.<name>` (all default **ON**; env override
+`OPENSCRIPT_FEATURE_<CATEGORY>_<NAME>=0|1`). The SAME toggles drive:
+
+1. **Cold-start installs** — `setup.sh` provisions only the deps for enabled
+   features (`bash setup.sh --list-features`; `--feature cat.name=0` to toggle
+   for one run; persist via `setup_openscript_config.sh --feature cat.name=0`).
+2. **Runtime gating** — a disabled engine/tool returns a clear error naming the
+   toggle + setup command instead of a missing-dep failure. Gates today:
+   - `tts.{kokoro,audio8,gepard,voicedesign,sidecar}` — TTS router
+   - `transcription.hinglish_ggml` — `transcribe`
+   - `media.{pexels,giphy,pixabay}` — key resolvers fail closed (handlers
+     degrade to their existing "key not set" path)
+   - `media.youtube` — `youtube.search` / `youtube.download`
+   - `llm.{opencode,openrouter}` — LLM/vision cascade
+   - `render.{ffmpeg,hyperframes,remotion,nvenc}`, `frontend` — reporting
+     (nvenc auto-degrades to CPU regardless)
+
+`system.capabilities` returns a `features` block (every toggle with `enabled`,
+the env override name, the config path, and the setup command) and marks each
+subsystem `available:false` with a feature-disabled reason when toggled off.
+
 ---
 
 ## Deprecated Tools

@@ -6,6 +6,11 @@
 #   PEXELS_API_KEY=... GIPHY_API_KEY=... bash scripts/setup_openscript_config.sh
 #   bash scripts/setup_openscript_config.sh --pexels-key KEY --giphy-key KEY
 #   bash scripts/setup_openscript_config.sh --openrouter-key sk-or-...
+#   bash scripts/setup_openscript_config.sh --feature tts.voicedesign=0
+#
+# --feature <category.name>=<0|1> merges into the features section (the
+# feature toggles that gate what setup.sh provisions and what the runtime
+# lets through). Missing toggles default to ON at runtime.
 #
 # Merges into existing config (does not wipe other keys).
 # Never commits secrets. File mode is 0600.
@@ -18,6 +23,7 @@ OPENCODE_KEY="${OPENCODE_API:-${OPENCODE_API_KEY:-}}"
 PEXELS_KEY="${PEXELS_API_KEY:-}"
 GIPHY_KEY="${GIPHY_API_KEY:-}"
 PIXABAY_KEY="${PIXABAY_API_KEY:-}"
+FEATURE_PATCHES=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,6 +32,8 @@ while [[ $# -gt 0 ]]; do
     --pexels-key) PEXELS_KEY="${2:-}"; shift 2 ;;
     --giphy-key) GIPHY_KEY="${2:-}"; shift 2 ;;
     --pixabay-key) PIXABAY_KEY="${2:-}"; shift 2 ;;
+    --feature) FEATURE_PATCHES="$FEATURE_PATCHES ${2:-}"; shift 2 ;;
+    --feature=*) FEATURE_PATCHES="$FEATURE_PATCHES ${1#--feature=}"; shift ;;
     -h|--help)
       cat <<'EOF'
 Create/update ~/.openscript/config.json (mode 0600).
@@ -35,6 +43,10 @@ Create/update ~/.openscript/config.json (mode 0600).
   --pixabay-key KEY      Pixabay key (optional music/video)
   --openrouter-key KEY   OpenRouter key (fallback LLM / vision)
   --opencode-key KEY     OpenCode key (primary LLM / vision, opencode.ai/zen)
+  --feature cat.name=0|1 Feature toggle (repeatable). Gates what setup.sh
+                          provisions + what the runtime enables. Examples:
+                          tts.voicedesign=0, tts.gepard=0, media.youtube=0,
+                          transcription.parakeet_align=0, frontend=0
 
 Env overrides: PEXELS_API_KEY, GIPHY_API_KEY, PIXABAY_API_KEY, OPENROUTER_API_KEY, OPENCODE_API
 EOF
@@ -47,7 +59,7 @@ done
 mkdir -p "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 
-export CONFIG_FILE OR_KEY OPENCODE_KEY PEXELS_KEY GIPHY_KEY PIXABAY_KEY
+export CONFIG_FILE OR_KEY OPENCODE_KEY PEXELS_KEY GIPHY_KEY PIXABAY_KEY FEATURE_PATCHES
 python3 <<'PY'
 import json, os
 from pathlib import Path
@@ -113,6 +125,28 @@ cfg = {
     else {"default_aspect": "9:16", "normalize_lufs": -16.0},
 }
 
+# Feature toggles: merge --feature cat.name=0|1 patches into the existing
+# features section. Keys not mentioned are left untouched (runtime defaults
+# them to ON). This is the config surface setup.sh reads on cold start.
+features = existing.get("features")
+if not isinstance(features, dict):
+    features = {}
+for patch in (os.environ.get("FEATURE_PATCHES", "") or "").split():
+    if "=" not in patch:
+        continue
+    key, _, raw = patch.partition("=")
+    key = key.strip()
+    val = raw.strip().lower() in ("1", "true", "yes", "on")
+    if "." in key:
+        cat, _, name = key.partition(".")
+        feats = features.setdefault(cat, {})
+        if isinstance(feats, dict):
+            feats[name] = val
+    else:
+        features[key] = val
+if features:
+    cfg["features"] = features
+
 path.write_text(json.dumps(cfg, indent=2) + "\n")
 os.chmod(path, 0o600)
 print(f"Wrote {path} (mode 0600)")
@@ -120,6 +154,12 @@ for k, v in api_keys.items():
     print(f"  {k}: {'set' if v else 'NOT set'}")
 print(f"  opencode_model: {cfg['llm']['opencode_model']}")
 print(f"  opencode_base_url: {cfg['llm']['opencode_base_url']}")
+feats = cfg.get("features")
+if feats:
+    for cat, names in feats.items():
+        if isinstance(names, dict):
+            for n, v in names.items():
+                print(f"  feature {cat}.{n}: {'on' if v else 'OFF'}")
 PY
 
 echo ""

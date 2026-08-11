@@ -61,36 +61,53 @@ fn opencode_key() -> String {
 /// Probe which backends are usable.
 pub async fn probe_llm_capabilities() -> Value {
     let cascade = LlmCascade::default();
+    let or_enabled = config::feature_llm("openrouter");
+    let oc_enabled = config::feature_llm("opencode");
     let or_key = !openrouter_key().is_empty();
+    let oc_key = !opencode_key().is_empty();
     let cfg_view = config::config_public_view();
     json!({
         "config_file": cfg_view.get("config_file").cloned().unwrap_or(Value::Null),
         "openrouter": {
-            "available": or_key,
+            "available": or_enabled && or_key,
+            "enabled": or_enabled,
             "models": cascade.openrouter_models,
             "base_url": cascade.openrouter_base_url,
-            "reason": if or_key {
-                Value::Null
-            } else {
+            "reason": if !or_enabled {
+                Value::String(
+                    "OpenRouter disabled by active configuration (features.llm.openrouter=false / \
+                     OPENSCRIPT_FEATURE_LLM_OPENROUTER=0)."
+                        .into(),
+                )
+            } else if !or_key {
                 Value::String(
                     "OpenRouter key not set. Add api_keys.openrouter in ~/.openscript/config.json \
                      or set OPENROUTER_API_KEY — free multimodal fallbacks disabled."
                         .into(),
                 )
+            } else {
+                Value::Null
             },
         },
         "opencode": {
-            "available": !opencode_key().is_empty(),
+            "available": oc_enabled && oc_key,
+            "enabled": oc_enabled,
             "base_url": config::resolve_opencode_base_url(),
             "model": config::resolve_opencode_model(),
-            "reason": if !opencode_key().is_empty() {
-                Value::Null
-            } else {
+            "reason": if !oc_enabled {
+                Value::String(
+                    "OpenCode disabled by active configuration (features.llm.opencode=false / \
+                     OPENSCRIPT_FEATURE_LLM_OPENCODE=0)."
+                        .into(),
+                )
+            } else if !oc_key {
                 Value::String(
                     "OpenCode key not set. Add api_keys.opencode in ~/.openscript/config.json \
                      or set OPENCODE_API env var — cloud LLM fallback disabled."
                         .into(),
                 )
+            } else {
+                Value::Null
             },
         },
         "cascade_text": [
@@ -158,6 +175,14 @@ pub async fn chat_complete_with_backend(
         image_b64_jpeg: Option<&str>,
         errors: &mut Vec<String>,
     ) -> Option<ChatResult> {
+        if !config::feature_llm("openrouter") {
+            errors.push(
+                "openrouter: disabled by active configuration (features.llm.openrouter=false / \
+                 OPENSCRIPT_FEATURE_LLM_OPENROUTER=0)"
+                    .into(),
+            );
+            return None;
+        }
         if key.is_empty() {
             errors.push(
                 "openrouter: no key (set api_keys.openrouter in ~/.openscript/config.json)".into(),
@@ -194,6 +219,14 @@ pub async fn chat_complete_with_backend(
         image_b64_jpeg: Option<&str>,
         errors: &mut Vec<String>,
     ) -> Option<ChatResult> {
+        if !config::feature_llm("opencode") {
+            errors.push(
+                "opencode: disabled by active configuration (features.llm.opencode=false / \
+                 OPENSCRIPT_FEATURE_LLM_OPENCODE=0)"
+                    .into(),
+            );
+            return None;
+        }
         let key = opencode_key();
         let base_url = config::resolve_opencode_base_url();
         let model = config::resolve_opencode_model();

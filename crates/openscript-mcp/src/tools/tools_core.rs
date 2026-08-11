@@ -6,6 +6,16 @@
 use super::*;
 
 pub(crate) async fn handle_transcribe(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    // Feature gate: transcription is a toggleable subsystem — a config that
+    // turns it off gets a clear error instead of a missing-engine failure.
+    if !crate::config::feature_transcription("hinglish_ggml") {
+        return Err(ToolError::Srt(
+            "Transcription (hinglish-ggml) is disabled in the active configuration. Enable \
+             features.transcription.hinglish_ggml=true in ~/.openscript/config.json (or set \
+             OPENSCRIPT_FEATURE_TRANSCRIPTION_HINGLISH_GGML=1), then run: bash setup.sh"
+                .to_string(),
+        ));
+    }
     let media_path = sanitize_input_path(extract_str(&args, "media_path")?)?
         .to_string_lossy()
         .to_string();

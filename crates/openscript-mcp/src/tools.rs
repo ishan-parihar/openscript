@@ -1935,18 +1935,31 @@ fn get_api_key(config_name: &str, _env_name: &str) -> String {
     crate::config::resolve_api_key(kind)
 }
 
-/// Convenience: get Pexels API key (config file or env var)
+/// Convenience: get Pexels API key (config file or env var). Returns "" when
+/// the media.pexels feature is disabled (fail-closed — handlers degrade to
+/// their existing "key not set" path and system.capabilities explains why).
 pub(crate) fn pexels_key() -> String {
+    if !crate::config::feature_media("pexels") {
+        return String::new();
+    }
     get_api_key("pexels_api_key", "PEXELS_API_KEY")
 }
 
-/// Convenience: get GIPHY API key (config file or env var)
+/// Convenience: get GIPHY API key (config file or env var). Returns "" when
+/// the media.giphy feature is disabled (see pexels_key).
 fn giphy_key() -> String {
+    if !crate::config::feature_media("giphy") {
+        return String::new();
+    }
     get_api_key("giphy_api_key", "GIPHY_API_KEY")
 }
 
-/// Convenience: get Pixabay API key (config file or env var)
+/// Convenience: get Pixabay API key (config file or env var). Returns "" when
+/// the media.pixabay feature is disabled (see pexels_key).
 pub(crate) fn pixabay_key() -> String {
+    if !crate::config::feature_media("pixabay") {
+        return String::new();
+    }
     get_api_key("pixabay_api_key", "PIXABAY_API_KEY")
 }
 
@@ -2635,6 +2648,14 @@ async fn tts_generate_routed(
     // feature is enabled. Otherwise fall through to the sidecar.
     #[cfg(feature = "kokoro")]
     if profile.provider == "kokoro" {
+        if !crate::config::feature_tts("kokoro") {
+            return Err(ToolError::Tts(
+                "Voice profile uses the Kokoro TTS engine, which is disabled in the active \
+                 configuration. Enable features.tts.kokoro=true in ~/.openscript/config.json \
+                 (or set OPENSCRIPT_FEATURE_TTS_KOKORO=1), then run: bash setup.sh"
+                    .to_string(),
+            ));
+        }
         use openscript_tts::kokoro::{KokoroClient, KokoroConfig};
 
         let model_dir =
@@ -2683,6 +2704,14 @@ async fn tts_generate_routed(
     // Gepard path (high-quality native-English voice cloning — Qwen3.5 AR + NeMo
     // NanoCodec via the .venv-gepard sidecar; Apache-2.0 weights).
     if profile.provider == "gepard" {
+        if !crate::config::feature_tts("gepard") {
+            return Err(ToolError::Tts(
+                "Voice profile uses the gepard TTS engine, which is disabled in the active \
+                 configuration. Enable features.tts.gepard=true in ~/.openscript/config.json \
+                 (or set OPENSCRIPT_FEATURE_TTS_GEPARD=1), then run: bash scripts/setup_gepard.sh"
+                    .to_string(),
+            ));
+        }
         let take = resolve_emotion_take(profile, emotion);
         let params = openscript_tts::gepard::GepardSynthParams {
             emotion: emotion.map(|s| s.to_string()),
@@ -2730,6 +2759,14 @@ async fn tts_generate_routed(
     // Emotion takes are pre-registered compound voices `{id}@{emotion}` at
     // voice.profile.add time; the take's presence switches the voice id.
     if profile.provider == "audio8" {
+        if !crate::config::feature_tts("audio8") {
+            return Err(ToolError::Tts(
+                "Voice profile uses the audio8 TTS engine, which is disabled in the active \
+                 configuration. Enable features.tts.audio8=true in ~/.openscript/config.json \
+                 (or set OPENSCRIPT_FEATURE_TTS_AUDIO8=1), then run: bash scripts/setup_audio8.sh"
+                    .to_string(),
+            ));
+        }
         let take = resolve_emotion_take(profile, emotion);
         let synth_voice = match take {
             Some(_) => format!("{}@{}", profile.id, emotion.unwrap_or("")),
@@ -2774,6 +2811,15 @@ async fn tts_generate_routed(
     // never touch a voicedesign profile (their reference WAVs were only ever
     // design artifacts — the actual scene audio comes from Qwen3 here).
     if profile.provider == "voicedesign" {
+        if !crate::config::feature_tts("voicedesign") {
+            return Err(ToolError::Tts(
+                "Voice profile uses the voicedesign (Qwen3 VoiceDesign) TTS engine, which is \
+                 disabled in the active configuration. Enable features.tts.voicedesign=true in \
+                 ~/.openscript/config.json (or set OPENSCRIPT_FEATURE_TTS_VOICEDESIGN=1), then \
+                 run: bash scripts/setup_voicedesign.sh"
+                    .to_string(),
+            ));
+        }
         let instruct = build_voicedesign_instruct(profile, emotion, tone);
         tracing::info!(
             "[tts] voicedesign line for '{}': {}",
@@ -2819,6 +2865,14 @@ async fn tts_generate_routed(
     }
 
     // Sidecar path (faster-qwen3-tts)
+    if !crate::config::feature_tts("sidecar") {
+        return Err(ToolError::Tts(
+            "The voicebox sidecar TTS engine is disabled in the active configuration. \
+             Enable features.tts.sidecar=true in ~/.openscript/config.json (or set \
+             OPENSCRIPT_FEATURE_TTS_SIDECAR=1) and start the server at OPENSCRIPT_TTS_URL."
+                .to_string(),
+        ));
+    }
     use openscript_tts::client::TtsClient;
     let tts_url = std::env::var("OPENSCRIPT_TTS_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:17493".to_string());
@@ -4931,6 +4985,14 @@ pub(crate) async fn fetch_youtube_stock_clip_signal(
     min_duration_s: f64,
     max_duration_s: f64,
 ) -> Option<StockClipFetch> {
+    // Feature gate: this is the single yt-dlp choke point for the acquisition
+    // chain (background.fetch fallback + scene_media YouTube tier), so
+    // media.youtube=false stops ALL YouTube fetching, not just the youtube.*
+    // tools.
+    if !crate::config::feature_media("youtube") {
+        tracing::debug!("[youtube] fetch disabled by active configuration (features.media.youtube=false)");
+        return None;
+    }
     let cache_dir = "mcp/assets/background_cache";
     std::fs::create_dir_all(cache_dir).ok()?;
 
@@ -5697,6 +5759,14 @@ async fn run_parakeet_alignment(
     offset_ms: i64,
     _scene_end_ms: i64,
 ) -> Result<Vec<WordTiming>, String> {
+    // Feature gate: transcription.parakeet_align off → callers fall back to
+    // the next alignment engine / even-spacing estimates (existing Err path).
+    if !crate::config::feature_transcription("parakeet_align") {
+        return Err(
+            "Parakeet alignment disabled by active configuration (features.transcription.parakeet_align=false)"
+                .to_string(),
+        );
+    }
     // Write alignment to a temp JSON file
     let tmp_json = format!("{}.align.json", wav_path);
 
@@ -5794,6 +5864,14 @@ async fn run_whisper_alignment(
     offset_ms: i64,
     _scene_end_ms: i64,
 ) -> Result<Vec<WordTiming>, String> {
+    // Feature gate: transcription.whisper_align off → callers fall back to
+    // the next alignment engine / even-spacing estimates (existing Err path).
+    if !crate::config::feature_transcription("whisper_align") {
+        return Err(
+            "Whisper alignment disabled by active configuration (features.transcription.whisper_align=false)"
+                .to_string(),
+        );
+    }
     let sidecar_script = resolve_repo_path("mcp/scripts/whisper_align.py");
     let tmp_json = format!("{}.whisper.align.json", wav_path);
 

@@ -24,5 +24,36 @@
   "tts": {
     "default_backend": "kokoro",
     "default_voice": null
+  },
+  "features": {
+    "tts": {
+      "kokoro": true,
+      "audio8": true,
+      "gepard": true,
+      "voicedesign": true,
+      "sidecar": true
+    },
+    "transcription": {
+      "hinglish_ggml": true,
+      "whisper_align": true,
+      "parakeet_align": true
+    },
+    "media": {
+      "pexels": true,
+      "giphy": true,
+      "pixabay": true,
+      "youtube": true
+    },
+    "llm": {
+      "opencode": true,
+      "openrouter": true
+    },
+    "render": {
+      "ffmpeg": true,
+      "hyperframes": true,
+      "remotion": true,
+      "nvenc": true
+    },
+    "frontend": true
   }
 }

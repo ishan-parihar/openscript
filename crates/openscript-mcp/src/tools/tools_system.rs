@@ -135,6 +135,51 @@ pub(crate) async fn handle_system_config_set(args: serde_json::Value) -> Result<
         }
     }
 
+    // features — merge feature toggles so agents can enable/disable subsystems
+    // at runtime (setup.sh reads the same file on cold start).
+    if let Some(feat) = patch.get("features").and_then(|v| v.as_object()) {
+        let set_bool = |patch_obj: &serde_json::Map<String, serde_json::Value>,
+                        key: &str,
+                        slot: &mut bool| {
+            if let Some(v) = patch_obj.get(key) {
+                if let Some(b) = v.as_bool() {
+                    *slot = b;
+                }
+            }
+        };
+        if let Some(tts) = feat.get("tts").and_then(|v| v.as_object()) {
+            set_bool(tts, "kokoro", &mut cfg.features.tts.kokoro);
+            set_bool(tts, "audio8", &mut cfg.features.tts.audio8);
+            set_bool(tts, "gepard", &mut cfg.features.tts.gepard);
+            set_bool(tts, "voicedesign", &mut cfg.features.tts.voicedesign);
+            set_bool(tts, "sidecar", &mut cfg.features.tts.sidecar);
+        }
+        if let Some(tr) = feat.get("transcription").and_then(|v| v.as_object()) {
+            set_bool(tr, "hinglish_ggml", &mut cfg.features.transcription.hinglish_ggml);
+            set_bool(tr, "whisper_align", &mut cfg.features.transcription.whisper_align);
+            set_bool(tr, "parakeet_align", &mut cfg.features.transcription.parakeet_align);
+        }
+        if let Some(media) = feat.get("media").and_then(|v| v.as_object()) {
+            set_bool(media, "pexels", &mut cfg.features.media.pexels);
+            set_bool(media, "giphy", &mut cfg.features.media.giphy);
+            set_bool(media, "pixabay", &mut cfg.features.media.pixabay);
+            set_bool(media, "youtube", &mut cfg.features.media.youtube);
+        }
+        if let Some(llm) = feat.get("llm").and_then(|v| v.as_object()) {
+            set_bool(llm, "opencode", &mut cfg.features.llm.opencode);
+            set_bool(llm, "openrouter", &mut cfg.features.llm.openrouter);
+        }
+        if let Some(render_f) = feat.get("render").and_then(|v| v.as_object()) {
+            set_bool(render_f, "ffmpeg", &mut cfg.features.render.ffmpeg);
+            set_bool(render_f, "hyperframes", &mut cfg.features.render.hyperframes);
+            set_bool(render_f, "remotion", &mut cfg.features.render.remotion);
+            set_bool(render_f, "nvenc", &mut cfg.features.render.nvenc);
+        }
+        if let Some(b) = feat.get("frontend").and_then(|v| v.as_bool()) {
+            cfg.features.frontend = b;
+        }
+    }
+
     let path = crate::config::write_user_config(&cfg)
         .map_err(|e| ToolError::Io(std::io::Error::other(e)))?;
 
@@ -234,11 +279,16 @@ pub(crate) async fn handle_system_capabilities(
         p.exists()
     };
 
-    // Pexels API key
+    // Pexels API key — the key resolvers already return "" when the feature
+    // is toggled off; surface the TRUE reason (feature vs key) here.
+    let pexels_enabled = crate::config::feature_media("pexels");
     let pexels_available = !pexels_key().is_empty();
     let pexels = json!({
         "available": pexels_available,
-        "reason": if pexels_available {
+        "enabled": pexels_enabled,
+        "reason": if !pexels_enabled {
+            "Pexels disabled by active configuration (features.media.pexels=false / OPENSCRIPT_FEATURE_MEDIA_PEXELS=0). Enable it to use Pexels stock.".into()
+        } else if pexels_available {
             serde_json::Value::Null
         } else {
             "PEXELS_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Get a free key at https://www.pexels.com/api/".into()
@@ -246,10 +296,14 @@ pub(crate) async fn handle_system_capabilities(
     });
 
     // GIPHY API key
+    let giphy_enabled = crate::config::feature_media("giphy");
     let giphy_available = !giphy_key().is_empty();
     let giphy = json!({
         "available": giphy_available,
-        "reason": if giphy_available {
+        "enabled": giphy_enabled,
+        "reason": if !giphy_enabled {
+            "GIPHY disabled by active configuration (features.media.giphy=false / OPENSCRIPT_FEATURE_MEDIA_GIPHY=0). Enable it to use GIPHY stickers.".into()
+        } else if giphy_available {
             serde_json::Value::Null
         } else {
             "GIPHY_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Get a key at https://developers.giphy.com/".into()
@@ -257,10 +311,14 @@ pub(crate) async fn handle_system_capabilities(
     });
 
     // Pixabay API key
+    let pixabay_enabled = crate::config::feature_media("pixabay");
     let pixabay_available = !pixabay_key().is_empty();
     let pixabay = json!({
         "available": pixabay_available,
-        "reason": if pixabay_available {
+        "enabled": pixabay_enabled,
+        "reason": if !pixabay_enabled {
+            "Pixabay disabled by active configuration (features.media.pixabay=false / OPENSCRIPT_FEATURE_MEDIA_PIXABAY=0). Enable it to use stock.search/stock.fetch.".into()
+        } else if pixabay_available {
             serde_json::Value::Null
         } else {
             "PIXABAY_API_KEY not set. Set it in mcp/assets/.openscript_config.json or as an env var. Optional — only needed for stock.search/stock.fetch.".into()
@@ -363,8 +421,16 @@ pub(crate) async fn handle_system_capabilities(
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    let kokoro_available = kokoro_model_ok && kokoro_voices_ok && kokoro_sidecar_ok && kokoro_python_ok;
-    let kokoro_reason = if kokoro_available {
+    let kokoro_feature_on = crate::config::feature_tts("kokoro");
+    let kokoro_available = kokoro_feature_on
+        && kokoro_model_ok
+        && kokoro_voices_ok
+        && kokoro_sidecar_ok
+        && kokoro_python_ok;
+    let kokoro_reason = if !kokoro_feature_on {
+        "Kokoro TTS disabled by active configuration (features.tts.kokoro=false / OPENSCRIPT_FEATURE_TTS_KOKORO=0). Enable it to use Kokoro presets."
+            .into()
+    } else if kokoro_available {
         serde_json::Value::Null
     } else {
         let mut missing = Vec::new();
@@ -402,19 +468,31 @@ pub(crate) async fn handle_system_capabilities(
     });
 
     // Transcription engine (HinglishGgml — the sole engine)
+    let transcription_feature_on = crate::config::feature_transcription("hinglish_ggml");
     let transcription = {
-        let result = openscript_transcribe::transcriber::check_hinglish_ggml_health().await;
-        match result {
-            Ok(_) => json!({
-                "available": true,
-                "engine": "hinglish-ggml",
-                "reason": serde_json::Value::Null,
-            }),
-            Err(reason) => json!({
+        if !transcription_feature_on {
+            json!({
                 "available": false,
+                "enabled": false,
                 "engine": "hinglish-ggml",
-                "reason": reason,
-            }),
+                "reason": "Transcription disabled by active configuration (features.transcription.hinglish_ggml=false / OPENSCRIPT_FEATURE_TRANSCRIPTION_HINGLISH_GGML=0). Enable it to transcribe audio.",
+            })
+        } else {
+            let result = openscript_transcribe::transcriber::check_hinglish_ggml_health().await;
+            match result {
+                Ok(_) => json!({
+                    "available": true,
+                    "enabled": true,
+                    "engine": "hinglish-ggml",
+                    "reason": serde_json::Value::Null,
+                }),
+                Err(reason) => json!({
+                    "available": false,
+                    "enabled": true,
+                    "engine": "hinglish-ggml",
+                    "reason": reason,
+                }),
+            }
         }
     };
 
@@ -478,14 +556,21 @@ pub(crate) async fn handle_system_capabilities(
     let parakeet_encoder = resolve("mcp/assets/parakeet/encoder-model.int8.onnx");
     let parakeet_decoder = resolve("mcp/assets/parakeet/decoder_joint-model.int8.onnx");
     let parakeet_models_exist = parakeet_encoder.exists() && parakeet_decoder.exists();
-    let parakeet_align_available = parakeet_script_exists && onnxruntime_importable && parakeet_models_exist;
+    let parakeet_feature_on = crate::config::feature_transcription("parakeet_align");
+    let parakeet_align_available = parakeet_feature_on
+        && parakeet_script_exists
+        && onnxruntime_importable
+        && parakeet_models_exist;
     let parakeet_align = json!({
         "available": parakeet_align_available,
+        "enabled": parakeet_feature_on,
         "path": parakeet_script_path,
         "script_exists": parakeet_script_exists,
         "onnxruntime_importable": onnxruntime_importable,
         "models_exist": parakeet_models_exist,
-        "reason": if parakeet_align_available {
+        "reason": if !parakeet_feature_on {
+            "Parakeet alignment disabled by active configuration (features.transcription.parakeet_align=false). Caption timing falls back to even-spacing.".into()
+        } else if parakeet_align_available {
             serde_json::Value::Null
         } else if !parakeet_script_exists {
             "parakeet_align.py not found. script.build_captions will fall back to even-spacing estimation (less accurate word timings).".into()
@@ -552,8 +637,12 @@ pub(crate) async fn handle_system_capabilities(
     } else {
         0
     };
+    let audio8_feature_on = crate::config::feature_tts("audio8");
     let audio8 = json!({
-        "available": audio8_model_present && openscript_tts::audio8::audio8_available(),
+        "available": audio8_feature_on
+            && audio8_model_present
+            && openscript_tts::audio8::audio8_available(),
+        "enabled": audio8_feature_on,
         "model_present": audio8_model_present,
         "voice_count": audio8_voice_count,
         "model_dir": "mcp/assets/audio8/model",
@@ -573,8 +662,10 @@ pub(crate) async fn handle_system_capabilities(
     } else {
         0
     };
+    let gepard_feature_on = crate::config::feature_tts("gepard");
     let gepard = json!({
-        "available": openscript_tts::gepard::gepard_available(),
+        "available": gepard_feature_on && openscript_tts::gepard::gepard_available(),
+        "enabled": gepard_feature_on,
         "model": "nineninesix/gepard-1.0",
         "voice_count": gepard_voice_count,
         "voices_dir": "mcp/assets/gepard/voices",
@@ -586,7 +677,9 @@ pub(crate) async fn handle_system_capabilities(
 
     // VoiceDesign TTS (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4 — designs
     // NOVEL character voices from a text description, zero reference audio).
-    let voicedesign_available = openscript_tts::voicedesign::voicedesign_available();
+    let voicedesign_feature_on = crate::config::feature_tts("voicedesign");
+    let voicedesign_available =
+        voicedesign_feature_on && openscript_tts::voicedesign::voicedesign_available();
     let voicedesign_model_present = openscript_tts::voicedesign::voicedesign_model_present();
     // Probe the resolved interpreter for the sidecar deps (onnxruntime, numpy,
     // soundfile, transformers) — same pattern as the kokoro `python_module_ok`
@@ -602,6 +695,7 @@ pub(crate) async fn handle_system_capabilities(
         .unwrap_or(false);
     let voicedesign = json!({
         "available": voicedesign_available && voicedesign_model_present && voicedesign_python_module_ok,
+        "enabled": voicedesign_feature_on,
         "sidecar_available": voicedesign_available,
         "model_present": voicedesign_model_present,
         "python_module_ok": voicedesign_python_module_ok,
@@ -627,8 +721,10 @@ pub(crate) async fn handle_system_capabilities(
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
+    let whisper_feature_on = crate::config::feature_transcription("whisper_align");
     let whisper_align = json!({
-        "available": whisper_script_exists && whisper_importable,
+        "available": whisper_feature_on && whisper_script_exists && whisper_importable,
+        "enabled": whisper_feature_on,
         "path": whisper_script,
         "script_exists": whisper_script_exists,
         "whisper_importable": whisper_importable,
@@ -649,6 +745,7 @@ pub(crate) async fn handle_system_capabilities(
 
     Ok(json!({
         "status": "success",
+        "features": crate::config::feature_flags_view(),
         "voicebox": voicebox,
         "kokoro": kokoro,
         "audio8": audio8,
@@ -869,10 +966,12 @@ pub(crate) async fn handle_system_doctor(_args: serde_json::Value) -> Result<ser
         "ready_for_production": ready_for_production,
         "checklist": checklist,
         "next_actions": next_actions,
+        "features": crate::config::feature_flags_view(),
         "hints": {
             "allow_procedural": "OPENSCRIPT_ALLOW_PROCEDURAL=1 forces gradient B-roll (draft-grade only)",
             "config": crate::config::config_file_path().display().to_string(),
             "install_plan": "docs/INSTALL_MEDIA_DEPS_PLAN.md",
+            "feature_gating": "Toggles live in ~/.openscript/config.json under features.<category>.<name> (all default ON); env override OPENSCRIPT_FEATURE_<CATEGORY>_<NAME>=0|1. setup.sh installs only the deps for enabled features.",
         },
     }))
 }

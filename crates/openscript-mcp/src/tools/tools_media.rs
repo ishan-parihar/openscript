@@ -219,6 +219,15 @@ pub(crate) async fn handle_stock_fetch(args: serde_json::Value) -> Result<serde_
 }
 
 pub(crate) async fn handle_youtube_download(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    // Feature gate: youtube is a toggleable media provider.
+    if !crate::config::feature_media("youtube") {
+        return Err(ToolError::Asset(
+            "YouTube downloads are disabled in the active configuration. Enable \
+             features.media.youtube=true in ~/.openscript/config.json (or set \
+             OPENSCRIPT_FEATURE_MEDIA_YOUTUBE=1) and install yt-dlp."
+                .to_string(),
+        ));
+    }
     let query = extract_str(&args, "query")?; // URL or search query
     let duration_s = default_f64(&args, "duration_s", 30.0);
     let start_s = default_opt_f64(&args, "start_s"); // Optional: specific start time
@@ -510,6 +519,15 @@ pub(crate) async fn handle_youtube_download(args: serde_json::Value) -> Result<s
 }
 
 pub(crate) async fn handle_youtube_search(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    // Feature gate: youtube is a toggleable media provider.
+    if !crate::config::feature_media("youtube") {
+        return Err(ToolError::Asset(
+            "YouTube search is disabled in the active configuration. Enable \
+             features.media.youtube=true in ~/.openscript/config.json (or set \
+             OPENSCRIPT_FEATURE_MEDIA_YOUTUBE=1) and install yt-dlp."
+                .to_string(),
+        ));
+    }
     let query = extract_str(&args, "query")?;
     let limit = default_u32(&args, "limit", 10) as usize;
 

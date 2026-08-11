@@ -24,12 +24,29 @@ bash scripts/setup_openscript_config.sh
 
 Template: `openscript.env.example`. Full media plan: `docs/INSTALL_MEDIA_DEPS_PLAN.md`.
 
-## 3. Bootstrap
+## 3. Bootstrap (feature-gated)
+
+`setup.sh` provisions **only the deps for the features that are active** in
+`~/.openscript/config.json` (`features.<category>.<name>`, all default ON), or
+per-run env overrides. Toggle before installing to skip big downloads:
 
 ```bash
-bash setup.sh                    # Kokoro models, cargo build, tests, smoke
+bash setup.sh --list-features               # print the toggle table + what each pulls
+OPENSCRIPT_FEATURE_TTS_VOICEDESIGN=0 bash setup.sh   # skip the 4.3GB VoiceDesign model
+bash setup.sh --feature tts.gepard=0        # skip the heavy CUDA/NeMo gepard venv
+bash setup.sh --feature transcription.parakeet_align=0   # skip the 320MB alignment model
+
+# Persist toggles in the config so they apply on every install:
+bash scripts/setup_openscript_config.sh --feature tts.voicedesign=0 --feature tts.gepard=0
+
+bash setup.sh                    # now installs only the enabled deps
 bash scripts/bootstrap_media.sh  # doctor + optional --with-library
 ```
+
+The same toggles gate the RUNTIME: a disabled engine/tool returns a clear error
+naming the toggle + setup command, and `system.capabilities` reports each
+feature's `enabled` state alongside its availability. See `openscript.env.example`
+for the full `OPENSCRIPT_FEATURE_<CATEGORY>_<NAME>` list.
 
 Or after build:
 
