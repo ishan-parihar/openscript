@@ -423,6 +423,7 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
         &format,
         emotion.as_deref(),
         tone.as_deref(),
+        None, // control_tags: tts.generate has no scene control tags
         temperature,
         top_k,
         top_p,
@@ -950,6 +951,7 @@ pub(crate) async fn handle_voiceover_generate(
         "wav",
         emotion.as_deref(),
         None, // tone: voiceover.generate has no scene tone
+        None, // control_tags: voiceover.generate has no scene control tags
         None, // temperature: engine default (expressive 0.7)
         None, // top_k
         None, // top_p

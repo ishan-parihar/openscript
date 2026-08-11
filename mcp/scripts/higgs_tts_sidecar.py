@@ -102,10 +102,34 @@ EOC = 1025                   # end-of-code (column terminator)
 # cloning: temperature 0.8, top_k 50, max_new_tokens 1024.
 DEFAULT_TEMPERATURE = float(os.environ.get("HIGGS_TEMPERATURE", "0.8"))
 DEFAULT_TOP_K = int(os.environ.get("HIGGS_TOP_K", "50"))
+# The sglang-omni reference passes top_p through (default 1.0 = off) alongside
+# top_k. None = off (pure top-k, matching the prior behavior).
+DEFAULT_TOP_P = float(os.environ.get("HIGGS_TOP_P", "0")) or None
 DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("HIGGS_MAX_NEW_TOKENS", "1024"))
-# max_new_tokens=1024 ≈ 1024 positions ≈ 1017 audio frames ≈ 40.7 s — far
-# beyond any scene chunk; longer scenes are split on sentence boundaries.
-MAX_CHARS_PER_CHUNK = 700
+# max_new_tokens=1024 ≈ 1024 positions ≈ 1017 audio frames ≈ 40.7 s.
+
+# Chunking strategy. Higgs is a CONVERSATIONAL model (8192-token context)
+# trained on multi-sentence responses with inline control tags; a single
+# autoregressive draw keeps prosody/tonality continuous across the whole
+# line. Splitting into sentence chunks re-anchors the model to the reference
+# at every seam and resets the delivery — the "tonality breaks per chunk"
+# symptom. So the CANONICAL mode for higgs is ONE-SHOT: the entire scene
+# text is one prompt, one draw.
+#   "one_shot"  (canonical): whole text as a single prompt (up to a context
+#               budget guard; see MAX_CHARS_ONE_SHOT).
+#   "sentence"  (legacy): sentence-aligned chunking + crossfade concat.
+#   "auto"      (default): one_shot while the text fits comfortably inside
+#               the 8192 context (MAX_CHARS_ONE_SHOT), else sentence chunks
+#               as a safety net for pathological scene sizes.
+MAX_CHARS_ONE_SHOT = 500     # ~80 words ≈ 20-25 s audio — inside the model's
+                             # stable one-shot envelope (probed: loops become
+                             # frequent past ~500 rows/20 s, retries then carry
+                             # the draw; typical scenes are 10-40 words)
+MAX_CHARS_PER_CHUNK = 700    # legacy sentence fallback budget
+# One-shot ceiling: ~80 s of audio. 20 tokens/word at 25 fps ≈ 0.8 s/word of
+# budget; a 250-word scene needs ~6250 positions, so this is generous while
+# still bounded (degenerate-loop guards below still apply per draw).
+MAX_TOKENS_ONE_SHOT = 2048
 
 # Degenerate-loop guards. The AR model can lock onto a repeated code vector
 # (a sustained tone) or keep speaking long past the prompt; with the delay
@@ -118,17 +142,34 @@ MAX_CHARS_PER_CHUNK = 700
 # never run 40 s on a 5-word line.
 MAX_TOKENS_PER_WORD = 20
 MIN_MAX_TOKENS = 96                 # ~3.8 s floor (very short lines)
-MAX_TOKENS_CAP = 768                # ~30 s hard cap per chunk
-REPEAT_BREAK_AFTER = 8              # consecutive identical code vectors => stuck
+MAX_TOKENS_CAP = 768                # ~30 s hard cap per chunk (sentence mode)
+# Natural speech ~2.5 wps @ 25 fps ≈ 10 audio rows/word; used to detect the
+# "finished the text but never sampled EOC" failure — the model completes the
+# line and then loops on a final phoneme. When the repetition guard fires at
+# >= 85% of the expected row count, the draw is COMPLETE and only the looping
+# tail needs cutting (recovers draws that would otherwise be wasted retries).
+ROWS_PER_WORD_EST = 10
+# Consecutive identical full code vectors => "stuck" tone loop. The default
+# is 25 frames = 1.0 s of identical 8-codebook vectors. This is safely above
+# any NATURAL sustained phoneme (a held vowel carries residual-codebook
+# modulation and rarely holds >8-10 identical vectors) yet still catches a
+# genuine loop LONG before the token caps. The old 8-frame threshold fired on
+# long one-shot draws mid-sentence (the "9 s audio for a 45 s scene" bug):
+# a dramatic pause or held vowel in real speech can exceed 8 identical
+# vectors, killing a healthy draw. Tunable via HIGGS_REPEAT_BREAK_AFTER.
+REPEAT_BREAK_AFTER = int(os.environ.get("HIGGS_REPEAT_BREAK_AFTER", "25"))
 
 # Retry-on-degenerate. Even with the reference-exact sampler the 4B AR model
-# stochastically (~10-20% of clone draws) enters a bad state: a sustained-tone
-# repetition (caught by the guard above), dead-air silence (decoded RMS ~0), or
-# rambling far past the text without ever sampling cb0 EOC. Each draw is
-# independent (global RNG), so retrying a degenerate chunk with a fresh sample
-# is cheap and recovers the vast majority of failures.
+# stochastically (~10-40% of clone draws, rising with draw length) enters a bad
+# state: a sustained-tone repetition (caught by the guard above), dead-air
+# silence (decoded RMS ~0), or rambling far past the text without ever sampling
+# cb0 EOC. Each draw is independent (global RNG), so retrying a degenerate
+# chunk with a fresh sample is cheap and recovers the vast majority of
+# failures. Each retry ALSO cools the temperature (see the synth loop) — a hot
+# draw that looped usually terminates cleanly 0.1-0.2 lower.
 SILENCE_RMS = 0.008               # decoded float32 RMS below this = dead air
 MAX_CHUNK_RETRIES = 2             # attempts beyond the first per chunk
+MIN_RETRY_TEMPERATURE = 0.5       # cooling floor for degenerate retries
 
 # Emote -> Higgs control-tag mapping. Keys are the emotes used across the
 # content-format playbooks / script scenes; the 21 Higgs emotions + 3 styles
@@ -247,16 +288,28 @@ def chunk_text(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
 
 
 def compose_prompt(text: str, emote: str | None = None,
-                   default_speed: float | None = None) -> str:
-    """Fold emote/speed into the text using Higgs control tags.
+                   default_speed: float | None = None,
+                   pitch: float | None = None,
+                   pause_ms: int | None = None,
+                   control_tags: str | None = None) -> str:
+    """Fold emote/speed/pitch/pause/raw control tags into the text.
 
-    Returns the raw prompt text (tags + text). The emote maps to a sentence-
-    level tag (or sfx/style); `default_speed` selects a prosody tag.
+    Returns the raw prompt text (tags + text). Emission rules mirror
+    PROMPTING.md placement semantics exactly:
+      - emotion / style / prosody speed / pitch / expressive are
+        sentence-level -> emitted at the START (they color the whole line).
+      - `pause` / `long_pause` are inline -> emitted at the END of the line
+        (between this line and whatever follows).
+      - `control_tags` is a RAW passthrough (e.g. "<|prosody:pause|> mid,"
+        or an sfx+onomatopoeia pair "<|sfx:cough|>Ahem,") prepended verbatim
+        so agents can hand-place inline effects the structured fields don't
+        express.
 
     NOTE: free-form instruct/tone text is deliberately NOT injected. Higgs
     only recognizes its 43 control tags — anything else "degrades output or
     gets read literally" (CAPABILITIES.md), so a parenthetical delivery
-    instruction would be SPOKEN ALOUD. Emote-tag mapping is the only channel.
+    instruction would be SPOKEN ALOUD. Structured emote/speed/pitch mapping
+    + raw control_tags are the only channels.
     """
     tags = []
     if emote:
@@ -277,24 +330,47 @@ def compose_prompt(text: str, emote: str | None = None,
                 if tag:
                     tags.append(f"<|{tag}|>")
                 break
+    if pitch is not None:
+        # Model ratios: pitch_low ≈ -3 semitones, pitch_high ≈ +2.5. Map the
+        # script's pitch multiplier into the nearest tag band (neutral ~1.0
+        # ±0.1 emits nothing).
+        if pitch <= 0.9:
+            tags.append("<|prosody:pitch_low|>")
+        elif pitch >= 1.1:
+            tags.append("<|prosody:pitch_high|>")
+    if pause_ms is not None and pause_ms >= 400:
+        # PROMPTING.md: long_pause ≈ 700-1500 ms, pause ≈ 400-700 ms.
+        tags.append("<|prosody:long_pause|>" if pause_ms >= 800
+                    else "<|prosody:pause|>")
     head = " ".join(tags)
     head = f"{head} " if head else ""
+    if control_tags and control_tags.strip():
+        raw = control_tags.strip()
+        # Raw tags are prepended; ensure a space separates them from the
+        # text unless the agent already attached an onomatopoeia (no space
+        # after the tag per PROMPTING.md: "<|sfx:cough|>Ahem, ...").
+        sep = "" if raw.endswith(("|", ",", "…", ".")) else " "
+        return f"{head}{raw}{sep}{text}"
     return f"{head}{text}"
 
 
-def estimate_max_tokens(text: str, ref_text: str | None = None) -> int:
+def estimate_max_tokens(text: str, ref_text: str | None = None,
+                        one_shot: bool = False) -> int:
     """Length-proportional generation budget (delay-pattern positions).
 
     Normal speech is ~2.5 words/second ≈ 10 audio frames/word; budget
-    20 tokens/word (2× headroom for slow/expressive delivery) plus a floor,
-    capped at MAX_TOKENS_CAP. The reference transcript is fixed conditioning
-    (not generated), so it does NOT extend the budget.
+    20 tokens/word (2× headroom for slow/expressive delivery) plus a floor.
+    One-shot draws allow the full MAX_TOKENS_ONE_SHOT ceiling (the model's
+    8192 context absorbs whole scenes); chunked draws keep the old 768 cap
+    (~30 s per chunk). The reference transcript is fixed conditioning (not
+    generated), so it does NOT extend the budget.
 
-    Returns an int in [MIN_MAX_TOKENS, MAX_TOKENS_CAP]. Pure — unit-testable.
+    Returns an int in [MIN_MAX_TOKENS, cap]. Pure — unit-testable.
     """
     words = len([w for w in text.split() if w.strip()])
     budget = words * MAX_TOKENS_PER_WORD + 40
-    return max(MIN_MAX_TOKENS, min(MAX_TOKENS_CAP, budget))
+    cap = MAX_TOKENS_ONE_SHOT if one_shot else MAX_TOKENS_CAP
+    return max(MIN_MAX_TOKENS, min(cap, budget))
 
 
 def apply_delay_pattern(codes_TN, num_codebooks: int = NUM_CODEBOOKS,
@@ -382,8 +458,14 @@ def dedelay_codes(position_codes: list, num_codebooks: int = NUM_CODEBOOKS,
     return frames, t
 
 
-def sample_from_logits(logits, temperature: float, top_k: int) -> int:
-    """Sample one code id from a [1026]-shaped logits vector."""
+def sample_from_logits(logits, temperature: float, top_k: int,
+                       top_p: float | None = None) -> int:
+    """Sample one code id from a [1026]-shaped logits vector.
+
+    Mirrors the sglang-omni `_sample_independent`: temperature scaling,
+    then top-k and/or top-p truncation, then a categorical draw. top_p is
+    applied AFTER top-k (the reference order); None disables it.
+    """
     import numpy as np  # noqa: PLC0415
 
     logits = np.asarray(logits, dtype=np.float32).reshape(-1)
@@ -393,6 +475,17 @@ def sample_from_logits(logits, temperature: float, top_k: int) -> int:
     if top_k > 0 and top_k < logits.size:
         kth = np.sort(logits)[-top_k]
         logits = np.where(logits < kth, -np.inf, logits)
+    if top_p is not None and 0.0 < top_p < 1.0:
+        sorted_idx = np.argsort(logits)[::-1]
+        sorted_logits = logits[sorted_idx]
+        probs = np.exp(sorted_logits - sorted_logits.max())
+        probs = probs / probs.sum()
+        cum = np.cumsum(probs)
+        cutoff = int(np.searchsorted(cum, top_p)) + 1
+        keep = sorted_idx[:max(cutoff, 1)]
+        mask = np.full(logits.shape, -np.inf)
+        mask[keep] = logits[keep]
+        logits = mask
     probs = np.exp(logits - logits.max())
     probs = probs / probs.sum()
     return int(np.random.choice(probs.size, p=probs))
@@ -431,6 +524,53 @@ def sampler_step(codes, delay_count, eoc_countdown,
 # ---------------------------------------------------------------------------
 # Runtime (lazy) — model + sessions
 # ---------------------------------------------------------------------------
+
+def spectral_noise_check(audio, sample_rate: int = SAMPLE_RATE):
+    """Return True when the waveform is broadband noise, not speech.
+
+    Uses zero-crossing rate + low-frequency energy ratio — the same metrics
+    the config sweep uses: clean speech zcps < ~3500 and >75% energy below
+    4 kHz; hiss/degraded 20-40% below 4 kHz. A draw can
+    terminate cleanly (EOC wind-down ran, no guard, no leaks, non-silent
+    RMS) yet still be broadband noise — the AR model occasionally locks onto
+    a hiss pattern whose vectors vary enough to dodge the identical-vector
+    repetition guard.
+    """
+    import numpy as np  # noqa: PLC0415
+
+    if audio is None or audio.size < 1024:
+        return False
+    audio = np.asarray(audio, dtype=np.float32)
+    seg = audio - audio.mean()
+    zcps = float(np.abs(np.diff(np.signbit(seg))).sum() / len(seg) * sample_rate)
+    n = 1 << 17
+    if len(seg) < n:
+        n = 1 << (len(seg).bit_length() - 1)
+    mid = seg[len(seg) // 2 - n // 2: len(seg) // 2 + n // 2]
+    if len(mid) < 1024:
+        return zcps > 8000
+    # Silence guard: if the FFT window is dead-air (a pause between
+    # sentences), the energy ratio is meaningless (near-zero denominator) and
+    # would false-flag a clean draw. Use the highest-energy window instead of
+    # a fixed middle window, and skip the FFT entirely when even that is
+    # quiet — the zcps gate above still catches true broadband hiss.
+    mid_rms = float(np.sqrt((mid ** 2).mean())) if mid.size else 0.0
+    seg_rms = float(np.sqrt((seg ** 2).mean())) if seg.size else 0.0
+    if mid_rms < 0.25 * max(seg_rms, 1e-6):
+        # Middle is a pause — fall back to the zcps gate only.
+        return zcps > 8000
+    spec = np.abs(np.fft.rfft(mid * np.hanning(len(mid))))
+    freqs = np.fft.rfftfreq(len(mid), 1.0 / sample_rate)
+    below4k = 100.0 * spec[freqs <= 4000].sum() / (spec.sum() + 1e-9)
+    # Hiss band from the config sweep: clean speech 75-95% below 4 kHz;
+    # hiss/degraded 20-40%. Flag anything in/below the hiss band so it gets
+    # a cooled retry instead of shipping.
+    noisy = zcps > 8000 or below4k < 40.0
+    if noisy:
+        log(f"spectral-noise flag: zcps={zcps:.0f} below4k={below4k:.1f}% "
+            f"(clean speech ~<3500 zcps / >75% below4k)")
+    return noisy
+
 
 class HiggsPipeline:
     """All six ONNX sub-models + the generation loop."""
@@ -567,26 +707,48 @@ class HiggsPipeline:
               ref_audio: str | None = None, ref_text: str | None = None,
               emote: str | None = None, instruct: str | None = None,
               default_speed: float | None = None,
+              pitch: float | None = None,
+              pause_ms: int | None = None,
+              control_tags: str | None = None,
+              chunking: str | None = None,
               temperature: float | None = None, top_k: int | None = None,
+              top_p: float | None = None,
               max_new_tokens: int | None = None) -> tuple:
         import numpy as np  # noqa: PLC0415
         import soundfile as sf  # noqa: PLC0415
 
         temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
         top_k = DEFAULT_TOP_K if top_k is None else top_k
+        if top_p is None:
+            top_p = DEFAULT_TOP_P
         max_new_tokens = DEFAULT_MAX_NEW_TOKENS if max_new_tokens is None else max_new_tokens
-        # Never let a scene run 20× past its text — scale the budget to the
-        # chunk length (ignoring control tags in the word count).
-        plain_words = " ".join(chunk_text(text)).split()
-        if max_new_tokens > estimate_max_tokens(" ".join(plain_words)):
-            capped = estimate_max_tokens(" ".join(plain_words))
-            log(f"capping max_new_tokens {max_new_tokens} -> {capped} "
-                f"({len(plain_words)} words; degenerate-loop guard)")
-            max_new_tokens = capped
 
-        chunks = chunk_text(text)
+        # Choose the chunking strategy. ONE-SHOT is canonical for higgs — the
+        # conversational model keeps prosody continuous across a whole line;
+        # sentence chunking re-anchors per chunk (the tonality-break bug).
+        mode = (chunking or "auto").strip().lower()
+        if mode not in ("one_shot", "sentence", "auto"):
+            log(f"unknown chunking mode {mode!r}; using auto")
+            mode = "auto"
+        one_shot = mode == "one_shot" or (mode == "auto" and len(text) <= MAX_CHARS_ONE_SHOT)
+        chunks = [text] if text.strip() else []
+        if not one_shot:
+            chunks = chunk_text(text)
         if not chunks:
             raise ValueError("synth text produced no chunks")
+
+        # Length-proportional budget (degenerate-loop guard). The budget is
+        # capped differently for one-shot draws (8192 context) vs chunked
+        # (~30 s/chunk ceiling). The reference transcript is fixed
+        # conditioning, so it does not extend the budget.
+        plain_words = " ".join(c if isinstance(c, str) else c for c in chunks).split()
+        if max_new_tokens > estimate_max_tokens(" ".join(plain_words), one_shot=one_shot):
+            capped = estimate_max_tokens(" ".join(plain_words), one_shot=one_shot)
+            log(f"capping max_new_tokens {max_new_tokens} -> {capped} "
+                f"({len(plain_words)} words, {len(chunks)} chunk(s), "
+                f"one_shot={one_shot}; degenerate-loop guard)")
+            max_new_tokens = capped
+
         # `instruct` is accepted for protocol compatibility but never injected
         # into the prompt — Higgs is control-tag-only and would read it aloud.
         if instruct:
@@ -609,39 +771,60 @@ class HiggsPipeline:
             ref_path = None
 
         parts = []
+        any_degenerate = False
         for i, chunk in enumerate(chunks):
-            chunk_txt = compose_prompt(chunk, emote=emote, default_speed=default_speed)
+            chunk_txt = compose_prompt(
+                chunk, emote=emote, default_speed=default_speed,
+                pitch=pitch, pause_ms=pause_ms, control_tags=control_tags)
             audio = None
             meta = None
             for attempt in range(MAX_CHUNK_RETRIES + 1):
+                # TEMPERATURE-COOLING RETRIES: a degenerate draw (tone loop)
+                # is usually the AR model running hot — retrying at a lower
+                # temperature drastically raises the chance of a clean draw
+                # (sweep data: 3 hot retries all looped; the cooled attempt
+                # terminates cleanly). Cool 0.1 per retry, floor 0.5.
+                attempt_temp = max(
+                    MIN_RETRY_TEMPERATURE, temperature - 0.1 * attempt)
                 try:
                     audio, meta = self._synth_chunk(
                         chunk_txt, ref_path=ref_path, ref_text=ref_text or None,
-                        temperature=temperature, top_k=top_k,
+                        temperature=attempt_temp, top_k=top_k, top_p=top_p,
                         max_new_tokens=max_new_tokens)
-                except RuntimeError as exc:
-                    # A draw that fails structurally (too few rows, codec
-                    # failure) is just another degenerate attempt — retry.
-                    log(f"chunk {i + 1} attempt {attempt + 1} raised: {exc}")
+                except Exception as exc:  # noqa: BLE001 — any failed draw
+                    # (structural, codec, ORT OOM/GPU Fail) is just another
+                    # degenerate attempt; a cooled retry is strictly better
+                    # than propagating. onnxruntime raises
+                    # onnxruntime.capi.onnxruntime_pybind11_state.Fail (not
+                    # RuntimeError) on OOM/provider errors — catch broadly.
+                    log(f"chunk {i + 1} attempt {attempt + 1} raised "
+                        f"{type(exc).__name__}: {exc}")
                     meta = {"degenerate": True, "wind_down": False,
-                            "rms": 0.0, "rows": 0, "leaked": 0}
+                            "rms": 0.0, "rows": 0, "leaked": 0,
+                            "spectral_noise": False}
                 if not meta["degenerate"]:
                     break
                 log(f"degenerate chunk {i + 1} attempt {attempt + 1}/"
                     f"{MAX_CHUNK_RETRIES + 1} (wind_down={meta['wind_down']} "
                     f"rms={meta['rms']:.4f} rows={meta['rows']}"
-                    f" leaked={meta.get('leaked', 0)}); retrying")
+                    f" leaked={meta.get('leaked', 0)}, temp={attempt_temp:.2f}); "
+                    f"retrying")
             if meta and meta["degenerate"]:
+                any_degenerate = True
                 log(f"WARNING: chunk {i + 1} still degenerate after "
                     f"{MAX_CHUNK_RETRIES + 1} attempts (wind_down="
-                    f"{meta['wind_down']}, rms={meta['rms']:.4f}); "
+                    f"{meta['wind_down']}, rms={meta['rms']:.4f}, "
+                    f"spectral={meta.get('spectral_noise', False)}); "
                     f"using last output")
             if len(chunks) > 1:
                 log(f"chunk {i + 1}/{len(chunks)} ({len(chunk)} chars) -> "
                     f"{len(audio) / SAMPLE_RATE:.2f}s")
             parts.append(np.asarray(audio, dtype=np.float32))
 
-        audio = crossfade_concat(parts, SAMPLE_RATE)
+        if len(parts) > 1:
+            audio = crossfade_concat(parts, SAMPLE_RATE)
+        else:
+            audio = parts[0]
         if audio is None:
             raise ValueError("synthesis produced no audio")
         out = Path(output_path)
@@ -650,10 +833,11 @@ class HiggsPipeline:
         # Uniform per-scene loudness — matches the gepard/voicedesign sidecars.
         normalize_lufs(str(out))
         duration_ms = int(round(len(audio) / SAMPLE_RATE * 1000.0))
-        return duration_ms, SAMPLE_RATE, len(chunks)
+        return duration_ms, SAMPLE_RATE, len(chunks), any_degenerate
 
     def _synth_chunk(self, chunk_txt: str, ref_path, ref_text,
-                     temperature: float, top_k: int, max_new_tokens: int):
+                     temperature: float, top_k: int, max_new_tokens: int,
+                     top_p: float | None = None):
         """Synthesize one chunk. Returns (audio float32 [N], meta dict).
 
         meta: {"degenerate": bool, "wind_down": bool, "rows": int, "rms": float}
@@ -718,7 +902,7 @@ class HiggsPipeline:
             l = np.asarray(logits)[0, 0]                              # [8,1026]
             codes = []
             for k in range(NUM_CODEBOOKS):
-                c = sample_from_logits(l[k], temperature, top_k)
+                c = sample_from_logits(l[k], temperature, top_k, top_p)
                 codes.append(int(c))
             # --- reference sampler state machine (pure helper) ---
             codes, delay_count, eoc_countdown, done = sampler_step(
@@ -747,6 +931,26 @@ class HiggsPipeline:
             emb = self.audio_embed.run(None, {"codes": new_codes})[0].astype(self.llm_dtype)
             cur = np.concatenate([cur, emb], axis=1)
 
+        # -- cut-at-end recovery (finish-without-EOC) -------------------------
+        # The most common failure on LONG draws: the model reads the WHOLE
+        # text correctly but never samples cb0 EOC, then loops on the final
+        # phoneme (sweep-verified: the guard fired at rows 223-279 for a
+        # 28-word scene whose clean draws end at 248-308). If the guard fired
+        # at >= 85% of the expected word-based row count, the speech is
+        # COMPLETE — cut the looping tail and accept the draw instead of
+        # wasting retries (and falling back to a 600-row rambling draw).
+        if guard_fired and len(delayed_rows) >= int(
+                len(chunk_txt.split()) * ROWS_PER_WORD_EST * 0.85):
+            expected = int(len(chunk_txt.split()) * ROWS_PER_WORD_EST)
+            keep = len(delayed_rows) - REPEAT_BREAK_AFTER
+            if keep >= NUM_CODEBOOKS + 2:
+                log(f"guard fired at natural end ({len(delayed_rows)} rows "
+                    f"vs ~{expected} expected) — cutting looping tail, "
+                    f"accepting complete draw")
+                delayed_rows = delayed_rows[:keep]
+                wind_down = True
+                guard_fired = False
+
         # -- de-delay (fixed geometry, reference-exact) + codec decode -------
         if len(delayed_rows) < NUM_CODEBOOKS:
             raise RuntimeError(
@@ -770,16 +974,24 @@ class HiggsPipeline:
         wave = self.audio_tokenizer.run(None, {"audio_codes": codes_mat})[0]
         audio = np.asarray(wave).reshape(-1)
         rms = float(np.sqrt((audio ** 2).mean())) if audio.size else 0.0
+        # SPECTRAL-HEALTH CHECK: a draw can terminate cleanly (wind-down ran,
+        # no guard, no leaks, non-silent RMS) yet still be broadband noise —
+        # the AR model occasionally locks onto a hiss pattern whose vectors
+        # vary enough to dodge the identical-vector repetition guard. Detect
+        # it by zero-crossing rate + low-frequency energy ratio.
+        spectral_noise = spectral_noise_check(audio, SAMPLE_RATE)
         # Degenerate = the sampler never ran its EOC wind-down (cap hit or
-        # guard fired), the codec would see special ids, OR the waveform is
-        # dead-air silence.
-        degenerate = (not wind_down) or guard_fired or leaked > 0 or rms < SILENCE_RMS
+        # guard fired) AND the draw wasn't recovered by the cut-at-end path,
+        # the codec would see special ids, the waveform is dead-air silence,
+        # OR the draw is spectrally broadband noise.
+        degenerate = (not wind_down) or guard_fired or leaked > 0 or rms < SILENCE_RMS or spectral_noise
         meta = {
             "degenerate": degenerate,
             "wind_down": wind_down,
             "rows": len(delayed_rows),
             "rms": rms,
             "leaked": leaked,
+            "spectral_noise": spectral_noise,
         }
         return audio, meta
 
@@ -884,7 +1096,7 @@ def handle_synth(req):
     if not text or not output_path:
         raise ValueError("synth requires text, output_path")
     pipe = get_pipeline()
-    duration_ms, sr, chunks = pipe.synth(
+    duration_ms, sr, chunks, degenerate_any = pipe.synth(
         text,
         output_path=output_path,
         voice=req.get("voice") or None,
@@ -893,11 +1105,24 @@ def handle_synth(req):
         emote=req.get("emote") or req.get("emotion") or None,
         instruct=req.get("instruct") or None,
         default_speed=req.get("default_speed"),
+        pitch=req.get("pitch"),
+        pause_ms=req.get("pause_ms"),
+        control_tags=req.get("control_tags") or None,
+        chunking=req.get("chunking") or None,
         temperature=req.get("temperature"),
         top_k=req.get("top_k"),
+        top_p=req.get("top_p"),
         max_new_tokens=req.get("max_new_tokens"),
     )
     resp = {"status": "ok", "duration_ms": duration_ms, "sample_rate": sr, "chunks": chunks}
+    if degenerate_any:
+        # The draw(s) never recovered after cooled retries — the last output
+        # shipped, but the caller MUST surface this (tools.rs logs a loud
+        # warning; agents should re-audit the scene or lower temperature).
+        resp["status"] = "warning"
+        resp["warning"] = ("one or more chunks still degenerate after all retries; "
+                            "last output shipped — re-audit the scene")
+        resp["degenerate"] = True
     if req.get("emote"):
         resp["emote"] = req["emote"]
     return resp

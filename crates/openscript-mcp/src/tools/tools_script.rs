@@ -237,8 +237,11 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "properties": {
                     "id": {"type": "string", "description": "Unique scene ID. Auto-generated if omitted."},
                     "speaker": {"type": "string", "description": "Speaker ID (must match a key in speakers)."},
-                    "text": {"type": "string", "description": "The spoken text for this scene."},                    "emote": {"type": ["string", "null"], "description": "Emotion/emote for this scene (e.g. 'happy', 'angry', 'whisper', 'thinking'). Selects the speaker's emotion-take (tonality template) at synthesis when the voice profile registered one; also feeds sticker/GIPHY reaction search. Free-form; falls back to the base voice when no take matches."}
-,
+                    "text": {"type": "string", "description": "The spoken text for this scene."},                    "emote": {"type": ["string", "null"], "description": "Emotion/emote for this scene (e.g. 'happy', 'angry', 'whisper', 'thinking'). Selects the speaker's emotion-take (tonality template) at synthesis when the voice profile registered one; also feeds sticker/GIPHY reaction search. For higgs voices, maps to inline emotion/style/sfx control tags. Free-form; falls back to the base voice when no take matches."},
+                    "tone": {"type": ["string", "null"], "description": "Natural-language delivery direction for this line (e.g. 'low gravelly whisper, slow deliberate pace'). VoiceDesign receives it verbatim; higgs scans it for delivery keywords (whisper/shout/sing/expressive/flat) and maps them to style/prosody control tags."},
+                    "control_tags": {"type": ["string", "null"], "description": "RAW control-tag passthrough for engines with inline control tokens (higgs: emotion/style/sfx/prosody, 43 tags). Prepended verbatim to the line, e.g. \"<|prosody:pause|> mid, <|sfx:laughter|>Haha\". Only the engine's recognized tags are valid."},
+                    "speed": {"type": ["number", "null"], "description": "Per-scene speech speed multiplier (overrides tts.default_speed). For higgs, values >=1.08 / <=0.92 emit prosody speed tags (natural pacing); neutral-band values fall back to ffmpeg."},
+                    "pitch": {"type": ["number", "null"], "description": "Per-scene pitch multiplier (overrides tts.default_pitch). For higgs, <=0.9 / >=1.1 emit prosody pitch tags."},
                     "background": {"type": ["string", "null"], "description": "Override background for this scene (preset name or null for auto)."},
                     "duration_override_ms": {"type": ["integer", "null"], "description": "Override scene duration in milliseconds. Null = use TTS duration."},
                     "duration_seconds": {"type": ["number", "null"], "description": "Override scene duration in SECONDS. Null = use TTS duration. If both this and duration_override_ms are set, duration_override_ms wins."},
@@ -665,6 +668,7 @@ pub(crate) async fn handle_script_generate_voices(
             "wav",
             scene.emote.as_deref(),
             scene.tone.as_deref(),
+            scene.control_tags.as_deref(),
             scene_temperature,
             spec.tts.default_top_k,
             None, // top_p

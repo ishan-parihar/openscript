@@ -79,9 +79,29 @@ pub struct HiggsSynthParams {
     /// Transcript of the reference clip (voice cloning prompt).
     pub ref_text: Option<String>,
     /// Script-level default speed — selects a `<|prosody:speed_*|>` tag.
+    /// Unlike gepard/audio8 (post-hoc ffmpeg atempo), higgs applies pacing
+    /// NATURALLY via its prosody control tags — this is the correct channel.
     pub default_speed: Option<f64>,
+    /// Script-level pitch multiplier — selects `<|prosody:pitch_low|>` /
+    /// `<|prosody:pitch_high|>` instead of ffmpeg rubber-banding.
+    pub pitch: Option<f64>,
+    /// Trailing pause in ms after the line — emits an inline
+    /// `<|prosody:pause|>` / `<|prosody:long_pause|>` tag.
+    pub pause_ms: Option<i64>,
+    /// RAW Higgs control-tag passthrough (e.g. "<|prosody:pause|> mid," or
+    /// "<|sfx:cough|>Ahem,") prepended verbatim — for inline effects the
+    /// structured fields don't express. Only the 43 model tags are valid;
+    /// anything else gets read aloud.
+    pub control_tags: Option<String>,
+    /// Chunking strategy: "one_shot" (canonical — whole line, one draw),
+    /// "sentence" (legacy sentence chunking), "auto" (default; one_shot up
+    /// to a context-budget guard, else sentence).
+    pub chunking: Option<String>,
     pub temperature: Option<f64>,
     pub top_k: Option<u32>,
+    /// top-p nucleus sampling (sglang-omni passthrough; None = off, pure
+    /// top-k). 0.9 matches the reference's default when smoothing is wanted.
+    pub top_p: Option<f64>,
     pub max_new_tokens: Option<u32>,
 }
 
@@ -103,9 +123,19 @@ struct SynthRequest<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     default_speed: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pitch: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pause_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    control_tags: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    chunking: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_k: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_new_tokens: Option<u32>,
 }
@@ -130,6 +160,12 @@ struct SidecarResponse {
     chunks: u32,
     #[serde(default)]
     error: String,
+    /// Set when a chunk was still degenerate after all cooled retries — the
+    /// sidecar shipped the last output but the caller must surface it.
+    #[serde(default)]
+    degenerate: bool,
+    #[serde(default)]
+    warning: String,
 }
 
 impl Sidecar {
@@ -214,19 +250,22 @@ impl Sidecar {
 
     /// Synthesize `text` with the registered `voice` (or no voice = model's
     /// zero-shot voice), writing WAV to `output_path`. Returns
-    /// (duration_ms, sample_rate, chunk_count).
-    pub fn synth(&mut self, text: &str, voice: Option<&str>, output_path: &str) -> Result<(i64, u32, u32), SidecarFailure> {
+    /// (duration_ms, sample_rate, chunk_count, degenerate_any).
+    pub fn synth(&mut self, text: &str, voice: Option<&str>, output_path: &str) -> Result<(i64, u32, u32, bool), SidecarFailure> {
         self.synth_params(text, voice, output_path, &HiggsSynthParams::default())
     }
 
     /// Synthesize with per-request tonality knobs (emote, instruct, sampling).
+    /// Returns (duration_ms, sample_rate, chunk_count, degenerate_any);
+    /// `degenerate_any` is true when the sidecar shipped a still-degenerate
+    /// draw after all cooled retries — the caller must log it loudly.
     pub fn synth_params(
         &mut self,
         text: &str,
         voice: Option<&str>,
         output_path: &str,
         params: &HiggsSynthParams,
-    ) -> Result<(i64, u32, u32), SidecarFailure> {
+    ) -> Result<(i64, u32, u32, bool), SidecarFailure> {
         let req = SynthRequest {
             op: "synth",
             text,
@@ -237,14 +276,26 @@ impl Sidecar {
             ref_audio: params.ref_audio.as_deref(),
             ref_text: params.ref_text.as_deref(),
             default_speed: params.default_speed,
+            pitch: params.pitch,
+            pause_ms: params.pause_ms,
+            control_tags: params.control_tags.as_deref(),
+            chunking: params.chunking.as_deref(),
             temperature: params.temperature,
             top_k: params.top_k,
+            top_p: params.top_p,
             max_new_tokens: params.max_new_tokens,
         };
         let json = serde_json::to_string(&req)
             .map_err(|e| SidecarFailure::Transport(format!("Failed to serialize higgs synth request: {}", e)))?;
         let resp = self.roundtrip(json)?;
-        Ok((resp.duration_ms, resp.sample_rate, resp.chunks))
+        if resp.degenerate {
+            tracing::warn!(
+                "[tts/higgs] degraded draw shipped for scene ({}) — {}",
+                text.chars().take(60).collect::<String>(),
+                if resp.warning.is_empty() { "all cooled retries failed; last output shipped" } else { &resp.warning }
+            );
+        }
+        Ok((resp.duration_ms, resp.sample_rate, resp.chunks, resp.degenerate))
     }
 
     /// Register a reference voice: `name` + reference WAV + transcript.
@@ -338,12 +389,12 @@ fn with_sidecar<T>(
 }
 
 /// Synthesize with a higgs voice clone (or zero-shot voice when `voice` is
-/// None). Returns (duration_ms, sample_rate, chunk_count).
+/// None). Returns (duration_ms, sample_rate, chunk_count, degenerate_any).
 pub fn higgs_synthesize(
     text: &str,
     voice: Option<&str>,
     output_path: &str,
-) -> Result<(i64, u32, u32), String> {
+) -> Result<(i64, u32, u32, bool), String> {
     with_sidecar(|s| s.synth(text, voice, output_path))
 }
 
@@ -353,7 +404,7 @@ pub fn higgs_synthesize_params(
     voice: Option<&str>,
     output_path: &str,
     params: &HiggsSynthParams,
-) -> Result<(i64, u32, u32), String> {
+) -> Result<(i64, u32, u32, bool), String> {
     with_sidecar(|s| s.synth_params(text, voice, output_path, params))
 }
 

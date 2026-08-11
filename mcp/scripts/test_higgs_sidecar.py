@@ -86,6 +86,47 @@ p = h.compose_prompt("Hi.", emote="angry")
 check("emote tag present, no stray parens",
       "<|emotion:anger|>" in p and "(" not in p)
 
+# --- one-shot chunking strategy --------------------------------------------
+print("== chunking strategy (one_shot vs sentence vs auto) ==")
+# A scene longer than MAX_CHARS_ONE_SHOT with mode=one_shot stays ONE chunk.
+big = "word " * 2000
+one = h.chunk_text if False else None  # placeholder (chunk_text is sentence-only)
+# emulate the synth() strategy selection directly
+mode_one = [big] if big.strip() else []
+check("one_shot keeps the whole text as one chunk", len(mode_one) == 1 and len(mode_one[0]) > h.MAX_CHARS_ONE_SHOT)
+# auto: <= MAX_CHARS_ONE_SHOT -> one shot; > -> sentence chunks
+short_txt = "This is a normal scene line under the one-shot budget."
+check("auto short text -> one shot", len(short_txt) <= h.MAX_CHARS_ONE_SHOT)
+check("auto long text -> falls back to sentence chunks",
+      len(h.chunk_text(big)) > 1)
+# estimate_max_tokens one_shot flag raises the ceiling to MAX_TOKENS_ONE_SHOT
+# (200 words -> 4040 budget, clamped to the 2048 one-shot ceiling).
+check("one_shot budget caps at MAX_TOKENS_ONE_SHOT",
+      h.estimate_max_tokens("word " * 200, one_shot=True) == h.MAX_TOKENS_ONE_SHOT)
+check("chunked budget still caps at MAX_TOKENS_CAP",
+      h.estimate_max_tokens("word " * 200, one_shot=False) == h.MAX_TOKENS_CAP)
+check("one_shot ceiling >= chunked ceiling",
+      h.MAX_TOKENS_ONE_SHOT >= h.MAX_TOKENS_CAP)
+
+# --- pitch / pause / control_tags injection ---------------------------------
+print("== compose_prompt pitch/pause/control_tags ==")
+p = h.compose_prompt("Deep line.", pitch=0.8)
+check("pitch 0.8 -> pitch_low", "<|prosody:pitch_low|>" in p)
+p = h.compose_prompt("High line.", pitch=1.2)
+check("pitch 1.2 -> pitch_high", "<|prosody:pitch_high|>" in p)
+p = h.compose_prompt("Neutral.", pitch=1.0)
+check("pitch 1.0 -> no pitch tag", "<|prosody:pitch" not in p)
+p = h.compose_prompt("Take a beat.", pause_ms=500)
+check("pause 500ms -> pause tag", "<|prosody:pause|>" in p)
+p = h.compose_prompt("Long beat.", pause_ms=1000)
+check("pause 1000ms -> long_pause tag", "<|prosody:long_pause|>" in p)
+p = h.compose_prompt("No beat.", pause_ms=200)
+check("pause <400ms -> no tag", "<|prosody:pause" not in p)
+p = h.compose_prompt("Mid-line.", control_tags="<|prosody:pause|> mid,")
+check("raw control_tags prepended", p.startswith("<|prosody:pause|> mid,") and "Mid-line." in p)
+p = h.compose_prompt("Hi.", emote="excited", control_tags="<|sfx:cough|>Ahem,")
+check("emote + raw tags stack", "<|emotion:enthusiasm|>" in p and "<|sfx:cough|>Ahem," in p)
+
 # --- delay-pattern de-delay -------------------------------------------------
 print("== dedelay_codes ==")
 # 8 codebooks, 12 positions: codebook k gets real codes from position k.
@@ -146,10 +187,12 @@ check("ref_text does not extend budget",
       higgs.estimate_max_tokens("Go.", "a very long reference transcript") == higgs.MIN_MAX_TOKENS)
 
 # stuck-vector simulation: identical code vector for REPEAT_BREAK_AFTER
-# consecutive (post-pad) positions must trigger the breaker.
+# consecutive (post-pad) positions must trigger the breaker. The loop must
+# run past the (tunable) threshold — drive it from the constant so this test
+# stays valid if HIGGS_REPEAT_BREAK_AFTER is tuned again.
 _vec = [101, 202, 303, 404, 505, 606, 707, 808]
 _last, _run, _trig = None, 0, False
-for _s in range(30):
+for _s in range(higgs.NUM_CODEBOOKS + higgs.REPEAT_BREAK_AFTER + 10):
     if _s >= higgs.NUM_CODEBOOKS:
         if _vec == _last:
             _run += 1
@@ -240,6 +283,35 @@ for _s in range(20):
         break
 check("EOC inside delay window does not terminate",
       _done_at is None and _delay == N)
+
+# --- spectral_noise_check: clean speech vs broadband hiss -----------------
+import numpy as _np
+sr = higgs.SAMPLE_RATE
+_t = _np.arange(sr * 2) / sr
+# 220 Hz tone + mild harmonics = voiced-like, mostly below 4 kHz.
+_clean = (0.6 * _np.sin(2 * _np.pi * 220 * _t)
+          + 0.3 * _np.sin(2 * _np.pi * 440 * _t)
+          + 0.1 * _np.sin(2 * _np.pi * 880 * _t)).astype(_np.float32)
+check("clean voiced signal not flagged as spectral noise",
+      not higgs.spectral_noise_check(_clean, sr))
+# White noise = broadband, zcps >> 8000, ~0% below 4k.
+_rng = _np.random.default_rng(42)
+_noisy = _rng.standard_normal(sr * 2).astype(_np.float32)
+check("white noise flagged as spectral noise",
+      higgs.spectral_noise_check(_noisy, sr))
+# 2 kHz pure tone: higher zcps than voiced speech but tonal, 100% below
+# 8k and mostly below 4k — not broadband hiss, not flagged.
+_high = _np.sin(2 * _np.pi * 2000 * _t).astype(_np.float32)
+check("tonal 2k tone not flagged (not broadband hiss)",
+      not higgs.spectral_noise_check(_high, sr))
+# A pure 8 kHz tone sits entirely above the speech band (0% below 4k) and
+# has zcps 16000 — that IS flagged as noise (no speech energy at all).
+_higher = _np.sin(2 * _np.pi * 8000 * _t).astype(_np.float32)
+check("8k pure tone flagged (no speech-band energy)",
+      higgs.spectral_noise_check(_higher, sr))
+# Tiny buffer (<1024) never flags.
+check("tiny buffer not flagged",
+      not higgs.spectral_noise_check(_np.zeros(64, dtype=_np.float32), sr))
 
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

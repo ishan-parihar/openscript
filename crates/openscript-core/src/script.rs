@@ -785,6 +785,16 @@ pub struct SceneSpec {
     #[serde(default)]
     pub tone: Option<String>,
 
+    /// RAW control-tag passthrough for engines with inline control tokens
+    /// (Higgs Audio v3: emotion/style/sfx/prosody tags, 43 total). Prepended
+    /// verbatim to the line before synthesis — e.g.
+    /// `"<|prosody:pause|> mid, <|sfx:laughter|>Haha"` for inline effects the
+    /// structured `emote`/`speed`/`pitch` fields don't express. Only the
+    /// engine's recognized tags are valid; anything else gets read aloud.
+    /// Ignored by engines without a control-tag channel.
+    #[serde(default)]
+    pub control_tags: Option<String>,
+
     /// Per-scene speech speed multiplier (overrides tts.default_speed).
     #[serde(default)]
     pub speed: Option<f64>,

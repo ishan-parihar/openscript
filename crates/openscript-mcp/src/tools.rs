@@ -2640,6 +2640,49 @@ fn build_voicedesign_instruct(
     }
 }
 
+/// Build the RAW Higgs control-tag passthrough from a scene's `tone`
+/// (natural language) + explicit `control_tags`.
+///
+/// Higgs only recognizes its 43 control tags (emotion×21, style×3, sfx×9,
+/// prosody×10) — free text is read aloud. So the tone string is scanned for
+/// delivery KEYWORDS that map 1:1 to the model's style/expressive tags
+/// (whisper/shout/sing, expressive/flat), and everything else in the tone is
+/// dropped. The scene's `control_tags` field is prepended verbatim for
+/// inline effects the keywords don't express (`<|prosody:pause|>`, sfx +
+/// onomatopoeia pairs). Returns None when nothing maps (no tags injected).
+pub(crate) fn higgs_control_tags_from(
+    tone: Option<&str>,
+    control_tags: Option<&str>,
+) -> Option<String> {
+    let mut tags: Vec<&str> = Vec::new();
+    if let Some(t) = tone {
+        let tl = t.to_lowercase();
+        if tl.contains("whisper") || tl.contains("hushed") || tl.contains("softly") {
+            tags.push("<|style:whispering|>");
+        } else if tl.contains("shout") || tl.contains("yell") || tl.contains("loud") {
+            tags.push("<|style:shouting|>");
+        } else if tl.contains("sing") || tl.contains("melody") || tl.contains("hum") {
+            tags.push("<|style:singing|>");
+        }
+        if tl.contains("expressive") || tl.contains("animated") || tl.contains("dramatic") {
+            tags.push("<|prosody:expressive_high|>");
+        } else if tl.contains("flat") || tl.contains("monotone") || tl.contains("deadpan") {
+            tags.push("<|prosody:expressive_low|>");
+        }
+    }
+    if let Some(ct) = control_tags {
+        let trimmed = ct.trim();
+        if !trimmed.is_empty() {
+            tags.push(trimmed);
+        }
+    }
+    if tags.is_empty() {
+        None
+    } else {
+        Some(tags.join(" "))
+    }
+}
+
 async fn tts_generate_routed(
     voice_profile_id: &str,
     text: &str,
@@ -2650,6 +2693,7 @@ async fn tts_generate_routed(
     format: &str,
     emotion: Option<&str>,
     tone: Option<&str>,
+    control_tags: Option<&str>,
     temperature: Option<f64>,
     top_k: Option<u32>,
     top_p: Option<f64>,
@@ -2908,27 +2952,60 @@ async fn tts_generate_routed(
         // The scene emote maps to a Higgs control tag (`<|emotion:X|>`, style,
         // or sfx) inside the sidecar. `tone` is deliberately NOT passed as
         // instruct — Higgs is control-tag-only and would read free-form
-        // delivery text aloud (CAPABILITIES.md). No emotion-take references
-        // needed either; the inline tags steer tonality per line directly.
+        // delivery text aloud (CAPABILITIES.md). Instead, delivery keywords
+        // in the tone (whisper/shout/sing) become explicit style control tags,
+        // and the scene's speed/pitch become prosody tags — the model applies
+        // pacing/pitch NATURALLY instead of ffmpeg rubber-banding. `control_tags`
+        // is a raw passthrough for inline effects (`<|prosody:pause|>`, sfx+
+        // onomatopoeia) the structured fields can't express. Chunking is
+        // one_shot by default: higgs is a conversational model (8192 context)
+        // and a single autoregressive draw keeps tonality continuous across
+        // the whole line — sentence chunking resets prosody per chunk.
+        let raw_tags = higgs_control_tags_from(tone, control_tags);
+        // Only apply ffmpeg speed/pitch post-processing when the model's
+        // prosody tags CANNOT express the value (neutral band, e.g. 1.05).
+        // Tagged values are applied naturally by the model — never double-apply.
+        let speed_tagged = (speed - 1.0).abs() > 1e-6
+            && (speed >= 1.08 || speed <= 0.92);
+        let pitch_tagged = (pitch - 1.0).abs() > 1e-6
+            && (pitch <= 0.9 || pitch >= 1.1);
         let params = openscript_tts::higgs::HiggsSynthParams {
             emote: emotion.map(|s| s.to_string()),
             instruct: None,
             ref_audio: None,
             ref_text: None,
-            default_speed: None,
+            default_speed: if (speed - 1.0).abs() > 1e-6 { Some(speed) } else { None },
+            pitch: if (pitch - 1.0).abs() > 1e-6 { Some(pitch) } else { None },
+            pause_ms: None,
+            control_tags: raw_tags,
+            chunking: Some("one_shot".to_string()),
             temperature,
             top_k,
+            top_p,
             max_new_tokens: None,
         };
-        let (mut duration_ms, sample_rate, _chunks) = openscript_tts::higgs::higgs_synthesize_params(
-            text,
-            Some(&profile.id),
-            output_path,
-            &params,
-        )
-        .map_err(|e| ToolError::Tts(e))?;
-        if (speed - 1.0).abs() > 1e-6 || (pitch - 1.0).abs() > 1e-6 {
-            match apply_speed_pitch(output_path, speed, pitch) {
+        let (mut duration_ms, sample_rate, _chunks, degenerate_any) =
+            openscript_tts::higgs::higgs_synthesize_params(
+                text,
+                Some(&profile.id),
+                output_path,
+                &params,
+            )
+            .map_err(|e| ToolError::Tts(e))?;
+        if degenerate_any {
+            tracing::warn!(
+                "[tts] higgs shipped a still-degenerate draw for scene ({} chars) — \
+                 all cooled retries failed; output may be noisy/truncated",
+                text.chars().count()
+            );
+        }
+        // Post-hoc ffmpeg correction ONLY for values the tags can't express
+        // (neutral-band fine tuning). Tagged speed/pitch were applied by the
+        // model itself — correcting them again would double the effect.
+        let ffmpeg_speed = if speed_tagged { 1.0 } else { speed };
+        let ffmpeg_pitch = if pitch_tagged { 1.0 } else { pitch };
+        if (ffmpeg_speed - 1.0).abs() > 1e-6 || (ffmpeg_pitch - 1.0).abs() > 1e-6 {
+            match apply_speed_pitch(output_path, ffmpeg_speed, ffmpeg_pitch) {
                 Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
                 Ok(_) => {}
                 Err(e) => {
@@ -3270,6 +3347,7 @@ async fn generate_commentary_segment(
         "wav",
         None, // commentary segments carry no scene emotion
         None, // nor tone
+        None, // nor control tags
         None, // temperature: engine default (expressive 0.7)
         None, // top_k
         None, // top_p
@@ -7255,6 +7333,69 @@ mod tests {
     #[test]
     fn test_build_speed_pitch_filter_no_op_when_defaults() {
         assert_eq!(build_speed_pitch_filter(1.0, 1.0, 44100), "", "1.0/1.0 must be a no-op");
+    }
+
+    // ---------------------------------------------------------------------
+    // Higgs control-tag injection (Phase: higgs control tokens) — tone
+    // keyword scan + raw control_tags passthrough. Higgs only recognizes its
+    // 43 tags; free text would be read aloud, so the tone scan is a strict
+    // keyword allowlist and everything else is dropped.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_higgs_control_tags_whisper_tone_maps_to_style_tag() {
+        let tags = higgs_control_tags_from(Some("low gravelly whisper, hushed"), None);
+        let t = tags.unwrap_or_default();
+        assert!(t.contains("<|style:whispering|>"), "got {t}");
+    }
+
+    #[test]
+    fn test_higgs_control_tags_shout_and_flat_maps_style_plus_expressive() {
+        let tags = higgs_control_tags_from(Some("loud shout, deadpan monotone"), None);
+        let t = tags.unwrap_or_default();
+        assert!(t.contains("<|style:shouting|>"), "got {t}");
+        assert!(t.contains("<|prosody:expressive_low|>"), "got {t}");
+    }
+
+    #[test]
+    fn test_higgs_control_tags_singing_tone() {
+        let tags = higgs_control_tags_from(Some("sing it like a lullaby"), None);
+        let t = tags.unwrap_or_default();
+        assert!(t.contains("<|style:singing|>"), "got {t}");
+    }
+
+    #[test]
+    fn test_higgs_control_tags_raw_passthrough_prepended() {
+        let tags = higgs_control_tags_from(None, Some("<|prosody:pause|> mid,")).unwrap();
+        assert_eq!(tags, "<|prosody:pause|> mid,");
+    }
+
+    #[test]
+    fn test_higgs_control_tags_tone_plus_raw_stack() {
+        let tags = higgs_control_tags_from(
+            Some("expressive and dramatic"),
+            Some("<|sfx:cough|>Ahem,"),
+        ).unwrap();
+        assert!(tags.contains("<|prosody:expressive_high|>"));
+        assert!(tags.contains("<|sfx:cough|>Ahem,"));
+    }
+
+    #[test]
+    fn test_higgs_control_tags_no_match_returns_none() {
+        assert!(higgs_control_tags_from(Some("clear and natural"), None).is_none());
+        assert!(higgs_control_tags_from(None, None).is_none());
+    }
+
+    #[test]
+    fn test_higgs_control_tags_free_text_not_injected() {
+        // "whisper this in a low gravelly voice" maps ONLY the whisper
+        // keyword to a tag; the rest must NOT be emitted verbatim (it would
+        // be spoken aloud).
+        let tags = higgs_control_tags_from(Some("whisper this in a low gravelly voice"), None);
+        let t = tags.unwrap_or_default();
+        assert!(t.contains("<|style:whispering|>"));
+        assert!(!t.contains("low gravelly"), "free text leaked: {t}");
+        assert!(!t.contains("whisper this"), "free text leaked: {t}");
     }
 
     // ---------------------------------------------------------------------
