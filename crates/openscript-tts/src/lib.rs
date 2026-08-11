@@ -1,6 +1,7 @@
 pub mod audio8;
 pub mod client;
 pub mod gepard;
+pub mod higgs;
 pub mod profiles;
 pub mod voicedesign;
 

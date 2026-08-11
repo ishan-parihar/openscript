@@ -89,8 +89,9 @@ pub struct OpenScriptConfig {
 
     /// TTS engine defaults for script→video voice generation.
     /// `default_backend` picks the engine family (kokoro | audio8 | gepard |
-    /// sidecar); `default_voice` optionally pins a registered voice profile
-    /// that wins when a script's speaker uses the bare voice id "default".
+    /// voicedesign | higgs | sidecar); `default_voice` optionally pins a
+    /// registered voice profile that wins when a script's speaker uses the
+    /// bare voice id "default".
     #[serde(default)]
     pub tts: TtsConfig,
 
@@ -133,6 +134,9 @@ pub struct TtsFeatures {
     /// Qwen3 VoiceDesign character voices (int4 model ~4.3GB + .venv-voicedesign)
     #[serde(default = "default_true")]
     pub voicedesign: bool,
+    /// Higgs Audio v3 expressive TTS (4B ONNX GenAI int4, ~3.6GB model + .venv-higgs)
+    #[serde(default = "default_true")]
+    pub higgs: bool,
     /// Remote voicebox sidecar at OPENSCRIPT_TTS_URL
     #[serde(default = "default_true")]
     pub sidecar: bool,
@@ -145,6 +149,7 @@ impl Default for TtsFeatures {
             audio8: true,
             gepard: true,
             voicedesign: true,
+            higgs: true,
             sidecar: true,
         }
     }
@@ -157,6 +162,7 @@ impl TtsFeatures {
             "audio8" => self.audio8,
             "gepard" => self.gepard,
             "voicedesign" => self.voicedesign,
+            "higgs" => self.higgs,
             "sidecar" => self.sidecar,
             _ => true,
         }
@@ -330,6 +336,7 @@ impl Default for FeaturesConfig {
                 audio8: true,
                 gepard: true,
                 voicedesign: true,
+                higgs: true,
                 sidecar: true,
             },
             transcription: TranscriptionFeatures {
@@ -460,7 +467,7 @@ pub struct PathsConfig {
 pub struct TtsConfig {
     /// Default TTS backend for script.to_video when the script omits
     /// `tts.backend`. One of: kokoro (default), audio8, gepard, voicedesign,
-    /// sidecar.
+    /// higgs, sidecar.
     #[serde(default = "default_tts_backend")]
     pub default_backend: String,
     /// Default voice profile id (e.g. "ishan_gepard"). When set, a speaker
@@ -804,7 +811,7 @@ pub fn feature_enabled(category: &str, name: &str) -> bool {
     config().features.get(category, name)
 }
 
-/// Typed sugar: TTS engine toggle (kokoro | audio8 | gepard | voicedesign | sidecar).
+/// Typed sugar: TTS engine toggle (kokoro | audio8 | gepard | voicedesign | higgs | sidecar).
 pub fn feature_tts(engine: &str) -> bool {
     feature_enabled("tts", engine)
 }
@@ -864,6 +871,7 @@ pub fn feature_flags_view() -> Value {
             "audio8": feature_entry("tts", "audio8", "bash scripts/setup_audio8.sh (downloads int4 model ~1GB + .venv-audio8)"),
             "gepard": feature_entry("tts", "gepard", "bash scripts/setup_gepard.sh (CUDA torch + NeMo + .venv-gepard)"),
             "voicedesign": feature_entry("tts", "voicedesign", "bash scripts/setup_voicedesign.sh (int4 model ~4.3GB + .venv-voicedesign)"),
+            "higgs": feature_entry("tts", "higgs", "bash scripts/setup_higgs.sh (downloads cuda_int4 model ~3.6GB + .venv-higgs)"),
             "sidecar": feature_entry("tts", "sidecar", "Run the voicebox sidecar at OPENSCRIPT_TTS_URL"),
         },
         "transcription": {

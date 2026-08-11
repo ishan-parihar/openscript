@@ -186,7 +186,9 @@ pub struct TtsSpec {
     /// clone, ONNX INT4), "gepard" (high-quality native-English clone),
     /// "voicedesign" (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT
     /// natural-language-instruction synthesis, per-line emotion/tonality, NO
-    /// cloning), "sidecar" (faster-qwen3-tts). This is the ENGINE SELECTION
+    /// cloning), "higgs" (Higgs Audio v3 4B ONNX GenAI int4 — 100+ languages,
+    /// zero-shot voice cloning + inline emotion/prosody/style/sfx control
+    /// tags), "sidecar" (faster-qwen3-tts). This is the ENGINE SELECTION
     /// for voice generation. Note: a speaker whose `voice` references a
     /// registered profile (e.g. "air_analyst") routes by the profile's own
     /// provider field, which always wins — a character voice registered as a
@@ -1083,7 +1085,7 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
     }
 
     // Validate TTS backend
-    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "gepard", "voicedesign"];
+    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "gepard", "voicedesign", "higgs"];
     if !valid_tts_backends.contains(&spec.tts.backend.as_str()) {
         errors.push(ScriptValidationError {
             field: "tts.backend".into(),

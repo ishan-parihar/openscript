@@ -36,8 +36,10 @@ __pycache__/
 .venv/
 .venv-gepard/
 .venv-voicedesign/
+.venv-higgs/
 # Gepard TTS registered voice clones (reference WAVs per voice)
 mcp/assets/gepard/voices/
+mcp/assets/higgs/
 # Vendored gepard-inference git metadata (source is committed; .git is not)
 third_party/gepard-inference/.git/
 

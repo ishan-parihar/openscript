@@ -96,11 +96,11 @@ script.generate_voices → script.build_captions → background.fetch → script
 
 1. **Speaker voice pin** — a speaker whose `voice` references a registered
    profile (e.g. `"ishan_gepard"`, `"air_analyst"`) routes by that profile's
-   own `provider` field (gepard / audio8 / voicedesign / kokoro / sidecar).
+   own `provider` field (gepard / audio8 / voicedesign / higgs / kokoro / sidecar).
    This always wins — a `voicedesign`-provider character voice synthesizes
    DIRECTLY on the Qwen3 VoiceDesign model even if `tts.backend` says otherwise.
 2. **Script `tts.backend`** — the engine default for the whole video
-   (`kokoro` | `audio8` | `gepard` | `voicedesign` | `sidecar`).
+   (`kokoro` | `audio8` | `gepard` | `voicedesign` | `higgs` | `sidecar`).
 3. **Script `tts.voice`** — a default voice profile id; a speaker whose voice
    is the literal string `"default"` resolves to it.
 4. **User config** — `~/.openscript/config.json` → `tts.default_backend` and
@@ -140,6 +140,32 @@ Official workflow for a stable comic cast: VoiceDesign designs the persona
 (→ register as a `voicedesign` profile as above) → each script line is generated
 BY the voice-design model with the character's personality + the scene's
 emotion/tone — the voice stays locked while every line gets its own delivery.
+
+### Expressive 100+ language TTS (`higgs` — Higgs Audio v3, 4B ONNX GenAI int4)
+
+`provider: higgs` / `tts.backend: "higgs"` runs the self-contained
+`onnx-community/higgs-audio-v3-tts-4b` `cuda_int4` export (~3.6 GB,
+provisioned by `bash scripts/setup_higgs.sh` → `.venv-higgs`). Higgs is a 4B
+conversational TTS with **100+ languages, zero-shot voice cloning, and inline
+control tokens** for emotion / prosody / style / sfx (24 kHz, 25 fps,
+8-codebook Higgs v2 codec). The int4 llm_decoder is a plain ONNX QDQ graph
+run under ordinary onnxruntime with a manual KV-cache loop.
+
+- **Voice cloning**: `voice.profile.add { profile_id, ref_audio, ref_text, provider: "higgs" }`
+  — the reference is encoded into the prompt (`<|tts|> <|ref_text|> tok(ref)
+  <|ref_audio|> [codes] <|text|> tok(text) <|audio|>`), so `tts.generate` /
+  `script.generate_voices` speak with the cloned voice.
+- **Per-line emotion**: the scene `emote` maps to a real Higgs control tag
+  (`<|emotion:anger|>`, `<|style:whispering|>`, `<|sfx:laughter|>`, …) — 21
+  emotions, 3 styles, 9 sfx, plus prosody speed/pitch/pause tags. Free-form
+  `tone`/instruct text is deliberately NOT injected (Higgs reads unrecognized
+  text aloud).
+- **Languages**: Hindi / Hinglish, English, Chinese, Spanish, French, German,
+  Arabic, Bengali, Tamil, Telugu, Marathi, Gujarati, Urdu, Punjabi, and 90+
+  more (no language flag — multilingual text tokenizes natively).
+- `system.capabilities` reports `higgs.available` (sidecar + model present).
+- **License**: research / non-commercial (Boson Higgs Audio v3 license) —
+  monetized use requires a commercial license from Boson.
 
 ### Emotion-take presets (per-line tonality — `voice.profile.add` `emotions`)
 
@@ -483,7 +509,7 @@ Every subsystem is toggleable via `~/.openscript/config.json` →
    for one run; persist via `setup_openscript_config.sh --feature cat.name=0`).
 2. **Runtime gating** — a disabled engine/tool returns a clear error naming the
    toggle + setup command instead of a missing-dep failure. Gates today:
-   - `tts.{kokoro,audio8,gepard,voicedesign,sidecar}` — TTS router
+   - `tts.{kokoro,audio8,gepard,voicedesign,higgs,sidecar}` — TTS router
    - `transcription.hinglish_ggml` — `transcribe`
    - `media.{pexels,giphy,pixabay}` — key resolvers fail closed (handlers
      degrade to their existing "key not set" path)

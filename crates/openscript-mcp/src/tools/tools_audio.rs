@@ -355,6 +355,8 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
         && !voice_profile_id.starts_with("faster-qwen")
         && !voice_profile_id.starts_with("audio8:")
         && !voice_profile_id.starts_with("gepard:")
+        && !voice_profile_id.starts_with("voicedesign:")
+        && !voice_profile_id.starts_with("higgs:")
     {
         format!("kokoro:{}", voice_profile_id)
     } else {
@@ -875,6 +877,8 @@ pub(crate) async fn handle_voiceover_generate(
         && !voice_profile_id.starts_with("faster-qwen")
         && !voice_profile_id.starts_with("audio8:")
         && !voice_profile_id.starts_with("gepard:")
+        && !voice_profile_id.starts_with("voicedesign:")
+        && !voice_profile_id.starts_with("higgs:")
     {
         format!("kokoro:{}", voice_profile_id)
     } else {
@@ -1000,6 +1004,8 @@ pub(crate) async fn handle_tts_commentary(args: serde_json::Value) -> Result<ser
         && !voice_profile_id.starts_with("faster-qwen")
         && !voice_profile_id.starts_with("audio8:")
         && !voice_profile_id.starts_with("gepard:")
+        && !voice_profile_id.starts_with("voicedesign:")
+        && !voice_profile_id.starts_with("higgs:")
     {
         format!("kokoro:{}", voice_profile_id)
     } else {

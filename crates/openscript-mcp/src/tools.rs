@@ -395,7 +395,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "profile_id": {"type": "string", "description": "Unique identifier for this voice profile"},
                     "ref_audio": {"type": "string", "description": "Path to reference audio file (clean speech sample)"},
                     "ref_text": {"type": "string", "description": "Transcript of the reference audio"},
-                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'gepard' (high-quality native-English zero-shot cloning — Gepard 1.0 Qwen3.5 AR + NeMo NanoCodec, 22.05kHz, requires .venv-gepard via scripts/setup_gepard.sh), 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'voicedesign' (Qwen3 VoiceDesign — DIRECT NL-instruction synthesis, no cloning; profiles from voice.design / character.create carry the persona in description), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
+                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'gepard' (high-quality native-English zero-shot cloning — Gepard 1.0 Qwen3.5 AR + NeMo NanoCodec, 22.05kHz, requires .venv-gepard via scripts/setup_gepard.sh), 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'voicedesign' (Qwen3 VoiceDesign — DIRECT NL-instruction synthesis, no cloning; profiles from voice.design / character.create carry the persona in description), 'higgs' (Higgs Audio v3 4B ONNX GenAI int4 — zero-shot clone + inline emotion/prosody/style/sfx control tags, 24kHz, 100+ languages, requires .venv-higgs via scripts/setup_higgs.sh; research/non-commercial license), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
                     "mode": {"type": "string", "default": "clone", "description": "Voice mode: 'clone' for voice cloning, 'preset' for built-in voices"},
                     "model": {"type": "string", "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "description": "TTS model identifier"},
                     "language": {"type": "string", "default": "English", "description": "Voice language"},
@@ -497,7 +497,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "tts.generate",
-            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'voicedesign' (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT NL-instruction synthesis with per-line emotion/tone, no cloning; profiles from voice.design / character.create), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
+            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'voicedesign' (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT NL-instruction synthesis with per-line emotion/tone, no cloning; profiles from voice.design / character.create), 'higgs' (Higgs Audio v3 4B ONNX GenAI int4 — zero-shot clone + inline emotion/prosody tags, 24kHz, 100+ languages; FIRST higgs synth loads the ~4.5GB pipeline — a cold start, not a hang), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2889,6 +2889,58 @@ async fn tts_generate_routed(
             duration_ms,
             cached: false,
             backend: format!("voicedesign:{}hz", sample_rate),
+        });
+    }
+
+    // Higgs Audio v3 path (expressive 4B TTS — 100+ languages, zero-shot
+    // voice cloning + inline emotion/prosody/style/sfx control tags; ONNX
+    // GenAI int4 via the .venv-higgs sidecar; research/non-commercial license).
+    if profile.provider == "higgs" {
+        if !crate::config::feature_tts("higgs") {
+            return Err(ToolError::Tts(
+                "Voice profile uses the higgs (Higgs Audio v3) TTS engine, which is disabled \
+                 in the active configuration. Enable features.tts.higgs=true in \
+                 ~/.openscript/config.json (or set OPENSCRIPT_FEATURE_TTS_HIGGS=1), then run: \
+                 bash scripts/setup_higgs.sh"
+                    .to_string(),
+            ));
+        }
+        // The scene emote maps to a Higgs control tag (`<|emotion:X|>`, style,
+        // or sfx) inside the sidecar. `tone` is deliberately NOT passed as
+        // instruct — Higgs is control-tag-only and would read free-form
+        // delivery text aloud (CAPABILITIES.md). No emotion-take references
+        // needed either; the inline tags steer tonality per line directly.
+        let params = openscript_tts::higgs::HiggsSynthParams {
+            emote: emotion.map(|s| s.to_string()),
+            instruct: None,
+            ref_audio: None,
+            ref_text: None,
+            default_speed: None,
+            temperature,
+            top_k,
+            max_new_tokens: None,
+        };
+        let (mut duration_ms, sample_rate, _chunks) = openscript_tts::higgs::higgs_synthesize_params(
+            text,
+            Some(&profile.id),
+            output_path,
+            &params,
+        )
+        .map_err(|e| ToolError::Tts(e))?;
+        if (speed - 1.0).abs() > 1e-6 || (pitch - 1.0).abs() > 1e-6 {
+            match apply_speed_pitch(output_path, speed, pitch) {
+                Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("[tts] higgs speed/pitch post-processing failed: {}", e)
+                }
+            }
+        }
+        return Ok(TtsGenResult {
+            output_path: output_path.to_string(),
+            duration_ms,
+            cached: false,
+            backend: format!("higgs:{}hz", sample_rate),
         });
     }
 

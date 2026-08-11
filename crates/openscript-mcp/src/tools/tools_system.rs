@@ -152,6 +152,7 @@ pub(crate) async fn handle_system_config_set(args: serde_json::Value) -> Result<
             set_bool(tts, "audio8", &mut cfg.features.tts.audio8);
             set_bool(tts, "gepard", &mut cfg.features.tts.gepard);
             set_bool(tts, "voicedesign", &mut cfg.features.tts.voicedesign);
+            set_bool(tts, "higgs", &mut cfg.features.tts.higgs);
             set_bool(tts, "sidecar", &mut cfg.features.tts.sidecar);
         }
         if let Some(tr) = feat.get("transcription").and_then(|v| v.as_object()) {
@@ -672,8 +673,19 @@ pub(crate) async fn handle_system_capabilities(
         "sample_rate": 22050,
         "languages": ["en", "es-MX", "pt-BR", "nl"],
         "setup": "bash scripts/setup_gepard.sh (builds .venv-gepard: Python 3.12 + CUDA torch + NeMo codec + transformers 5.3.0)",
-        "note": "High-quality native-English zero-shot voice cloning (Gepard 1.0, Apache-2.0; NeMo NanoCodec under NVIDIA OML). Voice.profile.add with provider=gepard.",
-    });
+       "note": "High-quality native-English zero-shot voice cloning (Gepard 1.0, Apache-2.0; NeMo NanoCodec under NVIDIA OML). Voice.profile.add with provider=gepard.",
+   });
+   let higgs_feature_on = crate::config::feature_tts("higgs");
+   let higgs = json!({
+       "available": higgs_feature_on && openscript_tts::higgs::higgs_available(),
+       "enabled": higgs_feature_on,
+       "model": "onnx-community/higgs-audio-v3-tts-4b (cuda_int4)",
+       "voices_dir": "mcp/assets/higgs/voices",
+       "sample_rate": 24000,
+       "languages": ["en", "hi", "zh", "es", "fr", "de", "ar", "bn", "ta", "te", "mr", "gu", "ur", "pa", "ml", "kn"] ,
+       "setup": "bash scripts/setup_higgs.sh (downloads cuda_int4 model ~3.6GB + .venv-higgs)",
+       "note": "Expressive 4B TTS (Higgs Audio v3, ONNX GenAI int4): 100+ languages, zero-shot voice cloning + inline emotion/prosody/style/sfx control tags (43). Voice.profile.add with provider=higgs. Research/non-commercial license.",
+   });
 
     // VoiceDesign TTS (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4 — designs
     // NOVEL character voices from a text description, zero reference audio).
@@ -752,6 +764,7 @@ pub(crate) async fn handle_system_capabilities(
         "audio8": audio8,
         "gepard": gepard,
         "voicedesign": voicedesign,
+        "higgs": higgs,
         "transcription": transcription,
         "parakeet_align": parakeet_align,
         "whisper_align": whisper_align,
