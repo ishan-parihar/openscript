@@ -133,5 +133,48 @@ logits[42] = 100.0  # dominant code
 c = h.sample_from_logits(logits, temperature=0.5, top_k=50)
 check("dominant logit sampled", c == 42)
 
+# --- Degenerate-loop guards (estimate_max_tokens + repetition breaker) ------
+import higgs_tts_sidecar as higgs
+
+print("== degenerate-loop guards ==")
+check("5 words -> ~140 tokens", higgs.estimate_max_tokens("Real villains are never obvious.") == 140)
+check("9 words -> ~220 tokens", higgs.estimate_max_tokens("Human culture is a spiral, not a straight line.") == 220)
+check("1 word -> floored at MIN", higgs.estimate_max_tokens("Yes.") == higgs.MIN_MAX_TOKENS)
+check("empty -> floored at MIN", higgs.estimate_max_tokens("") == higgs.MIN_MAX_TOKENS)
+check("100 words -> capped at MAX", higgs.estimate_max_tokens("word " * 100) == higgs.MAX_TOKENS_CAP)
+check("ref_text does not extend budget",
+      higgs.estimate_max_tokens("Go.", "a very long reference transcript") == higgs.MIN_MAX_TOKENS)
+
+# stuck-vector simulation: identical code vector for REPEAT_BREAK_AFTER
+# consecutive (post-pad) positions must trigger the breaker.
+_vec = [101, 202, 303, 404, 505, 606, 707, 808]
+_last, _run, _trig = None, 0, False
+for _s in range(30):
+    if _s >= higgs.NUM_CODEBOOKS:
+        if _vec == _last:
+            _run += 1
+            if _run >= higgs.REPEAT_BREAK_AFTER:
+                _trig = True
+                break
+        else:
+            _run = 0
+    _last = _vec
+check("repetition guard triggers on stuck vector", _trig and _run == higgs.REPEAT_BREAK_AFTER)
+
+# varying codes must never trigger the breaker.
+_last, _run, _trig = None, 0, False
+for _s in range(40):
+    _v = list(range(_s, _s + higgs.NUM_CODEBOOKS))
+    if _s >= higgs.NUM_CODEBOOKS:
+        if _v == _last:
+            _run += 1
+            if _run >= higgs.REPEAT_BREAK_AFTER:
+                _trig = True
+                break
+        else:
+            _run = 0
+    _last = _v
+check("varying codes never trigger", not _trig)
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

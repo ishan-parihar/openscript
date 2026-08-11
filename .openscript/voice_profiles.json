@@ -63,6 +63,18 @@
     "ref_audio": "mcp/assets/audio8/ref_ishan.wav",
     "ref_text": "Society did not just neatly evolve."
   },
+  "ishan_higgs": {
+    "description": null,
+    "emotions": {},
+    "gender": "male",
+    "language": "English",
+    "mode": "clone",
+    "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "profile_id": "ishan_higgs",
+    "provider": "higgs",
+    "ref_audio": "mcp/assets/audio8/ref_ishan.wav",
+    "ref_text": "Society did not just neatly evolve. Human culture is a spiral. Real villains are never obvious. We have to see the patterns that no one wants to name."
+  },
   "kokoro_af_bella": {
     "created_at": "2026-07-04T00:00:00Z",
     "description": "Kokoro af_bella — soft American female",

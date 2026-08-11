@@ -98,6 +98,20 @@ DEFAULT_MAX_NEW_TOKENS = int(os.environ.get("HIGGS_MAX_NEW_TOKENS", "1024"))
 # beyond any scene chunk; longer scenes are split on sentence boundaries.
 MAX_CHARS_PER_CHUNK = 700
 
+# Degenerate-loop guards. The AR model can lock onto a repeated code vector
+# (a sustained tone) or keep speaking long past the prompt; with the delay
+# pattern a fresh EOC is only sampled when the model "decides" to stop, and
+# a 1024-token cap gives it ~20× the headroom a sentence actually needs.
+# We therefore (a) cap max_new_tokens proportional to the text length and
+# (b) force-terminate when the sampled code vector repeats for many
+# consecutive positions (the tone state). 15-20 tokens/word ≈ 0.6-0.8 s of
+# audio per word of headroom — generous for slow speech, tight enough to
+# never run 40 s on a 5-word line.
+MAX_TOKENS_PER_WORD = 20
+MIN_MAX_TOKENS = 96                 # ~3.8 s floor (very short lines)
+MAX_TOKENS_CAP = 768                # ~30 s hard cap per chunk
+REPEAT_BREAK_AFTER = 8              # consecutive identical code vectors => stuck
+
 # Emote -> Higgs control-tag mapping. Keys are the emotes used across the
 # content-format playbooks / script scenes; the 21 Higgs emotions + 3 styles
 # map 1:1. Unknown emotes are skipped (never degrade the text).
@@ -250,6 +264,21 @@ def compose_prompt(text: str, emote: str | None = None,
     return f"{head}{text}"
 
 
+def estimate_max_tokens(text: str, ref_text: str | None = None) -> int:
+    """Length-proportional generation budget (delay-pattern positions).
+
+    Normal speech is ~2.5 words/second ≈ 10 audio frames/word; budget
+    20 tokens/word (2× headroom for slow/expressive delivery) plus a floor,
+    capped at MAX_TOKENS_CAP. The reference transcript is fixed conditioning
+    (not generated), so it does NOT extend the budget.
+
+    Returns an int in [MIN_MAX_TOKENS, MAX_TOKENS_CAP]. Pure — unit-testable.
+    """
+    words = len([w for w in text.split() if w.strip()])
+    budget = words * MAX_TOKENS_PER_WORD + 40
+    return max(MIN_MAX_TOKENS, min(MAX_TOKENS_CAP, budget))
+
+
 def dedelay_codes(position_codes: list, num_codebooks: int = NUM_CODEBOOKS,
                   boc: int = BOC, eoc: int = EOC):
     """De-delay the per-position code vectors into a [8, T] code matrix.
@@ -355,7 +384,13 @@ class HiggsPipeline:
         self.llm_dtype = np.float16  # probed: inputs_embeds is fp16 in the graph
         self.tokenizer = Tokenizer.from_file(str(self.model_dir / "tokenizer.json"))
 
-        # Audio/text sub-models under the same ORT runtime.
+        # Transformer sub-models (cuBLAS matmuls) run on the same provider as
+        # the LLM — verified fast + stable on CUDA. The convolutional
+        # `audio_encoder` is the ONE sub-model that needs cuDNN, and
+        # cudnnCreate fails on this driver (CUDNN_STATUS_INTERNAL_ERROR at
+        # session init) while the transformer path works perfectly. It only
+        # runs ONCE per clone synth on a short reference clip, so pin it to
+        # CPU — negligible cost, avoids the cuDNN failure entirely.
         self.text_embed = ort.InferenceSession(
             str(self.model_dir / "text_embed.onnx"), sess_opts, providers=providers)
         self.audio_embed = ort.InferenceSession(
@@ -365,8 +400,11 @@ class HiggsPipeline:
         self.audio_tokenizer = ort.InferenceSession(
             str(self.model_dir / "audio_tokenizer.onnx"), sess_opts, providers=providers)
         self.audio_encoder = ort.InferenceSession(
-            str(self.model_dir / "audio_encoder.onnx"), sess_opts, providers=providers)
-
+            str(self.model_dir / "audio_encoder.onnx"), sess_opts,
+            providers=["CPUExecutionProvider"])
+        if self.device == "cuda":
+            log("audio_encoder pinned to CPU (cuDNN unavailable on this driver); "
+                "transformer path stays on CUDA")
         # Special prompt tokens + codec markers.
         for tok in ("<|tts|>", "<|text|>", "<|audio|>", "<|ref_text|>", "<|ref_audio|>"):
             tid = self.tokenizer.token_to_id(tok)
@@ -435,6 +473,14 @@ class HiggsPipeline:
         temperature = DEFAULT_TEMPERATURE if temperature is None else temperature
         top_k = DEFAULT_TOP_K if top_k is None else top_k
         max_new_tokens = DEFAULT_MAX_NEW_TOKENS if max_new_tokens is None else max_new_tokens
+        # Never let a scene run 20× past its text — scale the budget to the
+        # chunk length (ignoring control tags in the word count).
+        plain_words = " ".join(chunk_text(text)).split()
+        if max_new_tokens > estimate_max_tokens(" ".join(plain_words)):
+            capped = estimate_max_tokens(" ".join(plain_words))
+            log(f"capping max_new_tokens {max_new_tokens} -> {capped} "
+                f"({len(plain_words)} words; degenerate-loop guard)")
+            max_new_tokens = capped
 
         chunks = chunk_text(text)
         if not chunks:
@@ -517,6 +563,8 @@ class HiggsPipeline:
         position_codes = []
         eoc_counts = 0
         cur = full
+        last_codes = None
+        repeat_run = 0
         for step in range(max_new_tokens):
             hidden, present = self._llm_step(cur, past)
             past = present
@@ -538,6 +586,19 @@ class HiggsPipeline:
             position_codes.append(codes)
             if eoc_counts >= NUM_CODEBOOKS:
                 break
+            # Degenerate-loop guard: if the full code vector is identical for
+            # REPEAT_BREAK_AFTER consecutive positions, the model is stuck in
+            # a sustained-tone state and will never sample EOC — terminate.
+            if step >= NUM_CODEBOOKS:
+                if codes == last_codes:
+                    repeat_run += 1
+                    if repeat_run >= REPEAT_BREAK_AFTER:
+                        log(f"degenerate repetition at step {step} "
+                            f"(code vector repeated {repeat_run}x); terminating")
+                        break
+                else:
+                    repeat_run = 0
+            last_codes = codes
             new_codes = np.array([[codes]], dtype=np.int64)           # [1,1,8]
             emb = self.audio_embed.run(None, {"codes": new_codes})[0].astype(self.llm_dtype)
             cur = np.concatenate([cur, emb], axis=1)

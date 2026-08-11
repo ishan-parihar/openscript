@@ -125,6 +125,31 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         }
     }
 
+    // Higgs Audio v3 (expressive zero-shot cloning): register the reference
+    // WAV + transcript with the higgs sidecar. Like gepard, registration
+    // failure is NOT fatal — the profile is saved and can be re-registered.
+    let mut registered_higgs = false;
+    let mut higgs_warning: Option<String> = None;
+    if provider == "higgs" {
+        if ref_audio.is_empty() || ref_text.is_empty() {
+            higgs_warning = Some(
+                "higgs profile needs ref_audio + ref_text for voice cloning; \
+                 registration skipped until both are provided."
+                    .into(),
+            );
+        } else {
+            match openscript_tts::higgs::higgs_register(&profile_id, &ref_audio, &ref_text) {
+                Ok(()) => registered_higgs = true,
+                Err(e) => {
+                    higgs_warning = Some(format!(
+                        "higgs voice registration failed (profile saved; retry later): {}",
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
     // Audio8 emotion takes: register each as a compound voice `{id}@{emotion}`
     // so the router can select it at synth time (audio8 conditions on the
     // reference at registration — a raw ref override is not supported).
@@ -162,6 +187,8 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         "audio8_warning": audio8_warning,
         "gepard_registered": registered_gepard,
         "gepard_warning": gepard_warning,
+        "higgs_registered": registered_higgs,
+        "higgs_warning": higgs_warning,
         "emotions_count": emotions_map.len(),
         "emotions_registered_audio8": audio8_emotions_registered,
         "emotion_warnings": emotion_warnings,
