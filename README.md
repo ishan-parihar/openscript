@@ -5,6 +5,7 @@
 AI-directed video editing pipeline — raw footage to polished 9:16 reel. Transcription → creative brief → timeline → FFmpeg render → verified output. Rust + Python + TypeScript. **109 MCP tools** (verified: 103 static + 6 dynamic in `openscript-mcp/src/tools.rs`). 9 Rust crates.
 
 [![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
+![LOC](https://img.shields.io/badge/LOC-67.5K-informational?style=flat-square)
 [![CI](https://github.com/ishan-parihar/openscript/actions/workflows/ci.yml/badge.svg)](https://github.com/ishan-parihar/openscript/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
@@ -171,3 +172,14 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 Developed by [Ishan Parihar](https://github.com/ishan-parihar)
+
+---
+
+## ☕ Support & Sponsorship
+
+If you find this project useful, consider supporting ongoing development:
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-ea4aaa?style=flat-square&logo=github)](https://github.com/sponsors/ishan-parihar)
+[![Donate](https://img.shields.io/badge/Donate-Razorpay-3395FF?style=flat-square)](https://rzp.io/rzp/ishan-parihar)
+
+Your support funds new features, releases, and infrastructure for the whole ecosystem.
