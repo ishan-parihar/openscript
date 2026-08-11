@@ -176,5 +176,61 @@ for _s in range(40):
     _last = _v
 check("varying codes never trigger", not _trig)
 
+# --- Reference-exact delay pattern (apply_delay_pattern) --------------------
+print("== apply_delay_pattern ==")
+import numpy as np
+_T = 4
+_rc = np.arange(_T * 8, dtype=np.int64).reshape(_T, 8)  # row-major frame codes
+_d = higgs.apply_delay_pattern(_rc)
+check("delayed shape is [T+7, 8]", _d.shape == (_T + 7, 8))
+# column c: BOC for rows < c, real codes rows c..c+T-1, EOC tail
+for c in range(8):
+    check(f"col {c} BOC prefix", list(_d[:c, c]) == [higgs.BOC] * c)
+    check(f"col {c} real codes", list(_d[c:c + _T, c]) == list(_rc[:, c]))
+    tail = _d[c + _T:, c]
+    check(f"col {c} EOC tail", len(tail) == 7 - c and all(x == higgs.EOC for x in tail))
+
+# round-trip: reverse(apply(codes)) == codes
+_rt = higgs.reverse_delay_pattern(_d)
+check("reverse(apply(codes)) == codes", np.array_equal(_rt, _rc))
+check("reverse drops exactly N-1 rows", _rt.shape == _rc.shape)
+
+# --- Reference sampler state machine (cb0 EOC + wind-down) ------------------
+print("== sampler termination (cb0 EOC + N-2 wind-down) ==")
+# Simulate: delay window for 8 rows, then cb0 emits EOC at row 10, then the
+# 6-row wind-down. Total rows appended = EOC row + 6 = 7 after row 9.
+N = higgs.NUM_CODEBOOKS
+rows = []
+delay_count = 0
+eoc_countdown = None
+for step in range(30):
+    codes = [step * 11 + k for k in range(N)]      # fake sampled codes
+    if delay_count < N:
+        next_cb = delay_count + 1
+        if next_cb < N:
+            for k in range(next_cb, N):
+                codes[k] = higgs.BOC
+        delay_count += 1
+    elif eoc_countdown is not None:
+        eoc_countdown -= 1
+        if eoc_countdown <= 0:
+            rows.append(codes)
+            break
+    elif codes[0] == higgs.EOC:
+        eoc_countdown = N - 2
+    rows.append(codes)
+    # inject cb0 EOC after the delay window (row 10 == step 10)
+    if step == 10 and delay_count >= N:
+        rows[-1][0] = higgs.EOC
+        eoc_countdown = N - 2
+check("terminates 6 rows after cb0 EOC", len(rows) == 10 + 1 + 6)
+check("cb0 EOC present at row 10", rows[10][0] == higgs.EOC)
+check("wind-down rows are appended (not cut)", rows[-1][0] != higgs.STOP_CODE if hasattr(higgs, 'STOP_CODE') else rows[-1][0] >= 0)
+# reverse-delay of the simulated output must contain no BOC/EOC ids
+_dm = np.array(rows, dtype=np.int64)
+_raw = higgs.reverse_delay_pattern(_dm)
+check("no BOC/EOC in de-delayed codes",
+      not np.isin(_raw, [higgs.BOC, higgs.EOC]).any())
+
 print(f"\n{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)

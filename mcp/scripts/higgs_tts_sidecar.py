@@ -25,11 +25,20 @@ PROMPT FORMAT (CAPABILITIES.md, zero-shot):
 
 GENERATION: the 8 codebooks follow a **delay pattern** (codebook k is shifted
 by k positions, BOC=1024 pads the start, EOC=1025 terminates each column).
-The int4 `llm_decoder` is a plain ONNX QDQ graph, so it runs under ordinary
-onnxruntime with a manual KV-cache loop (the export takes `inputs_embeds` +
-`past_key_values.*` and returns `hidden_states` + `present.*` — probed
-against ORT 1.28, fp16); audio logits come from the fused `audio_heads`
-model; codes are de-delayed and decoded to waveform by the `audio_tokenizer`.
+The prompt's REFERENCE codes are ALSO delay-patterned before fusion
+(`apply_delay_pattern` — T+7 rows, BOC prefix + EOC tail per column), exactly
+as the sglang-omni reference does; feeding raw parallel ref frames is
+off-distribution and yields a hissy/metallic clone. Termination follows the
+reference sampler state machine: during the delay window codebooks above
+`delay_count` are forced to BOC; when **codebook 0** samples EOC a wind-down
+of N-2 = 6 further rows runs (letting each column's EOC land just outside its
+reverse-delay window), then generation stops. The int4 `llm_decoder` is a
+plain ONNX QDQ graph, so it runs under ordinary onnxruntime with a manual
+KV-cache loop (the export takes `inputs_embeds` + `past_key_values.*` and
+returns `hidden_states` + `present.*` — probed against ORT 1.28, fp16); audio
+logits come from the fused `audio_heads` model; the generated rows are
+de-delayed with fixed geometry (`reverse_delay_pattern`) and decoded to
+waveform by the `audio_tokenizer`.
 
 LONG-LIVED SERVE MODE (--serve) — mirrors gepard_tts_sidecar.py:
 
@@ -111,6 +120,15 @@ MAX_TOKENS_PER_WORD = 20
 MIN_MAX_TOKENS = 96                 # ~3.8 s floor (very short lines)
 MAX_TOKENS_CAP = 768                # ~30 s hard cap per chunk
 REPEAT_BREAK_AFTER = 8              # consecutive identical code vectors => stuck
+
+# Retry-on-degenerate. Even with the reference-exact sampler the 4B AR model
+# stochastically (~10-20% of clone draws) enters a bad state: a sustained-tone
+# repetition (caught by the guard above), dead-air silence (decoded RMS ~0), or
+# rambling far past the text without ever sampling cb0 EOC. Each draw is
+# independent (global RNG), so retrying a degenerate chunk with a fresh sample
+# is cheap and recovers the vast majority of failures.
+SILENCE_RMS = 0.015               # decoded float32 RMS below this = dead air
+MAX_CHUNK_RETRIES = 2             # attempts beyond the first per chunk
 
 # Emote -> Higgs control-tag mapping. Keys are the emotes used across the
 # content-format playbooks / script scenes; the 21 Higgs emotions + 3 styles
@@ -279,15 +297,69 @@ def estimate_max_tokens(text: str, ref_text: str | None = None) -> int:
     return max(MIN_MAX_TOKENS, min(MAX_TOKENS_CAP, budget))
 
 
+def apply_delay_pattern(codes_TN, num_codebooks: int = NUM_CODEBOOKS,
+                        boc: int = BOC, eoc: int = EOC):
+    """Forward delay pattern — EXACTLY mirrors the sglang-omni reference
+    (``sglang_omni/models/higgs_tts/utils.py::apply_delay_pattern``).
+
+    ``codes_TN`` is a [T, N] int array of raw codec codes (0..1023). Returns
+    the [T + N - 1, N] delayed matrix: column c gets BOC for rows 0..c-1,
+    the real codes for rows c..c+T-1, and EOC for the remaining tail rows
+    (the full matrix is initialized to EOC).
+
+    The REFERENCE codes must be delay-patterned before they are fused into
+    the prompt — the model was trained on delayed ref rows, and feeding raw
+    parallel frames is off-distribution (caused the hissy/metallic clone).
+    """
+    import numpy as np  # noqa: PLC0415
+    import numpy.typing as npt  # noqa: PLC0415
+
+    arr = np.asarray(codes_TN, dtype=np.int64)
+    if arr.ndim != 2:
+        raise ValueError(f"codes must be 2-D [T, N], got {arr.shape}")
+    t, n = arr.shape
+    if n != num_codebooks:
+        raise ValueError(f"codes have {n} codebooks, expected {num_codebooks}")
+    out = np.full((t + n - 1, n), eoc, dtype=np.int64)
+    for c in range(n):
+        out[:c, c] = boc
+        out[c:c + t, c] = arr[:, c]
+    return out
+
+
+def reverse_delay_pattern(delayed, num_codebooks: int = NUM_CODEBOOKS):
+    """Reverse delay pattern — EXACTLY mirrors the sglang-omni reference
+    (``sglang_omni/utils/codec_delay.py::reverse_delay_pattern``).
+
+    ``[L, N]`` delayed rows -> ``[L - (N - 1), N]`` raw codes by fixed
+    geometry (column c contributes rows c .. c+rows-1). The model is trained
+    to place each column's EOC just outside its extracted window (cb0 EOC at
+    row s, column c at row s+c, generation stops at s+N-2), so NO EOC/BOC ids
+    ever reach the codec. Returns the raw [rows, N] int matrix.
+    """
+    import numpy as np  # noqa: PLC0415
+
+    arr = np.asarray(delayed, dtype=np.int64)
+    if arr.ndim != 2:
+        raise ValueError(f"delayed must be 2-D [L, N], got {arr.shape}")
+    length, n = arr.shape
+    rows = length - (n - 1)
+    if rows <= 0:
+        return arr[:0, :]
+    out = np.empty((rows, n), dtype=np.int64)
+    for c in range(n):
+        out[:, c] = arr[c:c + rows, c]
+    return out
+
+
 def dedelay_codes(position_codes: list, num_codebooks: int = NUM_CODEBOOKS,
                   boc: int = BOC, eoc: int = EOC):
-    """De-delay the per-position code vectors into a [8, T] code matrix.
+    """Legacy EOC-scanning de-delay — kept for unit-test compatibility and
+    as a defensive fallback. Production decode uses :func:`reverse_delay_pattern`
+    (fixed geometry, reference-exact); this variant cuts each column at its
+    first EOC.
 
     `position_codes[p]` = the 8 codes sampled at generation position p.
-    In the delay pattern, codebook k at position p belongs to frame (p-k);
-    codebook k is BOC-padded for the first k positions and terminated by EOC.
-    Complete frames are limited by the shortest column.
-
     Returns (codes[8][T] ints, frames T). Pure — unit-testable.
     """
     if not position_codes:
@@ -509,12 +581,27 @@ class HiggsPipeline:
         parts = []
         for i, chunk in enumerate(chunks):
             chunk_txt = compose_prompt(chunk, emote=emote, default_speed=default_speed)
-            audio = self._synth_chunk(chunk_txt, ref_path=ref_path,
-                                      ref_text=ref_text or None,
-                                      temperature=temperature, top_k=top_k,
-                                      max_new_tokens=max_new_tokens)
+            audio = None
+            last_meta = None
+            for attempt in range(MAX_CHUNK_RETRIES + 1):
+                audio, meta = self._synth_chunk(
+                    chunk_txt, ref_path=ref_path, ref_text=ref_text or None,
+                    temperature=temperature, top_k=top_k,
+                    max_new_tokens=max_new_tokens)
+                last_meta = meta
+                if not meta["degenerate"]:
+                    break
+                log(f"degenerate chunk {i + 1} attempt {attempt + 1}/"
+                    f"{MAX_CHUNK_RETRIES + 1} (wind_down={meta['wind_down']} "
+                    f"rms={meta['rms']:.4f} rows={meta['rows']}); retrying")
+            if meta["degenerate"]:
+                log(f"WARNING: chunk {i + 1} still degenerate after "
+                    f"{MAX_CHUNK_RETRIES + 1} attempts (wind_down="
+                    f"{last_meta['wind_down']}, rms={last_meta['rms']:.4f}); "
+                    f"using last output")
             if len(chunks) > 1:
-                log(f"chunk {i + 1}/{len(chunks)} ({len(chunk)} chars) -> {len(audio) / SAMPLE_RATE:.2f}s")
+                log(f"chunk {i + 1}/{len(chunks)} ({len(chunk)} chars) -> "
+                    f"{len(audio) / SAMPLE_RATE:.2f}s")
             parts.append(np.asarray(audio, dtype=np.float32))
 
         audio = crossfade_concat(parts, SAMPLE_RATE)
@@ -530,6 +617,13 @@ class HiggsPipeline:
 
     def _synth_chunk(self, chunk_txt: str, ref_path, ref_text,
                      temperature: float, top_k: int, max_new_tokens: int):
+        """Synthesize one chunk. Returns (audio float32 [N], meta dict).
+
+        meta: {"degenerate": bool, "wind_down": bool, "rows": int, "rms": float}
+        A chunk is flagged degenerate when the reference sampler never ran its
+        cb0-EOC wind-down (repetition guard fired or the token cap was hit),
+        or when the decoded waveform is dead-air silence.
+        """
         import numpy as np  # noqa: PLC0415
 
         # -- build prompt embeds --------------------------------------------
@@ -545,13 +639,19 @@ class HiggsPipeline:
 
         text_emb = self.text_embed.run(None, {"input_ids": ids})[0].astype(self.llm_dtype)
 
-        ref_emb = None
         if ref_path is not None:
+            # Reference codes MUST be delay-patterned before fusing into the
+            # prompt (sglang-omni reference: encode_reference ->
+            # apply_delay_pattern -> fused embed at placeholder rows). Feeding
+            # raw parallel frames is off-distribution and produces a hissy /
+            # metallic clone that doesn't anchor to the speaker.
             codes = self._encode_reference(ref_path)          # [1, 8, F]
-            codes_l = codes.transpose(0, 2, 1)                # [1, F, 8]
-            ref_emb = self.audio_embed.run(None, {"codes": codes_l.astype(np.int64)})[0]
-            ref_emb = ref_emb.astype(self.llm_dtype)
-            # ref embeds go right after the <|ref_audio|> text token.
+            codes_tn = codes.transpose(0, 2, 1)[0]            # [F, 8]
+            delayed = apply_delay_pattern(codes_tn)           # [F+7, 8]
+            ref_emb = self.audio_embed.run(
+                None, {"codes": delayed[None].astype(np.int64)})[0]
+            ref_emb = ref_emb.astype(self.llm_dtype)          # [1, F+7, 2560]
+            # Delayed ref embeds go right after the <|ref_audio|> text token.
             ref_pos = int(np.where(ids[0] == self.special_ids["<|ref_audio|>"])[0][0]) + 1
             full = np.concatenate(
                 [text_emb[:, :ref_pos], ref_emb, text_emb[:, ref_pos:]], axis=1)
@@ -559,12 +659,20 @@ class HiggsPipeline:
             full = text_emb
 
         # -- delay-pattern autoregressive loop -------------------------------
+        # Sampler state machine mirrors the sglang-omni reference exactly
+        # (sampler.py::step): during the delay window codebooks > delay_count
+        # are forced to BOC; once codebook 0 samples EOC a wind-down of
+        # N-2 = 6 further rows runs (giving each delayed column's EOC time to
+        # land just outside its reverse-delay window), then generation stops.
         past = None
-        position_codes = []
-        eoc_counts = 0
+        delayed_rows = []
         cur = full
-        last_codes = None
+        delay_count = 0
+        eoc_countdown = None
         repeat_run = 0
+        last_codes = None
+        wind_down = False
+        guard_fired = False
         for step in range(max_new_tokens):
             hidden, present = self._llm_step(cur, past)
             past = present
@@ -573,26 +681,34 @@ class HiggsPipeline:
             l = np.asarray(logits)[0, 0]                              # [8,1026]
             codes = []
             for k in range(NUM_CODEBOOKS):
-                if step < k:
-                    codes.append(BOC)                                 # forced pad
-                    continue
-                # Columns terminate ONLY by their own sampled EOC — never
-                # force-ended (a forced EOC on a live column shortens the
-                # de-delayed frame count and TRUNCATES the final phrase).
                 c = sample_from_logits(l[k], temperature, top_k)
                 codes.append(int(c))
-                if c == EOC:
-                    eoc_counts += 1
-            position_codes.append(codes)
-            if eoc_counts >= NUM_CODEBOOKS:
-                break
-            # Degenerate-loop guard: if the full code vector is identical for
-            # REPEAT_BREAK_AFTER consecutive positions, the model is stuck in
-            # a sustained-tone state and will never sample EOC — terminate.
-            if step >= NUM_CODEBOOKS:
+            # --- reference sampler state machine ---
+            if delay_count < NUM_CODEBOOKS:
+                next_cb = delay_count + 1
+                if next_cb < NUM_CODEBOOKS:
+                    for k in range(next_cb, NUM_CODEBOOKS):
+                        codes[k] = BOC                # forced pad
+                delay_count += 1
+            elif eoc_countdown is not None:
+                eoc_countdown -= 1
+                if eoc_countdown <= 0:
+                    delayed_rows.append(codes)
+                    wind_down = True
+                    log(f"wind-down complete after cb0 EOC "
+                        f"(total {len(delayed_rows)} rows)")
+                    break
+            elif codes[0] == EOC:
+                eoc_countdown = NUM_CODEBOOKS - 2
+            delayed_rows.append(codes)
+            # Degenerate-loop guard (safety net only): if the full code vector
+            # is identical for REPEAT_BREAK_AFTER consecutive positions, the
+            # model is stuck in a sustained-tone state and never samples EOC.
+            if delay_count >= NUM_CODEBOOKS and eoc_countdown is None:
                 if codes == last_codes:
                     repeat_run += 1
                     if repeat_run >= REPEAT_BREAK_AFTER:
+                        guard_fired = True
                         log(f"degenerate repetition at step {step} "
                             f"(code vector repeated {repeat_run}x); terminating")
                         break
@@ -603,16 +719,31 @@ class HiggsPipeline:
             emb = self.audio_embed.run(None, {"codes": new_codes})[0].astype(self.llm_dtype)
             cur = np.concatenate([cur, emb], axis=1)
 
-        # -- de-delay + codec decode ----------------------------------------
-        frames, t = dedelay_codes(position_codes)
-        if t < 8:
+        # -- de-delay (fixed geometry, reference-exact) + codec decode -------
+        if len(delayed_rows) < NUM_CODEBOOKS:
             raise RuntimeError(
-                f"generation produced too few audio frames ({t}); "
+                f"generation produced too few rows ({len(delayed_rows)}); "
                 "model likely failed to emit audio (check log for OOM/NaN)")
-        codes_mat = np.array([[frames[k][:t] for k in range(NUM_CODEBOOKS)]],
-                             dtype=np.int64)                           # [1,8,T]
+        delayed_mat = np.array(delayed_rows, dtype=np.int64)           # [L,8]
+        raw = reverse_delay_pattern(delayed_mat)                       # [L-7,8]
+        if raw.shape[0] < 8:
+            raise RuntimeError(
+                f"de-delay produced too few audio frames ({raw.shape[0]}); "
+                "model likely failed to emit audio (check log for OOM/NaN)")
+        codes_mat = raw.T[None]                                        # [1,8,T]
         wave = self.audio_tokenizer.run(None, {"audio_codes": codes_mat})[0]
-        return np.asarray(wave).reshape(-1)
+        audio = np.asarray(wave).reshape(-1)
+        rms = float(np.sqrt((audio ** 2).mean())) if audio.size else 0.0
+        # Degenerate = the sampler never ran its EOC wind-down (cap hit or
+        # guard fired) OR the decoded waveform is dead-air silence.
+        degenerate = (not wind_down) or guard_fired or rms < SILENCE_RMS
+        meta = {
+            "degenerate": degenerate,
+            "wind_down": wind_down,
+            "rows": len(delayed_rows),
+            "rms": rms,
+        }
+        return audio, meta
 
     def _encode_reference(self, wav_path):
         """Reference WAV -> audio codes [1, 8, frames] @24k (padded to 960-multiples)."""
