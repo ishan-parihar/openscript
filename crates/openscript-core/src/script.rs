@@ -1293,15 +1293,32 @@ pub fn parse_script(json: &str) -> Result<ScriptSpec, serde_json::Error> {
         }
     }
 
-    // Track explicitly-set top-level fields so correlated format defaults
-    // never clobber an explicit agent choice — e.g. "meme_brolls": {"enabled":
-    // false} must beat a format's reaction_memes=true even though the value
-    // happens to equal the default (value-based checks cannot tell the
-    // difference; presence-based ones can).
+    // Track explicitly-set fields so correlated format defaults never clobber
+    // an explicit agent choice — e.g. "meme_brolls": {"enabled": false} must
+    // beat a format's reaction_memes=true even though the value equals the
+    // default (value-based checks cannot tell the difference; presence-based
+    // ones can). Sub-keys are tracked for the blocks apply_format touches so
+    // setting tts.backend alone does NOT suppress the format's pacing defaults.
     let mut explicitly_set: HashSet<String> = HashSet::new();
     if let Some(obj) = root.as_object() {
         for key in obj.keys() {
             explicitly_set.insert(key.clone());
+            for (block, fields) in [
+                ("tts", &["default_speed", "default_temperature"][..]),
+                ("meme_brolls", &["enabled"][..]),
+                ("stickers", &["enabled"][..]),
+                ("music", &["mood"][..]),
+            ] {
+                if key == block {
+                    if let Some(bo) = obj.get(block).and_then(|v| v.as_object()) {
+                        for f in fields {
+                            if bo.contains_key(*f) {
+                                explicitly_set.insert(format!("{}.{}", block, f));
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1425,28 +1442,32 @@ pub fn infer_gender(voice: &str, free_text: &str) -> String {
 /// a value that merely equals a default is still an explicit choice).
 fn apply_format(spec: &mut ScriptSpec, explicitly_set: &HashSet<String>) {
     let f = &spec.format;
-    // Pacing: only when the script-level TTS block was not touched.
+    // Pacing: only when the specific tts field was not set by the agent
+    // (setting tts.backend alone must not suppress the format's pacing).
     if f.default_speed > 0.0
         && spec.tts.default_speed == 1.0
-        && !explicitly_set.contains("tts")
+        && !explicitly_set.contains("tts.default_speed")
     {
         spec.tts.default_speed = f.default_speed;
     }
     if let Some(t) = f.default_temperature {
-        if spec.tts.default_temperature.is_none() && !explicitly_set.contains("tts") {
+        if spec.tts.default_temperature.is_none() && !explicitly_set.contains("tts.default_temperature")
+        {
             spec.tts.default_temperature = Some(t);
         }
     }
     // Reaction memes (GIPHY pop-ins) — never override an explicit choice.
     if f.reaction_memes
         && !spec.meme_brolls.enabled
-        && !explicitly_set.contains("meme_brolls")
+        && !explicitly_set.contains("meme_brolls.enabled")
     {
         spec.meme_brolls.enabled = true;
     }
     // Sticker behavior.
     match f.sticker_mode.as_str() {
-        "none" if !explicitly_set.contains("stickers") => spec.stickers.enabled = false,
+        "none" if !explicitly_set.contains("stickers.enabled") => {
+            spec.stickers.enabled = false
+        }
         "reaction" => {
             // Stickers stay enabled — the sticker.auto pipeline is already
             // reaction-driven (intent + emphatic keywords).

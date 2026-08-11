@@ -23,6 +23,7 @@
         "ref_text": "Delhi recorded zero good air days in 2025. This is not a season, this is an emergency."
       }
     },
+    "gender": "male",
     "language": "english",
     "mode": "design",
     "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
@@ -33,6 +34,7 @@
   },
   "hero_sidekick": {
     "description": "voice.design persona: cheerful young female sidekick, bright energetic tone, quick laugh",
+    "gender": "female",
     "language": "english",
     "mode": "design",
     "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
