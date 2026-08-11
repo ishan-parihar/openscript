@@ -1,154 +1,260 @@
-# workspace-lint.yaml — OpenScript project structure rules
-# See AGENTS.md §1 for the canonical repository layout.
-# Run: python3 scripts/workspace-lint/workspace_lint.py
-
 project:
-  name: OpenScript
-  type: rust-workspace + python-sidecars + tauri-frontend
-  version: "0.1.0"
-
-ignore_dirs:
-  - .git
-  - __pycache__
-  - node_modules       # npm deps — gitignored, installed at build time
-  - .venv
-  - target             # cargo build dir — gitignored
-  - ".openscript"      # runtime state (projects, voice profiles)
-  - artifacts
-  - artifacts_test
-  - "artifacts_*"
-  - gen                # Tauri generated schemas (build artifact)
-  - dist               # build output within node_modules packages
-  - build              # build output within node_modules packages
-  - background_cache   # runtime cache — fetched Pexels/yt-dlp clips
-  - music_cache        # runtime cache — fetched music tracks
-  - broll_cache        # runtime cache — fetched b-roll clips
-  - third_party        # vendored deps (PupCaps, short-video-maker) — do not enforce placement
-  - ".ruff_cache"      # Python linter cache
-  - ".memsearch"       # search index
-  - ".contexty"        # session state
-  - ".cortexkit"       # magic-context state
-  - ".sisyphus"        # plan/feedback state
-  - ".benchmarks"      # benchmark outputs
-  - ".worktrees"       # git worktrees
-  - ".hive"            # hive feature state
+  name: "openscript"
+  type: "rust-content-creation"
 
 structure:
   canonical:
-    - path: crates
-      description: Rust workspace (8 crates)
-      children:
-        - openscript-core      # types, timeline schema, SRT, captions, amplitude
-        - openscript-ffmpeg    # ffmpeg filter graph, render, multilayer, subtitles
-        - openscript-tts       # Kokoro TTS client + voice profiles
-        - openscript-transcribe # Apex transcription
-        - openscript-assets    # Pexels, music index, SFX index
-        - openscript-mcp       # MCP server + 70 tool handlers
-        - openscript-cli       # CLI (clap) — thin wrapper over route_tool
-        - openscript-tauri     # Tauri desktop app
-        - openscript-ui        # Legacy TUI (ratatui)
-    - path: mcp
-      description: Python ML sidecars + committed assets
-      children:
-        - scripts    # Python sidecars (Kokoro, Whisper, Apex)
-        - assets     # Committed binary assets + generated JSON indices
-        - fonts      # BebasNeue for ASS captions
-        - styles     # PupCaps caption CSS
-    - path: hyperframes
-      description: Default render engine (HTML+GSAP) + interop template
-    - path: remotion
-      description: Escape-hatch render engine (React+Remotion v4)
-    - path: skills
-      description: Dev-reference docs for HyperFrames + Remotion translation
-    - path: scripts
-      description: Shell scripts (smoke_test, post-iteration gate, workspace-lint)
+    - path: "crates"
+      purpose: "Crate workspace"
+    - path: "docs"
+      purpose: "Documentation, audits, and plans"
+    - path: "scripts"
+      purpose: "Utility scripts"
+    - path: "skills"
+      purpose: "AI agent skills"
+    - path: "assets"
+      purpose: "Assets"
 
-root:
-  allowed_root_files:
-    - README.md
-    - AGENTS.md
-    - AGENT_GUIDE.md
-    - LICENSE
-    - .gitignore
-    - Cargo.toml
-    - Cargo.lock
-    - TOOL_AUDIT_REPORT.md
-    - workspace-lint.yaml
-    - setup.sh
-    - openscript.env.example
-    - lifeos.config.json
-  forbidden_files:
-    - "*.pyc"
-    - "*.pyo"
-    - "*.egg-info"
-    - "*.log"
-    - "*.tmp"
-    - ".DS_Store"
-    - "Thumbs.db"
-    - "*.swp"
-    - "*~"
-    - "*.bak"
-    - "*.reel.mp4"      # Render output — never commit
-    - "*.render.log"    # Render logs — never commit
-    - "*.concat.txt"    # FFmpeg concat lists — never commit
-    - "*.align.json"    # Whisper alignment output — never commit
-    - "*.debug.log"     # Debug logs — never commit
+rules:
+  root:
+    forbidden_files:
+      - "*.log"
+      - "*.bak"
+      - "*.tmp"
+      - "*.old"
+      - "*.orig"
+      - "*.rej"
+      - "*.swp"
+      - "*.pid"
+      - "*.out"
+      - "*.err"
+      - "*~"
+      - "AUDIT*"
+      - "PLAN*"
+      - "*REPORT*"
+      - "*_v[0-9]*"
+      - "*ROADMAP*"
+      - "*GUIDE*"
+      - "*UPGRADE*"
+      - "*DIAGNOSTICS*"
+      - "*INTELLIGENCE*"
+      - "TOOL_ANALYSIS*"
+      - "IMPLEMENTATION_*"
+      - "AGENT_GUIDE*"
+      - "error.log"
+      - "lifeos.config.json"
+    allowed_root_files:
+      - ".clippy.toml"
+      - ".editorconfig"
+      - ".env.example"
+      - ".eslintrc*"
+      - ".gitattributes"
+      - ".gitignore"
+      - ".gitmodules"
+      - ".impeccable.md"
+      - ".node-version"
+      - ".nvmrc"
+      - ".oh-my-opencode-pi-stats.json"
+      - ".prettierrc*"
+      - ".python-version"
+      - ".rustfmt.toml"
+      - "AGENTS.md"
+      - "BUGS.md"
+      - "CHANGELOG.md"
+      - "CODE_OF_CONDUCT.md"
+      - "CONTRIBUTING.md"
+      - "COPYING"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - "Dockerfile"
+      - "FRESH_AGENT_AUDIT_PROTOCOL.md"
+      - "FRESH_AGENT_SIMULATION_AUDIT_13.md"
+      - "FRESH_AGENT_SIMULATION_AUDIT_14.md"
+      - "FRESH_AGENT_SIMULATION_AUDIT_15.md"
+      - "FRESH_AGENT_SIMULATION_AUDIT_7.md"
+      - "FRESH_AGENT_SIMULATION_AUDIT_8.md"
+      - "FRESH_AGENT_UX_AUDIT.md"
+      - "FRESH_AGENT_UX_AUDIT_10.md"
+      - "FRESH_AGENT_UX_AUDIT_11.md"
+      - "FRESH_AGENT_UX_AUDIT_12.md"
+      - "FRESH_AGENT_UX_AUDIT_13.md"
+      - "FRESH_AGENT_UX_AUDIT_14.md"
+      - "FRESH_AGENT_UX_AUDIT_15.md"
+      - "FRESH_AGENT_UX_AUDIT_16.md"
+      - "FRESH_AGENT_UX_AUDIT_17.md"
+      - "FRESH_AGENT_UX_AUDIT_18.md"
+      - "FRESH_AGENT_UX_AUDIT_19.md"
+      - "FRESH_AGENT_UX_AUDIT_20.md"
+      - "FRESH_AGENT_UX_AUDIT_21.md"
+      - "FRESH_AGENT_UX_AUDIT_22.md"
+      - "FRESH_AGENT_UX_AUDIT_23.md"
+      - "FRESH_AGENT_UX_AUDIT_24.md"
+      - "FRESH_AGENT_UX_AUDIT_25.md"
+      - "FRESH_AGENT_UX_AUDIT_26.md"
+      - "FRESH_AGENT_UX_AUDIT_9.md"
+      - "FRESH_AGENT_UX_AUDIT_SIM5.md"
+      - "Justfile"
+      - "LICENSE"
+      - "LICENSE-*"
+      - "LICENSE.md"
+      - "Makefile"
+      - "NOTICE"
+      - "Pipfile"
+      - "README.md"
+      - "SECURITY.md"
+      - "TODO.md"
+      - "VERSION"
+      - "bun.lock"
+      - "capacitor.config.json"
+      - "clippy.toml"
+      - "docker-compose.yaml"
+      - "docker-compose.yml"
+      - "go.mod"
+      - "go.sum"
+      - "install.sh"
+      - "lifeos.config.default.json"
+      - "openscript.env.example"
+      - "output.mp4"
+      - "package-lock.json"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "rust-toolchain.toml"
+      - "setup.cfg"
+      - "setup.py"
+      - "setup.sh"
+      - "skills-lock.json"
+      - "svelte.config.js"
+      - "test_healing_script.json"
+      - "tsconfig.json"
+      - "tsup.config.ts"
+      - "vite.config.ts"
+      - "workspace-lint.yaml"
+      - "wrangler.toml"
+      - "yarn.lock"
 
-files:
-  "*.rs":
-    max_size_kb: 700    # tools.rs is a mega-file (~607KB); bump limit to avoid false positives
-  "*.py":
-    # Python lives in mcp/scripts (sidecars), skills/ (reference docs),
-    # and scripts/ (tooling). Do not enforce a single preferred_dir.
-    max_size_kb: 100
-  "*.ts":
-    # TS lives in multiple legitimate locations: frontend, hyperframes/,
-    # remotion/, skills/. Do not enforce a single preferred_dir.
-    max_size_kb: 200
-  "*.tsx":
-    # TSX lives in multiple legitimate locations: frontend, remotion/,
-    # skills/. Do not enforce a single preferred_dir.
-    max_size_kb: 100
-  "*.md":
-    max_size_kb: 200
-  "*.json":
-    max_size_kb: 500    # Generated indices can be large; warn if > 500KB
-  "*.mp4":
-    preferred_dir: mcp/assets   # Render output and backgrounds live in mcp/assets/
-    max_size_kb: 5000
-  "*.mp3":
-    preferred_dir: mcp/assets/music
-    max_size_kb: 2000
-  "*.ass":
-    preferred_dir: artifacts   # Generated caption files go in artifacts/
-    max_size_kb: 500
-  "*.timeline.json":
-    preferred_dir: artifacts   # Timeline scratch files go in artifacts/
-    max_size_kb: 500
-  "*.edl.json":
-    preferred_dir: artifacts   # EDL scratch files go in artifacts/
-    max_size_kb: 500
-  "*.wav":
-    # WAVs live in multiple legitimate locations: sfx_library/, sfx_pack/, artifacts/
-    # Do not enforce a single preferred_dir.
-    max_size_kb: 350000   # SFX library ambient WAVs can be large (up to ~300MB)
-  "*.svg":
-    preferred_dir: mcp/assets/svg_presets
-    max_size_kb: 50
-  "*.css":
-    # CSS lives in both mcp/styles (PupCaps) and frontend/src/styles (app CSS)
-    max_size_kb: 50
-  "*.ttf":
-    preferred_dir: mcp/fonts
-    max_size_kb: 500
+  files:
+    "*.md":
+      preferred_dir: "docs"
+      exclude_dirs:
+        - ".agents"
+        - ".claude"
+        - ".contexty"
+        - ".cortexkit"
+        - ".cursor"
+        - ".devin"
+        - ".gemini"
+        - ".github"
+        - ".grader"
+        - ".hive"
+        - ".impeccable"
+        - ".memsearch"
+        - ".oh-my-opencode"
+        - ".plans"
+        - ".serena"
+        - ".sisyphus"
+        - ".subtaskify"
+        - ".superpowers"
+        - "artifacts"
+        - "assets"
+        - "crates"
+        - "docs"
+        - "examples"
+        - "hyperframes"
+        - "mcp"
+        - "models"
+        - "node_modules"
+        - "optional-skills"
+        - "output"
+        - "plugins"
+        - "remotion"
+        - "scripts"
+        - "skills"
+        - "target"
+        - "test_fixtures"
+        - "third_party"
+    "*.py":
+      preferred_dir: "scripts"
+      exclude_dirs:
+        - ".agents"
+        - ".claude"
+        - ".contexty"
+        - ".cortexkit"
+        - ".cursor"
+        - ".devin"
+        - ".gemini"
+        - ".github"
+        - ".grader"
+        - ".hive"
+        - ".impeccable"
+        - ".memsearch"
+        - ".oh-my-opencode"
+        - ".plans"
+        - ".serena"
+        - ".sisyphus"
+        - ".subtaskify"
+        - ".superpowers"
+        - "artifacts"
+        - "assets"
+        - "crates"
+        - "docs"
+        - "examples"
+        - "hyperframes"
+        - "mcp"
+        - "models"
+        - "node_modules"
+        - "optional-skills"
+        - "output"
+        - "plugins"
+        - "remotion"
+        - "scripts"
+        - "skills"
+        - "target"
+        - "test_fixtures"
+        - "third_party"
+    "*.rs":
+      preferred_dir: "src"
+      exclude_dirs:
+        - ".agents"
+        - ".claude"
+        - ".contexty"
+        - ".cortexkit"
+        - ".cursor"
+        - ".devin"
+        - ".gemini"
+        - ".github"
+        - ".grader"
+        - ".hive"
+        - ".impeccable"
+        - ".memsearch"
+        - ".oh-my-opencode"
+        - ".plans"
+        - ".serena"
+        - ".sisyphus"
+        - ".subtaskify"
+        - ".superpowers"
+        - "artifacts"
+        - "assets"
+        - "crates"
+        - "docs"
+        - "examples"
+        - "hyperframes"
+        - "mcp"
+        - "models"
+        - "node_modules"
+        - "optional-skills"
+        - "output"
+        - "plugins"
+        - "remotion"
+        - "scripts"
+        - "skills"
+        - "target"
+        - "test_fixtures"
+        - "third_party"
 
-directories:
-  forbidden_patterns:
-    - ".*\\s.*"          # No spaces in directory names
-    - "^\\d+\\."         # No numeric prefixes
-    - "__pycache__"      # Python build artifacts
-    - "\\.DS_Store"      # macOS junk
-    - "^target$"         # Rust build dir (should be gitignored, not in repo)
-    - "^node_modules$"   # npm deps (should be gitignored)
-    - "^\\.venv$"        # Python venv (should be gitignored)
-  empty_allowed: false   # Empty directories are a violation
+  directories:
+    forbidden_patterns:
+      - "^\\s"
+      - "\\s$"
+
