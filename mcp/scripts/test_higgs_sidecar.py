@@ -174,6 +174,56 @@ logits[42] = 100.0  # dominant code
 c = h.sample_from_logits(logits, temperature=0.5, top_k=50)
 check("dominant logit sampled", c == 42)
 
+# EOC-safe termination (the "evolve-evolve-evolve" trailing-syllable bug):
+# top_k=50 was masking the EOC token on codebook 0 (rank >50 -> -inf), making
+# termination IMPOSSIBLE while the model rambled on the final syllable until
+# the distribution randomly lifted EOC into the window. eoc_safe must keep EOC
+# sampleable at its natural probability. Capture the softmax vector that
+# np.random.choice receives (deterministic — no flaky sampling).
+def _capture_probs(fn):
+    captured = {}
+    orig = np.random.choice
+
+    def fake_choice(size, p=None, **kw):
+        captured['p'] = np.array(p)
+        return orig(size, p=p, **kw)
+
+    np.random.choice = fake_choice
+    try:
+        out = fn()
+    finally:
+        np.random.choice = orig
+    return out, captured
+
+_eoc_logits = np.zeros(1026, dtype=np.float32)
+_eoc_logits[:100] = 1.0       # 100 content codes ranked above EOC's 0.0
+_eoc_logits[h.EOC] = 0.0      # EOC rank = 101 -> outside top-50
+
+_, _cap = _capture_probs(
+    lambda: h.sample_from_logits(_eoc_logits, temperature=1.0, top_k=50,
+                                 eoc_safe=False))
+check("EOC masked by top-k when not eoc_safe", float(_cap['p'][h.EOC]) == 0.0)
+
+_, _cap2 = _capture_probs(
+    lambda: h.sample_from_logits(_eoc_logits, temperature=1.0, top_k=50,
+                                 eoc_safe=True))
+check("EOC kept sampleable with eoc_safe", float(_cap2['p'][h.EOC]) > 0.0)
+# Its probability equals its natural temperature-scaled value renormalized
+# over the surviving candidates. NOTE: the top-k mask keeps every logit >= kth
+# (tie semantics — `scaled < kth` is false for values equal to kth), so all 100
+# equal-logit content codes survive: 100 x exp(1-1) + exp(0-1).
+_p_eoc = float(np.exp(-1.0) / (100 + np.exp(-1.0)))
+check("EOC prob preserved at natural value",
+      abs(float(_cap2['p'][h.EOC]) - _p_eoc) < 1e-6)
+# eoc_safe must NOT change the non-EOC candidate distribution (content
+# quality unaffected) — the two top content codes keep equal probability.
+_, _cap3 = _capture_probs(
+    lambda: h.sample_from_logits(_eoc_logits, temperature=1.0, top_k=50,
+                                 eoc_safe=True))
+check("non-EOC candidates unchanged by eoc_safe",
+      float(_cap3['p'][0]) > 0.0
+      and abs(float(_cap3['p'][0]) - float(_cap3['p'][1])) < 1e-9)
+
 # --- Degenerate-loop guards (estimate_max_tokens + repetition breaker) ------
 import higgs_tts_sidecar as higgs
 

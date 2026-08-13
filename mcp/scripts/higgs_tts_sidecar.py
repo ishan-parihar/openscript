@@ -459,13 +459,25 @@ def dedelay_codes(position_codes: list, num_codebooks: int = NUM_CODEBOOKS,
 
 
 def sample_from_logits(logits, temperature: float, top_k: int,
-                       top_p: float | None = None) -> int:
+                       top_p: float | None = None,
+                       eoc_safe: bool = False, eoc_id: int = EOC) -> int:
     """Sample one code id from a [1026]-shaped logits vector.
 
     Mirrors the sglang-omni `_sample_independent`: greedy short-circuit,
     temperature scaling, then top-k and/or top-p truncation, then a
     categorical draw. top_p is applied AFTER top-k (the reference order);
     None disables it.
+
+    ``eoc_safe`` (used for codebook 0 only): never mask the EOC termination
+    token. Top-k/top-p are CONTENT quality filters — masking EOC makes
+    termination physically impossible while its logit rank sits outside the
+    window, forcing the model to ramble on the final syllable until the
+    distribution randomly lifts EOC into the window (probed: EOC rank 325-599
+    for 88% of steps on a clean draw; the "evolve -> evolve-evolve-..."
+    trailing-syllable artifact). Exempting EOC keeps it sampleable at its
+    natural probability at every step: mid-sentence its prob is ~0 (no
+    premature termination), and once the model's stop signal rises it can
+    terminate immediately.
     """
     import numpy as np  # noqa: PLC0415
 
@@ -474,10 +486,11 @@ def sample_from_logits(logits, temperature: float, top_k: int,
     # <= ~0 must argmax, NOT divide — logits/0 → NaN probs → a broken draw.
     if temperature <= 1e-5:
         return int(np.argmax(logits))
-    logits = logits / temperature
+    scaled = logits / temperature
+    logits = scaled
     if top_k > 0 and top_k < logits.size:
-        kth = np.sort(logits)[-top_k]
-        logits = np.where(logits < kth, -np.inf, logits)
+        kth = np.sort(scaled)[-top_k]
+        logits = np.where(scaled < kth, -np.inf, scaled)
     if top_p is not None and 0.0 < top_p < 1.0:
         sorted_idx = np.argsort(logits)[::-1]
         sorted_logits = logits[sorted_idx]
@@ -489,6 +502,10 @@ def sample_from_logits(logits, temperature: float, top_k: int,
         mask = np.full(logits.shape, -np.inf)
         mask[keep] = logits[keep]
         logits = mask
+    if eoc_safe:
+        # Restore the temperature-scaled EOC logit after any truncation so the
+        # termination token always remains a candidate.
+        logits[eoc_id] = scaled[eoc_id]
     probs = np.exp(logits - logits.max())
     probs = probs / probs.sum()
     return int(np.random.choice(probs.size, p=probs))
@@ -914,6 +931,18 @@ class HiggsPipeline:
         wind_down = False
         guard_fired = False
         cap_hit = False
+        # Masked-EOC ramble guard (see below): the model must sample cb0 EOC
+        # to terminate, but top-k can keep EOC masked (rank > top_k -> -inf ->
+        # impossible to sample; probed on a clean 6-word draw: EOC rank 325-599
+        # for 88% of steps). Natural speech runs ~ROWS_PER_WORD_EST rows/word
+        # (+7-row delay prefix); past that, EOC masked for a stretch means the
+        # model is rambling on the final syllable with drifting codes that the
+        # identical-vector repeat guard cannot see.
+        natural_end_rows = int(len(chunk_txt.split()) * ROWS_PER_WORD_EST) + 7
+        ramble_budget = int(os.environ.get("HIGGS_RAMBLE_BUDGET", "0") or 0)
+        if ramble_budget <= 0:
+            ramble_budget = max(16, natural_end_rows // 5)
+        ramble_steps = 0
         total = full.shape[1]
         hidden, present = self._llm_step(full, total, None)           # prefill
         past = present
@@ -923,7 +952,10 @@ class HiggsPipeline:
             l = np.asarray(logits)[0, 0]                              # [8,1026]
             codes = []
             for k in range(NUM_CODEBOOKS):
-                c = sample_from_logits(l[k], temperature, top_k, top_p)
+                # EOC-safe on codebook 0 only: the termination token must
+                # always remain sampleable (top-k/top-p are content filters).
+                c = sample_from_logits(l[k], temperature, top_k, top_p,
+                                       eoc_safe=(k == 0))
                 codes.append(int(c))
             # --- reference sampler state machine (pure helper) ---
             codes, delay_count, eoc_countdown, done = sampler_step(
@@ -949,6 +981,26 @@ class HiggsPipeline:
                         break
                 else:
                     repeat_run = 0
+                # Masked-EOC force-stop: past the text-end estimate, if EOC
+                # stays OUTSIDE top-k (masked) for `ramble_budget` consecutive
+                # rows, the model cannot terminate and is rambling — cut at the
+                # natural text end (de-delay geometry stays exact) and accept
+                # the draw. EOC dipping back into top-k resets the counter so
+                # slow-but-terminating speech gets room.
+                scaled0 = np.asarray(l[0], dtype=np.float32) / temperature
+                eoc_rank = int((scaled0 > scaled0[EOC]).sum()) + 1
+                if eoc_rank > top_k and len(delayed_rows) >= natural_end_rows:
+                    ramble_steps += 1
+                    if ramble_steps >= ramble_budget:
+                        log(f"masked-EOC ramble: cb0 EOC outside top-{top_k} "
+                            f"for {ramble_steps} rows past text end "
+                            f"(~{natural_end_rows} rows) — cutting rambling "
+                            f"tail at natural end")
+                        delayed_rows = delayed_rows[:natural_end_rows]
+                        wind_down = True
+                        break
+                else:
+                    ramble_steps = 0
             last_cb0 = int(codes[0])
             new_codes = np.array([[codes]], dtype=np.int64)           # [1,1,8]
             emb = self.audio_embed.run(None, {"codes": new_codes})[0].astype(self.llm_dtype)
