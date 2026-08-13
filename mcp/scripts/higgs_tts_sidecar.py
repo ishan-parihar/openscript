@@ -142,7 +142,7 @@ MAX_TOKENS_ONE_SHOT = 2048
 # never run 40 s on a 5-word line.
 MAX_TOKENS_PER_WORD = 20
 MIN_MAX_TOKENS = 96                 # ~3.8 s floor (very short lines)
-MAX_TOKENS_CAP = 768                # ~30 s hard cap per chunk (sentence mode)
+MAX_TOKENS_CAP = 1500               # ~60 s hard cap per chunk (sentence mode)
 # Natural speech ~2.5 wps @ 25 fps ≈ 10 audio rows/word; used to detect the
 # "finished the text but never sampled EOC" failure — the model completes the
 # line and then loops on a final phoneme. When the repetition guard fires at
@@ -157,7 +157,7 @@ ROWS_PER_WORD_EST = 10
 # long one-shot draws mid-sentence (the "9 s audio for a 45 s scene" bug):
 # a dramatic pause or held vowel in real speech can exceed 8 identical
 # vectors, killing a healthy draw. Tunable via HIGGS_REPEAT_BREAK_AFTER.
-REPEAT_BREAK_AFTER = int(os.environ.get("HIGGS_REPEAT_BREAK_AFTER", "25"))
+REPEAT_BREAK_AFTER = int(os.environ.get("HIGGS_REPEAT_BREAK_AFTER", "32"))
 
 # Retry-on-degenerate. Even with the reference-exact sampler the 4B AR model
 # stochastically (~10-40% of clone draws, rising with draw length) enters a bad
@@ -361,8 +361,8 @@ def estimate_max_tokens(text: str, ref_text: str | None = None,
     Normal speech is ~2.5 words/second ≈ 10 audio frames/word; budget
     20 tokens/word (2× headroom for slow/expressive delivery) plus a floor.
     One-shot draws allow the full MAX_TOKENS_ONE_SHOT ceiling (the model's
-    8192 context absorbs whole scenes); chunked draws keep the old 768 cap
-    (~30 s per chunk). The reference transcript is fixed conditioning (not
+    8192 context absorbs whole scenes); chunked draws keep the 1500 cap
+    (~60 s per chunk). The reference transcript is fixed conditioning (not
     generated), so it does NOT extend the budget.
 
     Returns an int in [MIN_MAX_TOKENS, cap]. Pure — unit-testable.
@@ -462,16 +462,19 @@ def sample_from_logits(logits, temperature: float, top_k: int,
                        top_p: float | None = None) -> int:
     """Sample one code id from a [1026]-shaped logits vector.
 
-    Mirrors the sglang-omni `_sample_independent`: temperature scaling,
-    then top-k and/or top-p truncation, then a categorical draw. top_p is
-    applied AFTER top-k (the reference order); None disables it.
+    Mirrors the sglang-omni `_sample_independent`: greedy short-circuit,
+    temperature scaling, then top-k and/or top-p truncation, then a
+    categorical draw. top_p is applied AFTER top-k (the reference order);
+    None disables it.
     """
     import numpy as np  # noqa: PLC0415
 
     logits = np.asarray(logits, dtype=np.float32).reshape(-1)
-    # Mask EOC/BOC so they are only chosen when genuinely most likely.
-    if temperature > 0.0:
-        logits = logits / temperature
+    # Greedy short-circuit (reference `_GREEDY_TEMP_THRESHOLD`): temperature
+    # <= ~0 must argmax, NOT divide — logits/0 → NaN probs → a broken draw.
+    if temperature <= 1e-5:
+        return int(np.argmax(logits))
+    logits = logits / temperature
     if top_k > 0 and top_k < logits.size:
         kth = np.sort(logits)[-top_k]
         logits = np.where(logits < kth, -np.inf, logits)
@@ -623,7 +626,14 @@ class HiggsPipeline:
         }
         self.llm_inputs = {i.name for i in self.llm_session.get_inputs()}
         self.num_layers = 36  # qwen3-4B backbone (probed: 0..35 present.*)
-        self.llm_dtype = np.float16  # probed: inputs_embeds is fp16 in the graph
+        # Activation dtype is READ FROM THE GRAPH — reference inference.py:
+        # "CUDA/fp16 ModelBuilder decoders expect float16 inputs_embeds + KV
+        # cache; CPU int4 expects float32. Hardcoding fails on the other
+        # build." Never assume fp16.
+        self.llm_dtype = np.float32
+        for _inp in self.llm_session.get_inputs():
+            if _inp.name == "inputs_embeds":
+                self.llm_dtype = np.float16 if "float16" in _inp.type else np.float32
         self.tokenizer = Tokenizer.from_file(str(self.model_dir / "tokenizer.json"))
 
         # Transformer sub-models (cuBLAS matmuls) run on the same provider as
@@ -657,29 +667,32 @@ class HiggsPipeline:
         # Smoke the llm once (empty KV) so a broken EP fails fast at load.
         probe_ids = np.array([[self.special_ids["<|tts|>"]]], dtype=np.int64)
         emb = self.text_embed.run(None, {"input_ids": probe_ids})[0]
-        _ = self._llm_step(emb.astype(self.llm_dtype), past=None)
+        _ = self._llm_step(emb.astype(self.llm_dtype), emb.shape[1], None)
         log("llm ready (manual KV, plain ORT)")
 
     # -- llm step -----------------------------------------------------------
-    def _llm_step(self, inputs_embeds, past):
+    def _llm_step(self, inputs_embeds, attn_len, past):
         """One llm_decoder forward with manual KV cache.
 
-        `inputs_embeds` is the fp16 [1, L, 2560] tensor for the CURRENT step's
-        new positions (prefill = the whole prompt; later steps = one new
-        position). `past` is a list of 36 (key, value) fp16 arrays or None for
-        prefill (the graph REQUIRES past inputs — pass explicit empty KVs).
+        CANONICAL contract — mirrors the onnx-community reference
+        `inference.py::_llm_step` exactly: `inputs_embeds` is the [1, L, 2560]
+        tensor for ONLY the new positions this step (prefill = the whole
+        prompt; every decode step = the single new code-embed row),
+        `attn_len` is the TOTAL sequence length (past + new) so the graph can
+        build the causal mask, and `past` is the previous present.* KV list
+        (None on prefill — the graph REQUIRES explicit empty KVs).
         Returns (hidden_last [1,1,2560], present_kvs list of 36 pairs).
         """
         import numpy as np  # noqa: PLC0415
 
-        seq_len = inputs_embeds.shape[1]
-        # attention_mask is per-input-segment (the graph concatenates past KV
-        # internally); the probe declares 'total_sequence_length' but coherent
-        # multi-token audio was produced passing ones(1, cur_len) — verified
-        # empirically against ORT 1.28 (plain Session.run, incremental decode).
+        # attention_mask length = TOTAL sequence length (past + new); the
+        # graph concatenates past KV internally. Feeding the whole accumulated
+        # sequence every step instead (the old bug) re-attended every past
+        # position AND made the KV cache grow quadratically (the BFC OOM on
+        # long draws) — this is the exact reference contract.
         feeds = {
             "inputs_embeds": np.ascontiguousarray(inputs_embeds),
-            "attention_mask": np.ones((1, seq_len), dtype=np.int64),
+            "attention_mask": np.ones((1, int(attn_len)), dtype=np.int64),
         }
         for i in range(self.num_layers):
             if past is not None:
@@ -688,9 +701,9 @@ class HiggsPipeline:
             else:
                 # Graph requires explicit past inputs — zero-length KV.
                 feeds[f"past_key_values.{i}.key"] = np.zeros(
-                    (1, 8, 0, 128), dtype=np.float16)
+                    (1, 8, 0, 128), dtype=self.llm_dtype)
                 feeds[f"past_key_values.{i}.value"] = np.zeros(
-                    (1, 8, 0, 128), dtype=np.float16)
+                    (1, 8, 0, 128), dtype=self.llm_dtype)
 
         out = self.llm_session.run(None, feeds)
         hidden = out[self.llm_out_index["hidden_states"]]
@@ -885,18 +898,26 @@ class HiggsPipeline:
         # are forced to BOC; once codebook 0 samples EOC a wind-down of
         # N-2 = 6 further rows runs (giving each delayed column's EOC time to
         # land just outside its reverse-delay window), then generation stops.
+        # CANONICAL incremental decode — mirrors the reference
+        # `inference.py::_run_ar` exactly: prefill the whole prompt ONCE
+        # (empty KV), then feed ONE new code-embed row per step with
+        # attn_len = running total. The OLD code re-fed the full accumulated
+        # sequence every step alongside the past KV, which re-attended every
+        # past position AND grew the KV cache quadratically (the BFC OOM on
+        # long draws) — the exact bug the reference pattern avoids.
         past = None
         delayed_rows = []
-        cur = full
         delay_count = 0
         eoc_countdown = None
         repeat_run = 0
-        last_codes = None
+        last_cb0 = None
         wind_down = False
         guard_fired = False
+        cap_hit = False
+        total = full.shape[1]
+        hidden, present = self._llm_step(full, total, None)           # prefill
+        past = present
         for step in range(max_new_tokens):
-            hidden, present = self._llm_step(cur, past)
-            past = present
             logits = self.audio_heads.run(
                 None, {"hidden_states": hidden.astype(np.float32)})[0]  # [1,1,8,1026]
             l = np.asarray(logits)[0, 0]                              # [8,1026]
@@ -913,23 +934,36 @@ class HiggsPipeline:
                 log(f"wind-down complete after cb0 EOC "
                     f"(total {len(delayed_rows)} rows)")
                 break
-            # Degenerate-loop guard (safety net only): if the full code vector
-            # is identical for REPEAT_BREAK_AFTER consecutive positions, the
+            # Degenerate-loop guard (safety net only): if CODEBOOK-0 is
+            # identical for REPEAT_BREAK_AFTER consecutive positions, the
             # model is stuck in a sustained-tone state and never samples EOC.
+            # Tracks cb0 only (the reference convention) — full-8-vector
+            # equality over-fires on held vowels mid-speech.
             if delay_count >= NUM_CODEBOOKS and eoc_countdown is None:
-                if codes == last_codes:
+                if codes[0] == last_cb0:
                     repeat_run += 1
                     if repeat_run >= REPEAT_BREAK_AFTER:
                         guard_fired = True
                         log(f"degenerate repetition at step {step} "
-                            f"(code vector repeated {repeat_run}x); terminating")
+                            f"(cb0 repeated {repeat_run}x); terminating")
                         break
                 else:
                     repeat_run = 0
-            last_codes = codes
+            last_cb0 = int(codes[0])
             new_codes = np.array([[codes]], dtype=np.int64)           # [1,1,8]
             emb = self.audio_embed.run(None, {"codes": new_codes})[0].astype(self.llm_dtype)
-            cur = np.concatenate([cur, emb], axis=1)
+            total += 1
+            hidden, present = self._llm_step(emb, total, past)        # 1 new row
+            past = present
+        else:
+            cap_hit = True
+
+        # -- cap-hit handling (reference: loud TRUNCATED warning) -------------
+        if cap_hit:
+            secs = len(delayed_rows) * FRAME_SAMPLES / SAMPLE_RATE
+            log(f"WARNING: hit max_new_tokens={max_new_tokens} without cb0 EOC "
+                f"({secs:.1f}s, {len(delayed_rows)} rows) — output likely "
+                f"TRUNCATED mid-speech; raise the budget for this scene")
 
         # -- cut-at-end recovery (finish-without-EOC) -------------------------
         # The most common failure on LONG draws: the model reads the WHOLE
@@ -950,6 +984,13 @@ class HiggsPipeline:
                 delayed_rows = delayed_rows[:keep]
                 wind_down = True
                 guard_fired = False
+        # Reference tail-drop on repeat-stop: the trailing repeat rows ARE the
+        # degenerate buzz that tripped the guard — drop them so a shipped
+        # last-output doesn't end in a tone (inference.py `del delayed[-max_repeat:]`).
+        if guard_fired and len(delayed_rows) > REPEAT_BREAK_AFTER + NUM_CODEBOOKS:
+            log(f"dropping {REPEAT_BREAK_AFTER} trailing repeat rows "
+                f"(reference tail-drop on repeat-stop)")
+            delayed_rows = delayed_rows[:-REPEAT_BREAK_AFTER]
 
         # -- de-delay (fixed geometry, reference-exact) + codec decode -------
         if len(delayed_rows) < NUM_CODEBOOKS:
@@ -965,11 +1006,14 @@ class HiggsPipeline:
         # Misalignment guard: with clean geometry each column's EOC lands just
         # outside its extraction window. If any BOC/EOC id reaches this point,
         # the model misaligned its termination — treat the draw as degenerate
-        # (the codec would otherwise decode a special id as a real code).
+        # (and CLIP the ids below so a shipped last-output never feeds special
+        # ids to the codec — reference inference.py: `np.clip(codes, 0, 1023)`
+        # — which would decode as a real code and produce distorted audio).
         leaked = int(np.isin(raw, [BOC, EOC]).sum())
         if leaked:
             log(f"WARNING: {leaked} BOC/EOC ids leaked into de-delayed codes "
                 f"(misaligned termination); treating draw as degenerate")
+        raw = np.clip(raw, 0, CODEC_VOCAB - 1)                         # drop BOC/EOC
         codes_mat = raw.T[None]                                        # [1,8,T]
         wave = self.audio_tokenizer.run(None, {"audio_codes": codes_mat})[0]
         audio = np.asarray(wave).reshape(-1)
