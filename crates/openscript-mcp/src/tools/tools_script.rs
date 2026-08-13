@@ -237,7 +237,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "properties": {
                     "id": {"type": "string", "description": "Unique scene ID. Auto-generated if omitted."},
                     "speaker": {"type": "string", "description": "Speaker ID (must match a key in speakers)."},
-                    "text": {"type": "string", "description": "The spoken text for this scene."},                    "emote": {"type": ["string", "null"], "description": "Emotion/emote for this scene (e.g. 'happy', 'angry', 'whisper', 'thinking'). Selects the speaker's emotion-take (tonality template) at synthesis when the voice profile registered one; also feeds sticker/GIPHY reaction search. For higgs voices, maps to inline emotion/style/sfx control tags. Free-form; falls back to the base voice when no take matches."},
+                    "text": {"type": "string", "description": "The spoken text for this scene. Engines with inline control tokens (higgs) read `<|emotion|>`/`<|style|>`/`<|sfx|>`/`<|prosody|>` tags from this text — they are AUDIO-ONLY directives and are automatically stripped from captions/timeline previews (never displayed)."},                    "emote": {"type": ["string", "null"], "description": "Emotion/emote for this scene (e.g. 'happy', 'angry', 'whisper', 'thinking'). Selects the speaker's emotion-take (tonality template) at synthesis when the voice profile registered one; also feeds sticker/GIPHY reaction search. For higgs voices, maps to inline emotion/style/sfx control tags. Free-form; falls back to the base voice when no take matches."},
                     "tone": {"type": ["string", "null"], "description": "Natural-language delivery direction for this line (e.g. 'low gravelly whisper, slow deliberate pace'). VoiceDesign receives it verbatim; higgs scans it for delivery keywords (whisper/shout/sing/expressive/flat) and maps them to style/prosody control tags."},
                     "control_tags": {"type": ["string", "null"], "description": "RAW control-tag passthrough for engines with inline control tokens (higgs: emotion/style/sfx/prosody, 43 tags). Prepended verbatim to the line, e.g. \"<|prosody:pause|> mid, <|sfx:laughter|>Haha\". Only the engine's recognized tags are valid."},
                     "speed": {"type": ["number", "null"], "description": "Per-scene speech speed multiplier (overrides tts.default_speed). For higgs, values >=1.08 / <=0.92 emit prosody speed tags (natural pacing); neutral-band values fall back to ffmpeg."},
@@ -683,12 +683,20 @@ pub(crate) async fn handle_script_generate_voices(
         // word counts drift and remap_words_to_script collapses to even-spacing
         // estimates (caption-sync gap). Both engines' timings are text-remapped
         // to the script's ground-truth words below.
+        //
+        // DISPLAY TEXT: TTS engines with inline control tags (higgs
+        // `<|emotion|>`/`<|sfx|>`/`<|prosody|>`, etc.) consume the RAW
+        // `scene.text` above — but the tags are audio-only directives, not
+        // spoken words. The manifest `text` + word list must be the STRIPPED
+        // copy, or tags bleed into captions.ass / timeline previews. Tags also
+        // inflate the word count, breaking remap_words_to_script's count match.
+        let display_text = openscript_core::control_tags::strip_control_tags(&scene.text);
         let scene_end_ms = current_ms + result.duration_ms;
         let lang = spec.language.to_lowercase();
         let hinglish = lang.starts_with("hi") || lang.contains("hinglish");
         let words = if hinglish {
-            match run_whisper_alignment(&result.output_path, &scene.text, "hi", current_ms, scene_end_ms).await {
-                Ok(timed) => remap_words_to_script(&scene.text, timed, current_ms, scene_end_ms),
+            match run_whisper_alignment(&result.output_path, &display_text, "hi", current_ms, scene_end_ms).await {
+                Ok(timed) => remap_words_to_script(&display_text, timed, current_ms, scene_end_ms),
                 Err(e) => {
                     let msg = format!(
                         "Scene {}: Whisper alignment failed ({}), falling back to Parakeet.",
@@ -698,7 +706,7 @@ pub(crate) async fn handle_script_generate_voices(
                     tracing::warn!("[script.generate_voices] {}", msg);
                     voice_warnings.push(msg);
                     match run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms).await {
-                        Ok(timed) => remap_words_to_script(&scene.text, timed, current_ms, scene_end_ms),
+                        Ok(timed) => remap_words_to_script(&display_text, timed, current_ms, scene_end_ms),
                         Err(e2) => {
                             let msg2 = format!(
                                 "Scene {}: Parakeet fallback failed ({}), using estimated word timings. Caption sync will be approximate.",
@@ -707,14 +715,14 @@ pub(crate) async fn handle_script_generate_voices(
                             );
                             tracing::warn!("[script.generate_voices] {}", msg2);
                             voice_warnings.push(msg2);
-                            estimate_word_timings(&scene.text, current_ms, scene_end_ms)
+                            estimate_word_timings(&display_text, current_ms, scene_end_ms)
                         }
                     }
                 }
             }
         } else {
             match run_parakeet_alignment(&result.output_path, current_ms, scene_end_ms).await {
-                Ok(timed) => remap_words_to_script(&scene.text, timed, current_ms, scene_end_ms),
+                Ok(timed) => remap_words_to_script(&display_text, timed, current_ms, scene_end_ms),
                 Err(e) => {
                     let msg = format!(
                         "Scene {}: Parakeet force-alignment failed ({}), using estimated word timings. Caption sync will be approximate.",
@@ -723,7 +731,7 @@ pub(crate) async fn handle_script_generate_voices(
                     );
                     tracing::warn!("[script.generate_voices] {}", msg);
                     voice_warnings.push(msg);
-                    estimate_word_timings(&scene.text, current_ms, scene_end_ms)
+                    estimate_word_timings(&display_text, current_ms, scene_end_ms)
                 }
             }
         };
@@ -731,7 +739,7 @@ pub(crate) async fn handle_script_generate_voices(
         segments.push(serde_json::json!({
             "scene_id": scene.id,
             "speaker": scene.speaker,
-            "text": scene.text,
+            "text": display_text,
             "start_ms": current_ms,
             "end_ms": scene_end_ms,
             "duration_ms": result.duration_ms,
@@ -785,11 +793,14 @@ pub(crate) async fn handle_script_build_captions(
     let mut segments = Vec::new();
     if let Some(segs) = manifest.get("segments").and_then(|v| v.as_array()) {
         for seg in segs {
-            let text = seg
-                .get("text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            // Display boundary: strip TTS control tags (higgs `<|...|>`)
+            // from the caption text — they are audio-only directives and must
+            // never appear in the rendered captions. Defense-in-depth for
+            // manifests written before the generate_voices strip (stale
+            // manifests on disk still carry inline tags).
+            let text = openscript_core::control_tags::strip_control_tags(
+                seg.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+            );
             let start_ms = seg.get("start_ms").and_then(|v| v.as_i64()).unwrap_or(0);
             let end_ms = seg.get("end_ms").and_then(|v| v.as_i64()).unwrap_or(0);
 
@@ -798,14 +809,24 @@ pub(crate) async fn handle_script_build_captions(
             // (Parakeet mis-hears cloned voices: "bias" → "pie"). Keep the
             // alignment's real timing windows when the word count matches;
             // otherwise fall back to char-proportional estimation.
+            // Stale (pre-fix) manifests also carry `<|...|>` control tags as
+            // word entries — strip them so the count matches the stripped text
+            // and the real ASR timings survive (instead of collapsing to
+            // even-spacing estimates).
             let timed_words: Vec<WordTiming> = seg
                 .get("words")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
                         .filter_map(|w| {
+                            let word = openscript_core::control_tags::strip_control_tags(
+                                w.get("word")?.as_str()?,
+                            );
+                            if word.is_empty() {
+                                return None; // pure-tag token → not a spoken word
+                            }
                             Some(WordTiming {
-                                word: w.get("word")?.as_str()?.to_string(),
+                                word,
                                 start_ms: w.get("start_ms")?.as_i64()?,
                                 end_ms: w.get("end_ms")?.as_i64()?,
                             })
@@ -1082,7 +1103,11 @@ pub(crate) async fn handle_script_to_timeline(
     if let Some(segments) = manifest.get("segments").and_then(|v| v.as_array()) {
         for seg in segments {
             let scene_id = seg.get("scene_id").and_then(|v| v.as_str()).unwrap_or("");
-            let text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            // Display boundary: strip TTS control tags from the segment caption
+            // and voiceover event text (timeline preview must show clean prose).
+            let text = openscript_core::control_tags::strip_control_tags(
+                seg.get("text").and_then(|v| v.as_str()).unwrap_or(""),
+            );
             let dur_ms = seg
                 .get("duration_ms")
                 .and_then(|v| v.as_i64())
