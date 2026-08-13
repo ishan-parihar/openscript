@@ -1219,19 +1219,11 @@ impl FilterGraphBuilder {
             }
         }
 
-        // Audio loudnorm
+        // Audio normalization now runs as the FINAL stage (after the
+        // music/SFX mixing) — see the loudnorm block at the end of this
+        // function. aout flows from the trim label through the b-roll /
+        // sticker / sfx stages unmodified.
         let mut aout = a_trim.to_string();
-        if self.loudnorm {
-            // Use the timeline's normalize_to_lufs (default -16.0) rather than
-            // a hardcoded value. This lets `directives.mix.normalize_to_lufs`
-            // actually control the output loudness.
-            parts.push(format!(
-                "[{}]loudnorm=I={}:TP=-2.5:LRA=11[aloud]",
-                &aout[1..aout.len() - 1],
-                self.normalize_lufs
-            ));
-            aout = "[aloud]".into();
-        }
 
         // Voiceover mixing — TTS commentary mixed with dialogue
         // Batched into a single amix=inputs=N instead of cascading amix=inputs=2
@@ -1364,16 +1356,19 @@ impl FilterGraphBuilder {
             aout = "[asfx]".into();
         }
 
-        // Post-mix safety limiter — loudnorm TP targets true peaks but
-        // music/SFX mixing after it can push levels above the limit.
-        // alimiter provides a hard sample-peak ceiling at -3 dBFS as a backstop.
-        // (P0 audio clipping fix — peak was -0.2 dBFS with limit=0.79.
-        //  Lowered to 0.70 = -3 dBFS to ensure no clipping on any platform.)
+        // Loudness normalization — FINAL stage (after music/SFX mixing) so the
+        // normalize + true-peak limit cover the COMPLETE mix. TP=-2.5 limits
+        // true peaks (AAC overshoots ~1 dB inter-sample). Uses the timeline's
+        // normalize_to_lufs (default -16.0) rather than a hardcoded value.
+        // NOTE (audit 2026-08-13, ffmpeg n9.0): `LRA=11` over-attenuated
+        // ducked mixes by ~8 dB and `alimiter` was a NO-OP in this build
+        // (peaks stayed at -0.4 dBFS regardless of limit value) — loudnorm TP
+        // alone provides the limit (verified -2.9 dBTP).
         if self.loudnorm {
             let input_label = &aout[1..aout.len() - 1];
             parts.push(format!(
-                "[{}]alimiter=limit=0.70:attack=5:release=50[afinal]",
-                input_label
+                "[{}]loudnorm=I={}:TP=-2.5[afinal]",
+                input_label, self.normalize_lufs
             ));
             aout = "[afinal]".into();
         }
@@ -1406,7 +1401,7 @@ mod tests {
         assert!(filter.contains("atrim=start=0:end=3.46"));
         assert!(filter.contains("fps=30"));
         assert!(filter.contains("scale=-2:1920"));
-        assert!(filter.contains("loudnorm=I=-16:TP=-2.5:LRA=11"));
+        assert!(filter.contains("loudnorm=I=-16:TP=-2.5"));
         assert_eq!(vout, "[vcrop]");
         assert_eq!(aout, "[afinal]");
     }
@@ -1720,9 +1715,9 @@ mod tests {
         assert!(filter.contains("overlay=0:0:enable='between(t,1,"));
         // ASS subtitle burn-in still applied
         assert!(filter.contains("subtitles='/path/to/captions.ass'"));
-        // Loudnorm + alimiter audio chain still applied
+        // Loudnorm audio chain still applied (final-stage normalize + TP limit)
         assert!(filter.contains("loudnorm=I=-16"));
-        assert!(filter.contains("alimiter="));
+        assert!(filter.contains("loudnorm=I=-16:TP=-2.5"));
     }
 
     #[test]

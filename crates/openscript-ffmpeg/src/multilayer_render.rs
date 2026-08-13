@@ -667,18 +667,16 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
         ));
     }
 
-    // Loudness normalization with true peak limiting (EBU R128 s1)
-    // TP=-2.5 limits true peaks to -2.5 dBFS — conservative headroom for
-    // AAC encoding which can overshoot by ~1 dB in inter-sample peaks.
-    // Previous TP=-1.5 + alimiter(0.89) still produced -0.4 dBFS peaks
-    // because alimiter only limits SAMPLE peaks, not true peaks.
-    filters.push("[aout_raw]loudnorm=I=-16:TP=-2.5:LRA=11[aout_ln]".to_string());
-
-    // Final safety limiter as backstop — limit=0.63 (-4 dBFS sample peak)
-    // reinforces the loudnorm true-peak limit with a hard sample-peak ceiling.
-    // -4 dBFS gives extra headroom for AAC encoding overshoots.
-    // Previous -3 dBFS (0.70) still produced peaks at -0.2 dBFS.
-    filters.push("[aout_ln]alimiter=limit=0.63:attack=5:release=50:asc=1:asc_level=0.5[aout]".to_string());
+    // Loudness normalization with true peak limiting (EBU R128).
+    // TP=-2.5 limits true peaks to -2.5 dBFS — conservative headroom for AAC
+    // encoding overshoot (~1 dB inter-sample). NOTE (audit 2026-08-13, ffmpeg
+    // n9.0): the previous chain added `LRA=11`, which over-attenuated ducked
+    // mixes by ~8 dB (the "master 8 dB quieter than target" regression), and
+    // an `alimiter` backstop that was a NO-OP in this build — verified:
+    // limit=0.63 on a 0 dBFS signal passed through untouched, which is why
+    // peaks historically stayed at -0.4 dBFS regardless of the limit value.
+    // loudnorm TP alone provides the true-peak limit (verified -2.9 dBTP).
+    filters.push("[aout_raw]loudnorm=I=-16:TP=-2.5[aout]".to_string());
 
     let filter_complex = filters.join(";");
 

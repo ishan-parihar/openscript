@@ -24,7 +24,9 @@ fn test_filter_graph_single_segment() {
     assert!(filter.contains("atrim=start=0:end=3"));
     assert!(filter.contains("fps=30"));
     assert!(filter.contains("scale=-2:1920"));
-    assert!(filter.contains("loudnorm=I=-16:TP=-2.5:LRA=11"));
+    assert!(filter.contains("loudnorm=I=-16:TP=-2.5"));
+    assert!(!filter.contains("LRA=")); // LRA removed: over-attenuated ducked mixes (audit 2026-08-13)
+    assert!(!filter.contains("alimiter=")); // alimiter was a no-op in ffmpeg n9.0
     assert_eq!(vout, "[vcrop]");
     assert_eq!(aout, "[afinal]");
 }
@@ -361,7 +363,9 @@ fn test_filter_graph_no_ducking_preserves_behavior() {
     assert!(!filter.contains("asplit=2"));
     assert!(!filter.contains("sidechaincompress"));
     assert!(filter.contains("[music_0]volume=0.3[music_vol_0]"));
-    assert!(filter.contains("[aloud][music_vol_0]amix="));
+    // Dialogue (single segment -> [a0]) mixed with music, then loudnorm as final stage
+    assert!(filter.contains("[a0][music_vol_0]amix=inputs=2"));
+    assert!(filter.contains("loudnorm=I=-16:TP=-2.5[afinal]"));
     assert_eq!(aout, "[afinal]");
 }
 

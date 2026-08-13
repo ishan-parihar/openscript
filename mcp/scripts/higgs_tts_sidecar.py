@@ -165,11 +165,20 @@ REPEAT_BREAK_AFTER = int(os.environ.get("HIGGS_REPEAT_BREAK_AFTER", "32"))
 # silence (decoded RMS ~0), or rambling far past the text without ever sampling
 # cb0 EOC. Each draw is independent (global RNG), so retrying a degenerate
 # chunk with a fresh sample is cheap and recovers the vast majority of
-# failures. Each retry ALSO cools the temperature (see the synth loop) — a hot
-# draw that looped usually terminates cleanly 0.1-0.2 lower.
+# failures.
+#
+# Retry DIRECTION is cause-aware (see `retry_temperature`): a sustained-TONE
+# loop is the AR model stuck in a local attractor — COOLING makes it more
+# deterministic and MORE stuck, so tone-loop retries go HOTTER (+0.15/attempt)
+# to break the attractor. Ramble/silence/spectral draws, by contrast,
+# terminate better cooler (sweep data: cooled ramble draws terminate cleanly).
+# The stress_ctl render proved cooling-only retries fail on long one-shot
+# clone draws (all 3 cooled attempts looped on 3/5 scenes).
 SILENCE_RMS = 0.008               # decoded float32 RMS below this = dead air
-MAX_CHUNK_RETRIES = 2             # attempts beyond the first per chunk
-MIN_RETRY_TEMPERATURE = 0.5       # cooling floor for degenerate retries
+MAX_CHUNK_RETRIES = 4             # attempts beyond the first per chunk
+MIN_RETRY_TEMPERATURE = 0.35      # cooling floor for ramble/silence retries
+HOT_RETRY_STEP = 0.15             # tone-loop retries go hotter by this per try
+MAX_RETRY_TEMPERATURE = 0.95      # tone-loop retry ceiling
 
 # Emote -> Higgs control-tag mapping. Keys are the emotes used across the
 # content-format playbooks / script scenes; the 21 Higgs emotions + 3 styles
@@ -371,6 +380,31 @@ def estimate_max_tokens(text: str, ref_text: str | None = None,
     budget = words * MAX_TOKENS_PER_WORD + 40
     cap = MAX_TOKENS_ONE_SHOT if one_shot else MAX_TOKENS_CAP
     return max(MIN_MAX_TOKENS, min(cap, budget))
+
+
+def retry_temperature(base: float, attempt: int,
+                      cause: str | None = None) -> float:
+    """Direction-aware retry temperature for degenerate draws.
+
+    ``attempt`` 0 is the FIRST draw (returns ``base`` unchanged). Retries
+    (attempt >= 1) move temperature in the direction that actually fixes the
+    failure mode:
+
+    - ``cause == "tone"`` (cb0-repeat guard fired — the AR model is stuck in
+      a sustained-tone attractor): COOLING makes the draw more deterministic
+      and MORE stuck, so go HOTTER by ``HOT_RETRY_STEP`` per try (capped at
+      ``MAX_RETRY_TEMPERATURE``) to break the attractor with randomness.
+    - anything else (ramble / silence / spectral / error): terminate better
+      cooler — step down ``0.1`` per try, floored at
+      ``MIN_RETRY_TEMPERATURE``.
+
+    Pure — unit-testable.
+    """
+    if attempt <= 0:
+        return float(base)
+    if cause == "tone":
+        return min(MAX_RETRY_TEMPERATURE, base + HOT_RETRY_STEP * attempt)
+    return max(MIN_RETRY_TEMPERATURE, base - 0.1 * attempt)
 
 
 def apply_delay_pattern(codes_TN, num_codebooks: int = NUM_CODEBOOKS,
@@ -808,14 +842,11 @@ class HiggsPipeline:
                 pitch=pitch, pause_ms=pause_ms, control_tags=control_tags)
             audio = None
             meta = None
+            prev_cause = None
             for attempt in range(MAX_CHUNK_RETRIES + 1):
-                # TEMPERATURE-COOLING RETRIES: a degenerate draw (tone loop)
-                # is usually the AR model running hot — retrying at a lower
-                # temperature drastically raises the chance of a clean draw
-                # (sweep data: 3 hot retries all looped; the cooled attempt
-                # terminates cleanly). Cool 0.1 per retry, floor 0.5.
-                attempt_temp = max(
-                    MIN_RETRY_TEMPERATURE, temperature - 0.1 * attempt)
+                # Cause-aware retry direction: tone loops go HOTTER (cooling
+                # makes the attractor more stuck), everything else cools.
+                attempt_temp = retry_temperature(temperature, attempt, prev_cause)
                 try:
                     audio, meta = self._synth_chunk(
                         chunk_txt, ref_path=ref_path, ref_text=ref_text or None,
@@ -823,22 +854,23 @@ class HiggsPipeline:
                         max_new_tokens=max_new_tokens)
                 except Exception as exc:  # noqa: BLE001 — any failed draw
                     # (structural, codec, ORT OOM/GPU Fail) is just another
-                    # degenerate attempt; a cooled retry is strictly better
-                    # than propagating. onnxruntime raises
+                    # degenerate attempt; a retry is strictly better than
+                    # propagating. onnxruntime raises
                     # onnxruntime.capi.onnxruntime_pybind11_state.Fail (not
                     # RuntimeError) on OOM/provider errors — catch broadly.
                     log(f"chunk {i + 1} attempt {attempt + 1} raised "
                         f"{type(exc).__name__}: {exc}")
                     meta = {"degenerate": True, "wind_down": False,
                             "rms": 0.0, "rows": 0, "leaked": 0,
-                            "spectral_noise": False}
+                            "spectral_noise": False, "cause": "error"}
                 if not meta["degenerate"]:
                     break
+                prev_cause = meta.get("cause", "ramble")
                 log(f"degenerate chunk {i + 1} attempt {attempt + 1}/"
                     f"{MAX_CHUNK_RETRIES + 1} (wind_down={meta['wind_down']} "
                     f"rms={meta['rms']:.4f} rows={meta['rows']}"
-                    f" leaked={meta.get('leaked', 0)}, temp={attempt_temp:.2f}); "
-                    f"retrying")
+                    f" leaked={meta.get('leaked', 0)}, cause={prev_cause}, "
+                    f"temp={attempt_temp:.2f}); retrying")
             if meta and meta["degenerate"]:
                 any_degenerate = True
                 log(f"WARNING: chunk {i + 1} still degenerate after "
@@ -1081,6 +1113,19 @@ class HiggsPipeline:
         # the codec would see special ids, the waveform is dead-air silence,
         # OR the draw is spectrally broadband noise.
         degenerate = (not wind_down) or guard_fired or leaked > 0 or rms < SILENCE_RMS or spectral_noise
+        # Degenerate CAUSE — drives the retry-temperature direction in
+        # `retry_temperature`: "tone" (cb0-repeat attractor) must retry
+        # HOTTER; "ramble"/"silence"/"spectral"/"error" retry cooler.
+        if guard_fired:
+            cause = "tone"
+        elif not wind_down:
+            cause = "ramble"
+        elif rms < SILENCE_RMS:
+            cause = "silence"
+        elif spectral_noise:
+            cause = "spectral"
+        else:
+            cause = "none"
         meta = {
             "degenerate": degenerate,
             "wind_down": wind_down,
@@ -1088,6 +1133,7 @@ class HiggsPipeline:
             "rms": rms,
             "leaked": leaked,
             "spectral_noise": spectral_noise,
+            "cause": cause,
         }
         return audio, meta
 

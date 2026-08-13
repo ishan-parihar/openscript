@@ -236,6 +236,19 @@ check("100 words -> capped at MAX", higgs.estimate_max_tokens("word " * 100) == 
 check("ref_text does not extend budget",
       higgs.estimate_max_tokens("Go.", "a very long reference transcript") == higgs.MIN_MAX_TOKENS)
 
+# Cause-aware retry temperatures (the stress_ctl regression: cooling-only
+# retries left long one-shot clone draws stuck in tone loops).
+rt = higgs.retry_temperature
+r2 = lambda v: round(float(v), 2)  # float-safe comparison
+check("first draw keeps base temp", r2(rt(0.7, 0)) == 0.7)
+check("tone-loop retry goes hotter", r2(rt(0.7, 1, "tone")) == 0.85)
+check("tone-loop retry caps at ceiling", r2(rt(0.7, 2, "tone")) == higgs.MAX_RETRY_TEMPERATURE)
+check("ramble retry cools", r2(rt(0.7, 1, "ramble")) == 0.6)
+check("ramble retry floors at MIN", r2(rt(0.7, 5, "ramble")) == higgs.MIN_RETRY_TEMPERATURE)
+check("silence retry cools like ramble", r2(rt(0.7, 2, "silence")) == 0.5)
+check("spectral retry cools like ramble", r2(rt(0.7, 3, "spectral")) == 0.4)
+check("unknown cause cools", r2(rt(0.7, 1, None)) == 0.6)
+
 # stuck-vector simulation: identical code vector for REPEAT_BREAK_AFTER
 # consecutive (post-pad) positions must trigger the breaker. The loop must
 # run past the (tunable) threshold — drive it from the constant so this test

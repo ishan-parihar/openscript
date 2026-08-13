@@ -143,8 +143,10 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
         filters.push("[1:a]anull[aout]".to_string());
     }
 
-    // Loudness normalization — TP=-2.5 for conservative headroom (P0 audio clipping fix)
-    filters.push("[aout]loudnorm=I=-16:TP=-2.5:LRA=11[aout_norm]".to_string());
+    // Loudness normalization — TP=-2.5 for conservative headroom (P0 audio
+    // clipping fix). NOTE (audit 2026-08-13, ffmpeg n9.0): `LRA=11`
+    // over-attenuated ducked mixes by ~8 dB; loudnorm TP alone is the limit.
+    filters.push("[aout]loudnorm=I=-16:TP=-2.5[aout_norm]".to_string());
 
     let filter_complex = filters.join(";");
 
