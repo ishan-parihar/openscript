@@ -5,11 +5,11 @@
 
 ---
 
-## Tool Families (29 families, 111 tools)
+## Tool Families (30 families, 113 tools)
 
 | Family | Count | Tools |
 |--------|-------|-------|
-| timeline | 11 | build, load, validate, add_segment, add_track_event, diff, preview, inspect, autofill_broll, render, upgrade |
+| timeline | 12 | build, load, validate, presentation, add_segment, add_track_event, diff, preview, inspect, autofill_broll, render, upgrade |
 | script | 7 | schema, parse, format.validate, generate_voices, build_captions, to_timeline, to_video |
 | director | 2 | run, format |
 | hf | 6 | classify, lint, validate, snapshot, render |
@@ -38,6 +38,7 @@
 | voiceover | 1 | generate |
 | voices | 1 | list |
 | composition | 1 | render |
+| video | 1 | to_video |
 
 ---
 
@@ -372,27 +373,37 @@ before and after repair.
 
 ## Trajectory D — Video to Video (V2V)
 
-**Agentic pipeline (RECOMMENDED):**
+**One-call (RECOMMENDED) — `video.to_video`:** the visual layer ALTERNATES
+stock b-roll ↔ the ORIGINAL footage per transcript segment — `[broll → video →
+broll → video → …]`. Everything from the A2V pipeline remains (captions,
+stickers, music, SFX, voiceover); only the visual layer alternates, segregated
+by the transcript segmentation. The original video is the renderer's base
+layer and its audio is the master clock.
 ```
-1. transcribe             — Hinglish SRT from video
-2. srt.prepare            — Group words into caption segments
-3. srt.to_timeline        — Create timeline with segments
-4. segment.analyze        — Get clean segment data
-5. [AGENT generates English keywords from Hinglish content]
-6. broll.fetch            — Search Pexels with agent-generated English keywords
-7. music.assign           — Add background music
-8. captions.generate_ass  — Generate styled captions
-9. timeline.validate      — Check for errors
-10. timeline.render       — Render final video
+video.to_video {
+  video_path: "input.mp4",
+  alternation: { enabled: true, pattern: "every_other" }  // or broll_ratio: 0.5
+}
+```
+Planned roles (`broll` / `source` per segment) are persisted to
+`directives.presentation.visual_roles`; source-role segments get NO b-roll
+event, so the original footage shows there.
+
+**Manual / fine-grained:**
+```
+1. timeline.presentation  — plan/query visual roles (mode=alternate, pattern,
+                            every_n, broll_ratio)
+2. transcribe             — Hinglish SRT from video
+3. srt.to_timeline        — timeline with segments (source = the video)
+4. broll.auto { alternation: {enabled: true} }  — stock ONLY on broll-role segs
+5. music.assign / captions.generate_ass / sticker.auto — across ALL segments
+6. timeline.validate      — checks intent + coverage + BROLL_ON_SOURCE
+7. timeline.render        — base = original video → alternation renders
 ```
 
-**Alternative (for editorial control):**
-```
-1. reelize.brief          — Analyze footage, get segment data
-2. [AGENT decides which segments to keep, what b-roll to add]
-3. reelize.direct         — Execute agent's creative instructions
-4. verify.production      — Score output quality
-```
+**Alternative (full-coverage b-roll over everything):** the classic A2V stack
+(`broll.auto` without alternation, or `reelize.brief` → `reelize.direct`),
+which is Trajectory C with the visual layer fully covered by stock.
 
 ---
 

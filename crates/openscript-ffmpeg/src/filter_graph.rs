@@ -482,12 +482,33 @@ impl FilterGraphBuilder {
         if let Some(broll_track) = timeline.tracks.get(&TrackType::Broll) {
             for evt in broll_track {
                 if let EventKind::Broll { .. } = &evt.kind {
-                    let path = timeline
+                    // Robust asset resolution mirroring the sticker lane — two
+                    // registry conventions exist in the wild:
+                    //   (a) event.asset_id == registry key (broll.fetch-style:
+                    //       asset_id = event_id) → direct hit
+                    //   (b) event.asset_id == file path, registry keyed by
+                    //       event_id (broll.assign-style) → fall back to
+                    //       scanning the registry for a record whose `path`
+                    //       matches, then to treating event.asset_id itself as
+                    //       the path.
+                    // Before this fix, only (a) resolved — broll.assign events
+                    // silently dropped their overlay (V2V fixture audit caught
+                    // it: 3 events on the timeline, zero in the filter graph).
+                    let record = timeline
                         .assets
                         .broll
                         .get(&evt.asset_id)
+                        .or_else(|| {
+                            timeline.assets.broll.values().find(|v| {
+                                v.get("path")
+                                    .and_then(|p| p.as_str())
+                                    .map(|p| p == evt.asset_id)
+                                    .unwrap_or(false)
+                            })
+                        });
+                    let path = record
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
-                        .unwrap_or("")
+                        .unwrap_or(&evt.asset_id)
                         .to_string();
                     if !path.is_empty() && path != "placeholder" {
                         broll_events.push(BrollEvent {
@@ -1492,6 +1513,91 @@ mod tests {
         assert!(filter.contains("d=1:s=1080x1920:fps=30"));
         assert!(filter.contains("[broll_zp_0]"));
         assert_eq!(vout, "[vbroll_0]");
+    }
+
+    #[test]
+    fn test_from_timeline_resolves_broll_assign_convention_b() {
+        // Regression (V2V fixture audit): broll.assign-style timelines set
+        // event.asset_id = the FILE PATH and register the asset keyed by the
+        // EVENT id (convention b). The old from_timeline lookup used only
+        // assets.broll.get(&evt.asset_id) (convention a) — the path lookup
+        // missed, and b-roll events silently produced NO overlay. Assert both
+        // conventions resolve and that convention-b events emit overlays.
+        use openscript_core::timeline::{AssetRegistry, Directives, Effects, RenderTarget, Timeline};
+
+        let mut tl = Timeline::new("src.mp4".into(), "9:16", 30, None);
+        tl.segments = vec![make_segment("seg_001", 0.0, 4.0)];
+        // Convention (b): asset_id = path, registry keyed by event id.
+        let evt = openscript_core::timeline::TimelineEvent {
+            id: "broll_001".into(),
+            asset_id: "/tmp/broll_a.mp4".into(),
+            start_ms: 0,
+            end_ms: 4000,
+            offset_ms: 0,
+            gain_db: 0.0,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+            tags: vec!["test".into()],
+            provenance: None,
+            kind: openscript_core::timeline::EventKind::Broll {
+                concept: "test".into(),
+                source_provider: "test".into(),
+                transition_style: "cut".into(),
+                crop_mode: "center".into(),
+                orientation: "9:16".into(),
+                motion_intensity: "medium".into(),
+            },
+        };
+        tl.tracks
+            .insert(openscript_core::types::TrackType::Broll, vec![evt]);
+        tl.assets.broll.insert(
+            "broll_001".into(),
+            serde_json::json!({"path": "/tmp/broll_a.mp4"}),
+        );
+
+        let (filter, vout, _) = FilterGraphBuilder::from_timeline(&tl).build();
+        assert!(
+            filter.contains("movie='/tmp/broll_a.mp4'"),
+            "convention-b broll path must resolve into the filter graph, got: {}",
+            filter
+        );
+        assert!(
+            vout.contains("vbroll"),
+            "broll overlay must be the final video output, got vout={}",
+            vout
+        );
+
+        // Convention (a) — asset_id == registry key — must still resolve.
+        let mut tl_a = Timeline::new("src.mp4".into(), "9:16", 30, None);
+        tl_a.segments = vec![make_segment("seg_001", 0.0, 4.0)];
+        let evt_a = openscript_core::timeline::TimelineEvent {
+            id: "broll_001".into(),
+            asset_id: "broll_001".into(),
+            start_ms: 0,
+            end_ms: 4000,
+            offset_ms: 0,
+            gain_db: 0.0,
+            fade_in_ms: 0,
+            fade_out_ms: 0,
+            tags: vec!["test".into()],
+            provenance: None,
+            kind: openscript_core::timeline::EventKind::Broll {
+                concept: "test".into(),
+                source_provider: "test".into(),
+                transition_style: "cut".into(),
+                crop_mode: "center".into(),
+                orientation: "9:16".into(),
+                motion_intensity: "medium".into(),
+            },
+        };
+        tl_a.tracks
+            .insert(openscript_core::types::TrackType::Broll, vec![evt_a]);
+        tl_a.assets.broll.insert(
+            "broll_001".into(),
+            serde_json::json!({"path": "/tmp/broll_b.mp4"}),
+        );
+        let (filter_a, _, _) = FilterGraphBuilder::from_timeline(&tl_a).build();
+        assert!(filter_a.contains("movie='/tmp/broll_b.mp4'"));
     }
 
     #[test]

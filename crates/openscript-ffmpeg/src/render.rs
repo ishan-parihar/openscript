@@ -380,12 +380,28 @@ pub async fn render_from_timeline_with_cancel(
         let mut probed = std::collections::HashMap::new();
         for evt in broll_track.iter() {
             if let openscript_core::timeline::EventKind::Broll { .. } = &evt.kind {
-                let path = timeline
+                // Robust asset resolution mirroring FilterGraphBuilder::
+                // from_timeline — accept both registry conventions:
+                // (a) asset_id == registry key, (b) asset_id == file path with
+                // the registry keyed by event_id. The old direct-key lookup
+                // silently missed broll.assign-style events, so their clips
+                // never got duration-capped seek offsets (short-clip held
+                // frames on V2V alternated timelines).
+                let record = timeline
                     .assets
                     .broll
                     .get(&evt.asset_id)
+                    .or_else(|| {
+                        timeline.assets.broll.values().find(|v| {
+                            v.get("path")
+                                .and_then(|p| p.as_str())
+                                .map(|p| p == evt.asset_id)
+                                .unwrap_or(false)
+                        })
+                    });
+                let path = record
                     .and_then(|v| v.get("path").and_then(|p| p.as_str()))
-                    .unwrap_or("")
+                    .unwrap_or(&evt.asset_id)
                     .to_string();
                 if !path.is_empty() && path != "placeholder" && !probed.contains_key(&path) {
                     match crate::probe::probe(&path).await {
