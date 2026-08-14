@@ -46,8 +46,8 @@ pub(crate) use tools_asset::*;
 pub(crate) use tools_character::*;
 
 // ---------------------------------------------------------------------------
-// Tool definitions: 103 static in this array + 6 dynamic hf.* = 109 total
-// (43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto/broll.probe + sticker.keywords/sticker.validate_keywords/sticker.auto + asset.* + voice.design + character.*)
+// Tool definitions: 106 static in this array + 6 dynamic hf.* = 112 total
+// (43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto/broll.probe + sticker.keywords/sticker.validate_keywords/sticker.auto + asset.* + voice.design + character.* + video.to_video)
 // ---------------------------------------------------------------------------
 
 /// Resolve the fonts directory for ASS subtitle rendering.
@@ -855,6 +855,40 @@ pub fn tool_definitions() -> serde_json::Value {
                     "signal": {"type": "array", "items": {"type": "string"}, "description": "Optional lexical bias tokens; empty derives from the query"}
                 },
                 "required": ["query"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "video.to_video",
+            "description": "ONE-CALL V2V orchestrator: turn an EXISTING video into a captioned, music-backed short whose visual layer ALTERNATES stock b-roll ↔ the ORIGINAL footage per transcript segment — [broll → video → broll]. Everything from the A2V pipeline remains (transcribe → captions → stickers → music → SFX); only the visual layer alternates, segregated by the transcript segmentation. Pipeline: transcribe → srt.to_timeline (source = original video, the renderer's base layer) → broll.auto with alternation enabled (plans visual roles via presentation::plan_alternation, fetches stock ONLY for broll-role segments; source-role segments show the original video) → sticker.auto + captions.generate_ass across ALL segments → timeline.render. The original video's audio is the master clock. Returns: timeline_path, output_path, alternation summary, broll/render stats.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "Source video file — the ORIGINAL footage that alternates with stock b-roll (also the renderer's base layer + audio master clock)."},
+                    "srt_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional pre-existing SRT transcript (skips transcription)."},
+                    "output_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Optional output video path (auto-derived from the source)."},
+                    "crf": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Render quality (lower = better, default 20)."},
+                    "aspect": {"type": "string", "default": "9:16", "description": "Target aspect ratio (source video is center-cropped to it)."},
+                    "fps": {"type": "integer", "default": 30, "description": "Target framerate."},
+                    "min_duration_s": {"type": "number", "default": 2.0, "description": "Minimum segment duration."},
+                    "max_duration_s": {"type": "number", "default": 6.0, "description": "Maximum segment duration (short-form retention cap)."},
+                    "language": {"type": "string", "default": "hinglish", "description": "Source language of captions."},
+                    "quality": {"type": "string", "default": "sd", "description": "Pexels b-roll quality: sd/hd/4k."},
+                    "orientation": {"type": "string", "default": "9:16", "description": "B-roll orientation."},
+                    "max_candidates": {"type": "integer", "default": 6, "description": "Candidates per segment shown to the validation agent."},
+                    "max_keywords_per_search": {"type": "integer", "default": 2, "description": "Draft keywords per Pexels search."},
+                    "max_repair_iterations": {"type": "integer", "default": 3, "description": "Max b-roll repair-loop passes."},
+                    "stickers": {"type": "boolean", "default": true, "description": "Run the agentic sticker pipeline (across ALL segments)."},
+                    "captions": {"type": "boolean", "default": true, "description": "Generate styled ASS captions (across ALL segments)."},
+                    "alternation": {"type": "object", "properties": {
+                        "enabled": {"type": "boolean", "default": true, "description": "V2V alternation (default true for video.to_video). Set false for full b-roll coverage."},
+                        "pattern": {"type": "string", "default": "every_other", "description": "Cadence: 'every_other' ([broll→source→broll→…]), 'source_lead' (starts with original video), 'every_n' (n broll then 1 source)."},
+                        "every_n": {"type": "integer", "default": 2, "description": "Consecutive broll segments when pattern='every_n'."},
+                        "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Explicit share (0.0-1.0) of segments that get b-roll (0 = all original footage, 1 = all stock). Overrides the pattern."},
+                        "source_audio": {"type": "string", "default": "keep", "description": "'keep' or 'duck' (reserved for re-voice mode)."}
+                    }}
+                },
+                "required": ["video_path"],
                 "additionalProperties": false
             }
         },
@@ -1763,6 +1797,7 @@ pub fn route_tool(
         "broll.repair" => Box::pin(handle_broll_repair(args)),
         "broll.auto" => Box::pin(handle_broll_auto(args)),
         "broll.probe" => Box::pin(handle_broll_probe(args)),
+        "video.to_video" => Box::pin(handle_video_to_video(args)),
         "asset.library.status" => Box::pin(handle_asset_library_status(args)),
         "asset.ingest" => Box::pin(handle_asset_ingest(args)),
         "asset.probe" => Box::pin(handle_asset_probe(args)),

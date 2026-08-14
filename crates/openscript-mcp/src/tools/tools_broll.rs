@@ -1900,6 +1900,188 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
     }))
 }
 
+/// ONE-CALL V2V orchestrator: turn an EXISTING video into a captioned,
+/// music-backed short whose visual layer ALTERNATES stock b-roll ↔ the
+/// original footage per transcript segment — [broll → video → broll].
+///
+/// Pipeline (everything from the A2V pipeline remains, only the visual layer
+/// alternates):
+///   transcribe (or reuse srt_path) → segment.analyze → srt.to_timeline with
+///   source_video = the ORIGINAL video (the renderer's base layer) →
+///   broll.auto with alternation.enabled (plans roles, fetches stock ONLY for
+///   broll-role segments, stickers + captions across ALL segments) →
+///   timeline.render (base = original video).
+///
+/// The original video's audio is the master clock; voiceover/music/SFX mix
+/// above it exactly as in A2V. Returns: timeline_path, output_path, alternation
+/// summary, segment/asset counts.
+pub(crate) async fn handle_video_to_video(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let video_path = extract_str(&args, "video_path")?;
+    if !Path::new(&video_path).exists() {
+        return Err(ToolError::NotFound(format!(
+            "Source video not found: {}",
+            video_path
+        )));
+    }
+    let srt_path = default_opt_str(&args, "srt_path");
+    let output_path = default_opt_str(&args, "output_path");
+    let crf = default_opt_u32(&args, "crf");
+    let aspect = default_str(&args, "aspect", "9:16");
+    let fps = default_u32(&args, "fps", 30);
+    let min_duration_s = default_f64(&args, "min_duration_s", 2.0);
+    let max_duration_s = default_f64(&args, "max_duration_s", 6.0);
+    let language = default_str(&args, "language", "hinglish");
+    let quality = default_str(&args, "quality", "sd");
+    let orientation = default_str(&args, "orientation", "9:16");
+    let max_candidates = default_u32(&args, "max_candidates", 6);
+    let max_keywords_per_search = default_u32(&args, "max_keywords_per_search", 2);
+    let max_repair_iterations = default_u32(&args, "max_repair_iterations", 3);
+    let run_stickers = default_bool(&args, "stickers", true);
+    let run_captions = default_bool(&args, "captions", true);
+    // Alternation defaults to ENABLED for video.to_video — that is the point of
+    // this tool. Disable with alternation.enabled=false for full-coverage.
+    let mut alternation = args
+        .get("alternation")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    if alternation.get("enabled").is_none() {
+        if let Some(obj) = alternation.as_object_mut() {
+            obj.insert("enabled".into(), json!(true));
+        }
+    }
+
+    // ---- Stage 1: transcribe (or reuse provided SRT) ----
+    report_progress(5.0, 100.0, "1/5 transcribe").await.ok();
+    let (phrase_srt, word_srt) = if let Some(ref sp) = srt_path {
+        (sp.clone(), None)
+    } else {
+        let out_srt = format!(
+            "artifacts/{}.srt",
+            Path::new(&video_path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "v2v".to_string())
+        );
+        let tx = handle_transcribe(json!({
+            "media_path": video_path,
+            "output_srt_path": out_srt,
+        }))
+        .await?;
+        (
+            tx.get("phrase_srt_path")
+                .or_else(|| tx.get("output_srt_path"))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .unwrap_or(out_srt),
+            tx.get("word_srt_path").and_then(|v| v.as_str()).map(String::from),
+        )
+    };
+    if !Path::new(&phrase_srt).exists() {
+        return Err(ToolError::NotFound(format!(
+            "SRT not found: {}",
+            phrase_srt
+        )));
+    }
+
+    // ---- Stage 2: build the timeline with the ORIGINAL video as source ----
+    report_progress(20.0, 100.0, "2/5 srt.to_timeline (source = original video)").await.ok();
+    let tl_path = format!(
+        "artifacts/{}.timeline.json",
+        Path::new(&video_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "v2v".to_string())
+    );
+    let built = handle_srt_to_timeline(json!({
+        "srt_path": phrase_srt,
+        "source_video": video_path,
+        "output_path": tl_path,
+        "aspect": aspect,
+        "fps": fps,
+        "min_duration_s": min_duration_s,
+        "max_duration_s": max_duration_s,
+    }))
+    .await?;
+    let timeline_path = built
+        .get("timeline_path")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or(tl_path);
+
+    // ---- Stage 3: alternation b-roll (stock on broll-role segments only) ----
+    report_progress(45.0, 100.0, "3/5 broll.auto (V2V alternation)").await.ok();
+    let mut auto_args = json!({
+        "timeline_path": timeline_path,
+        "language": language,
+        "quality": quality,
+        "orientation": orientation,
+        "max_candidates": max_candidates,
+        "max_keywords_per_search": max_keywords_per_search,
+        "max_repair_iterations": max_repair_iterations,
+        "stickers": run_stickers,
+        "captions": run_captions,
+        "alternation": alternation,
+    });
+    if let Some(ref wsp) = word_srt {
+        if let Some(obj) = auto_args.as_object_mut() {
+            obj.insert("word_srt_path".into(), json!(wsp));
+        }
+    }
+    let broll = handle_broll_auto(auto_args).await?;
+    let alternation_summary = broll.get("alternation").cloned();
+
+    // ---- Stage 4: render (base = original video → source segments show) ----
+    report_progress(85.0, 100.0, "4/5 timeline.render").await.ok();
+    let render_args = json!({
+        "timeline_path": timeline_path,
+        "source_video": video_path,
+    });
+    let mut render_args = render_args;
+    if let Some(op) = output_path {
+        if let Some(obj) = render_args.as_object_mut() {
+            obj.insert("output_path".into(), json!(op));
+        }
+    }
+    if let Some(c) = crf {
+        if let Some(obj) = render_args.as_object_mut() {
+            obj.insert("crf".into(), json!(c));
+        }
+    }
+    let rendered = handle_timeline_render(render_args).await?;
+    let output_path_out = rendered
+        .get("output_path")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or_default();
+
+    report_progress(100.0, 100.0, "video.to_video complete").await.ok();
+
+    Ok(json!({
+        "status": "rendered",
+        "timeline_path": timeline_path,
+        "output_path": output_path_out,
+        "alternation": alternation_summary,
+        "broll": json!({
+            "valid": broll.get("valid").cloned().unwrap_or_else(|| json!(false)),
+            "auto_assigned": broll.get("auto_assigned").cloned().unwrap_or_else(|| json!(0)),
+            "stickers_placed": broll.get("stickers_placed").cloned().unwrap_or_else(|| json!(0)),
+            "message": broll.get("message").cloned().unwrap_or_else(|| json!("")),
+        }),
+        "render": json!({
+            "file_size_bytes": rendered.get("file_size_bytes").cloned().unwrap_or_else(|| json!(0)),
+            "segments_count": rendered.get("segments_count").cloned().unwrap_or_else(|| json!(0)),
+        }),
+        "pipeline": json!([
+            "transcribe",
+            "srt.to_timeline",
+            "broll.auto (alternation)",
+            "sticker.auto",
+            "captions.generate_ass",
+            "timeline.render",
+        ]),
+    }))
+}
+
 pub(crate) async fn handle_broll_probe(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
     let query = extract_str(&args, "query")?;
     let aspect = default_str(&args, "aspect", "9:16");
