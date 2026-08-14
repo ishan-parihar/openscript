@@ -1700,6 +1700,28 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_accepts_indextts_backend() {
+        // Regression (2026-08-14): IndexTTS-2.5 shipped but the valid-backend
+        // list was never updated, so EVERY indextts script failed script.parse
+        // with "Invalid TTS backend 'indextts'". Lock the acceptance.
+        let spec = parse_script(
+            r#"{
+            "tts": {"backend": "indextts"},
+            "speakers": {"narrator": {"voice": "ishan_indextts"}},
+            "scenes": [{"speaker": "narrator", "text": "Hello!"}]
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(spec.tts.backend, "indextts");
+        let errors = validate_script(&spec);
+        assert!(
+            errors.is_empty(),
+            "Expected indextts backend to validate, got: {:?}",
+            errors
+        );
+    }
+
+    #[test]
     fn test_validate_missing_speakers() {
         let spec = parse_script(
             r#"{

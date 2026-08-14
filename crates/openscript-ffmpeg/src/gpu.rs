@@ -26,8 +26,25 @@
 //! size. CPU and GPU renders of the same `crf` are therefore NOT bit-identical
 //! in quality or size — compare them knowing that difference is expected.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use tokio::process::Command;
+
+/// Set when a render in THIS process hit a fatal NVENC encoder OOM (e.g. a
+/// resident TTS sidecar on a small card). The next `resolve()` consumes it:
+/// that render degrades to CPU libx264, and the flag clears so the render
+/// AFTER it re-probes the GPU (VRAM may have freed; a repeat failure just
+/// re-triggers the one-shot retry). Using an atomic instead of mutating
+/// `OPENSCRIPT_FFMPEG_GPU` keeps the retry thread-safe (tokio renders can
+/// run on multiple threads; `std::env::set_var` is not safe against
+/// concurrent readers) and scoped to THIS process.
+static GPU_FORCE_CPU: AtomicBool = AtomicBool::new(false);
+
+/// Flag a one-shot CPU fallback after a fatal NVENC OOM (render entry points
+/// call this instead of mutating the environment).
+pub fn force_cpu_fallback() {
+    GPU_FORCE_CPU.store(true, Ordering::SeqCst);
+}
 
 /// GPU acceleration mode for the ffmpeg render path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +206,17 @@ impl GpuConfig {
     /// and fall back to CPU rather than crashing the render with a cryptic
     /// "Unknown encoder h264_nvenc" after all the TTS/broll prep work.
     pub fn resolve() -> Self {
+        // One-shot CPU fallback after a prior fatal NVENC OOM (consumed here
+        // so the NEXT render re-probes the GPU).
+        if GPU_FORCE_CPU.swap(false, Ordering::SeqCst) {
+            tracing::warn!(
+                "[gpu] Prior NVENC OOM in this process — using CPU libx264 for this render (next render re-probes GPU)"
+            );
+            return GpuConfig {
+                decode: false,
+                encode_nvenc: false,
+            };
+        }
         let mode = GpuMode::from_env();
         let cfg = match mode {
             GpuMode::Cpu => GpuConfig {

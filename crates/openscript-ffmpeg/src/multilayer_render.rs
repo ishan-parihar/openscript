@@ -799,7 +799,12 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
             tracing::warn!(
                 "[render] GPU encode failed (VRAM pressure) — retrying once with CPU libx264"
             );
-            std::env::set_var("OPENSCRIPT_FFMPEG_GPU", "cpu");
+            // Atomic one-shot fallback (thread-safe, scoped to this process —
+            // no env mutation). The recursion re-resolves GpuConfig, which
+            // consumes the flag and picks CPU. The retry is bounded to ONE:
+            // a CPU render's stderr never contains "h264_nvenc", so the
+            // classifier can't re-fire.
+            crate::gpu::force_cpu_fallback();
             // Box the recursive future (E0733: async recursion requires boxing).
             return Box::pin(render_multilayer(spec)).await;
         }
