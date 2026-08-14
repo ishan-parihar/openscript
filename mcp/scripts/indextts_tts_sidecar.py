@@ -138,6 +138,118 @@ EMOTION_TEXT = {
     "laughter": "laughing, amused, bright",
 }
 
+# Emote -> DIRECT 8-dim emotion vector (order: happy, angry, sad, afraid,
+# disgusted, melancholic, surprised, calm) passed via the engine's native
+# `emo_vector` channel. This BYPASSES QwenEmo for known emotes: QwenEmo is a
+# Chinese-trained text classifier whose `self.prompt = "文本情感分类"` flattens
+# English delivery adjectives — probed output for "determined, resolute,
+# assertive, serious" (firm) and "soft, whispered, hushed, intimate" (whisper)
+# is `calm = 1.00`, which is the EXACT same conditioning as a neutral line
+# (mixing is `emovec = emovec_mat + (1 - sum(w)) * neutral`, so a calm=1.0
+# vector carries zero emotion). Curated vectors target sum ~0.85-0.95 to stay
+# in the engine's expected distribution (QwenEmo itself emits sums ~1.0).
+# Unknown emotes still fall back to EMOTION_TEXT -> QwenEmo.
+EMOTE_VECTORS = {
+    # [happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
+    "neutral": None,
+    "firm": [0.0, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "determination": [0.0, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "determined": [0.0, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "assertive": [0.0, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "resolute": [0.0, 0.35, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+    "serious": [0.0, 0.2, 0.05, 0.0, 0.0, 0.0, 0.0, 0.65],
+    "grave": [0.0, 0.0, 0.55, 0.0, 0.0, 0.15, 0.0, 0.15],
+    "somber": [0.0, 0.0, 0.55, 0.0, 0.0, 0.15, 0.0, 0.15],
+    "sad": [0.0, 0.0, 0.8, 0.0, 0.0, 0.05, 0.0, 0.05],
+    "sadness": [0.0, 0.0, 0.8, 0.0, 0.0, 0.05, 0.0, 0.05],
+    "sorrow": [0.0, 0.0, 0.8, 0.0, 0.0, 0.05, 0.0, 0.05],
+    "grief": [0.0, 0.0, 0.7, 0.0, 0.0, 0.15, 0.0, 0.05],
+    "grieving": [0.0, 0.0, 0.7, 0.0, 0.0, 0.15, 0.0, 0.05],
+    "happy": [0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.05],
+    "joy": [0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.05],
+    "joyful": [0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.05],
+    "elation": [0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.0],
+    "elated": [0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05, 0.0],
+    "excited": [0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.1],
+    "enthusiasm": [0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.1],
+    "enthusiastic": [0.7, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.1],
+    "energetic": [0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1],
+    "lively": [0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1],
+    "calm": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7],
+    "contentment": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "content": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "peaceful": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.7],
+    "gentle": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.6],
+    "warm": [0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "affection": [0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.55],
+    "affectionate": [0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.55],
+    "tender": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "loving": [0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.55],
+    "whisper": [0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.55],
+    "whispering": [0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.55],
+    "hushed": [0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.55],
+    "intimate": [0.1, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.55],
+    "shout": [0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+    "loud": [0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+    "angry": [0.0, 0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05],
+    "anger": [0.0, 0.85, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05],
+    "frustrated": [0.0, 0.6, 0.05, 0.0, 0.0, 0.0, 0.0, 0.25],
+    "furious": [0.0, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    "fear": [0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.05, 0.05],
+    "fearful": [0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.05, 0.05],
+    "scared": [0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.05, 0.05],
+    "terrified": [0.0, 0.0, 0.0, 0.85, 0.0, 0.0, 0.05, 0.0],
+    "anxious": [0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.05, 0.35],
+    "nervous": [0.0, 0.0, 0.0, 0.45, 0.0, 0.0, 0.05, 0.35],
+    "hesitant": [0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.1, 0.45],
+    "surprise": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.1],
+    "surprised": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.1],
+    "astonished": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.1],
+    "awe": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.65, 0.15],
+    "awed": [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.65, 0.15],
+    "confusion": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.4, 0.35],
+    "confused": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.4, 0.35],
+    "puzzled": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.4, 0.35],
+    "uncertain": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.25, 0.5],
+    "playful": [0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15],
+    "amusement": [0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15],
+    "amused": [0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15],
+    "funny": [0.65, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.15],
+    "proud": [0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.55],
+    "pride": [0.2, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.55],
+    "confident": [0.1, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "assured": [0.1, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "relief": [0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "relieved": [0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.6],
+    "relaxed": [0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.65],
+    "easy": [0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.65],
+    "sigh": [0.0, 0.0, 0.05, 0.0, 0.0, 0.3, 0.0, 0.5],
+    "sighing": [0.0, 0.0, 0.05, 0.0, 0.0, 0.3, 0.0, 0.5],
+    "resigned": [0.0, 0.0, 0.2, 0.0, 0.0, 0.35, 0.0, 0.35],
+    "weary": [0.0, 0.0, 0.2, 0.0, 0.0, 0.4, 0.0, 0.3],
+    "cry": [0.0, 0.0, 0.8, 0.0, 0.0, 0.1, 0.0, 0.0],
+    "crying": [0.0, 0.0, 0.8, 0.0, 0.0, 0.1, 0.0, 0.0],
+    "tearful": [0.0, 0.0, 0.75, 0.0, 0.0, 0.15, 0.0, 0.0],
+    "upset": [0.0, 0.0, 0.55, 0.0, 0.0, 0.1, 0.0, 0.25],
+    "laugh": [0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+    "laughter": [0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+    "laughing": [0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.0],
+    "melancholic": [0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.1],
+    "melancholy": [0.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.1],
+    "depressed": [0.0, 0.0, 0.3, 0.0, 0.0, 0.5, 0.0, 0.1],
+    "gloomy": [0.0, 0.0, 0.25, 0.0, 0.0, 0.5, 0.0, 0.15],
+    "disgusted": [0.0, 0.1, 0.0, 0.0, 0.7, 0.0, 0.0, 0.1],
+    "disgust": [0.0, 0.1, 0.0, 0.0, 0.7, 0.0, 0.0, 0.1],
+    "afraid": [0.0, 0.0, 0.0, 0.85, 0.0, 0.0, 0.0, 0.05],
+    "thoughtful": [0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.1, 0.6],
+    "thinking": [0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1, 0.65],
+}
+
+# Emotes that additionally get a quieting gain (dB) applied AFTER loudness
+# normalization — a whisper-class delivery must be audibly hushed, and the
+# uniform -16 LUFS normalization would otherwise erase the quietness entirely.
+WHISPER_GAIN_DB = {"whisper": -8.0, "whispering": -8.0, "hushed": -8.0}
+
 
 def log(msg: str) -> None:
     sys.stderr.write(f"[indextts_tts_sidecar] {msg}\n")
@@ -259,13 +371,23 @@ def handle_synth(req):
 
     session = get_session()
 
-    # Emotion channel: a take ref clip wins (emo_audio_prompt + emo_alpha);
-    # else emo_text guidance (needs QwenEmo); else neutral.
+    # Emotion channel resolution (priority):
+    #   1. explicit `emo_vector`   (direct 8-dim, deterministic, strongest)
+    #   2. `emo_audio_prompt`      (emotional reference clip, model-native)
+    #   3. explicit `emo_text`     (QwenEmo natural-language guidance)
+    #   4. emote -> curated EMOTE_VECTORS (bypasses QwenEmo, which flattens
+    #      EN delivery adjectives like firm/whisper to calm=1.0 == neutral)
+    #   5. emote -> EMOTION_TEXT   (QwenEmo fallback for unknown emotes)
     emo_alpha = float(req.get("emo_alpha", 1.0)) if req.get("emo_alpha") is not None else 1.0
     take_ref = req.get("emo_audio_prompt") or None  # explicit emotion-take clip
     emo_text = req.get("emo_text") or None
-    if emote and not take_ref and not emo_text:
-        emo_text = EMOTION_TEXT.get(emote.strip().lower())
+    emo_vector = req.get("emo_vector") or None
+    if emote and not take_ref and not emo_text and emo_vector is None:
+        key = emote.strip().lower()
+        if key in EMOTE_VECTORS:
+            emo_vector = EMOTE_VECTORS[key]
+        else:
+            emo_text = EMOTION_TEXT.get(key)
 
     duration_factor = float(req.get("duration_factor", 1.0))
     if req.get("speed") is not None:
@@ -294,8 +416,8 @@ def handle_synth(req):
 
     tmp_out = output_path + ".tmp.wav"
     log(f"synth {len(text)} chars voice={voice} emote={emote} "
-        f"emo_text={emo_text!r} take={take_ref!r} dur_factor={duration_factor} "
-        f"temp={gen_kwargs['temperature']}")
+        f"emo_vector={emo_vector} emo_text={emo_text!r} take={take_ref!r} "
+        f"dur_factor={duration_factor} temp={gen_kwargs['temperature']}")
     try:
         session.infer(
             spk_audio_prompt=str(ref),
@@ -304,8 +426,9 @@ def handle_synth(req):
             lang="EN",
             emo_audio_prompt=take_ref,
             emo_alpha=emo_alpha,
-            use_emo_text=emo_text is not None,
-            emo_text=emo_text,
+            use_emo_text=emo_text is not None and emo_vector is None,
+            emo_text=emo_text if emo_vector is None else None,
+            emo_vector=emo_vector,
             duration_factor=duration_factor,
             verbose=False,
             **gen_kwargs,
@@ -323,8 +446,21 @@ def handle_synth(req):
     out.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(out), data.astype(np.float32), SAMPLE_RATE)
     os.remove(tmp_out)
-    # Uniform per-scene loudness (matches the audio8/voicedesign sidecars).
+    # Uniform per-scene loudness (matches the audio8/voicedesign sidecars),
+    # then re-apply any emote-specific delivery gain (whisper-class quieting)
+    # so the intentional hushed character survives normalization.
     normalize_lufs(str(out))
+    if emote and not take_ref:
+        gain_db = WHISPER_GAIN_DB.get(emote.strip().lower())
+        if gain_db:
+            import numpy as np  # noqa: PLC0415
+
+            data2, sr2 = sf.read(str(out), dtype="float32")
+            if data2.ndim > 1:
+                data2 = data2.mean(axis=1)
+            gain = 10.0 ** (gain_db / 20.0)
+            sf.write(str(out), (data2 * gain).astype(np.float32), sr2)
+            data = data2 * gain
     duration_ms = int(round(len(data) / SAMPLE_RATE * 1000.0))
     resp = {"status": "ok", "duration_ms": duration_ms, "sample_rate": SAMPLE_RATE, "chunks": 1}
     if emote:
