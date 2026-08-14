@@ -1062,6 +1062,73 @@ pub(crate) async fn handle_timeline_validate(args: serde_json::Value) -> Result<
             }
         }
     }
+    // ---- V2V alternation checks (docs/V2V_ALTERNATION_ARCHITECTURE.md §3.5) ----
+    // When the timeline is in alternate mode, the visual layer is DELIBERATELY
+    // partial: "source"-role segments show the ORIGINAL video (no b-roll event),
+    // "broll"-role segments must be covered. Validate intent + coverage + breadth.
+    let presentation = &timeline.directives.presentation;
+    let mut broll_role = 0usize;
+    let mut source_role = 0usize;
+    if presentation.is_alternate() {
+        // Intent: every segment needs a role.
+        for seg in &timeline.segments {
+            match presentation.role_for(&seg.id) {
+                openscript_core::presentation::ROLE_BROLL => broll_role += 1,
+                openscript_core::presentation::ROLE_SOURCE => source_role += 1,
+                _ => {}
+            }
+            if !presentation.visual_roles.contains_key(&seg.id) {
+                errors.push(format!(
+                    "PRESENTATION: segment {} has no visual role in an alternate-mode timeline — run timeline.presentation (or broll.auto with alternation) to re-plan roles",
+                    seg.id
+                ));
+            }
+        }
+        // Coverage: broll-role segments need a b-roll event covering their window
+        // (probe_broll_gaps above catches clips shorter than the window; here we
+        // catch a broll-role segment with NO event at all).
+        let mut broll_event_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        if let Some(evts) = timeline.tracks.get(&TrackType::Broll) {
+            for ev in evts {
+                if let Some(seg) = find_segment_for_window(&timeline, &ev.id) {
+                    broll_event_ids.insert(seg.id.clone());
+                }
+            }
+        }
+        for seg in &timeline.segments {
+            if presentation.role_for(&seg.id) == openscript_core::presentation::ROLE_BROLL
+                && !broll_event_ids.contains(&seg.id)
+            {
+                errors.push(format!(
+                    "PRESENTATION: segment {} is broll-role but has NO b-roll event — run broll.auto/broll.fetch with alternation enabled to cover it (original video would otherwise show where stock is intended)",
+                    seg.id
+                ));
+            }
+            // Source-role segments must NOT have a b-roll event — one would cover
+            // the original footage and break the alternation.
+            if presentation.role_for(&seg.id) == openscript_core::presentation::ROLE_SOURCE
+                && broll_event_ids.contains(&seg.id)
+            {
+                errors.push(format!(
+                    "BROLL_ON_SOURCE: segment {} is source-role (original video shows) but has a b-roll event — remove it or re-plan roles so the alternation stays intact",
+                    seg.id
+                ));
+            }
+        }
+        // Breadth: an alternation with zero source segments is degenerate (that is
+        // full coverage = cover mode); one with zero broll segments means the agent
+        // accidentally planned all-source (no stock anywhere).
+        if source_role == 0 && !timeline.segments.is_empty() {
+            errors.push(
+                "PRESENTATION: alternate mode has NO source-role segments — this is full coverage; set mode='cover' or adjust the pattern/broll_ratio to actually alternate".to_string(),
+            );
+        }
+        if broll_role == 0 && !timeline.segments.is_empty() {
+            errors.push(
+                "PRESENTATION: alternate mode has NO broll-role segments — the visual layer would be pure original footage with no stock; adjust the pattern/broll_ratio (e.g. every_other or broll_ratio 0.5)".to_string(),
+            );
+        }
+    }
     let valid = errors.is_empty();
 
     Ok(json!({
@@ -1070,6 +1137,136 @@ pub(crate) async fn handle_timeline_validate(args: serde_json::Value) -> Result<
         "valid": valid,
         "errors": errors,
         "broll_gaps": broll_gaps,
+        "presentation": json!({
+            "mode": presentation.mode,
+            "pattern": presentation.pattern,
+            "every_n": presentation.every_n,
+            "source_audio": presentation.source_audio,
+            "broll_role_segments": broll_role,
+            "source_role_segments": source_role,
+        }),
+    }))
+}
+
+/// Inspect or re-plan the V2V presentation directive on a timeline.
+///
+/// Query mode: `{timeline_path}` → returns mode + per-segment visual roles.
+/// Plan mode: `{timeline_path, mode, pattern, every_n, broll_ratio}` → re-plans
+/// roles via presentation::plan_alternation and persists them. mode='cover'
+/// clears roles (the default full-coverage behaviour).
+pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {
+    let timeline_path = sanitize_input_path(extract_str(&args, "timeline_path")?)?
+        .to_string_lossy()
+        .to_string();
+    let mut timeline = Timeline::load(&timeline_path)?;
+
+    // Query mode when no plan params are provided.
+    let mode = args.get("mode").and_then(|v| v.as_str());
+    let pattern = args.get("pattern").and_then(|v| v.as_str());
+    let every_n = args.get("every_n").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let broll_ratio = args.get("broll_ratio").and_then(|v| v.as_f64());
+    let source_audio = args.get("source_audio").and_then(|v| v.as_str());
+
+    if mode.is_none() && pattern.is_none() && every_n.is_none() && broll_ratio.is_none() && source_audio.is_none() {
+        let roles: serde_json::Map<String, serde_json::Value> = timeline
+            .segments
+            .iter()
+            .map(|s| {
+                (
+                    s.id.clone(),
+                    json!(timeline.directives.presentation.role_for(&s.id)),
+                )
+            })
+            .collect();
+        return Ok(json!({
+            "status": "queried",
+            "timeline_path": timeline_path,
+            "mode": timeline.directives.presentation.mode,
+            "pattern": timeline.directives.presentation.pattern,
+            "every_n": timeline.directives.presentation.every_n,
+            "source_audio": timeline.directives.presentation.source_audio,
+            "visual_roles": roles,
+        }));
+    }
+
+    // Plan mode.
+    if let Some(m) = mode {
+        if m == "cover" {
+            timeline.directives.presentation.mode = "cover".into();
+            timeline.directives.presentation.visual_roles.clear();
+            timeline.directives.presentation.pattern =
+                openscript_core::presentation::PATTERN_EVERY_OTHER.into();
+            timeline.directives.presentation.every_n = 2;
+        } else if m == "alternate" {
+            timeline.directives.presentation.mode = "alternate".into();
+            if let Some(p) = pattern {
+                timeline.directives.presentation.pattern = p.to_string();
+            }
+            if let Some(n) = every_n {
+                timeline.directives.presentation.every_n = n;
+            }
+            if let Some(sa) = source_audio {
+                timeline.directives.presentation.source_audio = sa.to_string();
+            }
+            let roles = openscript_core::presentation::plan_alternation(
+                &timeline.segments,
+                &timeline.directives.presentation.pattern,
+                timeline.directives.presentation.every_n,
+                broll_ratio,
+            );
+            timeline.directives.presentation.visual_roles = roles;
+        } else {
+            return Err(ToolError::InvalidArg(format!(
+                "mode must be 'cover' or 'alternate', got '{}'",
+                m
+            )));
+        }
+    } else if pattern.is_some() || every_n.is_some() || broll_ratio.is_some() {
+        // Re-plan within the current mode (must be alternate).
+        if !timeline.directives.presentation.is_alternate() {
+            return Err(ToolError::InvalidArg(
+                "cannot re-plan roles while mode='cover' — pass mode='alternate' first".into(),
+            ));
+        }
+        if let Some(p) = pattern {
+            timeline.directives.presentation.pattern = p.to_string();
+        }
+        if let Some(n) = every_n {
+            timeline.directives.presentation.every_n = n;
+        }
+        if let Some(sa) = source_audio {
+            timeline.directives.presentation.source_audio = sa.to_string();
+        }
+        let roles = openscript_core::presentation::plan_alternation(
+            &timeline.segments,
+            &timeline.directives.presentation.pattern,
+            timeline.directives.presentation.every_n,
+            broll_ratio,
+        );
+        timeline.directives.presentation.visual_roles = roles;
+    }
+
+    timeline.updated_at = chrono::Utc::now();
+    timeline.save(&timeline_path)?;
+
+    let roles: serde_json::Map<String, serde_json::Value> = timeline
+        .segments
+        .iter()
+        .map(|s| {
+            (
+                s.id.clone(),
+                json!(timeline.directives.presentation.role_for(&s.id)),
+            )
+        })
+        .collect();
+    Ok(json!({
+        "status": "planned",
+        "timeline_path": timeline_path,
+        "mode": timeline.directives.presentation.mode,
+        "pattern": timeline.directives.presentation.pattern,
+        "every_n": timeline.directives.presentation.every_n,
+        "source_audio": timeline.directives.presentation.source_audio,
+        "visual_roles": roles,
     }))
 }
 

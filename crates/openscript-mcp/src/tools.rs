@@ -46,7 +46,7 @@ pub(crate) use tools_asset::*;
 pub(crate) use tools_character::*;
 
 // ---------------------------------------------------------------------------
-// Tool definitions: 106 static in this array + 6 dynamic hf.* = 112 total
+// Tool definitions: 107 static in this array + 6 dynamic hf.* = 113 total
 // (43 original + 5 hf.* + 1 composition.render + 6 script.* + 2 background.* + 2 sticker.* + 2 script.to_* + 1 stock.fetch + 1 youtube.download + 1 youtube.search + 1 stock.search + 1 media.search + 1 gif.search + 1 timeline.inspect + 3 library.* + 2 auto_assign.* + broll.keywords/broll.validate_keywords/broll.repair/broll.auto/broll.probe + sticker.keywords/sticker.validate_keywords/sticker.auto + asset.* + voice.design + character.* + video.to_video)
 // ---------------------------------------------------------------------------
 
@@ -315,10 +315,27 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "timeline.validate",
-            "description": "Check a timeline for structural errors — missing segments, invalid track events, timing conflicts. ALWAYS call this before timeline.render to catch issues early. Returns: valid (boolean), errors array.",
+            "description": "Check a timeline for structural errors — missing segments, invalid track events, timing conflicts, and (for alternate-mode timelines) V2V presentation intent + coverage. ALWAYS call this before timeline.render to catch issues early. Returns: valid (boolean), errors array, broll_gaps, presentation summary.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"timeline_path": {"type": "string", "description": "Path to timeline JSON file"}},
+                "required": ["timeline_path"],
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "timeline.presentation",
+            "description": "Inspect or re-plan the V2V alternation presentation directive on a timeline (docs/V2V_ALTERNATION_ARCHITECTURE.md). Query mode (timeline_path only) returns the current mode + every segment's visual role. Plan mode (pass mode='alternate' + pattern/every_n/broll_ratio) re-plans roles via presentation::plan_alternation and persists them; mode='cover' clears roles (full-coverage default behaviour). Use to set up [broll → video → broll] alternation manually, or inspect what broll.auto / video.to_video planned. Returns: status, mode, pattern, every_n, source_audio, visual_roles.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "timeline_path": {"type": "string", "description": "Path to timeline JSON file"},
+                    "mode": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "'alternate' (V2V alternation) or 'cover' (full b-roll coverage). Omit for query-only."},
+                    "pattern": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Alternation cadence when planning: 'every_other' ([broll→source→broll→…]), 'broll_lead', 'source_lead' (starts with original video), 'every_n'."},
+                    "every_n": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Consecutive broll segments when pattern='every_n'."},
+                    "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Explicit share (0.0-1.0) of segments that get b-roll, spread evenly. Overrides the pattern cadence. 0 = all original footage, 1 = all stock."},
+                    "source_audio": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Original-video audio handling: 'keep' or 'duck' (reserved for re-voice mode)."}
+                },
                 "required": ["timeline_path"],
                 "additionalProperties": false
             }
@@ -1768,6 +1785,7 @@ pub fn route_tool(
         "timeline.build" => Box::pin(handle_timeline_build(args)),
         "timeline.load" => Box::pin(handle_timeline_load(args)),
         "timeline.validate" => Box::pin(handle_timeline_validate(args)),
+        "timeline.presentation" => Box::pin(handle_timeline_presentation(args)),
         "srt.to_timeline" => Box::pin(handle_srt_to_timeline(args)),
         "timeline.upgrade" => Box::pin(handle_timeline_upgrade(args)),
         "timeline.add_segment" => Box::pin(handle_timeline_add_segment(args)),

@@ -176,11 +176,12 @@ fn test_mcp_tools_list() {
     let payload = extract_result_payload(&response);
     let tools = payload.get("tools").unwrap().as_array().unwrap();
 
-    // 112 tools: 110 + director.format + script.format.validate + video.to_video
+    // 113 tools: 111 + director.format + script.format.validate + video.to_video
+    // + timeline.presentation
     assert_eq!(
         tools.len(),
-        112,
-        "Expected 112 MCP tools, got {}",
+        113,
+        "Expected 113 MCP tools, got {}",
         tools.len()
     );
 
@@ -197,6 +198,7 @@ fn test_mcp_tools_list() {
     assert!(tool_names.contains(&"broll.repair"));
     assert!(tool_names.contains(&"broll.auto"));
     assert!(tool_names.contains(&"video.to_video"));
+    assert!(tool_names.contains(&"timeline.presentation"));
     // Asset-development pipeline (user-curated footage library)
     assert!(tool_names.contains(&"asset.library.status"));
     assert!(tool_names.contains(&"asset.ingest"));
