@@ -67,6 +67,35 @@ def cuda_usable():
     return _CUDA_OK
 
 
+# Minimum free VRAM (MiB) required before CUDA providers are chosen. Mirrors
+# the ffmpeg render gate (gpu.rs GPU_MIN_FREE_VRAM_MIB): a resident TTS
+# sidecar on a small card makes ONNX BFC arena allocations fail with cryptic
+# "Failed to allocate memory" errors, so auto mode degrades to CPU providers
+# BEFORE session creation instead of crashing mid-job.
+GPU_MIN_FREE_VRAM_MIB = 2048
+
+
+def vram_headroom_ok(free_mib=None):
+    """True when enough free VRAM exists for CUDA inference.
+
+    Probes `nvidia-smi --query-gpu=memory.free` (MiB). `None` (probe
+    unavailable / no GPU) → True, preserving the old behavior so machines
+    without nvidia-smi keep using CUDA when the driver probe passes.
+    """
+    if free_mib is not None:
+        return free_mib >= GPU_MIN_FREE_VRAM_MIB
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode != 0:
+            return True
+        return int(out.stdout.strip().splitlines()[0]) >= GPU_MIN_FREE_VRAM_MIB
+    except Exception:
+        return True
+
+
 def ort_providers():
     """Return ONNX Runtime providers, preferring CUDA when available.
 
@@ -89,7 +118,13 @@ def ort_providers():
              "available (onnxruntime-gpu missing?) — falling back to CPU", "device")
         return ["CPUExecutionProvider"]
     if dev == "auto" and "CUDAExecutionProvider" in available and cuda_usable():
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        if vram_headroom_ok():
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        _log(
+            "free VRAM below {} MiB minimum — degrading to CPU providers to avoid "
+            "BFC arena OOM (set OPENSCRIPT_DEVICE=cuda to force)".format(GPU_MIN_FREE_VRAM_MIB),
+            "device",
+        )
     return ["CPUExecutionProvider"]
 
 

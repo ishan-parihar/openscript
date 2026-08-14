@@ -97,7 +97,16 @@ def _resolve_providers() -> list[str]:
     if dev == "cuda" and "CUDAExecutionProvider" in available:
         return ["CUDAExecutionProvider", "CPUExecutionProvider"]
     if "CUDAExecutionProvider" in available:
-        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        # VRAM-headroom gate (mirrors the ffmpeg render gate + transcribe_common):
+        # a resident model on a small card makes ONNX BFC arena allocations
+        # fail with cryptic "Failed to allocate memory" errors. Degrade to CPU
+        # BEFORE session creation so the job survives instead of dying mid-tts.
+        if vram_headroom_ok():
+            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        log(
+            f"free VRAM below {GPU_MIN_FREE_VRAM_MIB} MiB minimum — degrading to CPU "
+            "providers to avoid BFC arena OOM (set VOICEDESIGN_DEVICE=cuda to force)"
+        )
     return ["CPUExecutionProvider"]
 
 
@@ -128,6 +137,31 @@ def cuda_usable() -> bool:
 
 def _resolve_device_name(providers: list[str]) -> str:
     return "cuda" if providers and providers[0].startswith("CUDA") else "cpu"
+
+
+# Minimum free VRAM (MiB) required before CUDA providers are chosen — mirrors
+# transcribe_common.ort_providers() and the ffmpeg render gate (gpu.rs).
+GPU_MIN_FREE_VRAM_MIB = 2048
+
+
+def vram_headroom_ok() -> bool:
+    """True when enough free VRAM exists for CUDA inference.
+
+    Probes `nvidia-smi --query-gpu=memory.free` (MiB). Probe failure → True
+    (preserve old behavior).
+    """
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode != 0:
+            return True
+        return int(out.stdout.strip().splitlines()[0]) >= GPU_MIN_FREE_VRAM_MIB
+    except Exception:
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -171,8 +205,15 @@ class VoiceDesignEngine:
             "cp": ort.InferenceSession(
                 str(onnx_dir / "code_predictor.onnx"), providers=self.providers
             ),
+            # Vocoder pinned to CPU: the CUDA conv1d_5 kernel computes a
+            # garbage intermediate for SHORT code sequences (verified live:
+            # T=8 codes → 53 GB alloc request; T=64/256 → fine), so every
+            # real line (~30-80 frames) died with "Failed to allocate memory
+            # for requested buffer of size 831661277184". CPU handles all
+            # lengths and the vocoder is tiny (T×1920 samples — sub-second).
+            # The heavy LLM sessions (prefill/decode/cp) stay on GPU.
             "vocoder": ort.InferenceSession(
-                str(onnx_dir / "vocoder.onnx"), providers=self.providers
+                str(onnx_dir / "vocoder.onnx"), providers=["CPUExecutionProvider"]
             ),
         }
         log(
