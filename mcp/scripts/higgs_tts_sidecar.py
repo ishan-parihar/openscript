@@ -187,6 +187,8 @@ EMOTION_TAGS = {
     # direct Higgs emotions
     "anger": "anger", "angry": "anger", "furious": "anger", "rage": "anger",
     "sadness": "sadness", "sad": "sadness", "sorrow": "sadness", "grief": "sadness",
+    "grave": "sadness", "somber": "sadness", "melancholy": "sadness",
+    "solemn": "sadness", "mournful": "sadness",
     "elation": "elation", "joy": "elation", "joyful": "elation", "happy": "elation",
     "thrilled": "elation", "delighted": "elation",
     "enthusiasm": "enthusiasm", "excited": "enthusiasm", "excitement": "enthusiasm",
