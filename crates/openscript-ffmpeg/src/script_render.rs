@@ -203,6 +203,18 @@ pub async fn render_from_script(spec: &ScriptRenderSpec) -> Result<String, Ffmpe
 
     if !output.success() {
         let stderr_str = String::from_utf8_lossy(&full_stderr);
+        // VRAM-pressure fail-soft (same contract as render_multilayer):
+        // h264_nvenc encoder init OOM is fatal (resident TTS sidecar on a
+        // small card); retry ONCE with CPU libx264 via the env-forced CPU
+        // re-resolve inside `render_from_script`'s next `GpuConfig::resolve()`.
+        if gpu.active() && crate::gpu::nvenc_oom_failure(&stderr_str) {
+            tracing::warn!(
+                "[render] GPU encode failed (VRAM pressure) — retrying once with CPU libx264"
+            );
+            std::env::set_var("OPENSCRIPT_FFMPEG_GPU", "cpu");
+            // Box the recursive future (E0733: async recursion requires boxing).
+            return Box::pin(render_from_script(spec)).await;
+        }
         return Err(FfmpegError::RenderFailed(format!(
             "Render failed, see log: {}\nLast 5 lines: {}",
             log_path,

@@ -93,6 +93,52 @@ fn cuda_driver_usable() -> bool {
     }
 }
 
+/// Minimum free VRAM (MiB) required before `auto` mode enables the hardware
+/// paths. On small cards (e.g. 8 GB), a resident TTS sidecar (IndexTTS /
+/// Audio8 / VoiceDesign, ~2-4 GB) plus NVDEC decoder surface pools and the
+/// NVENC encoder can exceed available VRAM. NVDEC decoder failures degrade
+/// SOFT (ffmpeg falls back to software decode), but h264_nvenc ENCODER init
+/// failure is FATAL — the render dies after all the TTS/broll prep work.
+/// Gate `auto` on headroom so the render degrades to CPU libx264 BEFORE
+/// spawning ffmpeg instead of crashing mid-render.
+const GPU_MIN_FREE_VRAM_MIB: u64 = 2048;
+
+/// Probe current free VRAM (MiB) via nvidia-smi. `None` when the query fails
+/// (no GPU / driver mismatch / nvidia-smi absent) — callers treat `None` as
+/// "unknown, assume OK" so machines where the query is unavailable keep the
+/// existing behavior.
+fn cuda_free_vram_mib() -> Option<u64> {
+    let out = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.free", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines().next()?.trim().parse::<u64>().ok()
+}
+
+/// Pure decision helper: enough free VRAM headroom for NVDEC+NVENC?
+/// `None` (probe unavailable) → true, preserving the old behavior.
+fn vram_headroom_ok(free_mib: Option<u64>) -> bool {
+    match free_mib {
+        Some(free) => free >= GPU_MIN_FREE_VRAM_MIB,
+        None => true,
+    }
+}
+
+/// True when a failed ffmpeg stderr indicates the NVENC encoder failed to
+/// initialize due to GPU memory pressure — the trigger for a one-shot CPU
+/// retry in the render entry points. Decoder failures never match (they are
+/// soft); only the fatal encoder-init OOM does.
+pub fn nvenc_oom_failure(stderr: &str) -> bool {
+    stderr.contains("h264_nvenc")
+        && (stderr.contains("out of memory")
+            || stderr.contains("Cannot allocate memory")
+            || stderr.contains("InitializeEncoder failed"))
+}
+
 /// Probe once per process whether this ffmpeg build can actually accelerate:
 /// the `h264_nvenc` encoder AND the `cuda` hwaccel must both exist AND the
 /// live NVIDIA driver must be functional.
@@ -151,14 +197,27 @@ impl GpuConfig {
             },
             GpuMode::Auto => {
                 let avail = h264_nvenc_available();
-                if avail {
-                    tracing::info!("[gpu] h264_nvenc + cuda available — NVENC encode + CUDA decode");
-                } else {
+                let headroom = cuda_free_vram_mib();
+                let headroom_ok = vram_headroom_ok(headroom);
+                if !avail {
                     tracing::info!("[gpu] h264_nvenc/cuda not available — using CPU libx264");
+                } else if !headroom_ok {
+                    // VRAM-pressure guard (e.g. a resident TTS sidecar on a
+                    // small card). NVENC encoder init OOM is fatal; degrade
+                    // BEFORE spawning ffmpeg rather than mid-render.
+                    tracing::warn!(
+                        "[gpu] Free VRAM below {:.1} GiB minimum ({}) — degrading to CPU libx264 to avoid NVENC OOM (OPENSCRIPT_FFMPEG_GPU=nvenc to force)",
+                        GPU_MIN_FREE_VRAM_MIB / 1024,
+                        headroom
+                            .map(|m| format!("{} MiB free", m))
+                            .unwrap_or_else(|| "unknown".to_string())
+                    );
+                } else {
+                    tracing::info!("[gpu] h264_nvenc + cuda available — NVENC encode + CUDA decode");
                 }
                 GpuConfig {
-                    decode: avail,
-                    encode_nvenc: avail,
+                    decode: avail && headroom_ok,
+                    encode_nvenc: avail && headroom_ok,
                 }
             }
             GpuMode::Nvenc => {
@@ -441,5 +500,40 @@ mod tests {
         assert!(!args.contains(&"-profile:v".to_string()));
         assert_eq!(args[0], "-c:v");
         assert_eq!(args[1], "h264_nvenc");
+    }
+
+    #[test]
+    fn vram_headroom_gates_on_minimum() {
+        // Above the minimum → OK.
+        assert!(vram_headroom_ok(Some(4096)));
+        assert!(vram_headroom_ok(Some(GPU_MIN_FREE_VRAM_MIB)));
+        // Below the minimum → degrade to CPU.
+        assert!(!vram_headroom_ok(Some(1024)));
+        assert!(!vram_headroom_ok(Some(0)));
+        // Unknown (probe failed) → assume OK, preserve old behavior.
+        assert!(vram_headroom_ok(None));
+    }
+
+    #[test]
+    fn nvenc_oom_failure_matches_fatal_encoder_oom() {
+        let fatal = "[h264_nvenc @ 0x55c0a6167000] InitializeEncoder failed: out of memory (10): \n[vost#0:0/h264_nvenc @ 0x55c0a5902300] Error while opening encoder";
+        assert!(nvenc_oom_failure(fatal));
+        // Full-stderr shape from a real OOM render: the encoder init error
+        // (which carries the h264_nvenc name) plus the later frame-pump OOM.
+        let fatal2 = "[h264_nvenc @ 0x55c0a6167000] InitializeEncoder failed: out of memory (10): \n[fc#0 @ 0x55c0a58f72c0] Error sending frames to consumers: Cannot allocate memory";
+        assert!(nvenc_oom_failure(fatal2));
+    }
+
+    #[test]
+    fn nvenc_oom_failure_ignores_soft_decode_failures_and_other_errors() {
+        // NVDEC decoder hwaccel failure is SOFT (ffmpeg falls back to
+        // software decode) — must NOT trigger a retry.
+        let soft_decode = "[h264 @ 0x55c0a8bb8540] decoder->cvdl->cuvidCreateDecoder failed -> CUDA_ERROR_OUT_OF_MEMORY: out of memory\n[h264 @ 0x55c0a8bb8540] Failed setup for format cuda: hwaccel initialisation returned error.";
+        assert!(!nvenc_oom_failure(soft_decode));
+        // A non-GPU failure must never trigger the retry.
+        assert!(!nvenc_oom_failure("No such file or directory"));
+        assert!(!nvenc_oom_failure(""));
+        // Encoder OOM words without the nvenc codec name → not ours.
+        assert!(!nvenc_oom_failure("libx264: Cannot allocate memory"));
     }
 }

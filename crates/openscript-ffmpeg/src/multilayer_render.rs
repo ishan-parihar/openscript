@@ -789,6 +789,20 @@ pub async fn render_multilayer(spec: &MultiLayerRenderSpec) -> Result<String, Ff
 
     if !output.success() {
         let stderr_str = String::from_utf8_lossy(&full_stderr);
+        // VRAM-pressure fail-soft: NVDEC decoder failures degrade gracefully
+        // inside ffmpeg, but h264_nvenc ENCODER init OOM is fatal (e.g. a
+        // resident TTS sidecar on an 8 GB card). Retry ONCE with CPU libx264
+        // instead of failing the whole video after all the TTS/broll prep
+        // work. `GpuConfig::resolve()` re-reads the env var on the retry, so
+        // forcing `cpu` here makes the recursion take the pure CPU path.
+        if gpu.active() && crate::gpu::nvenc_oom_failure(&stderr_str) {
+            tracing::warn!(
+                "[render] GPU encode failed (VRAM pressure) — retrying once with CPU libx264"
+            );
+            std::env::set_var("OPENSCRIPT_FFMPEG_GPU", "cpu");
+            // Box the recursive future (E0733: async recursion requires boxing).
+            return Box::pin(render_multilayer(spec)).await;
+        }
         return Err(FfmpegError::RenderFailed(format!(
             "Render failed, see log: {}\nLast 5 lines: {}",
             log_path,
