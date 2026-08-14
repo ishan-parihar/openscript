@@ -228,6 +228,11 @@ pub struct TtsSpec {
     #[serde(default)]
     pub default_top_k: Option<u32>,
 
+    /// Default emotion intensity for clone engines (None = engine default).
+    /// indextts maps this to emo_alpha (see SceneSpec.emotion_strength).
+    #[serde(default)]
+    pub default_emotion_strength: Option<f64>,
+
     /// Default cfg_scale for clone engines with reference-fidelity control
     /// (carried by gepard; retained for config-file compatibility). None = 1.0.
     #[serde(default)]
@@ -256,6 +261,7 @@ impl Default for TtsSpec {
             default_pitch: default_pitch(),
             default_temperature: None,
             default_top_k: None,
+            default_emotion_strength: None,
             default_cfg_scale: None,
         }
     }
@@ -807,6 +813,15 @@ pub struct SceneSpec {
     /// Lets a single line be more/less expressive than the rest of the video.
     #[serde(default)]
     pub temperature: Option<f64>,
+
+    /// Per-scene emotion intensity (0.0-1.0; overrides tts.default_emotion_strength).
+    /// Clone engines (indextts) map this to emo_alpha: the blend between the
+    /// generic emotion basis and the speaker's own conditioning. 1.0 = max
+    /// emotion (more synthetic); 0.6 = the official IndexTTS balance;
+    /// lower = subtler emotion, closer to the bare clone. Lets a single line
+    /// hit a dramatic read without the whole script going synthetic.
+    #[serde(default)]
+    pub emotion_strength: Option<f64>,
 
     /// Override background for this scene (preset name or null for auto).
     #[serde(default)]

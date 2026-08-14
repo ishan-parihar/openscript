@@ -28,6 +28,10 @@ ENV:
   INDEXTTS_VOICES_DIR  registered reference voices (default <root>/mcp/assets/indextts/voices)
   INDEXTTS_DEVICE      auto|cuda|cpu (default auto)
   INDEXTTS_QWEN_EMO    load the QwenEmo text-to-emotion model (default 1)
+  INDEXTTS_EMO_ALPHA   clone-fidelity vs emotion-intensity balance for
+                       text/vector emotion mode (default 0.6 — official
+                       IndexTTS recommendation; 1.0 = max emotion, more
+                       synthetic; lower = more clone, subtler emotion)
   INDEXTTS_LOG         diagnostics log (default /tmp/indextts_tts_sidecar.log)
   OPENSCRIPT_ROOT      repo root
 
@@ -378,7 +382,22 @@ def handle_synth(req):
     #   4. emote -> curated EMOTE_VECTORS (bypasses QwenEmo, which flattens
     #      EN delivery adjectives like firm/whisper to calm=1.0 == neutral)
     #   5. emote -> EMOTION_TEXT   (QwenEmo fallback for unknown emotes)
-    emo_alpha = float(req.get("emo_alpha", 1.0)) if req.get("emo_alpha") is not None else 1.0
+    #
+    # `emo_alpha` is the clone-fidelity vs emotion-intensity balance knob.
+    # The engine mixes emovec = emovec_mat + (1 - sum(w)) * clone_vec, so a
+    # vector sum of 1.0 makes the GENERIC emotion basis dominate (~90%) and
+    # the cloned voice conditioning shrinks to ~10% — correct emotion but a
+    # synthetic-sounding voice. The official IndexTTS README recommends
+    # emo_alpha=0.6 for text/vector emotion mode (~54% emotion / 46% clone).
+    # Audio-prompt mode (a real emotion reference clip) keeps the official
+    # 1.0 blend default since the clip carries the speaker's own timbre.
+    emo_alpha = None
+    if req.get("emo_alpha") is not None:
+        emo_alpha = float(req["emo_alpha"])
+    elif req.get("emo_audio_prompt"):
+        emo_alpha = 1.0
+    else:
+        emo_alpha = float(os.environ.get("INDEXTTS_EMO_ALPHA", "0.6"))
     take_ref = req.get("emo_audio_prompt") or None  # explicit emotion-take clip
     emo_text = req.get("emo_text") or None
     emo_vector = req.get("emo_vector") or None

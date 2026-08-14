@@ -76,7 +76,8 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                     "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "voicedesign", "higgs", "indextts", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), voicedesign (Qwen3 VoiceDesign — direct NL-instruction synthesis with per-line emotion/tonality, NO cloning), higgs (Higgs Audio v3 4B — zero-shot clone + inline emotion/prosody control tags, 100+ languages), indextts (IndexTTS-2.5 — emotion-aware zero-shot clone, 22.05kHz, en/zh/ja/es/ar), sidecar (faster-qwen3-tts)."},
                     "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan'). Speakers whose voice is the literal string 'default' use this profile."},
                     "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
-                    "default_pitch": {"type": "number", "default": 1.0}
+                    "default_pitch": {"type": "number", "default": 1.0},
+                    "default_emotion_strength": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": null, "description": "Default emotion intensity 0.0-1.0 for clone engines (indextts -> emo_alpha). None = sidecar default 0.6 (official IndexTTS balance: emotion reads, clone stays recognizable). Scenes can override with emotion_strength."}
                 }
             },
             "speakers": {
@@ -242,6 +243,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                     "control_tags": {"type": ["string", "null"], "description": "RAW control-tag passthrough for engines with inline control tokens (higgs: emotion/style/sfx/prosody, 43 tags). Prepended verbatim to the line, e.g. \"<|prosody:pause|> mid, <|sfx:laughter|>Haha\". Only the engine's recognized tags are valid."},
                     "speed": {"type": ["number", "null"], "description": "Per-scene speech speed multiplier (overrides tts.default_speed). For higgs, values >=1.08 / <=0.92 emit prosody speed tags (natural pacing); neutral-band values fall back to ffmpeg."},
                     "pitch": {"type": ["number", "null"], "description": "Per-scene pitch multiplier (overrides tts.default_pitch). For higgs, <=0.9 / >=1.1 emit prosody pitch tags."},
+                    "emotion_strength": {"type": ["number", "null"], "description": "Per-scene emotion intensity 0.0-1.0 (overrides tts.default_emotion_strength; indextts clones map it to emo_alpha). 1.0 = max emotion (synthetic voice risk); 0.6 = official IndexTTS balance; lower = subtler emotion, closer clone. Lets one line hit a dramatic read without the whole script going synthetic."},
                     "background": {"type": ["string", "null"], "description": "Override background for this scene (preset name or null for auto)."},
                     "duration_override_ms": {"type": ["integer", "null"], "description": "Override scene duration in milliseconds. Null = use TTS duration."},
                     "duration_seconds": {"type": ["number", "null"], "description": "Override scene duration in SECONDS. Null = use TTS duration. If both this and duration_override_ms are set, duration_override_ms wins."},
@@ -658,6 +660,12 @@ pub(crate) async fn handle_script_generate_voices(
         } else {
             spec.tts.default_cfg_scale
         };
+        // Emotion intensity balance: per-scene wins, else the script default,
+        // else None (sidecar default 0.6 for indextts — emotion reads but the
+        // clone stays recognizable).
+        let scene_emotion_strength = scene
+            .emotion_strength
+            .or(spec.tts.default_emotion_strength);
         let result = tts_generate_routed(
             &speaker.voice,
             &scene.text,
@@ -673,6 +681,7 @@ pub(crate) async fn handle_script_generate_voices(
             spec.tts.default_top_k,
             None, // top_p
             scene_cfg_scale,
+            scene_emotion_strength,
             &profile,
         )
         .await?;
