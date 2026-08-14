@@ -758,3 +758,156 @@ fn test_character_registry_roundtrip_with_existing_voice() {
 
     cleanup(child);
 }
+
+/// Minimal valid EDL-v2 timeline JSON (6 segments, cover-mode defaults) used by
+/// the timeline.presentation integration tests. All required serde fields are
+/// present; `presentation` is omitted so it takes the legacy default.
+fn write_v2v_fixture_timeline() -> std::path::PathBuf {
+    let path = std::env::temp_dir().join("os_v2v_presentation_test.timeline.json");
+    let json = r#"{
+        "version": "2",
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "source": "/tmp/fake_source.mp4",
+        "target": { "aspect": "9:16", "fps": 30, "max_duration": null },
+        "segments": [
+            { "id": "seg_001", "start": 0.0, "end": 3.0, "caption": "One.", "crossfade_ms": 80, "semantic_role": null },
+            { "id": "seg_002", "start": 3.0, "end": 6.0, "caption": "Two.", "crossfade_ms": 80, "semantic_role": null },
+            { "id": "seg_003", "start": 6.0, "end": 9.0, "caption": "Three.", "crossfade_ms": 80, "semantic_role": null },
+            { "id": "seg_004", "start": 9.0, "end": 12.0, "caption": "Four.", "crossfade_ms": 80, "semantic_role": null },
+            { "id": "seg_005", "start": 12.0, "end": 15.0, "caption": "Five.", "crossfade_ms": 80, "semantic_role": null },
+            { "id": "seg_006", "start": 15.0, "end": 18.0, "caption": "Six.", "crossfade_ms": 80, "semantic_role": null }
+        ],
+        "tracks": {},
+        "directives": {
+            "ducking": [],
+            "transitions": [],
+            "mix": { "master_gain_db": 0.0, "limiter_threshold_db": -3.0, "normalize_to_lufs": -16.0 },
+            "render_backend": "auto"
+        },
+        "assets": { "voices": {}, "broll": {}, "music": {}, "sfx": {} },
+        "effects": { "burn_captions": true, "audio": { "loudnorm": true } }
+    }"#;
+    std::fs::write(&path, json).expect("write v2v fixture timeline");
+    path
+}
+
+#[test]
+fn test_mcp_timeline_presentation_plans_alternation() {
+    let timeline_path = write_v2v_fixture_timeline();
+    let (mut stdin, mut stdout, child) = start_mcp_server();
+
+    send_request(
+        &mut stdin,
+        &mut stdout,
+        "initialize",
+        serde_json::json!({}),
+        1,
+    );
+
+    // Plan every_other alternation: [broll -> source -> broll -> ...]
+    let resp = send_request(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "timeline.presentation",
+            "arguments": {
+                "timeline_path": timeline_path.to_string_lossy().to_string(),
+                "mode": "alternate",
+                "pattern": "every_other"
+            }
+        }),
+        2,
+    );
+    let payload = extract_result_payload(&resp);
+    assert_eq!(
+        payload.get("status").unwrap().as_str().unwrap(),
+        "planned",
+        "timeline.presentation failed: {}",
+        payload
+    );
+    assert_eq!(payload.get("mode").unwrap().as_str().unwrap(), "alternate");
+
+    let roles = payload.get("visual_roles").unwrap().as_object().unwrap();
+    assert_eq!(roles.len(), 6, "every segment must carry a visual role");
+    let broll_count = roles.values().filter(|v| v.as_str() == Some("broll")).count();
+    let source_count = roles.values().filter(|v| v.as_str() == Some("source")).count();
+    assert_eq!(broll_count, 3, "every_other on 6 segments -> 3 broll roles");
+    assert_eq!(source_count, 3, "every_other on 6 segments -> 3 source roles");
+    // Segments alternate strictly: seg_001 broll, seg_002 source, ...
+    let expected = ["broll", "source", "broll", "source", "broll", "source"];
+    for (i, want) in expected.iter().enumerate() {
+        let seg_id = format!("seg_{:03}", i + 1);
+        assert_eq!(
+            roles.get(&seg_id).and_then(|v| v.as_str()),
+            Some(*want),
+            "segment {} role mismatch",
+            seg_id
+        );
+    }
+
+    // Query mode returns the persisted plan.
+    let resp = send_request(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "timeline.presentation",
+            "arguments": {
+                "timeline_path": timeline_path.to_string_lossy().to_string()
+            }
+        }),
+        3,
+    );
+    let payload = extract_result_payload(&resp);
+    assert_eq!(payload.get("status").unwrap().as_str().unwrap(), "queried");
+    assert_eq!(payload.get("mode").unwrap().as_str().unwrap(), "alternate");
+    let roles = payload.get("visual_roles").unwrap().as_object().unwrap();
+    assert_eq!(roles.len(), 6);
+
+    let _ = std::fs::remove_file(&timeline_path);
+    cleanup(child);
+}
+
+#[test]
+fn test_mcp_timeline_presentation_invalid_mode_errors() {
+    let timeline_path = write_v2v_fixture_timeline();
+    let (mut stdin, mut stdout, child) = start_mcp_server();
+
+    send_request(
+        &mut stdin,
+        &mut stdout,
+        "initialize",
+        serde_json::json!({}),
+        1,
+    );
+
+    let resp = send_request(
+        &mut stdin,
+        &mut stdout,
+        "tools/call",
+        serde_json::json!({
+            "name": "timeline.presentation",
+            "arguments": {
+                "timeline_path": timeline_path.to_string_lossy().to_string(),
+                "mode": "bogus"
+            }
+        }),
+        2,
+    );
+    let has_error = resp.get("error").is_some()
+        || resp
+            .get("result")
+            .and_then(|r| r.get("isError"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+    assert!(
+        has_error,
+        "timeline.presentation with mode='bogus' should error, got: {}",
+        resp
+    );
+
+    let _ = std::fs::remove_file(&timeline_path);
+    cleanup(child);
+}
