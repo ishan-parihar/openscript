@@ -29,9 +29,10 @@ ENV:
   INDEXTTS_DEVICE      auto|cuda|cpu (default auto)
   INDEXTTS_QWEN_EMO    load the QwenEmo text-to-emotion model (default 1)
   INDEXTTS_EMO_ALPHA   clone-fidelity vs emotion-intensity balance for
-                       text/vector emotion mode (default 0.6 — official
-                       IndexTTS recommendation; 1.0 = max emotion, more
-                       synthetic; lower = more clone, subtler emotion)
+                       text/vector emotion mode (default 0.375 — best
+                       clone-fidelity point from the alpha sweep; 1.0 = max
+                       emotion, more synthetic; lower = more clone,
+                       subtler emotion)
   INDEXTTS_LOG         diagnostics log (default /tmp/indextts_tts_sidecar.log)
   OPENSCRIPT_ROOT      repo root
 
@@ -397,7 +398,11 @@ def handle_synth(req):
     elif req.get("emo_audio_prompt"):
         emo_alpha = 1.0
     else:
-        emo_alpha = float(os.environ.get("INDEXTTS_EMO_ALPHA", "0.6"))
+        # 0.375 = best clone-fidelity point from the alpha sweep (0.25/0.375/
+        # 0.5/0.6/1.0): highest cepstral similarity to the neutral clone
+        # (0.985 mean) while the emotion still reads clearly. Lower = even
+        # closer to the bare clone; higher = stronger emotion, more synthetic.
+        emo_alpha = float(os.environ.get("INDEXTTS_EMO_ALPHA", "0.375"))
     take_ref = req.get("emo_audio_prompt") or None  # explicit emotion-take clip
     emo_text = req.get("emo_text") or None
     emo_vector = req.get("emo_vector") or None

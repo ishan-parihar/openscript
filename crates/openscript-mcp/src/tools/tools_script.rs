@@ -77,7 +77,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                     "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan'). Speakers whose voice is the literal string 'default' use this profile."},
                     "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
                     "default_pitch": {"type": "number", "default": 1.0},
-                    "default_emotion_strength": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": null, "description": "Default emotion intensity 0.0-1.0 for clone engines (indextts -> emo_alpha). None = sidecar default 0.6 (official IndexTTS balance: emotion reads, clone stays recognizable). Scenes can override with emotion_strength."}
+                    "default_emotion_strength": {"anyOf": [{"type": "number"}, {"type": "null"}], "default": null, "description": "Default emotion intensity 0.0-1.0 for clone engines (indextts -> emo_alpha). None = sidecar default 0.375 (best clone-fidelity point from the alpha sweep: emotion reads, clone stays recognizable). Scenes can override with emotion_strength."}
                 }
             },
             "speakers": {
@@ -661,8 +661,8 @@ pub(crate) async fn handle_script_generate_voices(
             spec.tts.default_cfg_scale
         };
         // Emotion intensity balance: per-scene wins, else the script default,
-        // else None (sidecar default 0.6 for indextts — emotion reads but the
-        // clone stays recognizable).
+        // else None (sidecar default 0.375 for indextts — emotion reads but
+        // the clone stays recognizable).
         let scene_emotion_strength = scene
             .emotion_strength
             .or(spec.tts.default_emotion_strength);

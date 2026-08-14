@@ -410,7 +410,7 @@ pub(crate) async fn handle_tts_generate(args: serde_json::Value) -> Result<serde
     let top_p = args.get("top_p").and_then(|v| v.as_f64());
     let cfg_scale = args.get("cfg_scale").and_then(|v| v.as_f64());
     // Emotion intensity balance (0.0-1.0): maps to indextts emo_alpha —
-    // explicit value wins, else the sidecar's 0.6 default. Lower = subtler
+    // explicit value wins, else the sidecar's 0.375 default. Lower = subtler
     // emotion, closer clone; higher = stronger emotion, more synthetic.
     let emotion_strength = args.get("emotion_strength").and_then(|v| v.as_f64());
 
@@ -957,7 +957,7 @@ pub(crate) async fn handle_voiceover_generate(
         None, // top_k
         None, // top_p
         None, // cfg_scale
-        None, // emotion_strength: sidecar default 0.6 for indextts
+        None, // emotion_strength: sidecar default 0.375 for indextts
         &profile,
     )
     .await?;

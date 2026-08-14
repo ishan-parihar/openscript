@@ -514,7 +514,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "top_k": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Top-k sampling for clone engines (None = engine default)."},
                     "top_p": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Top-p nucleus sampling (audio8; None = engine default 0.9)."},
                     "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Reference-fidelity knob (retained for compatibility; higher = clings closer to the reference recording; 1.0 default). Explicit value wins over the emotion take's cfg_scale."},
-                    "emotion_strength": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Emotion intensity balance 0.0-1.0 (indextts clones; maps to the engine's emo_alpha). 1.0 = max emotion (synthetic voice risk); 0.6 = official IndexTTS balance (emotion reads, clone stays recognizable); lower = subtler emotion, closer to the bare clone. None = sidecar default 0.6."}
+                    "emotion_strength": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Emotion intensity balance 0.0-1.0 (indextts clones; maps to the engine's emo_alpha). 1.0 = max emotion (synthetic voice risk); 0.375 = best clone-fidelity default (emotion reads, clone stays recognizable); lower = subtler emotion, closer to the bare clone. None = sidecar default 0.375."}
                 },
                 "required": ["voice_profile_id", "text", "output_path"],
                 "additionalProperties": false
@@ -2944,8 +2944,8 @@ async fn tts_generate_routed(
         // `emotion_strength` (0.0-1.0) maps to the engine's emo_alpha blend
         // knob — the balance between the generic emotion basis and the clone's
         // own conditioning. Explicit scene/script value wins; None = sidecar
-        // default 0.6 (official IndexTTS recommendation — clone stays
-        // recognizable while the emotion reads).
+        // default 0.375 (best clone-fidelity point from the alpha sweep —
+        // clone stays recognizable while the emotion reads).
         let emo_alpha = emotion_strength.map(|s| s.clamp(0.0, 1.0));
         let params = openscript_tts::indextts::IndexttsSynthParams {
             emote: emotion.map(|s| s.to_string()),
@@ -3402,7 +3402,7 @@ async fn generate_commentary_segment(
         None, // top_k
         None, // top_p
         None, // cfg_scale
-        None, // emotion_strength: sidecar default 0.6 for indextts
+        None, // emotion_strength: sidecar default 0.375 for indextts
         profile,
     )
     .await?;
