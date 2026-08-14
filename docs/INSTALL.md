@@ -33,6 +33,7 @@ per-run env overrides. Toggle before installing to skip big downloads:
 ```bash
 bash setup.sh --list-features               # print the toggle table + what each pulls
 OPENSCRIPT_FEATURE_TTS_VOICEDESIGN=0 bash setup.sh   # skip the 4.3GB VoiceDesign model
+OPENSCRIPT_FEATURE_TTS_INDEXTTS=0 bash setup.sh      # skip the 5.7GB IndexTTS-2.5 checkpoints + .venv-indextts
 bash setup.sh --feature transcription.parakeet_align=0   # skip the 320MB alignment model
 
 # Persist toggles in the config so they apply on every install:

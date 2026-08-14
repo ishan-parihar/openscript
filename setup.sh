@@ -17,6 +17,7 @@
 #   - tts.voicedesign   → scripts/setup_voicedesign.sh (int4 model ~4.3GB + venv)
 #   - tts.audio8        → scripts/setup_audio8.sh (int4 model ~1GB + pip deps)
 #   - tts.higgs         → scripts/setup_higgs.sh (cuda_int4 model ~3.6GB + .venv-higgs)
+#   - tts.indextts      → scripts/setup_indextts.sh (~5.7GB checkpoints + .venv-indextts)
 #   - transcription.hinglish_ggml → whisper.cpp build + GGML model
 #   - transcription.parakeet_align→ Parakeet ONNX (~320MB) + onnxruntime/librosa
 #   - frontend          → npm install (Tauri/React web UI)
@@ -95,6 +96,7 @@ def enabled(cat, name):
         return 0 if str(v).strip().lower() in ("0", "false", "no", "off") else 1
     return 1 if cfg.get(cat, {}).get(name, True) else 0
 cats = {
+    "TTS": ["kokoro", "audio8", "voicedesign", "higgs", "indextts", "sidecar"],
     "TRANSCRIPTION": ["hinglish_ggml", "whisper_align", "parakeet_align"],
     "MEDIA": ["pexels", "giphy", "pixabay", "youtube"],
     "LLM": ["opencode", "openrouter"],
@@ -125,6 +127,7 @@ print_features() {
   printf "  %-42s %s\n" "-----" "-----"
   printf "  %-42s %s\n" "tts.kokoro"       "$F_TTS_KOKORO / kokoro-onnx + Kokoro model (~340MB)"
   printf "  %-42s %s\n" "tts.audio8"       "$F_TTS_AUDIO8 / Audio8 int4 model (~1GB) + pip deps"
+  printf "  %-42s %s\n" "tts.indextts"     "$F_TTS_INDEXTTS / IndexTTS-2.5 checkpoints (~5.7GB) + .venv-indextts"
   printf "  %-42s %s\n" "tts.voicedesign"  "$F_TTS_VOICEDESIGN / Qwen3 VoiceDesign int4 (~4.3GB) + venv"
   printf "  %-42s %s\n" "tts.higgs"        "$F_TTS_HIGGS / Higgs Audio v3 4B cuda_int4 (~3.6GB) + .venv-higgs"
   printf "  %-42s %s\n" "tts.sidecar"      "$F_TTS_SIDECAR / remote voicebox server (no local deps)"
@@ -357,9 +360,15 @@ else
   warn "Skipping VoiceDesign provision — tts.voicedesign is disabled."
 fi
 
+if [ "${F_TTS_INDEXTTS:-1}" = "1" ]; then
+  if [ -x "scripts/setup_indextts.sh" ]; then
+    info "Provisioning IndexTTS-2.5 (checkpoints ~5.7GB + .venv-indextts)..."
+    bash scripts/setup_indextts.sh || warn "setup_indextts.sh reported issues (see above)"
   else
+    warn "tts.indextts is enabled but scripts/setup_indextts.sh is missing"
   fi
 else
+  warn "Skipping IndexTTS-2.5 provision — tts.indextts is disabled."
 fi
 
 if [ "${F_TTS_AUDIO8:-1}" = "1" ]; then

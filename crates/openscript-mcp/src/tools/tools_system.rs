@@ -152,6 +152,7 @@ pub(crate) async fn handle_system_config_set(args: serde_json::Value) -> Result<
             set_bool(tts, "audio8", &mut cfg.features.tts.audio8);
             set_bool(tts, "voicedesign", &mut cfg.features.tts.voicedesign);
             set_bool(tts, "higgs", &mut cfg.features.tts.higgs);
+            set_bool(tts, "indextts", &mut cfg.features.tts.indextts);
             set_bool(tts, "sidecar", &mut cfg.features.tts.sidecar);
         }
         if let Some(tr) = feat.get("transcription").and_then(|v| v.as_object()) {
@@ -661,8 +662,22 @@ pub(crate) async fn handle_system_capabilities(
        "sample_rate": 24000,
        "languages": ["en", "hi", "zh", "es", "fr", "de", "ar", "bn", "ta", "te", "mr", "gu", "ur", "pa", "ml", "kn"] ,
        "setup": "bash scripts/setup_higgs.sh (downloads cuda_int4 model ~3.6GB + .venv-higgs)",
-       "note": "Expressive 4B TTS (Higgs Audio v3, ONNX GenAI int4): 100+ languages, zero-shot voice cloning + inline emotion/prosody/style/sfx control tags (43). Voice.profile.add with provider=higgs. Research/non-commercial license.",
+       "note": "Expressive 4B TTS (Higgs Audio v3, ONNX GenAI int4): 100+ languages, zero-shot voice cloning + inline emotion/prosody/style/sfx control tags (43). Voice.profile.add with provider=higgs. Research/non-commercial license. ON HOLD pending fidelity bakeoff — use audio8/indextts for production clones.",
    });
+
+    // IndexTTS-2.5 (emotion-aware zero-shot voice cloning)
+    let indextts_feature_on = crate::config::feature_tts("indextts");
+    let indextts = json!({
+        "available": indextts_feature_on && openscript_tts::indextts::indextts_available(),
+        "enabled": indextts_feature_on,
+        "model": "IndexTeam/IndexTTS-2.5 (PyTorch, ~0.6-0.8B)",
+        "model_dir": "mcp/assets/indextts",
+        "voices_dir": "mcp/assets/indextts/voices",
+        "sample_rate": 22050,
+        "languages": ["en", "zh", "ja", "es", "ar"],
+        "setup": "bash scripts/setup_indextts.sh (downloads ~5.7GB checkpoints + .venv-indextts)",
+        "note": "IndexTTS-2.5: SOTA zero-shot cloning (CV3-Eval SS ~68-77% / WER 3.3-5.6%) with three emotion channels (emo_text NL guidance via QwenEmo, emo_audio_prompt takes, 8-dim emo_vector). Voice.profile.add with provider=indextts. bilibili license — research/non-commercial; commercial use requires contacting indexspeech@bilibili.com.",
+    });
 
     // VoiceDesign TTS (Qwen3-TTS-1.7B-VoiceDesign, ONNX int4 — designs
     // NOVEL character voices from a text description, zero reference audio).
@@ -694,7 +709,7 @@ pub(crate) async fn handle_system_capabilities(
         "sample_rate": 24000,
         "languages": ["english", "chinese", "japanese", "korean", "german", "french", "russian", "portuguese", "spanish", "italian"],
         "setup": "bash scripts/setup_voicedesign.sh (builds .venv-voicedesign + downloads model ~4.3GB)",
-        "note": "Designs brand-new character voices from a natural-language description (voice.design). No reference audio needed — pair with gepard clone registration for reusable personas.",
+        "note": "Designs brand-new character voices from a natural-language description (voice.design). No reference audio needed — pair with audio8/indextts clone registration for reusable personas.",
     });
 
     // Whisper word alignment (multilingual — primary alignment engine for
@@ -741,6 +756,7 @@ pub(crate) async fn handle_system_capabilities(
         "audio8": audio8,
         "voicedesign": voicedesign,
         "higgs": higgs,
+        "indextts": indextts,
         "transcription": transcription,
         "parakeet_align": parakeet_align,
         "whisper_align": whisper_align,

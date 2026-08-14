@@ -123,6 +123,31 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         }
     }
 
+    // IndexTTS-2.5 (emotion-aware zero-shot cloning): register the reference
+    // WAV with the indextts sidecar. Like the other clone engines, registration
+    // failure is NOT fatal — the profile is saved and can be re-registered.
+    let mut indextts_registered = false;
+    let mut indextts_warning: Option<String> = None;
+    if provider == "indextts" {
+        if ref_audio.is_empty() {
+            indextts_warning = Some(
+                "indextts profile needs ref_audio for voice cloning; \
+                 registration skipped until it is provided."
+                    .into(),
+            );
+        } else {
+            match openscript_tts::indextts::indextts_register(&profile_id, &ref_audio) {
+                Ok(()) => indextts_registered = true,
+                Err(e) => {
+                    indextts_warning = Some(format!(
+                        "indextts voice registration failed (profile saved; retry later): {}",
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
     // Audio8 emotion takes: register each as a compound voice `{id}@{emotion}`
     // so the router can select it at synth time (audio8 conditions on the
     // reference at registration — a raw ref override is not supported).
@@ -160,6 +185,8 @@ pub(crate) async fn handle_voice_profile_add(args: serde_json::Value) -> Result<
         "audio8_warning": audio8_warning,
         "higgs_registered": registered_higgs,
         "higgs_warning": higgs_warning,
+        "indextts_registered": indextts_registered,
+        "indextts_warning": indextts_warning,
         "emotions_count": emotions_map.len(),
         "emotions_registered_audio8": audio8_emotions_registered,
         "emotion_warnings": emotion_warnings,

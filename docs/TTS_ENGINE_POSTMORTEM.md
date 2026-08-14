@@ -154,11 +154,31 @@ post-training (ASR-WER + speaker-similarity preference), ~2.28× RTF improvement
   schema; fast at 0.8B/25 Hz.
 - **Con:** commercial license gate; PyTorch-only (needs a ~4 GB venv like
   gepard's); English is one of 5 supported languages (fine for our EN content).
-- **Recommendation:** do NOT integrate until (a) the license question is
-  resolved for the target business use, and (b) audio8's current performance is
-  demonstrably insufficient. If integrated, model it on the gepard sidecar
-  pattern and register it behind the config-driven backend toggle
-  (`tts.backend: "indextts"`).
+- **Recommendation (SUPERSEDED — integrated, Phase 175):** do NOT integrate
+  until (a) the license question is resolved for the target business use, and
+  (b) audio8's current performance is demonstrably insufficient. The license
+  gate was accepted for research-stage integration (bilibili — research /
+  non-commercial; commercial use requires contacting indexspeech@bilibili.com),
+  and IndexTTS-2.5 is now registered behind the config-driven backend toggle
+  (`tts.backend: "indextts"`) as a sidecar clone engine.
+
+### 3.5 IndexTTS-2.5 integration status (Phase 175, DONE)
+
+Integrated as a long-lived stdin/stdout sidecar (`mcp/scripts/indextts_tts_sidecar.py`
++ `scripts/setup_indextts.sh`, `.venv-indextts` torch 2.8 + CUDA, ~5.7 GB
+checkpoints in `mcp/assets/indextts` — gitignored). Verified end-to-end on the
+RTX 2060 (8 GB): first synth 99.5 s (cold load), warm synth 37 s, 22.05 kHz
+mono, per-emote `emo_text` guidance applied, loudness-normalized.
+
+**8 GB-GPU fixes baked into the vendored copy** (idempotent
+`scripts/patch_indextts_vendored.py`, applied by setup):
+- `QwenEmotion` (float16 Qwen 0.6B, ~1.5 GB) moved from `device_map="auto"`
+  (GPU) to `device_map="cpu"` — it is a tiny per-line text classifier; the
+  GPU stays free for the audio pipeline. Without this the process peaked at
+  6.36 GiB and OOM'd at inference on the 2060.
+- `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (fragmentation guard).
+- `use_cuda_kernel=False` (BigVGAN fused kernel targets newer archs than
+  Turing sm_75; plain torch fallback is fine).
 
 ---
 

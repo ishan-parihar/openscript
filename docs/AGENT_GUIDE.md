@@ -100,7 +100,10 @@ script.generate_voices → script.build_captions → background.fetch → script
    This always wins — a `voicedesign`-provider character voice synthesizes
    DIRECTLY on the Qwen3 VoiceDesign model even if `tts.backend` says otherwise.
 2. **Script `tts.backend`** — the engine default for the whole video
-   (`kokoro` | `audio8` | `voicedesign` | `higgs` | `sidecar`).
+   (`kokoro` | `audio8` | `voicedesign` | `higgs` | `indextts` | `sidecar`).
+   `indextts` = IndexTTS-2.5 (emotion-aware zero-shot clone, 22.05 kHz,
+   en/zh/ja/es/ar, ~5.7 GB, provisioned by `bash scripts/setup_indextts.sh`,
+   bilibili license — research/non-commercial).
 3. **Script `tts.voice`** — a default voice profile id; a speaker whose voice
    is the literal string `"default"` resolves to it.
 4. **User config** — `~/.openscript/config.json` → `tts.default_backend` and

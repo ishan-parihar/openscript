@@ -2920,6 +2920,64 @@ async fn tts_generate_routed(
         });
     }
 
+    // IndexTTS-2.5 path (emotion-aware zero-shot voice cloning — 22.05kHz,
+    // en/zh/ja/es/ar, ~0.6-0.8B semantic-GPT + Zipformer-flow S2M + BigVGAN;
+    // official PyTorch stack via the .venv-indextts sidecar; bilibili
+    // license — research/non-commercial). The scene emote maps to
+    // natural-language `emo_text` guidance (QwenEmo) inside the sidecar, so
+    // each line is tonally attuned to its emote while the clone identity
+    // stays fixed. Speed is applied NATURALLY by the flow model via
+    // `duration_factor` (reciprocal) — never ffmpeg atempo. Only pitch
+    // (which IndexTTS has no native knob for) falls back to ffmpeg.
+    if profile.provider == "indextts" {
+        if !crate::config::feature_tts("indextts") {
+            return Err(ToolError::Tts(
+                "Voice profile uses the indextts (IndexTTS-2.5) TTS engine, which is disabled \
+                 in the active configuration. Enable features.tts.indextts=true in \
+                 ~/.openscript/config.json (or set OPENSCRIPT_FEATURE_TTS_INDEXTTS=1), then run: \
+                 bash scripts/setup_indextts.sh"
+                    .to_string(),
+            ));
+        }
+        let params = openscript_tts::indextts::IndexttsSynthParams {
+            emote: emotion.map(|s| s.to_string()),
+            ref_audio: None,
+            emo_audio_prompt: None,
+            emo_text: None,
+            emo_alpha: None,
+            speed: if (speed - 1.0).abs() > 1e-6 { Some(speed) } else { None },
+            temperature,
+            top_k,
+            top_p,
+            repetition_penalty: None,
+        };
+        let (mut duration_ms, sample_rate, _chunks) =
+            openscript_tts::indextts::indextts_synthesize_params(
+                text,
+                Some(&profile.id),
+                output_path,
+                &params,
+            )
+            .map_err(|e| ToolError::Tts(e))?;
+        // Speed was applied by the model (duration_factor); only pitch needs
+        // the ffmpeg fallback.
+        if (pitch - 1.0).abs() > 1e-6 {
+            match apply_speed_pitch(output_path, 1.0, pitch) {
+                Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("[tts] indextts pitch post-processing failed: {}", e)
+                }
+            }
+        }
+        return Ok(TtsGenResult {
+            output_path: output_path.to_string(),
+            duration_ms,
+            cached: false,
+            backend: format!("indextts:{}hz", sample_rate),
+        });
+    }
+
     // Higgs Audio v3 path (expressive 4B TTS — 100+ languages, zero-shot
     // voice cloning + inline emotion/prosody/style/sfx control tags; ONNX
     // GenAI int4 via the .venv-higgs sidecar; research/non-commercial license).

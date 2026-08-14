@@ -73,7 +73,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "type": "object",
                 "description": "TTS engine configuration. Backend selects the audio model engine; a speaker voice of \"default\" resolves to tts.voice (or the user's ~/.openscript/config.json tts.default_voice, or OPENSCRIPT_TTS_VOICE).",
                 "properties": {
-                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "voicedesign", "higgs", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), voicedesign (Qwen3 VoiceDesign — direct NL-instruction synthesis with per-line emotion/tonality, NO cloning), higgs (Higgs Audio v3 4B — zero-shot clone + inline emotion/prosody control tags, 100+ languages), sidecar (faster-qwen3-tts)."},
+                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "voicedesign", "higgs", "indextts", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), voicedesign (Qwen3 VoiceDesign — direct NL-instruction synthesis with per-line emotion/tonality, NO cloning), higgs (Higgs Audio v3 4B — zero-shot clone + inline emotion/prosody control tags, 100+ languages), indextts (IndexTTS-2.5 — emotion-aware zero-shot clone, 22.05kHz, en/zh/ja/es/ar), sidecar (faster-qwen3-tts)."},
                     "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan'). Speakers whose voice is the literal string 'default' use this profile."},
                     "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
                     "default_pitch": {"type": "number", "default": 1.0}
@@ -581,7 +581,8 @@ pub(crate) async fn handle_script_generate_voices(
                 Some(v) => v,
                 None if spec.tts.backend == "audio8"
                     || spec.tts.backend == "voicedesign"
-                    || spec.tts.backend == "higgs" => {
+                    || spec.tts.backend == "higgs"
+                    || spec.tts.backend == "indextts" => {
                     // Clone engines cannot fall back to a built-in preset — a
                     // speaker voice "default" with no configured voice profile
                     // is a config gap, not a lookup miss. Error clearly instead
@@ -607,6 +608,7 @@ pub(crate) async fn handle_script_generate_voices(
             && !voice_lookup.starts_with("audio8:")
             && !voice_lookup.starts_with("voicedesign:")
             && !voice_lookup.starts_with("higgs:")
+            && !voice_lookup.starts_with("indextts:")
         {
             format!("kokoro:{}", voice_lookup)
         } else {
