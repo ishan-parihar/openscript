@@ -192,11 +192,18 @@ def get_session():
         use_qwen_emo = os.environ.get("INDEXTTS_QWEN_EMO", "1").strip().lower() not in (
             "0", "false", "no")
         # infer_v2_5.py hardcodes HF_HUB_CACHE relative to CWD at import — run
-        # from the model dir so the Qwen cache lands inside the asset dir.
+        # from the model dir so the Qwen cache lands inside the asset dir, then
+        # RESTORE the original CWD so relative output_paths (e.g.
+        # "output/samples/x.wav") resolve from the caller's working directory,
+        # not from inside the model dir.
+        orig_cwd = os.getcwd()
         os.chdir(MODEL_DIR)
         log(f"loading IndexTTS-2.5 from {MODEL_DIR} on {device} "
             f"(bf16={device != 'cpu'}, qwen_emo={use_qwen_emo}); first load takes minutes)")
-        from indextts.infer_v2_5 import IndexTTS2  # noqa: PLC0415
+        try:
+            from indextts.infer_v2_5 import IndexTTS2  # noqa: PLC0415
+        finally:
+            os.chdir(orig_cwd)
 
         _session = IndexTTS2(
             cfg_path=str(cfg_path),
