@@ -44,6 +44,8 @@ mcp/assets/higgs/
 mcp/assets/indextts/
 # Vendored gepard-inference git metadata (source is committed; .git is not)
 third_party/gepard-inference/.git/
+# Vendored index-tts git metadata (source is committed; .git is not)
+third_party/index-tts/.git/
 
 # IDE
 .vscode/
