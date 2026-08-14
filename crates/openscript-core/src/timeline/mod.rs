@@ -47,6 +47,7 @@ impl Timeline {
                     normalize_to_lufs: -14.0,
                 },
                 render_backend: "auto".into(),
+                presentation: PresentationDirective::default(),
             },
             assets: AssetRegistry {
                 voices: std::collections::HashMap::new(),
@@ -372,6 +373,7 @@ impl Timeline {
                     normalize_to_lufs: -14.0,
                 },
                 render_backend: "auto".into(),
+                presentation: PresentationDirective::default(),
             },
             assets: AssetRegistry {
                 voices: std::collections::HashMap::new(),

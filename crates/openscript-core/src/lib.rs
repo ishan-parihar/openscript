@@ -3,6 +3,7 @@ pub mod background;
 pub mod captions;
 pub mod control_tags;
 pub mod error;
+pub mod presentation;
 pub mod production_quality;
 pub mod script;
 pub mod srt;

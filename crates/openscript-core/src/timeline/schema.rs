@@ -203,6 +203,66 @@ pub struct Directives {
     pub transitions: Vec<TransitionDirective>,
     pub mix: MixConfig,
     pub render_backend: String,
+    /// Visual presentation mode: "cover" (b-roll everywhere — default) or
+    /// "alternate" (the visual layer alternates stock b-roll ↔ the original
+    /// source video, segregated by transcript segmentation — the V2V mode).
+    /// Legacy timelines omit this field and behave exactly as before.
+    #[serde(default)]
+    pub presentation: PresentationDirective,
+}
+
+/// V2V alternation presentation (docs/V2V_ALTERNATION_ARCHITECTURE.md).
+/// When `mode == "alternate"`, every segment carries a visual role in
+/// `visual_roles` ("broll" → covered by stock footage; "source" → the
+/// original video shows through). The planner (`presentation::plan_alternation`)
+/// assigns roles; validators check intent + coverage + breadth.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct PresentationDirective {
+    /// "cover" (default, current behaviour — broll everywhere) or "alternate".
+    pub mode: String,
+    /// segment_id → "broll" | "source". Populated when mode == "alternate".
+    pub visual_roles: std::collections::HashMap<String, String>,
+    /// Alternation cadence: "every_other" (default, [broll→source→broll→…]),
+    /// "broll_lead", "source_lead", "every_n".
+    pub pattern: String,
+    /// Consecutive broll segments when pattern == "every_n".
+    pub every_n: u32,
+    /// What to do with the ORIGINAL video's audio in re-voice mode:
+    /// "keep" (default) or "duck" (lower under cloned voiceover).
+    pub source_audio: String,
+}
+
+impl Default for PresentationDirective {
+    fn default() -> Self {
+        Self {
+            mode: "cover".into(),
+            visual_roles: std::collections::HashMap::new(),
+            pattern: "every_other".into(),
+            every_n: 2,
+            source_audio: "keep".into(),
+        }
+    }
+}
+
+impl PresentationDirective {
+    /// Whether the timeline is in V2V alternation mode.
+    pub fn is_alternate(&self) -> bool {
+        self.mode == "alternate"
+    }
+
+    /// Visual role for a segment id ("broll" | "source"). Defaults to
+    /// "broll" for cover mode / unassigned segments (the legacy behaviour).
+    pub fn role_for(&self, segment_id: &str) -> &str {
+        if self.is_alternate() {
+            self.visual_roles
+                .get(segment_id)
+                .map(|s| s.as_str())
+                .unwrap_or("broll")
+        } else {
+            "broll"
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
