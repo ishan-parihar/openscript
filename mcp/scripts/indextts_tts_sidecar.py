@@ -47,6 +47,11 @@ from pathlib import Path
 # Enable PyTorch's expandable segments so fragmented blocks are freed instead
 # of OOM'ing during GPT decoding + vocoder. Must be set before torch import.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# Quality-first: force one-shot generation (chunking re-anchors conditioning
+# per segment and causes speaker drift/podcast effect). The 8GB OOM that low-
+# vram mode existed for is already solved by QwenEmo CPU-offload +
+# expandable_segments. Operators can re-enable via INDEXTTS_LOW_VRAM=1.
+os.environ.setdefault("INDEXTTS_LOW_VRAM", "0")
 
 # --- Shared TTS post-processing (loudness normalization + crossfade concat) --
 _SCRIPT_DIR = Path(__file__).resolve().parent
