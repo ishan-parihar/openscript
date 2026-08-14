@@ -63,11 +63,17 @@ VOICES_DIR = Path(
 ).resolve()
 SAMPLE_RATE = 22050
 
-# Sampling defaults from the index-tts config.yaml (GPT inference knobs).
-DEFAULT_TEMPERATURE = float(os.environ.get("INDEXTTS_TEMPERATURE", "0.9"))
-DEFAULT_TOP_K = int(os.environ.get("INDEXTTS_TOP_K", "0"))
+# Sampling defaults MATCH the engine's own canonical values
+# (infer_v2_5.py generation_kwargs pops: temperature 0.8, top_k 30,
+# top_p 0.8, repetition_penalty 10.0, num_beams 3). Passing top_k=0 would
+# DISABLE top-k filtering entirely (engine default is 30) and a weak
+# repetition_penalty lets the mel-code sampler wander — both cause the
+# voice drift / second-speaker artifact.
+DEFAULT_TEMPERATURE = float(os.environ.get("INDEXTTS_TEMPERATURE", "0.8"))
+DEFAULT_TOP_K = int(os.environ.get("INDEXTTS_TOP_K", "30"))
 DEFAULT_TOP_P = float(os.environ.get("INDEXTTS_TOP_P", "0.8"))
-DEFAULT_REPETITION_PENALTY = float(os.environ.get("INDEXTTS_REPETITION_PENALTY", "1.1"))
+DEFAULT_REPETITION_PENALTY = float(os.environ.get("INDEXTTS_REPETITION_PENALTY", "10.0"))
+# num_beams matches the engine default (3) — do not override.
 
 # Emote -> natural-language emotion guidance (emo_text, QwenEmo). Unknown
 # emotes fall back to the emote string itself; empty when no emote.

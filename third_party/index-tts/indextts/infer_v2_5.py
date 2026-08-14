@@ -124,14 +124,19 @@ class IndexTTS2:
         self.use_accel = use_accel
         self.use_torch_compile = use_torch_compile
 
-        # Detect low-VRAM GPUs (< 10 GB) to enable automatic text chunking
+        # Detect low-VRAM GPUs (< 10 GB) to enable automatic text chunking.
+        # OpenScript override: INDEXTTS_LOW_VRAM=0 forces chunking OFF
+        # (the 40-char split re-anchors conditioning per chunk and can
+        # drift into a different speaker — set 0 once VRAM allows).
         self.low_vram = False
-        if torch.cuda.is_available() and self.device.startswith("cuda"):
-            dev_idx = int(self.device.split(":")[-1]) if ":" in self.device else 0
-            total_vram_gb = torch.cuda.get_device_properties(dev_idx).total_memory / (1024 ** 3)
-            if total_vram_gb < 10.0:
-                self.low_vram = True
-                print(f">> Low-VRAM mode enabled ({total_vram_gb:.1f} GB < 10 GB), long text will be split into chunks")
+        _lv_override = os.environ.get("INDEXTTS_LOW_VRAM", "1").strip().lower()
+        if _lv_override not in ("0", "false", "no", "off"):
+            if torch.cuda.is_available() and self.device.startswith("cuda"):
+                dev_idx = int(self.device.split(":")[-1]) if ":" in self.device else 0
+                total_vram_gb = torch.cuda.get_device_properties(dev_idx).total_memory / (1024 ** 3)
+                if total_vram_gb < 10.0:
+                    self.low_vram = True
+                    print(f">> Low-VRAM mode enabled ({total_vram_gb:.1f} GB < 10 GB), long text will be split into chunks")
 
         if use_qwen_emo:
             self.qwen_emo = QwenEmotion(os.path.join(self.model_dir, self.cfg.qwen_emo_path))
@@ -467,7 +472,7 @@ class IndexTTS2:
         return segments or [text]
 
     @staticmethod
-    def split_text_by_punctuation(text, max_chars=40):
+    def split_text_by_punctuation(text, max_chars=int(os.environ.get("INDEXTTS_LOW_VRAM_CHARS", "200"))):
         """Split text into segments of at most `max_chars` characters,
         breaking at punctuation boundaries. If a segment exceeds the limit
         and contains no punctuation, it is kept as-is to avoid mid-word splits."""
@@ -511,7 +516,7 @@ class IndexTTS2:
               emo_vector=None, use_emo_text=False, emo_text=None, use_random=False, interval_silence=200,
               verbose=False, max_text_tokens_per_segment=120, stream_return=False, more_segment_before=0, duration_factor=1.0, text_normalization=True, **generation_kwargs):
         if self.low_vram and not stream_return and len(text) > 40:
-            segments = self.split_text_by_punctuation(text, max_chars=40)
+            segments = self.split_text_by_punctuation(text, max_chars=int(os.environ.get("INDEXTTS_LOW_VRAM_CHARS", "200")))
             if verbose:
                 print(f">> Low-VRAM: split into {len(segments)} segments: {segments}")
             sampling_rate = 22050
