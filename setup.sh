@@ -11,12 +11,10 @@
 #
 #   bash setup.sh --list-features   # print the toggle table + what each pulls
 #   OPENSCRIPT_FEATURE_TTS_VOICEDESIGN=0 bash setup.sh   # skip the 4.3GB model
-#   bash setup.sh --feature tts.gepard=0                 # skip the heavy venv
 #
 # Only the deps for ENABLED features are downloaded/built:
 #   - tts.kokoro        → kokoro-onnx pip deps + Kokoro model (~340MB)
 #   - tts.voicedesign   → scripts/setup_voicedesign.sh (int4 model ~4.3GB + venv)
-#   - tts.gepard        → scripts/setup_gepard.sh (CUDA torch + NeMo venv)
 #   - tts.audio8        → scripts/setup_audio8.sh (int4 model ~1GB + pip deps)
 #   - tts.higgs         → scripts/setup_higgs.sh (cuda_int4 model ~3.6GB + .venv-higgs)
 #   - transcription.hinglish_ggml → whisper.cpp build + GGML model
@@ -97,7 +95,6 @@ def enabled(cat, name):
         return 0 if str(v).strip().lower() in ("0", "false", "no", "off") else 1
     return 1 if cfg.get(cat, {}).get(name, True) else 0
 cats = {
-    "TTS": ["kokoro", "audio8", "gepard", "voicedesign", "higgs", "sidecar"],
     "TRANSCRIPTION": ["hinglish_ggml", "whisper_align", "parakeet_align"],
     "MEDIA": ["pexels", "giphy", "pixabay", "youtube"],
     "LLM": ["opencode", "openrouter"],
@@ -110,7 +107,6 @@ print("F_FRONTEND=%d" % enabled("frontend", "frontend"))
 PY
 )"
   else
-    F_TTS_KOKORO=1; F_TTS_AUDIO8=1; F_TTS_GEPARD=1; F_TTS_VOICEDESIGN=1; F_TTS_HIGGS=1; F_TTS_SIDECAR=1
     F_TRANSCRIPTION_HINGLISH_GGML=1; F_TRANSCRIPTION_WHISPER_ALIGN=1; F_TRANSCRIPTION_PARAKEET_ALIGN=1
     F_MEDIA_PEXELS=1; F_MEDIA_GIPHY=1; F_MEDIA_PIXABAY=1; F_MEDIA_YOUTUBE=1
     F_LLM_OPENCODE=1; F_LLM_OPENROUTER=1
@@ -129,7 +125,6 @@ print_features() {
   printf "  %-42s %s\n" "-----" "-----"
   printf "  %-42s %s\n" "tts.kokoro"       "$F_TTS_KOKORO / kokoro-onnx + Kokoro model (~340MB)"
   printf "  %-42s %s\n" "tts.audio8"       "$F_TTS_AUDIO8 / Audio8 int4 model (~1GB) + pip deps"
-  printf "  %-42s %s\n" "tts.gepard"       "$F_TTS_GEPARD / .venv-gepard (CUDA torch + NeMo, heavy)"
   printf "  %-42s %s\n" "tts.voicedesign"  "$F_TTS_VOICEDESIGN / Qwen3 VoiceDesign int4 (~4.3GB) + venv"
   printf "  %-42s %s\n" "tts.higgs"        "$F_TTS_HIGGS / Higgs Audio v3 4B cuda_int4 (~3.6GB) + .venv-higgs"
   printf "  %-42s %s\n" "tts.sidecar"      "$F_TTS_SIDECAR / remote voicebox server (no local deps)"
@@ -347,7 +342,6 @@ fi
 # ----------------------------------------------------------------------------
 # Step 3a: Per-engine TTS provisioning (feature-gated)
 #   voicedesign → setup_voicedesign.sh (~4.3GB model + .venv-voicedesign)
-#   gepard      → setup_gepard.sh (CUDA torch + NeMo + .venv-gepard)
 #   audio8      → setup_audio8.sh (~1GB int4 model + pip deps)
 # ----------------------------------------------------------------------------
 step "3a/9 — Provisioning active TTS engines"
@@ -363,15 +357,9 @@ else
   warn "Skipping VoiceDesign provision — tts.voicedesign is disabled."
 fi
 
-if [ "${F_TTS_GEPARD:-1}" = "1" ]; then
-  if [ -x "scripts/setup_gepard.sh" ]; then
-    info "Provisioning Gepard (.venv-gepard: CUDA torch + NeMo + gepard-inference)..."
-    bash scripts/setup_gepard.sh || warn "setup_gepard.sh reported issues (see above)"
   else
-    warn "tts.gepard is enabled but scripts/setup_gepard.sh is missing"
   fi
 else
-  warn "Skipping Gepard provision — tts.gepard is disabled."
 fi
 
 if [ "${F_TTS_AUDIO8:-1}" = "1" ]; then

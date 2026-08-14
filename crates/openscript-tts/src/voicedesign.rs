@@ -5,14 +5,14 @@
 //! This powers the `voice.design` MCP tool: an agent describes a persona
 //! ("grumpy detective, low gravelly voice") and gets back a 24 kHz WAV of a
 //! brand-new voice matching that description, which can then be registered as
-//! a cloned-voice profile (e.g. via gepard) for reuse across a script.
+//! a cloned-voice profile for reuse across a script.
 //!
 //! Model: wavekat/Qwen3-TTS-1.7B-VoiceDesign-ONNX (Apache-2.0), int4,
 //! ~4.3 GB. Inference is NumPy + ONNX Runtime only (no torch), so the venv is
 //! light: onnxruntime-gpu + numpy + soundfile + transformers, provisioned by
 //! `scripts/setup_voicedesign.sh`. The sidecar is
 //! `mcp/scripts/voicedesign_tts_sidecar.py`, a long-lived stdin/stdout JSON
-//! process mirroring `gepard_tts_sidecar.py`:
+//! process mirroring the audio8/higgs sidecar pattern:
 //!
 //! ```text
 //! → {"op":"design","instruct":"Speak in a warm friendly female voice",

@@ -95,12 +95,12 @@ script.generate_voices → script.build_captions → background.fetch → script
 `script.to_video` / `script.generate_voices` pick the TTS engine in this order:
 
 1. **Speaker voice pin** — a speaker whose `voice` references a registered
-   profile (e.g. `"ishan_gepard"`, `"air_analyst"`) routes by that profile's
-   own `provider` field (gepard / audio8 / voicedesign / higgs / kokoro / sidecar).
+   profile (e.g. `"ishan"`, `"air_analyst"`) routes by that profile's
+   own `provider` field (audio8 / voicedesign / higgs / kokoro / sidecar).
    This always wins — a `voicedesign`-provider character voice synthesizes
    DIRECTLY on the Qwen3 VoiceDesign model even if `tts.backend` says otherwise.
 2. **Script `tts.backend`** — the engine default for the whole video
-   (`kokoro` | `audio8` | `gepard` | `voicedesign` | `higgs` | `sidecar`).
+   (`kokoro` | `audio8` | `voicedesign` | `higgs` | `sidecar`).
 3. **Script `tts.voice`** — a default voice profile id; a speaker whose voice
    is the literal string `"default"` resolves to it.
 4. **User config** — `~/.openscript/config.json` → `tts.default_backend` and
@@ -108,8 +108,8 @@ script.generate_voices → script.build_captions → background.fetch → script
    (env wins over config file; explicit script fields win over both).
 5. **Built-in default** — `kokoro` / `kokoro:af_heart`.
 
-Example: to make every script use the Gepard clone by default, set
-`OPENSCRIPT_TTS_BACKEND=gepard OPENSCRIPT_TTS_VOICE=ishan_gepard` and write
+Example: to make every script use the Audio8 clone by default, set
+`OPENSCRIPT_TTS_BACKEND=audio8 OPENSCRIPT_TTS_VOICE=ishan` and write
 speakers with `"voice": "default"`.
 
 ### Designing novel character voices (`voice.design`)
@@ -175,7 +175,7 @@ any line can be spoken in that emotion:
 
 ```
 voice.profile.add {
-  profile_id: "ishan", provider: "gepard",
+  profile_id: "ishan", provider: "audio8",
   ref_audio: "base.wav", ref_text: "...",
   emotions: {
     "angry":   { ref_audio: "ishan_angry.wav",   ref_text: "..." },
@@ -186,8 +186,8 @@ voice.profile.add {
 
 - Scene `emote` (free-form: `"happy"`, `"angry"`, `"whisper"`, ...) selects the
   matching take at synthesis; `tts.generate` takes an `emotion` arg.
-- Engine mechanics: gepard takes are used via a per-request reference override;
-  audio8 takes auto-register as `{profile_id}@{emotion}` compound voices.
+- Engine mechanics: audio8 takes auto-register as `{profile_id}@{emotion}`
+  compound voices; the scene emote selects the take at synthesis.
 - Unmatched emotion → falls back to the base reference (never fails).
 - Per-scene `speed` / `pitch` overrides (previously silently dropped for clone
   engines) are now applied post-synthesis.
@@ -509,7 +509,7 @@ Every subsystem is toggleable via `~/.openscript/config.json` →
    for one run; persist via `setup_openscript_config.sh --feature cat.name=0`).
 2. **Runtime gating** — a disabled engine/tool returns a clear error naming the
    toggle + setup command instead of a missing-dep failure. Gates today:
-   - `tts.{kokoro,audio8,gepard,voicedesign,higgs,sidecar}` — TTS router
+   - `tts.{kokoro,audio8,voicedesign,higgs,sidecar}` — TTS router
    - `transcription.hinglish_ggml` — `transcribe`
    - `media.{pexels,giphy,pixabay}` — key resolvers fail closed (handlers
      degrade to their existing "key not set" path)

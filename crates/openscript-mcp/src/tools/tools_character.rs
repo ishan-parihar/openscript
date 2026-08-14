@@ -38,17 +38,18 @@ fn save_characters(chars: &serde_json::Value) -> Result<(), ToolError> {
     atomic_write_json(&characters_path(), chars)
 }
 
-/// Sanitize an id for use in filenames — MUST match gepard's `_voice_path`
-/// sanitizer (alnum + `-_.`) so the design WAV and the registered voice copy
-/// land on the same path (no orphaned files for ids containing dashes).
+/// Sanitize an id for use in filenames (alnum + `-_.`), so the design WAV and
+/// the registered voice copy land on the same path (no orphaned files for ids
+/// containing dashes).
 fn sanitize_id(id: &str) -> String {
     id.chars()
         .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
         .collect::<String>()
 }
 
-/// Character base voice output path (gepard voices dir = the standard
-/// registered-voice location; emotion takes live here too).
+/// Character base voice output path. `mcp/assets/gepard/voices` is the legacy
+/// registered-voice location (kept — voicedesign character refs live there);
+/// emotion takes live here too.
 fn character_voice_path(character_id: &str) -> String {
     format!("mcp/assets/gepard/voices/{}.wav", sanitize_id(character_id))
 }
@@ -130,8 +131,8 @@ pub(crate) async fn handle_character_create(
         )));
     }
 
-    // Base voice: use an existing profile, or design one (VoiceDesign + gepard
-    // sidecar registration are registry-free; the JSON profile entry is written
+    // Base voice: use an existing profile, or design one (VoiceDesign —
+    // registry-free; the JSON profile entry is written
     // inside the lock below).
     let (base_voice, wav_path, ref_text): (String, Option<String>, Option<String>) =
         match existing_voice {
@@ -275,7 +276,7 @@ pub(crate) async fn handle_character_design_emotion(
         _ => character_lang,
     };
 
-    // Base profile must exist AND be a voicedesign (or legacy gepard) base —
+    // Base profile must exist AND be a voicedesign base —
     // the character workflow is VoiceDesign-direct by design (emotion takes
     // are per-line `instruct` overrides at synthesis time; the take WAV is a
     // design artifact). Attaching takes to a kokoro base would be silently
@@ -289,7 +290,7 @@ pub(crate) async fn handle_character_design_emotion(
         .and_then(|p| p.get("provider"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    if base_provider != "voicedesign" && base_provider != "gepard" {
+    if base_provider != "voicedesign" {
         return Err(ToolError::InvalidArg(format!(
             "character '{}' base voice provider is '{}' — character emotion takes require a voicedesign (Qwen3 VoiceDesign) base. Re-run character.create WITHOUT an explicit 'voice' (designs a voicedesign base) or with a voicedesign voice profile.",
             character_id, if base_provider.is_empty() { "<missing>" } else { base_provider }

@@ -19,8 +19,8 @@ pub struct EmotionTake {
     /// Exact transcript of the emotion reference audio.
     #[serde(default)]
     pub ref_text: String,
-    /// Gepard reference-fidelity knob: higher = timbre clings closer to THIS
-    /// emotion reference (1.0 = default, 2.0 = tighter).
+    /// Reference-fidelity knob (carried by gepard; retained for compatibility):
+    /// higher = timbre clings closer to THIS emotion reference (1.0 = default).
     #[serde(default)]
     pub cfg_scale: Option<f64>,
     /// Optional per-emotion speech speed multiplier.
@@ -54,8 +54,8 @@ pub struct VoiceProfile {
 
     /// Emotion-template map: `{emotion_id -> EmotionTake}`. When a scene
     /// carries an `emote`, synthesis uses the matching take (per-engine:
-    /// gepard = ref_audio override, audio8 = compound `{id}@{emotion}`
-    /// registered voice) instead of the neutral base reference.
+    /// audio8 = compound `{id}@{emotion}` registered voice) instead of the
+    /// neutral base reference.
     #[serde(default)]
     pub emotions: HashMap<String, EmotionTake>,
 }
@@ -144,7 +144,7 @@ mod tests {
     fn test_emotions_template_roundtrip() {
         let mut profile = VoiceProfile {
             id: "ishan".into(),
-            provider: "gepard".into(),
+            provider: "audio8".into(),
             mode: "clone".into(),
             model: String::new(),
             ref_audio: "base.wav".into(),

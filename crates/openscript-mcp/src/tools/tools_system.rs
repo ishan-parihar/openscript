@@ -150,7 +150,6 @@ pub(crate) async fn handle_system_config_set(args: serde_json::Value) -> Result<
         if let Some(tts) = feat.get("tts").and_then(|v| v.as_object()) {
             set_bool(tts, "kokoro", &mut cfg.features.tts.kokoro);
             set_bool(tts, "audio8", &mut cfg.features.tts.audio8);
-            set_bool(tts, "gepard", &mut cfg.features.tts.gepard);
             set_bool(tts, "voicedesign", &mut cfg.features.tts.voicedesign);
             set_bool(tts, "higgs", &mut cfg.features.tts.higgs);
             set_bool(tts, "sidecar", &mut cfg.features.tts.sidecar);
@@ -653,28 +652,6 @@ pub(crate) async fn handle_system_capabilities(
         "note": "Zero-shot voice cloning via Audio8 TTS Preview 0.6B (ONNX INT4). English default for the script-to-video workflow.",
     });
 
-    // Gepard TTS (high-quality native-English voice cloning — Qwen3.5 AR + NeMo
-    // NanoCodec via the .venv-gepard inference venv; Apache-2.0 weights).
-    let gepard_voices_dir = std::path::Path::new("mcp/assets/gepard/voices");
-    let gepard_voice_count = if gepard_voices_dir.exists() {
-        std::fs::read_dir(gepard_voices_dir)
-            .map(|d| d.filter_map(|e| e.ok()).filter(|e| e.path().extension().map(|x| x == "wav").unwrap_or(false)).count())
-            .unwrap_or(0)
-    } else {
-        0
-    };
-    let gepard_feature_on = crate::config::feature_tts("gepard");
-    let gepard = json!({
-        "available": gepard_feature_on && openscript_tts::gepard::gepard_available(),
-        "enabled": gepard_feature_on,
-        "model": "nineninesix/gepard-1.0",
-        "voice_count": gepard_voice_count,
-        "voices_dir": "mcp/assets/gepard/voices",
-        "sample_rate": 22050,
-        "languages": ["en", "es-MX", "pt-BR", "nl"],
-        "setup": "bash scripts/setup_gepard.sh (builds .venv-gepard: Python 3.12 + CUDA torch + NeMo codec + transformers 5.3.0)",
-       "note": "High-quality native-English zero-shot voice cloning (Gepard 1.0, Apache-2.0; NeMo NanoCodec under NVIDIA OML). Voice.profile.add with provider=gepard.",
-   });
    let higgs_feature_on = crate::config::feature_tts("higgs");
    let higgs = json!({
        "available": higgs_feature_on && openscript_tts::higgs::higgs_available(),
@@ -762,7 +739,6 @@ pub(crate) async fn handle_system_capabilities(
         "voicebox": voicebox,
         "kokoro": kokoro,
         "audio8": audio8,
-        "gepard": gepard,
         "voicedesign": voicedesign,
         "higgs": higgs,
         "transcription": transcription,

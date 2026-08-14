@@ -395,12 +395,12 @@ pub fn tool_definitions() -> serde_json::Value {
                     "profile_id": {"type": "string", "description": "Unique identifier for this voice profile"},
                     "ref_audio": {"type": "string", "description": "Path to reference audio file (clean speech sample)"},
                     "ref_text": {"type": "string", "description": "Transcript of the reference audio"},
-                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'gepard' (high-quality native-English zero-shot cloning — Gepard 1.0 Qwen3.5 AR + NeMo NanoCodec, 22.05kHz, requires .venv-gepard via scripts/setup_gepard.sh), 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'voicedesign' (Qwen3 VoiceDesign — DIRECT NL-instruction synthesis, no cloning; profiles from voice.design / character.create carry the persona in description), 'higgs' (Higgs Audio v3 4B ONNX GenAI int4 — zero-shot clone + inline emotion/prosody/style/sfx control tags, 24kHz, 100+ languages, requires .venv-higgs via scripts/setup_higgs.sh; research/non-commercial license), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
+                    "provider": {"type": "string", "default": "faster-qwen3-tts", "description": "TTS provider engine: 'audio8' (default for cloned voices — Audio8 TTS zero-shot cloning, registers ref_audio + ref_text), 'voicedesign' (Qwen3 VoiceDesign — DIRECT NL-instruction synthesis, no cloning; profiles from voice.design / character.create carry the persona in description), 'higgs' (Higgs Audio v3 4B ONNX GenAI int4 — zero-shot clone + inline emotion/prosody/style/sfx control tags, 24kHz, 100+ languages, requires .venv-higgs via scripts/setup_higgs.sh; research/non-commercial license), 'kokoro' (preset voices), 'faster-qwen3-tts' (voicebox HTTP sidecar)"},
                     "mode": {"type": "string", "default": "clone", "description": "Voice mode: 'clone' for voice cloning, 'preset' for built-in voices"},
                     "model": {"type": "string", "default": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "description": "TTS model identifier"},
                     "language": {"type": "string", "default": "English", "description": "Voice language"},
                     "description": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Human-readable description of this voice"},
-                    "emotions": {"anyOf": [{"type": "object", "additionalProperties": {"type": "object", "properties": {"ref_audio": {"type": "string", "description": "Reference WAV of this speaker delivering the emotion"}, "ref_text": {"type": "string", "description": "Exact transcript of the emotion reference audio"}, "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Gepard reference-fidelity knob for this take (higher = clings closer to this emotion reference)"}}, "required": ["ref_audio", "ref_text"]}}, {"type": "null"}], "description": "Emotion-template map: {emotion_id: {ref_audio, ref_text, cfg_scale?}}. Each entry is a SEPARATE reference recording of the same speaker delivering that emotion. Scene 'emote' / tts.generate 'emotion' then selects the matching take so every line is attuned to the required tonality. gepard takes are used via per-request ref override; audio8 takes are auto-registered as {profile_id}@{emotion} compound voices."}
+                    "emotions": {"anyOf": [{"type": "object", "additionalProperties": {"type": "object", "properties": {"ref_audio": {"type": "string", "description": "Reference WAV of this speaker delivering the emotion"}, "ref_text": {"type": "string", "description": "Exact transcript of the emotion reference audio"}, "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Reference-fidelity knob (retained for compatibility; higher = clings closer to this emotion reference)"}}, "required": ["ref_audio", "ref_text"]}}, {"type": "null"}], "description": "Emotion-template map: {emotion_id: {ref_audio, ref_text, cfg_scale?}}. Each entry is a SEPARATE reference recording of the same speaker delivering that emotion. Scene 'emote' / tts.generate 'emotion' then selects the matching take so every line is attuned to the required tonality. audio8 takes are auto-registered as {profile_id}@{emotion} compound voices."}
                 },
                 "required": ["profile_id", "ref_audio", "ref_text"],
                 "additionalProperties": false
@@ -497,7 +497,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "tts.generate",
-            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'gepard' (high-quality native-English voice clone, 22.05kHz, Apache-2.0 — best fidelity for English narration; FIRST gepard synth downloads the model ~2.5GB and can take minutes — a cold start, not a hang), 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'voicedesign' (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT NL-instruction synthesis with per-line emotion/tone, no cloning; profiles from voice.design / character.create), 'higgs' (Higgs Audio v3 4B ONNX GenAI int4 — zero-shot clone + inline emotion/prosody tags, 24kHz, 100+ languages; FIRST higgs synth loads the ~4.5GB pipeline — a cold start, not a hang), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
+            "description": "Generate speech audio from text using a registered voice profile. Use for producing narration, explanations, or any scripted audio. Routes by provider: 'audio8' (zero-shot voice clone, ONNX INT4 — default for cloned voices), 'voicedesign' (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT NL-instruction synthesis with per-line emotion/tone, no cloning; profiles from voice.design / character.create), 'higgs' (Higgs Audio v3 4B ONNX GenAI int4 — zero-shot clone + inline emotion/prosody tags, 24kHz, 100+ languages; FIRST higgs synth loads the ~4.5GB pipeline — a cold start, not a hang), 'kokoro' (presets), 'faster-qwen3-tts' (requires OPENSCRIPT_TTS_URL sidecar). Pass an 'emotion' to select the profile's emotion-take (tonality template) when one is registered — e.g. a clone profile with an 'angry' take speaks that line angry instead of neutral. Returns: output_path, duration_ms, cached flag, backend.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -506,14 +506,14 @@ pub fn tool_definitions() -> serde_json::Value {
                     "output_path": {"type": "string", "description": "Output audio file path (WAV/MP3)"},
                     "emotion": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Emotion-take id registered on the profile (e.g. 'angry', 'whisper', 'excited'). When the profile has an emotions template (voice.profile.add with emotions), synthesizes with that emotional delivery's reference instead of the neutral base voice. Falls back to the base voice when no take matches."},
                     "tone": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Natural-language delivery direction, e.g. 'low gravelly whisper, deliberate'. Recorded as a diagnostic and reserved for engines that gain an instruction channel; the emotion-take mechanism carries tonality today."},
-                    "speed": {"type": "number", "default": 1.0, "description": "Playback speed multiplier (1.0 = normal; applied post-synthesis for gepard/audio8 clone engines)"},
-                    "pitch": {"type": "number", "default": 1.0, "description": "Pitch multiplier (applied post-synthesis for gepard/audio8 clone engines)"},
+                    "speed": {"type": "number", "default": 1.0, "description": "Playback speed multiplier (1.0 = normal; applied post-synthesis for audio8 clone engines)"},
+                    "pitch": {"type": "number", "default": 1.0, "description": "Pitch multiplier (applied post-synthesis for audio8 clone engines)"},
                     "volume": {"type": "number", "default": 1.0, "description": "Volume multiplier"},
                     "format": {"type": "string", "default": "wav", "description": "Output audio format"},
                     "temperature": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Sampling temperature (clone engines). Higher = more prosodic variation/inflection; lower = flatter. Default 0.7 (expressive but stable). 0.3+ is the robotic/flat zone."},
                     "top_k": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Top-k sampling for clone engines (None = engine default)."},
                     "top_p": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Top-p nucleus sampling (audio8; None = engine default 0.9)."},
-                    "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Gepard reference-fidelity knob (higher = clings closer to the reference recording; 1.0 default). Explicit value wins over the emotion take's cfg_scale."}
+                    "cfg_scale": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Reference-fidelity knob (retained for compatibility; higher = clings closer to the reference recording; 1.0 default). Explicit value wins over the emotion take's cfg_scale."}
                 },
                 "required": ["voice_profile_id", "text", "output_path"],
                 "additionalProperties": false
@@ -2737,6 +2737,7 @@ async fn tts_generate_routed(
     cfg_scale: Option<f64>,
     profile: &openscript_tts::profiles::VoiceProfile,
 ) -> Result<TtsGenResult, ToolError> {
+    let _ = cfg_scale; // retained: gepard's reference-fidelity knob, kept for schema/config compatibility
     // Natural-language delivery direction — consumed here as a diagnostic so
     // it is not dead schema: logged per line and ready to feed any engine that
     // gains an instruction channel (VoiceDesign at design-time today; the
@@ -2808,60 +2809,6 @@ async fn tts_generate_routed(
              Rebuild openscript-mcp with --features kokoro."
                 .to_string(),
         ));
-    }
-
-    // Gepard path (high-quality native-English voice cloning — Qwen3.5 AR + NeMo
-    // NanoCodec via the .venv-gepard sidecar; Apache-2.0 weights).
-    if profile.provider == "gepard" {
-        if !crate::config::feature_tts("gepard") {
-            return Err(ToolError::Tts(
-                "Voice profile uses the gepard TTS engine, which is disabled in the active \
-                 configuration. Enable features.tts.gepard=true in ~/.openscript/config.json \
-                 (or set OPENSCRIPT_FEATURE_TTS_GEPARD=1), then run: bash scripts/setup_gepard.sh"
-                    .to_string(),
-            ));
-        }
-        let take = resolve_emotion_take(profile, emotion);
-        let params = openscript_tts::gepard::GepardSynthParams {
-            emotion: emotion.map(|s| s.to_string()),
-            ref_audio: take.map(|t| t.ref_audio.clone()),
-            // Explicit request temperature/cfg_scale win; else the emotion
-            // take's own cfg_scale; else None (engine default 0.7 / 1.0).
-            cfg_scale: cfg_scale.or_else(|| take.and_then(|t| t.cfg_scale)),
-            temperature,
-            top_k,
-            max_frames: None,
-        };
-        let (mut duration_ms, sample_rate) = openscript_tts::gepard::gepard_synthesize_params(
-            text,
-            &profile.id,
-            output_path,
-            &params,
-        )
-        .map_err(|e| ToolError::Tts(e))?;
-        if take.is_some() {
-            tracing::info!(
-                "[tts] gepard emotion '{}' take for voice '{}' (ref={})",
-                emotion.unwrap_or(""),
-                profile.id,
-                take.map(|t| t.ref_audio.as_str()).unwrap_or("")
-            );
-        }
-        // Speed/pitch were previously SILENTLY DROPPED for clone engines;
-        // apply them post-synthesis now (non-fatal on failure).
-        if (speed - 1.0).abs() > 1e-6 || (pitch - 1.0).abs() > 1e-6 {
-            match apply_speed_pitch(output_path, speed, pitch) {
-                Ok(new_dur) if new_dur > 0 => duration_ms = new_dur,
-                Ok(_) => {}
-                Err(e) => tracing::warn!("[tts] gepard speed/pitch post-processing failed: {}", e),
-            }
-        }
-        return Ok(TtsGenResult {
-            output_path: output_path.to_string(),
-            duration_ms,
-            cached: false,
-            backend: format!("gepard:{}hz", sample_rate),
-        });
     }
 
     // Audio8 path (zero-shot voice cloning — default cloned-voice engine).

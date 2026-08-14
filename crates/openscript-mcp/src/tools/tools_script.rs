@@ -73,8 +73,8 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "type": "object",
                 "description": "TTS engine configuration. Backend selects the audio model engine; a speaker voice of \"default\" resolves to tts.voice (or the user's ~/.openscript/config.json tts.default_voice, or OPENSCRIPT_TTS_VOICE).",
                 "properties": {
-                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "gepard", "voicedesign", "higgs", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), gepard (high-quality native-English clone), voicedesign (Qwen3 VoiceDesign — direct NL-instruction synthesis with per-line emotion/tonality, NO cloning), higgs (Higgs Audio v3 4B — zero-shot clone + inline emotion/prosody control tags, 100+ languages), sidecar (faster-qwen3-tts)."},
-                    "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan_gepard'). Speakers whose voice is the literal string 'default' use this profile."},
+                    "backend": {"type": "string", "default": "kokoro", "enum": ["kokoro", "audio8", "voicedesign", "higgs", "sidecar"], "description": "Audio model engine: kokoro (presets), audio8 (zero-shot clone, ONNX INT4), voicedesign (Qwen3 VoiceDesign — direct NL-instruction synthesis with per-line emotion/tonality, NO cloning), higgs (Higgs Audio v3 4B — zero-shot clone + inline emotion/prosody control tags, 100+ languages), sidecar (faster-qwen3-tts)."},
+                    "voice": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "Default voice profile id (e.g. 'ishan'). Speakers whose voice is the literal string 'default' use this profile."},
                     "default_speed": {"type": "number", "default": 1.0, "description": "Speech speed multiplier."},
                     "default_pitch": {"type": "number", "default": 1.0}
                 }
@@ -211,7 +211,7 @@ pub(crate) async fn handle_script_schema(_args: serde_json::Value) -> Result<ser
                 "type": "object",
                 "required": ["voice"],
                 "properties": {
-                    "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', bare 'af_heart', a registered clone profile (e.g. 'ishan_gepard'), or the literal 'default' to use tts.voice / the user's configured default voice."},
+                    "voice": {"type": "string", "description": "Voice ID: 'kokoro:af_heart', 'kokoro:am_michael', bare 'af_heart', a registered clone profile (e.g. 'ishan'), or the literal 'default' to use tts.voice / the user's configured default voice."},
                     "preset": {"type": "string", "default": "default_person", "description": "SVG preset: default_person, robot, cat, etc."},
                     "position": {"type": "string", "default": "top-left", "enum": ["top-left", "top-right", "top-center", "center", "bottom-left", "bottom-right", "bottom-center"]},
                     "scale": {"type": "number", "default": 0.35, "description": "Sticker scale as fraction of canvas width (0.0-1.0)."},
@@ -579,14 +579,13 @@ pub(crate) async fn handle_script_generate_voices(
                 .or_else(crate::config::resolve_tts_default_voice);
             match cfg_voice {
                 Some(v) => v,
-                None if spec.tts.backend == "gepard"
-                    || spec.tts.backend == "audio8"
+                None if spec.tts.backend == "audio8"
                     || spec.tts.backend == "voicedesign"
                     || spec.tts.backend == "higgs" => {
                     // Clone engines cannot fall back to a built-in preset — a
                     // speaker voice "default" with no configured voice profile
                     // is a config gap, not a lookup miss. Error clearly instead
-                    // of fabricating a "gepard:default" profile id that would
+                    // of fabricating a "{backend}:default" profile id that would
                     // fail the registry lookup with a misleading message.
                     return Err(ToolError::InvalidArg(format!(
                         "Speaker '{}' uses voice \"default\" but tts.backend '{}' requires a \
@@ -606,7 +605,6 @@ pub(crate) async fn handle_script_generate_voices(
         let normalized_voice = if !voice_lookup.starts_with("kokoro:")
             && !voice_lookup.starts_with("faster-qwen")
             && !voice_lookup.starts_with("audio8:")
-            && !voice_lookup.starts_with("gepard:")
             && !voice_lookup.starts_with("voicedesign:")
             && !voice_lookup.starts_with("higgs:")
         {
@@ -3301,11 +3299,11 @@ mod tests {
     #[test]
     fn tts_defaults_injected_when_tts_absent() {
         let _guard = crate::config::TTS_ENV_TEST_MUTEX.lock().unwrap();
-        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "gepard");
-        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan_gepard");
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "audio8");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan");
         let v = parse_tts(r#"{"speakers": {"n": {"voice": "default"}}, "scenes": [{"speaker": "n", "text": "Hi"}]}"#);
-        assert_eq!(v["tts"]["backend"], "gepard");
-        assert_eq!(v["tts"]["voice"], "ishan_gepard");
+        assert_eq!(v["tts"]["backend"], "audio8");
+        assert_eq!(v["tts"]["voice"], "ishan");
         std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
         std::env::remove_var("OPENSCRIPT_TTS_VOICE");
     }
@@ -3329,15 +3327,15 @@ mod tests {
     #[test]
     fn tts_explicit_script_wins_over_env() {
         let _guard = crate::config::TTS_ENV_TEST_MUTEX.lock().unwrap();
-        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "gepard");
-        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan_gepard");
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "audio8");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan");
         let v = parse_tts(r#"{"tts": {"backend": "kokoro"}, "speakers": {"n": {"voice": "af_heart"}}, "scenes": [{"speaker": "n", "text": "Hi"}]}"#);
         // Explicit script backend always wins over env.
         assert_eq!(v["tts"]["backend"], "kokoro");
         // tts.voice is still injected as the script-level default (only
         // consulted when a speaker uses the literal "default" — inert here
         // because the speaker pins af_heart explicitly).
-        assert_eq!(v["tts"]["voice"], "ishan_gepard");
+        assert_eq!(v["tts"]["voice"], "ishan");
         std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
         std::env::remove_var("OPENSCRIPT_TTS_VOICE");
     }

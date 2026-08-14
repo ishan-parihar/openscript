@@ -88,7 +88,7 @@ pub struct OpenScriptConfig {
     pub render: RenderConfig,
 
     /// TTS engine defaults for script→video voice generation.
-    /// `default_backend` picks the engine family (kokoro | audio8 | gepard |
+    /// `default_backend` picks the engine family (kokoro | audio8 |
     /// voicedesign | higgs | sidecar); `default_voice` optionally pins a
     /// registered voice profile that wins when a script's speaker uses the
     /// bare voice id "default".
@@ -128,9 +128,6 @@ pub struct TtsFeatures {
     /// Audio8 zero-shot clone (ONNX INT4, ~1GB model + deps)
     #[serde(default = "default_true")]
     pub audio8: bool,
-    /// Gepard native-English clone (heavy .venv-gepard: CUDA torch + NeMo)
-    #[serde(default = "default_true")]
-    pub gepard: bool,
     /// Qwen3 VoiceDesign character voices (int4 model ~4.3GB + .venv-voicedesign)
     #[serde(default = "default_true")]
     pub voicedesign: bool,
@@ -147,7 +144,6 @@ impl Default for TtsFeatures {
         Self {
             kokoro: true,
             audio8: true,
-            gepard: true,
             voicedesign: true,
             higgs: true,
             sidecar: true,
@@ -160,7 +156,6 @@ impl TtsFeatures {
         match name {
             "kokoro" => self.kokoro,
             "audio8" => self.audio8,
-            "gepard" => self.gepard,
             "voicedesign" => self.voicedesign,
             "higgs" => self.higgs,
             "sidecar" => self.sidecar,
@@ -334,7 +329,6 @@ impl Default for FeaturesConfig {
             tts: TtsFeatures {
                 kokoro: true,
                 audio8: true,
-                gepard: true,
                 voicedesign: true,
                 higgs: true,
                 sidecar: true,
@@ -466,11 +460,11 @@ pub struct PathsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsConfig {
     /// Default TTS backend for script.to_video when the script omits
-    /// `tts.backend`. One of: kokoro (default), audio8, gepard, voicedesign,
+    /// `tts.backend`. One of: kokoro (default), audio8, voicedesign,
     /// higgs, sidecar.
     #[serde(default = "default_tts_backend")]
     pub default_backend: String,
-    /// Default voice profile id (e.g. "ishan_gepard"). When set, a speaker
+    /// Default voice profile id (e.g. "ishan"). When set, a speaker
     /// whose voice is the literal string "default" resolves to this profile.
     #[serde(default)]
     pub default_voice: Option<String>,
@@ -811,7 +805,7 @@ pub fn feature_enabled(category: &str, name: &str) -> bool {
     config().features.get(category, name)
 }
 
-/// Typed sugar: TTS engine toggle (kokoro | audio8 | gepard | voicedesign | higgs | sidecar).
+/// Typed sugar: TTS engine toggle (kokoro | audio8 | voicedesign | higgs | sidecar).
 pub fn feature_tts(engine: &str) -> bool {
     feature_enabled("tts", engine)
 }
@@ -869,7 +863,6 @@ pub fn feature_flags_view() -> Value {
         "tts": {
             "kokoro": feature_entry("tts", "kokoro", "bash setup.sh (downloads model + installs kokoro-onnx)"),
             "audio8": feature_entry("tts", "audio8", "bash scripts/setup_audio8.sh (downloads int4 model ~1GB + .venv-audio8)"),
-            "gepard": feature_entry("tts", "gepard", "bash scripts/setup_gepard.sh (CUDA torch + NeMo + .venv-gepard)"),
             "voicedesign": feature_entry("tts", "voicedesign", "bash scripts/setup_voicedesign.sh (int4 model ~4.3GB + .venv-voicedesign)"),
             "higgs": feature_entry("tts", "higgs", "bash scripts/setup_higgs.sh (downloads cuda_int4 model ~3.6GB + .venv-higgs)"),
             "sidecar": feature_entry("tts", "sidecar", "Run the voicebox sidecar at OPENSCRIPT_TTS_URL"),
@@ -983,10 +976,10 @@ mod tests {
         assert_eq!(resolve_tts_default_backend(), "kokoro");
         assert!(resolve_tts_default_voice().is_none());
 
-        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "gepard");
-        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan_gepard");
-        assert_eq!(resolve_tts_default_backend(), "gepard");
-        assert_eq!(resolve_tts_default_voice().as_deref(), Some("ishan_gepard"));
+        std::env::set_var("OPENSCRIPT_TTS_BACKEND", "audio8");
+        std::env::set_var("OPENSCRIPT_TTS_VOICE", "ishan");
+        assert_eq!(resolve_tts_default_backend(), "audio8");
+        assert_eq!(resolve_tts_default_voice().as_deref(), Some("ishan"));
 
         std::env::remove_var("OPENSCRIPT_TTS_BACKEND");
         std::env::remove_var("OPENSCRIPT_TTS_VOICE");
@@ -996,8 +989,8 @@ mod tests {
     fn tts_config_roundtrips_through_write() {
         // Ensure the tts section survives the persist/load cycle.
         let mut cfg = OpenScriptConfig::default();
-        cfg.tts.default_backend = "gepard".into();
-        cfg.tts.default_voice = Some("ishan_gepard".into());
+        cfg.tts.default_backend = "audio8".into();
+        cfg.tts.default_voice = Some("ishan".into());
         let out = json!({
             "tts": {
                 "default_backend": cfg.tts.default_backend,
@@ -1005,8 +998,8 @@ mod tests {
             },
         });
         let parsed: OpenScriptConfig = serde_json::from_value(out).unwrap();
-        assert_eq!(parsed.tts.default_backend, "gepard");
-        assert_eq!(parsed.tts.default_voice.as_deref(), Some("ishan_gepard"));
+        assert_eq!(parsed.tts.default_backend, "audio8");
+        assert_eq!(parsed.tts.default_voice.as_deref(), Some("ishan"));
     }
 
     #[test]
@@ -1048,12 +1041,10 @@ mod tests {
         // the runtime always agree on what is active.
         let mut cfg = OpenScriptConfig::default();
         cfg.features.tts.voicedesign = false;
-        cfg.features.tts.gepard = false;
         cfg.features.transcription.parakeet_align = false;
         let out = json!({"features": cfg.features});
         let parsed: OpenScriptConfig = serde_json::from_value(out).unwrap();
         assert!(!parsed.features.tts.voicedesign);
-        assert!(!parsed.features.tts.gepard);
         assert!(!parsed.features.transcription.parakeet_align);
         assert!(parsed.features.tts.kokoro);
     }

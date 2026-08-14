@@ -183,7 +183,7 @@ impl Default for MetaSpec {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TtsSpec {
     /// Backend engine: "kokoro" (presets, default), "audio8" (zero-shot
-    /// clone, ONNX INT4), "gepard" (high-quality native-English clone),
+    /// clone, ONNX INT4),
     /// "voicedesign" (Qwen3-TTS-1.7B-VoiceDesign ONNX int4 — DIRECT
     /// natural-language-instruction synthesis, per-line emotion/tonality, NO
     /// cloning), "higgs" (Higgs Audio v3 4B ONNX GenAI int4 — 100+ languages,
@@ -201,7 +201,7 @@ pub struct TtsSpec {
     #[serde(default = "default_tts_backend")]
     pub backend: String,
 
-    /// Default voice profile id (e.g. "ishan_gepard", "ishan", "kokoro:af_heart").
+    /// Default voice profile id (e.g. "ishan", "kokoro:af_heart").
     /// When set, a speaker whose voice is the literal string "default"
     /// resolves to this profile. Lets one script-level setting drive the
     /// cloned voice for every speaker.
@@ -217,7 +217,7 @@ pub struct TtsSpec {
     pub default_pitch: f64,
 
     /// Default sampling temperature for clone engines (None = engine default:
-    /// 0.7 for gepard/audio8 — expressive but stable). Higher = more prosodic
+    /// 0.7 for audio8 — expressive but stable). Higher = more prosodic
     /// variation/inflection; lower = flatter, more robotic. Production-grade
     /// voices sit 0.6-0.8; the old flat 0.3 default produced "robotic, no
     /// emotional nuance" clones (audit finding).
@@ -228,8 +228,8 @@ pub struct TtsSpec {
     #[serde(default)]
     pub default_top_k: Option<u32>,
 
-    /// Default cfg_scale for gepard (reference-fidelity; higher clings closer
-    /// to the reference recording). None = 1.0.
+    /// Default cfg_scale for clone engines with reference-fidelity control
+    /// (carried by gepard; retained for config-file compatibility). None = 1.0.
     #[serde(default)]
     pub default_cfg_scale: Option<f64>,
 }
@@ -1095,7 +1095,7 @@ pub fn validate_script(spec: &ScriptSpec) -> Vec<ScriptValidationError> {
     }
 
     // Validate TTS backend
-    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "gepard", "voicedesign", "higgs"];
+    let valid_tts_backends = ["kokoro", "sidecar", "audio8", "voicedesign", "higgs"];
     if !valid_tts_backends.contains(&spec.tts.backend.as_str()) {
         errors.push(ScriptValidationError {
             field: "tts.backend".into(),
@@ -2007,13 +2007,13 @@ mod tests {
     #[test]
     fn test_tts_voice_field() {
         let json = r#"{
-            "tts": {"backend": "gepard", "voice": "ishan_gepard"},
+            "tts": {"backend": "audio8", "voice": "ishan"},
             "speakers": {"narrator": {"voice": "default"}},
             "scenes": [{"speaker": "narrator", "text": "Hi"}]
         }"#;
         let spec = parse_script(json).unwrap();
-        assert_eq!(spec.tts.backend, "gepard");
-        assert_eq!(spec.tts.voice.as_deref(), Some("ishan_gepard"));
+        assert_eq!(spec.tts.backend, "audio8");
+        assert_eq!(spec.tts.voice.as_deref(), Some("ishan"));
         assert_eq!(spec.speakers["narrator"].voice, "default");
     }
 

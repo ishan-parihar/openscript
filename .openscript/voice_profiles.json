@@ -44,7 +44,7 @@
     "ref_text": "We can totally do this together. I found the clue!"
   },
   "ishan": {
-    "description": "Ishan English \u2014 Audio8 zero-shot voice clone",
+    "description": "Ishan English — Audio8 zero-shot voice clone",
     "language": "English",
     "mode": "clone",
     "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
@@ -52,16 +52,6 @@
     "provider": "audio8",
     "ref_audio": "mcp/assets/audio8/ref_ishan.wav",
     "ref_text": "Society didn't just neatly evolve. Human culture is a spiral. Real villains are not men or women. Real villains are the broken pathological stages of society that rewards our worst primal instincts."
-  },
-  "ishan_gepard": {
-    "description": null,
-    "language": "English",
-    "mode": "clone",
-    "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
-    "profile_id": "ishan_gepard",
-    "provider": "gepard",
-    "ref_audio": "mcp/assets/audio8/ref_ishan.wav",
-    "ref_text": "Society did not just neatly evolve."
   },
   "ishan_higgs": {
     "description": null,
@@ -77,7 +67,7 @@
   },
   "kokoro_af_bella": {
     "created_at": "2026-07-04T00:00:00Z",
-    "description": "Kokoro af_bella \u2014 soft American female",
+    "description": "Kokoro af_bella — soft American female",
     "id": "kokoro_af_bella",
     "language": "en",
     "mode": "preset",
@@ -89,7 +79,7 @@
   },
   "kokoro_af_heart": {
     "created_at": "2026-07-04T00:00:00Z",
-    "description": "Kokoro af_heart \u2014 warm American female",
+    "description": "Kokoro af_heart — warm American female",
     "id": "kokoro_af_heart",
     "language": "en",
     "mode": "preset",
@@ -101,7 +91,7 @@
   },
   "kokoro_am_michael": {
     "created_at": "2026-07-04T00:00:00Z",
-    "description": "Kokoro am_michael \u2014 American male",
+    "description": "Kokoro am_michael — American male",
     "id": "kokoro_am_michael",
     "language": "en",
     "mode": "preset",
@@ -113,7 +103,7 @@
   },
   "kokoro_bf_emma": {
     "created_at": "2026-07-04T00:00:00Z",
-    "description": "Kokoro bf_emma \u2014 British female",
+    "description": "Kokoro bf_emma — British female",
     "id": "kokoro_bf_emma",
     "language": "en",
     "mode": "preset",
@@ -132,6 +122,6 @@
     "profile_id": "listicle_narrator",
     "provider": "voicedesign",
     "ref_audio": "artifacts/voices/designed_20260811_055638.wav",
-    "ref_text": "There are five signs you're dealing with burnout \u2014 and number three is the one nobody sees coming."
+    "ref_text": "There are five signs you're dealing with burnout — and number three is the one nobody sees coming."
   }
 }
