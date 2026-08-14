@@ -403,7 +403,26 @@ pub(crate) async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_
             // segments reuse the same footage only when the pool is exhausted.
             let mut concept_cursor: std::collections::HashMap<usize, usize> =
                 std::collections::HashMap::new();
+            // V2V alternation (docs/V2V_ALTERNATION_ARCHITECTURE.md): when the
+            // timeline is in alternate mode, "source"-role segments are the
+            // ORIGINAL video — they must NOT get a b-roll event (an event there
+            // would cover the original footage and break the alternation). Only
+            // "broll"-role segments are placed. Non-alternate timelines (the
+            // default) behave exactly as before (every segment is b-roll).
+            let in_alternation = tl.directives.presentation.is_alternate();
             for (i, segment) in segments.iter().enumerate() {
+                let seg_id = segment
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if in_alternation && tl.directives.presentation.role_for(&seg_id) == openscript_core::presentation::ROLE_SOURCE {
+                    tracing::debug!(
+                        "[broll.fetch] skipping source-role segment {} (V2V alternation) — original video shows here",
+                        seg_id
+                    );
+                    continue;
+                }
                 let result_val = &all_results[i % all_results.len()];
                 let concept_idx = i % all_results.len();
                 // Advance a per-concept cursor through the distinct clip pool.
@@ -1511,112 +1530,187 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
         ));
     }
 
+    // ---- Alternation mode (V2V): plan visual roles + filter to broll ----
+    // When alternation.enabled, the visual layer alternates stock b-roll ↔ the
+    // ORIGINAL source video per transcript segment (docs/V2V_ALTERNATION_
+    // ARCHITECTURE.md). Roles are planned by presentation::plan_alternation and
+    // persisted to directives.presentation.visual_roles; ONLY "broll"-role
+    // segments enter the keyword → validate → fetch pipeline. "source"-role
+    // segments get NO b-roll event, so the renderer shows the original video
+    // there. Stickers + captions still run across ALL segments (the A2V
+    // pipeline remains intact).
+    let alternation = args.get("alternation").cloned().unwrap_or_else(|| json!({}));
+    let alternation_enabled = alternation
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let alt_pattern = alternation
+        .get("pattern")
+        .and_then(|v| v.as_str())
+        .unwrap_or(openscript_core::presentation::PATTERN_EVERY_OTHER)
+        .to_string();
+    let alt_every_n = alternation.get("every_n").and_then(|v| v.as_u64()).unwrap_or(2) as u32;
+    let alt_ratio = alternation.get("broll_ratio").and_then(|v| v.as_f64());
+    let alt_source_audio = alternation
+        .get("source_audio")
+        .and_then(|v| v.as_str())
+        .unwrap_or("keep")
+        .to_string();
+
+    let mut broll_segments = segments.clone();
+    let mut alternation_summary: Option<serde_json::Value> = None;
+    if alternation_enabled {
+        let mut tl = Timeline::load(&timeline_path)?;
+        let roles = openscript_core::presentation::plan_alternation(
+            &tl.segments,
+            &alt_pattern,
+            alt_every_n,
+            alt_ratio,
+        );
+        tl.directives.presentation.mode = "alternate".into();
+        tl.directives.presentation.visual_roles = roles.clone();
+        tl.directives.presentation.pattern = alt_pattern.clone();
+        tl.directives.presentation.every_n = alt_every_n;
+        tl.directives.presentation.source_audio = alt_source_audio.clone();
+        tl.updated_at = chrono::Utc::now();
+        tl.save(&timeline_path)?;
+        let roles_owned = roles;
+        broll_segments.retain(|s| {
+            let id = s
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            roles_owned.get(&id).map(|r| r == "broll").unwrap_or(true)
+        });
+        let source_count = segments_arr.len().saturating_sub(broll_segments.len());
+        alternation_summary = Some(json!({
+            "mode": "alternate",
+            "pattern": alt_pattern,
+            "every_n": alt_every_n,
+            "broll_ratio": alt_ratio,
+            "source_audio": alt_source_audio,
+            "broll_segments": broll_segments.len(),
+            "source_segments": source_count,
+        }));
+        tracing::info!(
+            "[broll.auto] V2V alternation: pattern={} every_n={} ratio={:?} → {} b-roll / {} source segment(s)",
+            alt_pattern, alt_every_n, alt_ratio, broll_segments.len(), source_count
+        );
+    }
+
     // ---- Stage B: draft keywords (agentic, unified) ----
     // ONE draft call emits BOTH visual (stock) and reactions (GIPHY) keywords
     // per segment via the shared keywords module. B-roll consumes `visual`;
     // stickers consume `reactions` (Stage F) — the old path fed validated
     // visual b-roll nouns into the GIPHY sticker search (the sticker-
-    // relevance bug).
+    // relevance bug). In alternation mode only broll-role segments are drafted
+    // (source segments need no stock footage).
     let _ = max_batch_size; // draft batching is owned by keywords (MAX_DRAFT_BATCH)
-    report_progress(35.0, 100.0, "3/6 keywords.draft (visual + reactions)").await.ok();
-    let draft_inputs: Vec<crate::keywords::SegmentInput> = segments
-        .iter()
-        .enumerate()
-        .map(|(i, s)| crate::keywords::SegmentInput {
-            segment_id: s
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or(&format!("seg_{}", i))
-                .to_string(),
-            caption: s
-                .get("caption")
-                .or_else(|| s.get("text"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            language_hint: Some(language.clone()),
-            duration_s: (s
-                .get("end_s")
-                .or_else(|| s.get("end"))
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0)
-                - s.get("start_s")
-                    .or_else(|| s.get("start"))
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0))
-            .max(0.0),
-            scene_idx: i,
-            total_scenes: segments.len(),
-            video_title: String::new(),
-            video_keywords: Vec::new(),
-            covered_concepts: Vec::new(),
-        })
-        .collect();
-    let drafted = crate::keywords::draft_scene_keywords(&draft_inputs).await;
-    // Preserve each segment's timestamps/caption for the validation stage;
-    // attach the unified VISUAL keywords in input order.
-    let draft_segments: serde_json::Value = json!(
-        segments
+    let mut drafted: Vec<crate::keywords::SceneKeywords> = Vec::new();
+    let mut validated_segments = json!([]);
+    let mut auto_assigned = 0u64;
+    if !broll_segments.is_empty() {
+        report_progress(35.0, 100.0, "3/6 keywords.draft (visual + reactions)").await.ok();
+        let draft_inputs: Vec<crate::keywords::SegmentInput> = broll_segments
             .iter()
             .enumerate()
-            .map(|(i, s)| {
-                let mut seg = s.clone();
-                if let Some(obj) = seg.as_object_mut() {
-                    let visual = drafted.get(i).map(|d| d.visual.clone()).unwrap_or_default();
-                    obj.insert("keywords".into(), json!(visual));
-                }
-                seg
+            .map(|(i, s)| crate::keywords::SegmentInput {
+                segment_id: s
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&format!("seg_{}", i))
+                    .to_string(),
+                caption: s
+                    .get("caption")
+                    .or_else(|| s.get("text"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                language_hint: Some(language.clone()),
+                duration_s: (s
+                    .get("end_s")
+                    .or_else(|| s.get("end"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    - s.get("start_s")
+                        .or_else(|| s.get("start"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0))
+                .max(0.0),
+                scene_idx: 0,
+                total_scenes: broll_segments.len(),
+                video_title: String::new(),
+                video_keywords: Vec::new(),
+                covered_concepts: Vec::new(),
             })
-            .collect::<Vec<serde_json::Value>>()
-    );
-
-    // ---- Stage C: relevance validation (agent picks best real video) ----
-    report_progress(50.0, 100.0, "4/6 broll.validate_keywords (relevance)").await.ok();
-    let validated = handle_broll_validate_keywords(json!({
-        "enriched_segments": draft_segments,
-        "max_candidates": max_candidates,
-        "max_keywords_per_search": max_keywords_per_search,
-        "orientation": orientation,
-        "quality": quality,
-        "language": language,
-    }))
-    .await?;
-    let validated_segments = validated.get("segments").cloned().unwrap_or_else(|| json!([]));
-
-    // ---- Stage D: fetch + auto-place ----
-    report_progress(65.0, 100.0, "5/6 broll.fetch (download + place)").await.ok();
-    let fetch_segments: Vec<serde_json::Value> = validated_segments
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .map(|v| {
-                    let mut seg = json!({
-                        "id": v.get("id").cloned().unwrap_or_else(|| json!("")),
-                        "start_s": v.get("start_s").cloned().unwrap_or_else(|| json!(0)),
-                        "end_s": v.get("end_s").cloned().unwrap_or_else(|| json!(0)),
-                        "caption": v.get("caption").cloned().unwrap_or_else(|| json!("")),
-                    });
-                    let kw = v
-                        .get("final_keywords")
-                        .cloned()
-                        .or_else(|| v.get("draft_keywords").cloned())
-                        .unwrap_or_else(|| json!([]));
-                    seg["keywords"] = kw;
+            .collect();
+        drafted = crate::keywords::draft_scene_keywords(&draft_inputs).await;
+        // Preserve each segment's timestamps/caption for the validation stage;
+        // attach the unified VISUAL keywords in input order.
+        let draft_segments: serde_json::Value = json!(
+            broll_segments
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let mut seg = s.clone();
+                    if let Some(obj) = seg.as_object_mut() {
+                        let visual = drafted.get(i).map(|d| d.visual.clone()).unwrap_or_default();
+                        obj.insert("keywords".into(), json!(visual));
+                    }
                     seg
                 })
-                .collect()
-        })
-        .unwrap_or_default();
+                .collect::<Vec<serde_json::Value>>()
+        );
 
-    let fetched = handle_broll_fetch(json!({
-        "enriched_segments": fetch_segments,
-        "timeline_path": timeline_path,
-        "download_n": 1,
-        "quality": quality,
-        "orientation": orientation,
-    }))
-    .await?;
-    let auto_assigned = fetched.get("auto_assigned").and_then(|v| v.as_u64()).unwrap_or(0);
+        // ---- Stage C: relevance validation (agent picks best real video) ----
+        report_progress(50.0, 100.0, "4/6 broll.validate_keywords (relevance)").await.ok();
+        let validated = handle_broll_validate_keywords(json!({
+            "enriched_segments": draft_segments,
+            "max_candidates": max_candidates,
+            "max_keywords_per_search": max_keywords_per_search,
+            "orientation": orientation,
+            "quality": quality,
+            "language": language,
+        }))
+        .await?;
+        validated_segments = validated.get("segments").cloned().unwrap_or_else(|| json!([]));
+
+        // ---- Stage D: fetch + auto-place ----
+        report_progress(65.0, 100.0, "5/6 broll.fetch (download + place)").await.ok();
+        let fetch_segments: Vec<serde_json::Value> = validated_segments
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .map(|v| {
+                        let mut seg = json!({
+                            "id": v.get("id").cloned().unwrap_or_else(|| json!("")),
+                            "start_s": v.get("start_s").cloned().unwrap_or_else(|| json!(0)),
+                            "end_s": v.get("end_s").cloned().unwrap_or_else(|| json!(0)),
+                            "caption": v.get("caption").cloned().unwrap_or_else(|| json!("")),
+                        });
+                        let kw = v
+                            .get("final_keywords")
+                            .cloned()
+                            .or_else(|| v.get("draft_keywords").cloned())
+                            .unwrap_or_else(|| json!([]));
+                        seg["keywords"] = kw;
+                        seg
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let fetched = handle_broll_fetch(json!({
+            "enriched_segments": fetch_segments,
+            "timeline_path": timeline_path,
+            "download_n": 1,
+            "quality": quality,
+            "orientation": orientation,
+        }))
+        .await?;
+        auto_assigned = fetched.get("auto_assigned").and_then(|v| v.as_u64()).unwrap_or(0);
+    }
 
     // ---- Stage E: validate + repair loop until zero gaps ----
     report_progress(80.0, 100.0, "6/6 timeline.validate + repair loop").await.ok();
@@ -1756,13 +1850,24 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
     Ok(json!({
         "status": if final_valid { "success" } else { "partial" },
         "message": if final_valid {
+            let coverage_note = if alternation_enabled {
+                format!(
+                    " V2V alternation active: {} b-roll / {} source segment(s) — original video shows on source segments.",
+                    broll_segments.len(),
+                    segments_arr.len().saturating_sub(broll_segments.len())
+                )
+            } else {
+                String::new()
+            };
             format!(
-                "A2V b-roll complete: {} segments fully covered with validated, non-looping clips ({} placed, {} repair pass(es)).{} {}",
+                "A2V b-roll complete: {} segments {} with validated, non-looping clips ({} placed, {} repair pass(es)).{} {}{}",
                 segments_arr.len(),
+                if alternation_enabled { "covered in alternation" } else { "fully covered" },
                 auto_assigned,
                 repair_passes,
                 if stickers_placed > 0 { format!(" {} sticker(s) placed.", stickers_placed) } else { String::new() },
-                if let Some(ref w) = sticker_warning { format!(" Stickers skipped: {}", w) } else { String::new() }
+                if let Some(ref w) = sticker_warning { format!(" Stickers skipped: {}", w) } else { String::new() },
+                coverage_note
             )
         } else {
             format!(
@@ -1779,6 +1884,7 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
         "repaired_total": repaired_total,
         "remaining_gaps": remaining_gaps,
         "valid": final_valid,
+        "alternation": alternation_summary,
         "stickers_placed": stickers_placed,
         "sticker_warning": sticker_warning,
         "captions_ass_path": captions_ass_path,

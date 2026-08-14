@@ -771,7 +771,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "broll.auto",
-            "description": "ONE-CALL A2V b-roll orchestrator: runs the full agentic b-roll pipeline end-to-end and loops until zero gaps remain. Pipeline: segment.analyze (sentence-aware 2-6s) → broll.keywords (agentic draft) → broll.validate_keywords (agent validates real Pexels candidates vs the spoken caption) → srt.to_timeline → broll.fetch (download + auto-place) → timeline.validate → broll.repair loop (re-drafts keywords for any BROLL_GAP with full timeline context) until no gaps remain or max_repair_iterations is hit. Feed it an SRT + audio and get back a fully covered timeline ready for timeline.render. Returns: timeline_path, segments_count, auto_assigned, initial_gaps, repair_passes, repaired_total, remaining_gaps, valid.",
+            "description": "ONE-CALL A2V/V2V b-roll orchestrator: runs the full agentic b-roll pipeline end-to-end and loops until zero gaps remain. Pipeline: segment.analyze (sentence-aware 2-6s) → broll.keywords (agentic draft) → broll.validate_keywords (agent validates real Pexels candidates vs the spoken caption) → srt.to_timeline → broll.fetch (download + auto-place) → timeline.validate → broll.repair loop (re-drafts keywords for any BROLL_GAP with full timeline context) until no gaps remain or max_repair_iterations is hit. Feed it an SRT + audio and get back a fully covered timeline ready for timeline.render. With alternation.enabled=true this becomes the V2V presentation mode: the visual layer ALTERNATES stock b-roll ↔ the ORIGINAL source video per transcript segment (segments planned by presentation::plan_alternation; source-role segments get NO b-roll event so the renderer shows the original footage there). Returns: timeline_path, segments_count, auto_assigned, initial_gaps, repair_passes, repaired_total, remaining_gaps, valid, alternation.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -790,7 +790,14 @@ pub fn tool_definitions() -> serde_json::Value {
                     "max_keywords_per_search": {"type": "integer", "default": 2, "description": "Draft keywords per Pexels search."},
                     "max_repair_iterations": {"type": "integer", "default": 3, "description": "Max repair-loop passes (stops early if a pass repairs 0 gaps)."},
                     "stickers": {"type": "boolean", "default": true, "description": "After b-roll coverage, also run the agentic sticker pipeline (sticker.keywords → GIPHY → Stickers track). Finalizes the A2V one-call."},
-                    "captions": {"type": "boolean", "default": true, "description": "After b-roll coverage, generate styled ASS captions and register them in timeline.assets.captions. Finalizes the A2V one-call."}
+                    "captions": {"type": "boolean", "default": true, "description": "After b-roll coverage, generate styled ASS captions and register them in timeline.assets.captions. Finalizes the A2V one-call."},
+                    "alternation": {"type": "object", "properties": {
+                        "enabled": {"type": "boolean", "default": false, "description": "Enable V2V alternation mode: the visual layer alternates stock b-roll ↔ the ORIGINAL source video per transcript segment. source-role segments get NO b-roll event, so timeline.render (with the original video as source) shows the original footage there — [broll → video → broll]."},
+                        "pattern": {"type": "string", "default": "every_other", "description": "Alternation cadence: 'every_other' ([broll→source→broll→…]), 'broll_lead' (same as every_other), 'source_lead' (starts with the original video), 'every_n' (n consecutive broll segments then 1 source)."},
+                        "every_n": {"type": "integer", "default": 2, "description": "Consecutive broll segments when pattern='every_n'."},
+                        "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Optional explicit share (0.0-1.0) of segments that get b-roll, spread evenly. 0.0 = all-source (pure captioned original footage), 1.0 = all-broll (full coverage). Overrides the pattern cadence."},
+                        "source_audio": {"type": "string", "default": "keep", "description": "Original-video audio handling: 'keep' (default) or 'duck' (reserved for re-voice mode — lowers original audio under cloned voiceover)."}
+                    }}
                 },
                 "required": [],
                 "additionalProperties": false
