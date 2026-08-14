@@ -387,18 +387,7 @@ pub async fn render_from_timeline_with_cancel(
                 // silently missed broll.assign-style events, so their clips
                 // never got duration-capped seek offsets (short-clip held
                 // frames on V2V alternated timelines).
-                let record = timeline
-                    .assets
-                    .broll
-                    .get(&evt.asset_id)
-                    .or_else(|| {
-                        timeline.assets.broll.values().find(|v| {
-                            v.get("path")
-                                .and_then(|p| p.as_str())
-                                .map(|p| p == evt.asset_id)
-                                .unwrap_or(false)
-                        })
-                    });
+                let record = crate::find_registry_record(&timeline.assets.broll, &evt.asset_id);
                 let path = record
                     .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                     .unwrap_or(&evt.asset_id)

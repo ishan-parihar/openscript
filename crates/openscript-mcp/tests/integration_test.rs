@@ -762,8 +762,10 @@ fn test_character_registry_roundtrip_with_existing_voice() {
 /// Minimal valid EDL-v2 timeline JSON (6 segments, cover-mode defaults) used by
 /// the timeline.presentation integration tests. All required serde fields are
 /// present; `presentation` is omitted so it takes the legacy default.
-fn write_v2v_fixture_timeline() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join("os_v2v_presentation_test.timeline.json");
+/// Writes the fixture to a UNIQUE path per test (tests in a binary run in
+/// parallel — a shared path + remove_file in one test would race the other).
+fn write_v2v_fixture_timeline(tag: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("os_v2v_{}.timeline.json", tag));
     let json = r#"{
         "version": "2",
         "created_at": "2026-01-01T00:00:00Z",
@@ -794,7 +796,7 @@ fn write_v2v_fixture_timeline() -> std::path::PathBuf {
 
 #[test]
 fn test_mcp_timeline_presentation_plans_alternation() {
-    let timeline_path = write_v2v_fixture_timeline();
+    let timeline_path = write_v2v_fixture_timeline("plan");
     let (mut stdin, mut stdout, child) = start_mcp_server();
 
     send_request(
@@ -872,7 +874,7 @@ fn test_mcp_timeline_presentation_plans_alternation() {
 
 #[test]
 fn test_mcp_timeline_presentation_invalid_mode_errors() {
-    let timeline_path = write_v2v_fixture_timeline();
+    let timeline_path = write_v2v_fixture_timeline("bad_mode");
     let (mut stdin, mut stdout, child) = start_mcp_server();
 
     send_request(

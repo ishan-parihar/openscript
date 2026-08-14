@@ -1259,15 +1259,31 @@ pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Res
             )
         })
         .collect();
-    Ok(json!({
-        "status": "planned",
-        "timeline_path": timeline_path,
-        "mode": timeline.directives.presentation.mode,
-        "pattern": timeline.directives.presentation.pattern,
-        "every_n": timeline.directives.presentation.every_n,
-        "source_audio": timeline.directives.presentation.source_audio,
-        "visual_roles": roles,
-    }))
+    // Re-voice ducking is a documented Phase-2 filter-graph addition — the
+    // schema/tool accept source_audio but the renderer does NOT implement it
+    // yet. Surface that honestly so agents never believe "duck" is active.
+    let source_audio = timeline.directives.presentation.source_audio.clone();
+    let note = if source_audio != "keep" {
+        Some(format!(
+            "source_audio='{}' is accepted but re-voice ducking is not yet wired into the renderer - output uses the original audio unattenuated (keep).",
+            source_audio
+        ))
+    } else {
+        None
+    };
+
+    let mut resp = serde_json::Map::new();
+    resp.insert("status".into(), json!("planned"));
+    resp.insert("timeline_path".into(), json!(timeline_path));
+    resp.insert("mode".into(), json!(timeline.directives.presentation.mode));
+    resp.insert("pattern".into(), json!(timeline.directives.presentation.pattern));
+    resp.insert("every_n".into(), json!(timeline.directives.presentation.every_n));
+    resp.insert("source_audio".into(), json!(source_audio));
+    resp.insert("visual_roles".into(), json!(roles));
+    if let Some(n) = note {
+        resp.insert("note".into(), json!(n));
+    }
+    Ok(serde_json::Value::Object(resp))
 }
 
 pub(crate) async fn handle_timeline_upgrade(args: serde_json::Value) -> Result<serde_json::Value, ToolError> {

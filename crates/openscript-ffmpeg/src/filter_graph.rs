@@ -494,18 +494,7 @@ impl FilterGraphBuilder {
                     // Before this fix, only (a) resolved — broll.assign events
                     // silently dropped their overlay (V2V fixture audit caught
                     // it: 3 events on the timeline, zero in the filter graph).
-                    let record = timeline
-                        .assets
-                        .broll
-                        .get(&evt.asset_id)
-                        .or_else(|| {
-                            timeline.assets.broll.values().find(|v| {
-                                v.get("path")
-                                    .and_then(|p| p.as_str())
-                                    .map(|p| p == evt.asset_id)
-                                    .unwrap_or(false)
-                            })
-                        });
+                    let record = crate::find_registry_record(&timeline.assets.broll, &evt.asset_id);
                     let path = record
                         .and_then(|v| v.get("path").and_then(|p| p.as_str()))
                         .unwrap_or(&evt.asset_id)
