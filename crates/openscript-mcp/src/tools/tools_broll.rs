@@ -1461,8 +1461,8 @@ pub(crate) async fn handle_broll_repair(args: serde_json::Value) -> Result<serde
                             prov.tool = "broll.repair".to_string();
                         }
                     }
-                    None => {
-                        if let Some((start_ms, end_ms)) = seg_window {
+                    None => match seg_window {
+                        Some((start_ms, end_ms)) => {
                             evts.push(openscript_core::timeline::TimelineEvent {
                                 id: gap.segment_id.clone(),
                                 asset_id: new_asset_id.clone(),
@@ -1488,7 +1488,18 @@ pub(crate) async fn handle_broll_repair(args: serde_json::Value) -> Result<serde
                                 },
                             });
                         }
-                    }
+                        None => {
+                            // Segment window unresolvable (segment missing from
+                            // the timeline) — do NOT report a heal that never
+                            // happened. Skip the asset insert + count below.
+                            decisions.push(json!({
+                                "segment_id": gap.segment_id,
+                                "status": "unrepairable_this_pass",
+                                "reason": "no timeline segment window found to place the b-roll event",
+                            }));
+                            continue;
+                        }
+                    },
                 }
                 tl.assets.broll.insert(
                     new_asset_id.clone(),

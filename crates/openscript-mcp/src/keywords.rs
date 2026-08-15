@@ -513,10 +513,18 @@ pub fn is_reaction_searchable(kw: &str) -> bool {
     if toks.is_empty() {
         return false;
     }
-    let all_residue = toks.iter().all(|t| {
-        let lower = t
-            .trim_matches(|c: char| !c.is_ascii_alphanumeric())
-            .to_lowercase();
+    // Drop punctuation-only tokens ("!!!" → empty) and 1-2 char stubs before
+    // the residue check so pure garbage never counts as searchable.
+    let meaningful: Vec<&str> = toks
+        .iter()
+        .map(|t| t.trim_matches(|c: char| !c.is_ascii_alphanumeric()))
+        .filter(|t| !t.is_empty() && t.chars().count() >= 3)
+        .collect();
+    if meaningful.is_empty() {
+        return false;
+    }
+    let all_residue = meaningful.iter().all(|t| {
+        let lower = t.to_lowercase();
         HINGLISH_RESIDUE.contains(&lower.as_str())
     });
     !all_residue
@@ -1545,8 +1553,14 @@ mod tests {
         }
         // Devanagari — never searchable.
         assert!(!is_reaction_searchable("वाह क्या बात"));
-        // Empty / whitespace.
+        // Empty / whitespace / punctuation-only.
         assert!(!is_reaction_searchable(""));
         assert!(!is_reaction_searchable("   "));
+        assert!(!is_reaction_searchable("!!!"));
+        // Note: single-token ASR garbage like "phishiega" intentionally passes
+        // (GIPHY returns nothing → sticker gracefully skipped). The whitelist
+        // can't distinguish it from emotive single words ("wow", "facepalm")
+        // which are also not in COMMON_ENGLISH_WORDS — this is the accepted
+        // leniency tradeoff for the forgiving GIPHY surface.
     }
 }
