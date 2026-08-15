@@ -158,8 +158,11 @@ def transcribe_ggml(
     segment_srt = Path(out_dir) / "whisper_segments.srt"
     
     # Build whisper-cli command
-    # -osrt: segment-level SRT
-    # -owts: word-level SRT (actual word timestamps)
+    # -osrt: segment-level SRT (phrase windows — accurate VAD boundaries).
+    # NOTE: -owts (word timestamps) is NOT requested — whisper.cpp writes a
+    # karaoke bash script (not SRT), requires a font (-fp) or writes a 0-byte
+    # file, and emits subword BPE fragments. Word-level timing is derived
+    # downstream by char-proportional split inside the accurate phrase windows.
     # --vad: Voice Activity Detection (prevents hallucination loops)
     # --vad-model: Silero VAD model path
     cmd = [
@@ -169,7 +172,6 @@ def transcribe_ggml(
         "-l", language_hint[:2] if language_hint != "auto" else "auto",
         "-t", "4",
         "-osrt",
-        "-owts",
         "--no-prints",
         "-of", str(segment_srt.with_suffix("")),
     ]
@@ -312,6 +314,10 @@ def transcribe_ggml(
                 continue
             total_chars = sum(len(w) for w in words)
             span = entry["end_s"] - entry["start_s"]
+            if span <= 0:
+                # Zero-duration phrase (VAD anomaly) — skip; downstream tiling
+                # would otherwise produce overlapping 0.01s cues.
+                continue
             cursor = entry["start_s"]
             for i, w in enumerate(words):
                 frac = len(w) / total_chars if total_chars else 1.0 / len(words)
