@@ -315,6 +315,140 @@ pub fn auto_extract_video_keywords(title: &str) -> Vec<String> {
     kws
 }
 
+/// True when the source language needs Hinglish→English visual translation
+/// (hi / hindi / hinglish). English and other scripts pass through untouched.
+pub fn is_hinglish_lang(lang: &str) -> bool {
+    let l = lang.to_ascii_lowercase();
+    l.starts_with("hi") || l.contains("hinglish") || l.contains("hindi")
+}
+
+/// Map known Hinglish/Hindi visual nouns to English (sarkaar → government) so
+/// BOTH the LLM draft prompt and the salience fallback receive readable
+/// English. Non-Hinglish input is returned unchanged (no-op).
+pub fn translate_caption_if_needed(caption: &str, language: &str) -> String {
+    if is_hinglish_lang(language) {
+        crate::stock_signal::translate_hinglish_visuals(caption)
+    } else {
+        caption.to_string()
+    }
+}
+
+/// Derive the whole-video context (title + topic keywords) from a transcript —
+/// the V2V/A2V-from-audio equivalent of a script's `title` + `video_keywords`.
+/// One LLM call extracts 3-6 topical keywords that anchor every per-segment
+/// draft; LLM-down falls back to the deterministic salience heuristic over the
+/// translated transcript + title tokens. Without this anchor the per-segment
+/// drafter hallucinates from noisy ASR fragments (the "cooking turkey oven"
+/// for an India-politics video bug). Returns (title, topic_keywords).
+pub async fn derive_video_context(
+    captions: &[String],
+    title_hint: &str,
+    language: &str,
+) -> (String, Vec<String>) {
+    let title = clean_video_title(title_hint, captions);
+    let joined: String = captions
+        .iter()
+        .filter(|c| !c.trim().is_empty())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let transcript = translate_caption_if_needed(&joined, language);
+    if transcript.trim().is_empty() {
+        let kws = derive_video_context_heuristic("", &title);
+        return (title, kws);
+    }
+    // LLM-first: one call for the video's topic keywords.
+    let system = "You are a video-topic keyword extractor for a stock-footage pipeline. \
+        Given a video transcript (possibly noisy ASR with Hinglish/Hindi), return 3-6 short English \
+        topic keywords that describe what the WHOLE video is about — concrete nouns/topics a stock \
+        camera could search for (e.g. 'india politics protest', 'corruption media censorship'). \
+        Output ONLY a JSON object: {\"keywords\": [\"...\"]}.";
+    let user = format!(
+        "Video title: \"{}\n\nTranscript:\n{}\n\nOutput ONLY the JSON object.",
+        title, transcript
+    );
+    if let Ok(r) = crate::llm::chat_complete(system, &user, None).await {
+        if let Some(kws) = extract_json_obj(&r.text)
+            .get("keywords")
+            .and_then(|v| v.as_array())
+        {
+            let kws: Vec<String> = kws
+                .iter()
+                .filter_map(|k| k.as_str().map(|s| s.trim().to_string()))
+                .filter(|k| k.chars().count() >= MIN_KEYWORD_LEN)
+                .take(6)
+                .collect();
+            if !kws.is_empty() {
+                return (title, kws);
+            }
+        }
+    }
+    let kws = derive_video_context_heuristic(&transcript, &title);
+    (title, kws)
+}
+
+/// Deterministic LLM-down topic fallback: salience over the translated
+/// transcript, anchored with title tokens. Never empty.
+pub fn derive_video_context_heuristic(transcript: &str, title: &str) -> Vec<String> {
+    let mut signal = extract_salient_keywords(transcript, 5);
+    let mut seen: HashSet<String> = signal.iter().cloned().collect();
+    for kw in auto_extract_video_keywords(title) {
+        for tok in unicode_tokens(&kw) {
+            if !is_stopword(&tok) && seen.insert(tok.clone()) {
+                signal.push(tok);
+            }
+        }
+    }
+    if signal.is_empty() {
+        signal = vec!["video".to_string()];
+    }
+    signal
+}
+
+fn clean_video_title(hint: &str, captions: &[String]) -> String {
+    let hint = hint
+        .replace('_', " ")
+        .replace('-', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !hint.is_empty() {
+        return hint;
+    }
+    auto_extract_video_keywords(
+        &captions
+            .iter()
+            .map(|c| c.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+    .first()
+    .cloned()
+    .unwrap_or_else(|| "Untitled Video".to_string())
+}
+
+/// The UNIFIED per-segment keyword set that drives BOTH b-roll and stickers:
+/// reaction/intent terms first (what GIPHY actually indexes), then concrete
+/// visual subject nouns (keeps the sticker context-relevant to the segment's
+/// subject, not just its mood). Deduped, capped at 4, never empty.
+pub fn blend_sticker_keywords(visual: &[String], reactions: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for kw in reactions.iter().chain(visual.iter()) {
+        let k = kw.trim().to_string();
+        if k.chars().count() >= 3 && seen.insert(k.clone()) {
+            out.push(k);
+        }
+        if out.len() >= 4 {
+            break;
+        }
+    }
+    if out.is_empty() {
+        out.push("funny".to_string());
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
 // Topic registry (data-driven, expanded) — used for heuristic context only.
 // The LLM draft is primary; this registry only matters when the cascade is down.
@@ -800,8 +934,26 @@ pub async fn draft_scene_keywords(inputs: &[SegmentInput]) -> Vec<SceneKeywords>
     if n == 0 {
         return Vec::new();
     }
-    let mut out: Vec<SceneKeywords> = inputs.iter().map(SceneKeywords::fallback).collect();
     let language = batch_language(inputs);
+    // Hinglish/Hindi pre-translation: map known visual nouns to English so
+    // BOTH the LLM prompt and the salience fallback receive readable English.
+    // The raw ASR word-salad previously made the drafter hallucinate
+    // ("cooking turkey oven" for a politics video). Unified for every caller
+    // (broll.auto, broll.keywords, sticker.keywords, script.to_video, repair).
+    let effective: Vec<SegmentInput> = if is_hinglish_lang(&language) {
+        inputs
+            .iter()
+            .map(|i| {
+                let mut c = i.clone();
+                c.caption = translate_caption_if_needed(&i.caption, &language);
+                c
+            })
+            .collect()
+    } else {
+        inputs.to_vec()
+    };
+    let inputs = &effective;
+    let mut out: Vec<SceneKeywords> = inputs.iter().map(SceneKeywords::fallback).collect();
     let id_map = id_to_index(inputs);
 
     // First pass: batched draft over all inputs
@@ -1082,5 +1234,69 @@ mod tests {
             vec!["city".to_string(), "night".to_string()]
         );
         // The old global-map call would have written out[15] on this 1-len slice.
+    }
+
+    #[test]
+    fn is_hinglish_lang_detects_hindi_variants() {
+        assert!(is_hinglish_lang("hinglish"));
+        assert!(is_hinglish_lang("hi"));
+        assert!(is_hinglish_lang("hindi"));
+        assert!(!is_hinglish_lang("english"));
+        assert!(!is_hinglish_lang("es"));
+    }
+
+    #[test]
+    fn translate_caption_if_needed_maps_hinglish_nouns() {
+        // Known visual noun in the map must be translated; unknown words pass.
+        let out = translate_caption_if_needed("sarkar corruption bhai log", "hinglish");
+        assert!(
+            !out.to_lowercase().contains("sarkar"),
+            "'sarkar' should map to government: {}",
+            out
+        );
+        assert!(
+            out.to_lowercase().contains("corruption"),
+            "known English nouns survive: {}",
+            out
+        );
+        // English input is a no-op.
+        assert_eq!(
+            translate_caption_if_needed("the quick brown fox", "english"),
+            "the quick brown fox"
+        );
+    }
+
+    #[test]
+    fn derive_video_context_heuristic_never_empty_and_anchors_title() {
+        let kws = derive_video_context_heuristic("sarkar corruption media aavaaz", "india-politics");
+        assert!(!kws.is_empty());
+        // Title tokens should anchor the set.
+        let joined = kws.join(" ").to_lowercase();
+        assert!(
+            joined.contains("politic") || joined.contains("india"),
+            "title tokens must anchor topics: {}",
+            joined
+        );
+        let empty = derive_video_context_heuristic("", "");
+        assert_eq!(empty, vec!["video".to_string()]);
+    }
+
+    #[test]
+    fn blend_sticker_keywords_unifies_reactions_and_visual() {
+        // Reactions first (GIPHY-friendly), visual nouns after — one shared set.
+        let blended = blend_sticker_keywords(
+            &["corruption".into(), "handcuffs".into(), "court".into()],
+            &["shocked".into(), "facepalm".into()],
+        );
+        assert_eq!(blended, vec!["shocked", "facepalm", "corruption", "handcuffs"]);
+        // Dedup + cap at 4; 1-char terms filtered.
+        let big = blend_sticker_keywords(
+            &["aaa".into(), "bbb".into(), "ccc".into(), "ddd".into(), "eee".into()],
+            &["bbb".into()],
+        );
+        assert_eq!(big, vec!["bbb", "aaa", "ccc", "ddd"]);
+        assert!(!big.contains(&"eee".to_string()), "capped at 4");
+        // Never empty.
+        assert_eq!(blend_sticker_keywords(&[], &[]), vec!["funny".to_string()]);
     }
 }

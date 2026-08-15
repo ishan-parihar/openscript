@@ -1032,7 +1032,10 @@ pub(crate) async fn handle_broll_validate_keywords(
             last_model = model;
         }
 
-        // Search Pexels with the draft keywords (dedup across queries).
+        // Search Pexels. Multi-word phrase FIRST — Pexels matches joined
+        // phrases far better than lone words (the A2V path joins its top
+        // keywords into ONE query; lone-word searches returned generic clips).
+        // Individual keywords are fallbacks only when the phrase under-delivers.
         let queries: Vec<String> = draft
             .iter()
             .filter(|k| k.len() >= 3)
@@ -1045,22 +1048,51 @@ pub(crate) async fn handle_broll_validate_keywords(
         }
         let mut candidates: Vec<openscript_assets::pexels::PexelsVideo> = Vec::new();
         let mut seen: std::collections::HashSet<i64> = std::collections::HashSet::new();
-        for q in &queries {
-            match client.search(q, &orientation, &quality).await {
+        let joined = if queries.len() >= 2 {
+            Some(queries[..2].join(" "))
+        } else {
+            None
+        };
+        if let Some(j) = &joined {
+            match client.search(j, &orientation, &quality).await {
                 Ok(vids) => {
                     for v in vids {
-                        if v.duration > 0 && seen.insert(v.id) && candidates.len() < max_candidates
+                        if v.duration > 0
+                            && seen.insert(v.id)
+                            && candidates.len() < max_candidates
                         {
                             candidates.push(v);
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "[broll.validate_keywords] search '{}' failed: {}",
-                        q,
-                        e
-                    )
+                    tracing::warn!("[broll.validate_keywords] search '{}' failed: {}", j, e)
+                }
+            }
+        }
+        if candidates.len() < max_candidates {
+            for q in &queries {
+                if candidates.len() >= max_candidates {
+                    break;
+                }
+                match client.search(q, &orientation, &quality).await {
+                    Ok(vids) => {
+                        for v in vids {
+                            if v.duration > 0
+                                && seen.insert(v.id)
+                                && candidates.len() < max_candidates
+                            {
+                                candidates.push(v);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[broll.validate_keywords] search '{}' failed: {}",
+                            q,
+                            e
+                        )
+                    }
                 }
             }
         }
@@ -1256,7 +1288,8 @@ pub(crate) async fn handle_broll_repair(args: serde_json::Value) -> Result<serde
             last_model = model;
         }
 
-        // Search Pexels with the draft keywords.
+        // Search Pexels — joined phrase first (matches the A2V query style),
+        // individual keywords as fallbacks when the phrase under-delivers.
         let queries: Vec<String> = draft
             .iter()
             .filter(|k| k.len() >= 3)
@@ -1265,17 +1298,33 @@ pub(crate) async fn handle_broll_repair(args: serde_json::Value) -> Result<serde
             .collect();
         let mut candidates: Vec<openscript_assets::pexels::PexelsVideo> = Vec::new();
         let mut seen: std::collections::HashSet<i64> = std::collections::HashSet::new();
-        for q in &queries {
-            match client.search(q, &orientation, &quality).await {
-                Ok(vids) => {
-                    for v in vids {
-                        if v.duration > 0 && seen.insert(v.id) {
-                            candidates.push(v);
-                        }
+        let joined = if queries.len() >= 2 {
+            Some(queries[..2].join(" "))
+        } else {
+            None
+        };
+        if let Some(j) = &joined {
+            if let Ok(vids) = client.search(j, &orientation, &quality).await {
+                for v in vids {
+                    if v.duration > 0 && seen.insert(v.id) {
+                        candidates.push(v);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("[broll.repair] search '{}' failed: {}", q, e)
+            }
+        }
+        if candidates.is_empty() {
+            for q in &queries {
+                match client.search(q, &orientation, &quality).await {
+                    Ok(vids) => {
+                        for v in vids {
+                            if v.duration > 0 && seen.insert(v.id) {
+                                candidates.push(v);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("[broll.repair] search '{}' failed: {}", q, e)
+                    }
                 }
             }
         }
@@ -1539,6 +1588,62 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
     // segments get NO b-roll event, so the renderer shows the original video
     // there. Stickers + captions still run across ALL segments (the A2V
     // pipeline remains intact).
+    // ---- Video-level context (V2V equivalent of a script's title +
+    // video_keywords): derive topical keywords from the WHOLE transcript so
+    // the per-segment draft is anchored to the video's subject instead of
+    // hallucinating from noisy ASR fragments (the "cooking turkey oven" for an
+    // India-politics video bug). Mirrors script.to_video's effective_video_
+    // keywords path. ----
+    let video_title_arg = default_opt_str(&args, "video_title");
+    let all_captions: Vec<String> = segments
+        .iter()
+        .filter_map(|s| {
+            s.get("caption")
+                .or_else(|| s.get("text"))
+                .and_then(|v| v.as_str())
+                .map(|c| c.to_string())
+        })
+        .filter(|c| !c.trim().is_empty())
+        .collect();
+    let title_hint = video_title_arg.clone().or_else(|| {
+        Path::new(&timeline_path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+    });
+    let (video_title, video_keywords) = crate::keywords::derive_video_context(
+        &all_captions,
+        title_hint.as_deref().unwrap_or(""),
+        &language,
+    )
+    .await;
+    tracing::info!(
+        "[broll.auto] derived video context: title={:?} topic={:?} ({} segment captions)",
+        video_title,
+        video_keywords.iter().take(6).collect::<Vec<_>>(),
+        all_captions.len()
+    );
+
+    // Concepts already placed on this timeline — the drafter must AVOID
+    // re-suggesting them (non-redundant drafts across re-runs).
+    let existing_broll_concepts: Vec<String> = Timeline::load(&timeline_path)
+        .ok()
+        .map(|tl| {
+            tl.tracks
+                .get(&TrackType::Broll)
+                .cloned()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|e| match &e.kind {
+                    openscript_core::timeline::EventKind::Broll { concept, .. } => {
+                        Some(concept.clone())
+                    }
+                    _ => None,
+                })
+                .filter(|c| !c.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
     let alternation = args.get("alternation").cloned().unwrap_or_else(|| json!({}));
     let alternation_enabled = alternation
         .get("enabled")
@@ -1611,7 +1716,10 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
     let mut auto_assigned = 0u64;
     if !broll_segments.is_empty() {
         report_progress(35.0, 100.0, "3/6 keywords.draft (visual + reactions)").await.ok();
-        let draft_inputs: Vec<crate::keywords::SegmentInput> = broll_segments
+        // Draft for ALL segments (not just broll-role ones) — stickers consume
+        // the SAME unified draft across every segment; only the fetch below is
+        // filtered to broll-role segments. Video context anchors the draft.
+        let draft_inputs: Vec<crate::keywords::SegmentInput> = segments
             .iter()
             .enumerate()
             .map(|(i, s)| crate::keywords::SegmentInput {
@@ -1637,24 +1745,38 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
                         .and_then(|v| v.as_f64())
                         .unwrap_or(0.0))
                 .max(0.0),
-                scene_idx: 0,
-                total_scenes: broll_segments.len(),
-                video_title: String::new(),
-                video_keywords: Vec::new(),
-                covered_concepts: Vec::new(),
+                scene_idx: i,
+                total_scenes: segments.len(),
+                video_title: video_title.clone(),
+                video_keywords: video_keywords.clone(),
+                covered_concepts: existing_broll_concepts.clone(),
             })
             .collect();
         drafted = crate::keywords::draft_scene_keywords(&draft_inputs).await;
-        // Preserve each segment's timestamps/caption for the validation stage;
-        // attach the unified VISUAL keywords in input order.
+        // Index alignment: drafted is ALL segments, broll_segments is the
+        // broll-role subset — look keywords up by segment id, never position.
+        let drafted_by_id: std::collections::HashMap<String, crate::keywords::SceneKeywords> =
+            drafted
+                .iter()
+                .map(|d| (d.segment_id.clone(), d.clone()))
+                .collect();
         let draft_segments: serde_json::Value = json!(
             broll_segments
                 .iter()
                 .enumerate()
                 .map(|(i, s)| {
                     let mut seg = s.clone();
+                    let id = seg
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     if let Some(obj) = seg.as_object_mut() {
-                        let visual = drafted.get(i).map(|d| d.visual.clone()).unwrap_or_default();
+                        let visual = drafted_by_id
+                            .get(&id)
+                            .map(|d| d.visual.clone())
+                            .or_else(|| drafted.get(i).map(|d| d.visual.clone()))
+                            .unwrap_or_default();
                         obj.insert("keywords".into(), json!(visual));
                     }
                     seg
@@ -1771,23 +1893,28 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
         // `reactions` (reaction/meme keywords that GIPHY actually indexes).
         // The old path fed validated visual b-roll nouns into the GIPHY
         // sticker search, which produced irrelevant noun/crowd GIFs.
+        // Unification (requested): b-roll AND stickers share ONE keyword source
+        // — the same per-segment draft, blended (reactions first for GIPHY +
+        // visual subject nouns for context), across ALL segments. The sticker
+        // relevance gate (sticker.validate_keywords) still approves/rejects each
+        // GIF, so sharing never means flooding.
         let sticker_shared_keywords: Vec<serde_json::Value> = drafted
             .iter()
-            .filter_map(|d| {
-                if !d.emphatic || d.reactions.is_empty() {
-                    return None;
-                }
+            .map(|d| {
                 let caption = segments
                     .iter()
                     .find(|s| s.get("id").and_then(|v| v.as_str()) == Some(d.segment_id.as_str()))
                     .and_then(|s| s.get("caption").and_then(|v| v.as_str()))
                     .unwrap_or("")
                     .to_string();
-                Some(json!({
+                json!({
                     "id": d.segment_id.clone(),
                     "caption": caption,
-                    "sticker_keywords": d.reactions.clone(),
-                }))
+                    "sticker_keywords": crate::keywords::blend_sticker_keywords(
+                        &d.visual,
+                        &d.reactions
+                    ),
+                })
             })
             .collect();
         // sticker.auto loads the timeline's segments directly (timeline_path
@@ -2009,8 +2136,13 @@ pub(crate) async fn handle_video_to_video(args: serde_json::Value) -> Result<ser
 
     // ---- Stage 3: alternation b-roll (stock on broll-role segments only) ----
     report_progress(45.0, 100.0, "3/5 broll.auto (V2V alternation)").await.ok();
+    let src_title = Path::new(&video_path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "video".to_string());
     let mut auto_args = json!({
         "timeline_path": timeline_path,
+        "video_title": src_title,
         "language": language,
         "quality": quality,
         "orientation": orientation,
