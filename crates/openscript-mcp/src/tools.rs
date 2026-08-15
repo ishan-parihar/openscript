@@ -4327,17 +4327,33 @@ fn caption_words_for_phrase(
         .join(" ");
     let joined_norm = normalize_caption_text(&joined);
     let phrase_norm = normalize_caption_text(&phrase.text);
+    // GRANULARITY GATE: a REAL word-level SRT has roughly one entry per word
+    // (each entry's text is a single word). When the "word" SRT is actually
+    // phrase-level (the observed bug: transcribe writes word.srt as a byte
+    // copy of phrase.srt, so ONE entry spans a whole phrase), zipping
+    // truncates to a single timing that swallows the entire phrase window and
+    // pads the remaining words with zero-duration blips — captions then read
+    // word-by-word in the last few ms instead of in sync with the audio.
+    // Detect phrase-level entries (embedded whitespace or entry count far
+    // smaller than the phrase word count) and fall back to char-proportional
+    // estimation across the window — always audio-synced to the phrase window.
+    let phrase_words: Vec<&str> = phrase.text.split_whitespace().collect();
+    let word_granular = !overlapping.is_empty()
+        && overlapping.len() >= (phrase_words.len() + 1) / 2
+        && overlapping
+            .iter()
+            .all(|w| !w.text.trim().contains(char::is_whitespace));
     // Accept the alignment windows when the ASR word text matches the phrase
     // exactly OR closely (Jaccard >= 0.5) — minor ASR differences must not
     // throw away real timings. When accepted, the word TEXT is overridden
     // with the phrase's own words (caption text = ground truth; alignment
     // windows = real), zipped by index and truncated to the shorter side.
-    let close_match = !joined_norm.is_empty()
+    let close_match = word_granular
+        && !joined_norm.is_empty()
         && !phrase_norm.is_empty()
         && (joined_norm == phrase_norm
             || caption_text_similarity(&joined, &phrase.text) >= 0.5);
-    if !overlapping.is_empty() && close_match {
-        let phrase_words: Vec<&str> = phrase.text.split_whitespace().collect();
+    if close_match {
         let mut out: Vec<WordTiming> = overlapping
             .iter()
             .zip(phrase_words.iter())
@@ -7886,6 +7902,47 @@ mod tests {
         assert_eq!(words[1].start_ms, 500, "real alignment start preserved");
         assert_eq!(words[1].end_ms, 1000, "real alignment end preserved");
         assert_eq!(words[4].end_ms, 3310);
+    }
+
+    #[test]
+    fn test_caption_words_for_phrase_phrase_sized_word_srt_falls_back() {
+        use openscript_core::srt::SrtEntry;
+        // The transcribe bug: word.srt is a byte-copy of phrase.srt — ONE
+        // entry spans the WHOLE phrase (multi-word text). Naively zipping 1
+        // entry against ~11 words gave the first word the entire window and
+        // zero-duration blips for the rest (captions read word-by-word in the
+        // final milliseconds). The granularity gate must detect this and
+        // fall back to char-proportional estimation tiling the window.
+        let phrase = SrtEntry {
+            idx: 1,
+            start: 0.0,
+            end: 3.31,
+            text: "Bhai sarkaar ki phati badhiya. Sarkaar shuruaat isi patti".to_string(),
+        };
+        let phrase_sized = vec![SrtEntry {
+            idx: 1,
+            start: 0.0,
+            end: 3.31,
+            text: "Bhai sarkaar ki phati badhiya. Sarkaar shuruaat isi patti".to_string(),
+        }];
+        let words = caption_words_for_phrase(&phrase, &phrase_sized, 0, 0.0);
+        assert_eq!(
+            words.len(),
+            phrase.text.split_whitespace().count(),
+            "all phrase words must get a highlight cue"
+        );
+        assert_eq!(words.first().unwrap().start_ms, 0);
+        assert_eq!(words.last().unwrap().end_ms, 3310, "window tiled exactly");
+        // Words must be spread across the window — NOT crammed at the tail.
+        let mid = &words[words.len() / 2];
+        assert!(
+            mid.start_ms > 300 && mid.start_ms < 3000,
+            "mid word must sit inside the window, got {}",
+            mid.start_ms
+        );
+        // Char-proportional: a long word spans more than the first blip.
+        let first = &words[0];
+        assert!(first.end_ms - first.start_ms > 50, "first word gets real duration");
     }
 
     #[test]

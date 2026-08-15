@@ -286,16 +286,38 @@ def transcribe_ggml(
         _log_hinglish(f"Reading word-level timestamps from {word_srt_path_out}")
         all_words = _parse_word_srt_file(str(word_srt_path_out))
         _log_hinglish(f"Parsed {len(all_words)} words with actual timestamps")
-    else:
-        _log_hinglish("WARNING: Word-level SRT not found — using segment-level data only")
-        # Do NOT estimate word timestamps — they produce garbage timing
-        # that breaks word-highlight captions. Use segment-level text only.
+        # Sanity: a REAL word SRT has ~1 entry per word. If the backend wrote a
+        # phrase-sized "word" SRT (one entry whose text spans the whole phrase),
+        # treat it as missing — downstream zip truncation would give the first
+        # word the whole window and zero-duration blips for the rest (the
+        # caption-sync bug). Rebuild from phrase windows below.
+        phrase_sized = all_words and any(
+            len(w["word"].strip().split()) > 1 for w in all_words
+        )
+        if phrase_sized:
+            _log_hinglish("WARNING: word SRT is phrase-sized (multi-word entries) — rebuilding from phrase windows")
+            all_words = []
+    if not all_words:
+        _log_hinglish("WARNING: no usable word timestamps — splitting phrase windows into char-proportional words")
+        # Char-proportional split WITHIN each phrase window. Each word gets a
+        # slice proportional to its char count, tiling the window exactly so
+        # word-highlight captions stay audio-synced even without real ASR
+        # word timestamps. (Estimation inside an accurate phrase window is
+        # correct; the previous "one fake word per phrase" output collapsed
+        # all highlights into the last milliseconds.)
         for entry in entries:
-            all_words.append({
-                "word": entry["text"],
-                "start_s": entry["start_s"],
-                "end_s": entry["end_s"],
-            })
+            text = entry["text"].strip()
+            words = text.split()
+            if not words:
+                continue
+            total_chars = sum(len(w) for w in words)
+            span = entry["end_s"] - entry["start_s"]
+            cursor = entry["start_s"]
+            for i, w in enumerate(words):
+                frac = len(w) / total_chars if total_chars else 1.0 / len(words)
+                end_s = entry["end_s"] if i == len(words) - 1 else cursor + span * frac
+                all_words.append({"word": w, "start_s": cursor, "end_s": max(end_s, cursor + 0.01)})
+                cursor = end_s
     
     full_text = " ".join(s["text"] for s in entries)
     duration_s = entries[-1]["end_s"] if entries else 0.0
