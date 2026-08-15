@@ -83,10 +83,15 @@ pub(crate) async fn handle_transcribe(args: serde_json::Value) -> Result<serde_j
             .await;
             if let Some(msg) = enriched {
                 tracing::info!("[transcribe] word-timing enrichment: {}", msg);
-            } else {
-                // Enrichment skipped/failed — the transcriber's own word SRT
-                // (char-proportional within accurate phrase windows) stays.
             }
+            // Enrichment skipped/failed — the transcriber's own word SRT
+            // (char-proportional within accurate phrase windows) stays.
+            // NOTE: when accepted, the returned word_srt_path carries the
+            // whisper-aligned text for the matching phrases; the caption
+            // pipeline always uses the phrase SRT as authoritative text and
+            // re-verifies per-phrase before consuming timings, but consumers
+            // that treat word_srt_path as a standalone transcript should
+            // re-validate against the phrase SRT.
         }
     }
 
@@ -161,11 +166,10 @@ async fn enrich_transcribe_word_timings(
     }
     let sidecar = resolve_repo_path("mcp/scripts/whisper_align.py");
     let tmp_json = format!("{}.fullalign.json", phrase_srt_path);
-    let language = if language_hint == "auto" {
-        "hi"
-    } else {
-        language_hint
-    };
+    // Pass the hint through AS-IS: whisper_align.py treats "auto" as None and
+    // lets openai-whisper auto-detect. Mapping auto→"hi" here would force
+    // Hindi onto English/other audio, guaranteeing mismatches and a wasted
+    // (rejected) alignment pass for every non-Hindi transcribe.
     let output = tokio::process::Command::new("python3")
         .arg(&sidecar)
         .arg("--wav")
@@ -173,7 +177,7 @@ async fn enrich_transcribe_word_timings(
         .arg("--text")
         .arg(&full_text)
         .arg("--language")
-        .arg(language)
+        .arg(language_hint)
         .arg("--model")
         .arg("base")
         .arg("--output")
@@ -189,8 +193,17 @@ async fn enrich_transcribe_word_timings(
         let _ = std::fs::remove_file(&tmp_json);
         return None;
     }
-    let align_str = std::fs::read_to_string(&tmp_json).ok()?;
-    let _ = std::fs::remove_file(&tmp_json);
+    // Clean up the temp JSON regardless of outcome (read failure included).
+    let align_str = match std::fs::read_to_string(&tmp_json) {
+        Ok(s) => {
+            let _ = std::fs::remove_file(&tmp_json);
+            s
+        }
+        Err(_) => {
+            let _ = std::fs::remove_file(&tmp_json);
+            return None;
+        }
+    };
     let align: serde_json::Value = serde_json::from_str(&align_str).ok()?;
     if let Some(err) = align.get("error").and_then(|v| v.as_str()) {
         tracing::warn!("[transcribe] whisper align enrichment skipped: {}", err);

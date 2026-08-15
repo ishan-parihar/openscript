@@ -306,7 +306,10 @@ def transcribe_ggml(
     wav_dur = _probe_wav_duration(wav_path)
     if wav_dur > 0:
         before = len(entries)
-        entries = [e for e in entries if e["start_s"] < wav_dur - 0.05]
+        # Drop only segments that START at/after the audio end (whisper.cpp
+        # hallucination extends 5-15s past the real end). A legitimate final
+        # phrase that starts just before the end is kept and its end clamped.
+        entries = [e for e in entries if e["start_s"] < wav_dur]
         for e in entries:
             if e["end_s"] > wav_dur:
                 e["end_s"] = wav_dur
