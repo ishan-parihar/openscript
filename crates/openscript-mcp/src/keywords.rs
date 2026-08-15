@@ -364,7 +364,7 @@ pub async fn derive_video_context(
         camera could search for (e.g. 'india politics protest', 'corruption media censorship'). \
         Output ONLY a JSON object: {\"keywords\": [\"...\"]}.";
     let user = format!(
-        "Video title: \"{}\n\nTranscript:\n{}\n\nOutput ONLY the JSON object.",
+        "Video title: \"{}\"\n\nTranscript:\n{}\n\nOutput ONLY the JSON object.",
         title, transcript
     );
     if let Ok(r) = crate::llm::chat_complete(system, &user, None).await {
