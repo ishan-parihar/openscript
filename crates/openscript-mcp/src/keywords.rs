@@ -374,16 +374,128 @@ const HINGLISH_RESIDUE: &[&str] = &[
     "jaisa", "jaise", "waise", "bhai", "dost", "yaar", "bhaai", "kya", "kyu",
 ];
 
+/// Compact English content-word whitelist used by the Hinglish English-only
+/// gate. ASR garbage ("phishiega", "galgoate", "enge") is unbounded and can
+/// never be blacklisted — requiring at least one recognized English content
+/// token per keyword rejects it deterministically while keeping real English
+/// terms ("government", "crowd", "smartphone").
+const COMMON_ENGLISH_WORDS: &[&str] = &[
+    "people", "person", "man", "woman", "men", "women", "child", "children", "family",
+    "crowd", "group", "city", "town", "street", "road", "building", "house", "home",
+    "government", "office", "school", "hospital", "court", "police", "army", "soldier",
+    "protest", "rally", "march", "flag", "india", "indian", "country", "nation", "world",
+    "money", "cash", "bank", "loan", "tax", "business", "market", "shop", "factory",
+    "corruption", "crime", "criminal", "murder", "rape", "prison", "jail", "handcuff",
+    "law", "laws", "rule", "rules", "justice", "media", "news", "press", "journalist",
+    "tv", "television", "camera", "phone", "mobile", "smartphone", "social", "media",
+    "internet", "online", "account", "app", "computer", "laptop", "screen", "vote",
+    "election", "politics", "politician", "leader", "minister", "modi", "parliament",
+    "speech", "speaker", "public", "audience", "speaker", "voice", "sound", "microphone",
+    "gas", "fuel", "oil", "petrol", "diesel", "cooking", "kitchen", "stove", "food",
+    "water", "paani", "river", "sea", "ocean", "rain", "air", "pollution", "smoke",
+    "fire", "car", "cars", "vehicle", "bus", "train", "truck", "bike", "traffic",
+    "road", "highway", "station", "airport", "travel", "journey", "time", "clock",
+    "night", "morning", "evening", "day", "sun", "moon", "sky", "cloud", "mountain",
+    "forest", "tree", "nature", "field", "farm", "agriculture", "farmer", "crop", "village",
+    "india", "delhi", "mumbai", "city", "life", "quality", "living", "standard",
+    "work", "job", "worker", "labour", "employee", "salary", "unemployment", "jobless",
+    "health", "doctor", "medicine", "hospital", "disease", "pandemic", "vaccine", "mask",
+    "education", "teacher", "student", "university", "college", "exam", "book", "pen",
+    "paper", "notebook", "handwriting", "write", "writing", "read", "reading", "document",
+    "form", "signature", "file", "filing", "papers", "news", "newspaper", "article",
+    "report", "story", "channel", "broadcast", "live", "video", "film", "movie", "song",
+    "music", "dance", "celebration", "party", "festival", "happy", "sad", "angry", "fear",
+    "shocked", "surprise", "surprised", "excited", "excitement", "love", "hate", "anger",
+    "hope", "freedom", "right", "rights", "security", "safety", "danger", "war", "peace",
+    "revolution", "change", "development", "progress", "growth", "economy", "financial",
+    "inflation", "price", "cost", "ration", "subsidy", "scheme", "welfare", "pension",
+    "house", "housing", "slum", "construction", "bridge", "dam", "power", "electricity",
+    "light", "streetlight", "powercut", "loadshedding", "water", "supply", "pipeline",
+    "drain", "sewage", "garbage", "waste", "clean", "cleanliness", "toilet", "sanitation",
+    "road", "pothole", "infrastructure", "railway", "rail", "metro", "transport", "commute",
+    "traffic", "jam", "accident", "crash", "injury", "death", "funeral", "candle", "tribute",
+    "justice", "case", "cases", "hearing", "judge", "lawyer", "witness", "evidence", "guilty",
+    "innocent", "arrest", "suspect", "gang", "mafia", "scam", "fraud", "fake", "hoax",
+    "truth", "lie", "lies", "propaganda", "censorship", "ban", "banned", "block", "blocked",
+    "protest", "slogan", "demonstration", "strike", "violence", "riot", "conflict", "tension",
+    "youth", "student", "job", "aspiration", "dream", "goal", "future", "generation", "youth",
+    "vote", "voter", "ballot", "mandate", "opposition", "party", "coalition", "bill", "act",
+    "constitution", "democracy", "dictatorship", "authoritarian", "suppression", "oppression",
+    "human", "rights", "protest", "movement", "campaign", "awareness", "message", "speech",
+    "interview", "debate", "discussion", "talk", "question", "answer", "opinion", "view",
+    "analysis", "commentary", "expert", "panel", "host", "guest", "anchor", "reporter",
+    "camera", "studio", "set", "stage", "lighting", "gallery", "audience", "applause",
+    "clap", "clapping", "laugh", "laughing", "smile", "smiling", "tears", "crying", "cry",
+    "scream", "shout", "whisper", "silence", "quiet", "noise", "music", "drum", "guitar",
+    "dance", "party", "wedding", "marriage", "ceremony", "ritual", "temple", "mosque",
+    "church", "gurudwara", "festival", "diwali", "holi", "eid", "christmas", "new year",
+    "food", "rice", "wheat", "grain", "ration", "cooking", "meal", "hunger", "starvation",
+    "poverty", "poor", "rich", "wealth", "luxury", "corruption", "black money", "smuggling",
+    "border", "war", "army", "defence", "missile", "tank", "terrorism", "terrorist", "attack",
+    "bomb", "blast", "explosion", "injury", "wounded", "hospital", "ambulance", "rescue",
+    "relief", "aid", "donation", "charity", "volunteer", "help", "support", "solidarity",
+    // Common adjectives / adverbs / misc English content words
+    "new", "old", "big", "small", "high", "low", "long", "short", "young", "first",
+    "last", "good", "bad", "great", "best", "worst", "real", "fake", "true", "false",
+    "open", "closed", "public", "private", "local", "national", "international", "global",
+    "york", "yogi", "world", "city", "state", "center", "central", "union", "federal",
+    "total", "full", "empty", "strong", "weak", "fast", "slow", "hard", "soft", "hot",
+    "cold", "dark", "bright", "clear", "clean", "dirty", "safe", "free", "equal", "major",
+    "minor", "special", "general", "common", "social", "digital", "physical", "mental",
+    "national", "regional", "rural", "urban", "tribal", "daily", "weekly", "monthly",
+    "annual", "present", "future", "past", "current", "recent", "early", "late", "main",
+    "top", "bottom", "right", "left", "central", "direct", "indirect", "official", "illegal",
+    // Indian geography + prominent names (proper nouns appear in Hinglish drafts)
+    "delhi", "mumbai", "kolkata", "chennai", "bangalore", "bengaluru", "hyderabad", "jaipur",
+    "lucknow", "patna", "kanpur", "varanasi", "agra", "goa", "chandigarh", "pune", "ahmedabad",
+    "surat", "indore", "bhopal", "nagpur", "thiruvananthapuram", "guwahati", "amritsar", "jammu",
+    "srinagar", "shimla", "dehradun", "ranchi", "raipur", "bhubaneswar", "gangtok", "itanagar",
+    "dispur", "imphal", "aizawl", "kohima", "agartala", "port blair", "puducherry", "daman", "diu",
+    "bihar", "up", "uttar", "pradesh", "punjab", "haryana", "rajasthan", "gujarat", "maharashtra",
+    "kerala", "tamil", "nadu", "karnataka", "andhra", "telangana", "odisha", "jharkhand",
+    "chhattisgarh", "himachal", "uttarakhand", "assam", "bengal", "west bengal", "madhya", "kashmir",
+    "ladakh", "sikkim", "nagaland", "manipur", "meghalaya", "tripura", "mizoram", "arunachal",
+    "modi", "narendra", "shah", "amit", "rahul", "gandhi", "priyanka", "sonia", "manmohan",
+    "singh", "atal", "vajpayee", "indira", "jawaharlal", "nehru", "ambedkar", "bhagat", "singh",
+    "subhash", "chandra", "bose", "tilak", "savarkar", "shivaji", "mahatma", "gandhi", "kejriwal",
+    "arvind", "mayawati", "mamata", "banerjee", "owaisi", "asaduddin", "nitish", "kumar", "soren",
+    "hemant", "yogi", "adityanath", "sushma", "swaraj", "smriti", "irani", "rajnath", "singh",
+    "jaishankar", "nirmala", "sitharaman", "piyush", "goyal", "amit", "nadda", "hemant", "biren",
+    "singh", "manik", "saha", "conrad", "sangma", "pema", "khandu", "premier", "naveen", "patnaik",
+    "mohan", "yadav", "akhilesh", "mulayam", "lalu", "prasad", "tejashwi", "rabri", "devi", "upendra",
+    "kushwaha", "tejasvi", "surya", "mallikarjun", "kharge", "jagan", "mohan", "reddy", "kcr",
+    "chandrababu", "naidu", "pawan", "kalyan", "ram", "gopal", "yadav", "owaisi", "asaduddin",
+    "sanjay", "raut", "uddhav", "thackeray", "devendra", "fadnavis", "eknath", "shinde", "ajit", "pawar",
+    "sharad", "pawar", "supriya", "sule", "mamata", "abhishek", "banerjee", "derek", "o'brien",
+    "arindam", "bagchi", "shatrughan", "sinha", "shekhar", "gupta", "ravish", "kumar", "rajdeep",
+    "sardesai", "arnab", "goswami", "vikram", "chandra", "swati", "maliwal", "kiran", "bedi",
+    "anna", "hazare", "army", "bipin", "rawat", "gen", "narrative", "narratives", "fake news",
+];
+
+/// True when at least one whitespace token of `kw` is a recognized English
+/// content word (or the whole phrase contains a known English word).
+pub fn has_english_content_word(kw: &str) -> bool {
+    kw.split_whitespace().any(|tok| {
+        let lower = tok.trim_matches(|c: char| !c.is_ascii_alphanumeric()).to_lowercase();
+        COMMON_ENGLISH_WORDS.contains(&lower.as_str())
+    })
+}
+
 /// Deterministic English-only gate for DRAFTED keywords on Hinglish/Hindi
 /// sources. The LLM is non-deterministic — on a bad draw it echoes raw Hinglish
 /// tokens ("chaaloo", "farq", "thodi") that Pexels cannot search. A keyword is
-/// searchable when it has no Devanagari characters and no Hinglish residue.
+/// searchable when it has no Devanagari characters, no Hinglish residue, and
+/// contains at least one recognized English content word (catches unbounded
+/// ASR garbage like "phishiega").
 pub fn is_searchable_english_keyword(kw: &str) -> bool {
     if kw.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)) {
         return false;
     }
     let lower = kw.trim().to_lowercase();
-    !HINGLISH_RESIDUE.contains(&lower.as_str())
+    if HINGLISH_RESIDUE.contains(&lower.as_str()) {
+        return false;
+    }
+    has_english_content_word(kw)
 }
 
 /// Derive the whole-video context (title + topic keywords) from a transcript —
@@ -1380,8 +1492,15 @@ mod tests {
             );
         }
         // English keywords pass.
-        for good in ["government", "building", "protest", "corruption", "crowd"] {
+        for good in [
+            "government", "building", "protest", "corruption", "crowd", "new york", "yogi modi",
+            "time gas", "murder criminal",
+        ] {
             assert!(is_searchable_english_keyword(good), "'{}' must pass", good);
+        }
+        // Unbounded ASR garbage must be rejected by the whitelist.
+        for bad in ["phishiega", "galgoate", "bajaaya", "enge", "uchh"] {
+            assert!(!is_searchable_english_keyword(bad), "'{}' must be rejected", bad);
         }
         // Case-insensitive.
         assert!(!is_searchable_english_keyword("Hisaab"));
