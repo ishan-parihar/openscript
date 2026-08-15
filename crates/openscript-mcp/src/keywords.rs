@@ -812,9 +812,14 @@ pub async fn draft_scene_keywords(inputs: &[SegmentInput]) -> Vec<SceneKeywords>
             Ok(r) => {
                 let parsed = extract_json_obj(&r.text);
                 if let Some(results) = parsed.get("results").and_then(|v| v.as_array()) {
-                    // Mark every chunk member as attempted (we made the call)
-                    for i in 0..chunk.len() {
-                        attempted[i] = true;
+                    // Mark every chunk member as attempted (we made the call) —
+                    // keyed by ABSOLUTE index, never the chunk-local position:
+                    // chunks beyond the first would otherwise never be marked
+                    // and would be skipped by the redraft pass below.
+                    for c in chunk {
+                        if let Some(&ai) = id_map.get(&c.segment_id) {
+                            attempted[ai] = true;
+                        }
                     }
                     // Find the absolute indices of chunk members
                     let abs_idxs: Vec<usize> = chunk
@@ -827,10 +832,18 @@ pub async fn draft_scene_keywords(inputs: &[SegmentInput]) -> Vec<SceneKeywords>
                         abs_out[k] = out[ai].clone();
                     }
                     let mut sub_out: Vec<SceneKeywords> = abs_out;
+                    // CRITICAL: resolve result ids against the chunk-LOCAL map,
+                    // never the global id_map. apply_llm_result writes
+                    // out[idx] where idx comes from the map, and sub_out is
+                    // sized to THIS chunk (≤ MAX_DRAFT_BATCH members) — a
+                    // global index (15+ for the second chunk) indexes out of
+                    // bounds and panics. This was the >15-segment V2V bug:
+                    // "index out of bounds: the len is 15 but the index is 15".
+                    let chunk_map = id_to_index(chunk);
                     let applied = apply_llm_result(
                         chunk,
                         results,
-                        &id_map,
+                        &chunk_map,
                         &mut sub_out,
                         &format!("{}/{}", r.backend, r.model),
                     );
@@ -1033,5 +1046,41 @@ mod tests {
         let (q, s) = heuristic_scene_query("", &[], "neutral", "9:16", 3);
         assert!(!q.is_empty());
         assert!(!s.is_empty());
+    }
+
+    #[test]
+    fn test_apply_llm_result_chunk_local_map_prevents_oob_panic() {
+        // 16 inputs → two chunks of 15+1. The second chunk's only member has
+        // GLOBAL index 15. apply_llm_result must resolve ids against the
+        // chunk-LOCAL map: writing out[15] on a 1-element slice is the OOB
+        // panic the >15-segment V2V run hit ("len is 15, index is 15").
+        let inputs: Vec<SegmentInput> = (0..16)
+            .map(|i| SegmentInput {
+                segment_id: format!("seg_{:03}", i),
+                caption: format!("caption {}", i),
+                language_hint: None,
+                duration_s: 3.0,
+                scene_idx: i,
+                total_scenes: 16,
+                video_title: "test".into(),
+                video_keywords: Vec::new(),
+                covered_concepts: Vec::new(),
+            })
+            .collect();
+        let chunk = &inputs[15..]; // the second chunk (1 member, global idx 15)
+        let local_map = id_to_index(chunk);
+        assert_eq!(local_map.get("seg_015"), Some(&0));
+        let results_val =
+            serde_json::json!([{"id": "seg_015", "visual": ["city", "night"], "reactions": []}]);
+        let results = results_val.as_array().unwrap();
+        let mut out = vec![SceneKeywords::fallback(&inputs[0]); chunk.len()];
+        let applied = apply_llm_result(chunk, results, &local_map, &mut out, "test/test");
+        assert_eq!(applied, 1);
+        assert_eq!(out[0].segment_id, "seg_015");
+        assert_eq!(
+            out[0].visual,
+            vec!["city".to_string(), "night".to_string()]
+        );
+        // The old global-map call would have written out[15] on this 1-len slice.
     }
 }
