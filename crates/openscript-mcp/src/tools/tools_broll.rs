@@ -1416,15 +1416,35 @@ pub(crate) async fn handle_broll_repair(args: serde_json::Value) -> Result<serde
         let concept = final_kws.first().cloned().unwrap_or_else(|| queries.first().cloned().unwrap_or("b-roll".into()));
         match client.download_best(chosen, &concept).await {
             Ok(path) => {
-                // Replace the event's asset + the asset record.
+                // Replace the event's asset + the asset record — or CREATE the
+                // missing event. Segments whose keyword draft produced nothing
+                // have NO b-roll event at all; mutating-only left them
+                // permanently uncovered.
                 let new_asset_id = format!("broll_gap_{}", gap.segment_id);
                 let old_asset_id = tl
                     .tracks
                     .get(&TrackType::Broll)
                     .and_then(|evts| evts.iter().find(|e| e.id == gap.segment_id))
                     .map(|e| e.asset_id.clone());
-                if let Some(evts) = tl.tracks.get_mut(&TrackType::Broll) {
-                    if let Some(evt) = evts.iter_mut().find(|e| e.id == gap.segment_id) {
+                // Missing-event windows are sized from the timeline segment
+                // (seconds → ms); existing events keep their own timing.
+                let seg_window: Option<(i64, i64)> = {
+                    let has_evt = tl
+                        .tracks
+                        .get(&TrackType::Broll)
+                        .map(|evts| evts.iter().any(|e| e.id == gap.segment_id))
+                        .unwrap_or(false);
+                    if has_evt {
+                        None
+                    } else {
+                        find_segment_for_window(&tl, &gap.segment_id).map(|s| {
+                            ((s.start * 1000.0) as i64, (s.end * 1000.0) as i64)
+                        })
+                    }
+                };
+                let evts = tl.tracks.entry(TrackType::Broll).or_default();
+                match evts.iter_mut().find(|e| e.id == gap.segment_id) {
+                    Some(evt) => {
                         evt.asset_id = new_asset_id.clone();
                         evt.tags = vec![concept.clone()];
                         if let openscript_core::timeline::EventKind::Broll {
@@ -1439,6 +1459,34 @@ pub(crate) async fn handle_broll_repair(args: serde_json::Value) -> Result<serde
                         if let Some(prov) = &mut evt.provenance {
                             prov.concept = Some(concept.clone());
                             prov.tool = "broll.repair".to_string();
+                        }
+                    }
+                    None => {
+                        if let Some((start_ms, end_ms)) = seg_window {
+                            evts.push(openscript_core::timeline::TimelineEvent {
+                                id: gap.segment_id.clone(),
+                                asset_id: new_asset_id.clone(),
+                                start_ms,
+                                end_ms,
+                                offset_ms: 0,
+                                gain_db: 0.0,
+                                fade_in_ms: 0,
+                                fade_out_ms: 0,
+                                tags: vec![concept.clone()],
+                                provenance: Some(openscript_core::timeline::Provenance {
+                                    tool: "broll.repair".to_string(),
+                                    editorial_role: None,
+                                    concept: Some(concept.clone()),
+                                }),
+                                kind: openscript_core::timeline::EventKind::Broll {
+                                    concept: concept.clone(),
+                                    source_provider: "pexels".to_string(),
+                                    transition_style: "cut".to_string(),
+                                    crop_mode: "center".to_string(),
+                                    orientation: orientation.clone(),
+                                    motion_intensity: "medium".to_string(),
+                                },
+                            });
                         }
                     }
                 }

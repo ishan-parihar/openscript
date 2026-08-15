@@ -498,6 +498,30 @@ pub fn is_searchable_english_keyword(kw: &str) -> bool {
     has_english_content_word(kw)
 }
 
+/// Lighter gate for GIPHY sticker-reaction phrases. The stock-footage
+/// whitelist (`is_searchable_english_keyword`) is deliberately strict — it
+/// requires at least one token in `COMMON_ENGLISH_WORDS` — which wrongly drops
+/// emotive phrases GIPHY indexes perfectly well ("mind blown", "facepalm",
+/// "rolling eyes", "wow"). Reactions only need: no Devanagari script, and not
+/// an all-residue filler phrase (e.g. "bhai kya baat" is meaningless to GIPHY
+/// too). Any English content token makes the phrase searchable.
+pub fn is_reaction_searchable(kw: &str) -> bool {
+    if kw.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)) {
+        return false;
+    }
+    let toks: Vec<&str> = kw.split_whitespace().collect();
+    if toks.is_empty() {
+        return false;
+    }
+    let all_residue = toks.iter().all(|t| {
+        let lower = t
+            .trim_matches(|c: char| !c.is_ascii_alphanumeric())
+            .to_lowercase();
+        HINGLISH_RESIDUE.contains(&lower.as_str())
+    });
+    !all_residue
+}
+
 /// Derive the whole-video context (title + topic keywords) from a transcript —
 /// the V2V/A2V-from-audio equivalent of a script's `title` + `video_keywords`.
 /// One LLM call extracts 3-6 topical keywords that anchor every per-segment
@@ -1053,7 +1077,7 @@ fn apply_llm_result(
                 arr.iter()
                     .filter_map(|k| k.as_str().map(String::from))
                     .filter(|k| k.chars().count() >= 2)
-                    .filter(|k| !is_hinglish_lang(lang) || is_searchable_english_keyword(k))
+                    .filter(|k| !is_hinglish_lang(lang) || is_reaction_searchable(k))
                     .collect()
             })
             .unwrap_or_default();
@@ -1504,5 +1528,25 @@ mod tests {
         }
         // Case-insensitive.
         assert!(!is_searchable_english_keyword("Hisaab"));
+    }
+
+    #[test]
+    fn reaction_gate_allows_emotive_phrases_but_rejects_filler() {
+        // Emotive phrases the strict whitelist would drop — GIPHY handles them.
+        for good in [
+            "mind blown", "facepalm", "wow", "rolling eyes", "eyebrow raise",
+            "nervous laugh", "sarcastic clap", "yaar seriously", "thala for a reason",
+        ] {
+            assert!(is_reaction_searchable(good), "'{}' must pass the reaction gate", good);
+        }
+        // All-residue filler — meaningless to GIPHY too.
+        for bad in ["bhai kya baat", "yaar bhai", "kya kya", "aur phir", "bhai yeh"] {
+            assert!(!is_reaction_searchable(bad), "'{}' must be rejected", bad);
+        }
+        // Devanagari — never searchable.
+        assert!(!is_reaction_searchable("वाह क्या बात"));
+        // Empty / whitespace.
+        assert!(!is_reaction_searchable(""));
+        assert!(!is_reaction_searchable("   "));
     }
 }
