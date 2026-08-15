@@ -342,16 +342,36 @@ pub fn translate_caption_if_needed(caption: &str, language: &str) -> String {
 /// Hinglish function/residue tokens the drafter tends to echo verbatim instead
 /// of translating (pronouns, particles, verbs, filler — never stock-searchable).
 const HINGLISH_RESIDUE: &[&str] = &[
-    "hisaab", "saahab", "sahab", "hote", "bane", "thodi", "pad", "rahe", "raha",
-    "hai", "ho", "ki", "ka", "ko", "ke", "se", "mein", "bhai", "yah", "yeh",
-    "aur", "par", "na", "inhen", "inke", "unki", "tarike", "kyonki", "chaahe",
-    "zindagi", "aavaaz", "avaz", "dekh", "mil", "nikal", "khila", "pahunch",
-    "shuruaat", "badhiya", "chaaloo", "chalu", "garibi", "zaroori", "saare", "farq", "farak", "fark",
-    "aise", "aisa", "usi", "jis", "inhonne", "jinhonne", "chayan", "phati",
-    "patti", "thi", "the", "tha", "jata", "jaate", "karta", "karte", "kuchh",
-    "kuch", "bhi", "lena", "dete", "samajh", "enge", "bajaaya", "galgoate",
-    "nahin", "nahi", "keval", "wahin", "baad", "hain", "inhe", "koi", "apna",
-    "apni", "unka", "iska", "uska", "chahiye", "karna", "karne", "hua", "hue",
+    // Pronouns / determiners
+    "hisaab", "saahab", "sahab", "mere", "meri", "mera", "tere", "teri", "teri",
+    "tumhara", "humara", "apna", "apni", "apne", "unka", "unke", "unki", "iska",
+    "uska", "inke", "inhen", "inhe", "inko", "unki", "kisi", "kisiko", "koi",
+    "kuchh", "kuch", "sab", "sabhi", "saare", "kaafi", "bahut", "itna", "kitna",
+    // Verbs / auxiliaries
+    "hai", "hain", "ho", "tha", "thi", "the", "hoga", "hua", "hui", "hue",
+    "raha", "rahi", "rahe", "rakha", "rakhi", "rakhe", "kiya", "kiye", "karta",
+    "karte", "karna", "karne", "kar", "karke", "dete", "deta", "diya", "diye",
+    "lena", "lete", "jata", "jaate", "gaya", "gaye", "bana", "bane", "banti",
+    "mila", "mili", "mil", "nikal", "nikala", "khila", "khilaya", "pahunch",
+    "pahunche", "samajh", "samjha", "chahiye", "chahie", "dekh", "dekha", "suno",
+    "suna", "bola", "bole", "aaya", "aaye", "liya", "liye", "karo", "karo",
+    // Particles / adverbs / conjunctions
+    "bhi", "hi", "na", "nahin", "nahi", "mat", "ab", "abhi", "yah", "yeh",
+    "woh", "wo", "aur", "par", "per", "se", "ko", "ka", "ke", "ki", "mein",
+    "maine", "jis", "jin", "jinhonne", "inhonne", "usne", "unhone", "yahan",
+    "wahan", "wahin", "keval", "sirf", "baad", "pehle", "phir", "tab", "jab",
+    "kyun", "kyon", "kyonki", "isliye", "lekin", "magar", "agar", "toh", "to",
+    "idhar", "udhar", "andar", "bahar", "upar", "neeche", "aaj", "kal", "uss",
+    // Nouns / filler the drafter echoes instead of translating (drop: the
+    // translated-caption heuristic covers the meaningful ones)
+    "zindagi", "aavaaz", "avaz", "garibi", "kaanoon", "kanoon", "qanoon", "farq",
+    "farak", "fark", "thodi", "thoda", "shuruaat", "badhiya", "chaaloo", "chalu",
+    "zaroori", "tarike", "tarika", "chaahe", "chayan", "phati", "patti", "patta",
+    "uchh", "ash", "aash", "bachana", "bacha", "bach", "desh", "log", "logon",
+    "baat", "baatein", "rasta", "raasta", "ghar", "kaam", "kam", "waqt", "din",
+    "raat", "saal", "paisa", "paise", "gaadi", "gaadiyaan", "gadi", "sadak",
+    "enge", "bajaaya", "galgoate", "aise", "aisa", "usi", "unhi", "inhi",
+    "jaisa", "jaise", "waise", "bhai", "dost", "yaar", "bhaai", "kya", "kyu",
 ];
 
 /// Deterministic English-only gate for DRAFTED keywords on Hinglish/Hindi
@@ -1349,7 +1369,10 @@ mod tests {
         // Devanagari — never searchable.
         assert!(!is_searchable_english_keyword("सरकार"));
         // Hinglish residue the LLM echoes — never searchable.
-        for bad in ["chaaloo", "hisaab", "farq", "thodi", "saahab", "inhonne"] {
+        for bad in [
+            "chaaloo", "hisaab", "farq", "thodi", "saahab", "inhonne", "rakha",
+            "mere", "kisi", "kaanoon", "uchh", "ash", "zindagi", "garibi",
+        ] {
             assert!(
                 !is_searchable_english_keyword(bad),
                 "'{}' must be filtered as Hinglish residue",

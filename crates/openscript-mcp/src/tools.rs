@@ -4808,6 +4808,50 @@ async fn probe_broll_gaps(timeline: &Timeline) -> Vec<openscript_core::productio
             });
         }
     }
+
+    // Segments that should be covered but have NO b-roll event at all — the
+    // loop above only inspects placed events, so a segment whose keyword draft
+    // produced nothing was silently left uncovered (never flagged, never
+    // repaired). In alternation mode only "broll"-role segments require an
+    // overlay (source-role segments intentionally show the original video).
+    // Guard: only report missing-segment gaps when b-roll is actually expected
+    // (>=1 event placed, or alternation enabled) so intentionally b-roll-free
+    // timelines aren't invented into gaps.
+    let is_alternate = timeline.directives.presentation.is_alternate();
+    if !broll_track.is_empty() || is_alternate {
+        for seg in &timeline.segments {
+            let start = (seg.start * 1000.0) as i64;
+            let end = (seg.end * 1000.0) as i64;
+            let dur_s = (end - start) as f64 / 1000.0;
+            if dur_s <= 0.0 {
+                continue;
+            }
+            if is_alternate
+                && timeline.directives.presentation.role_for(&seg.id)
+                    != openscript_core::presentation::ROLE_BROLL
+            {
+                continue; // source-role segment — original video shows here
+            }
+            let covered = broll_track
+                .iter()
+                .any(|e| e.start_ms < end && e.end_ms > start);
+            if !covered {
+                gaps.push(BrollGap {
+                    segment_id: seg.id.clone(),
+                    concept: String::new(),
+                    asset_id: String::new(),
+                    asset_path: String::new(),
+                    required_s: (dur_s * 100.0).round() / 100.0,
+                    available_s: 0.0,
+                    gap_s: (dur_s * 100.0).round() / 100.0,
+                    action: format!(
+                        "segment {} has no b-roll event (draft produced no searchable keywords) — re-run broll.keywords + broll.fetch for it",
+                        seg.id
+                    ),
+                });
+            }
+        }
+    }
     gaps
 }
 
