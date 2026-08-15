@@ -55,7 +55,14 @@ fn escape_filter_path(path: &str) -> Result<String, String> {
     // arbitrary filter graph nodes.
     // Commas are common in filenames (e.g. "voice,_7599377.mp4") and are
     // safe when the path is wrapped in single quotes in the filter string.
-    let dangerous_chars = [';', '[', ']'];
+    //
+    // Single quotes are REJECTED (not escaped): lavfi quote-escaping
+    // (`'\''`) is unreliable in the movie/amovie filters — ffmpeg mangles
+    // the escaped quote and glues the filter options into the filename
+    // (empirically: a file named `3_o'clock.mp4` fails avformat_open_input
+    // even when the path is correctly escaped). Cache/asset filenames must
+    // therefore never contain `'` — the Pexels downloader sanitizes them.
+    let dangerous_chars = [';', '[', ']', '\''];
     for ch in dangerous_chars {
         if path.contains(ch) {
             return Err(format!(
@@ -66,9 +73,7 @@ fn escape_filter_path(path: &str) -> Result<String, String> {
     }
     // Convert backslashes to forward slashes (Windows path compat)
     let forward = path.replace('\\', "/");
-    // Escape single quotes: ' → '\''
-    let escaped = forward.replace('\'', "'\\''");
-    Ok(escaped)
+    Ok(forward)
 }
 
 fn amovie_filter(path: &str, stream: &str) -> Result<String, String> {

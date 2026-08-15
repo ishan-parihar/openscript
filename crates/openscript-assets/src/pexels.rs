@@ -3,6 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// Sanitize a concept/cache-key into a filesystem-safe cache stem.
+/// The ffmpeg movie filter CANNOT open paths containing `'` (lavfi
+/// quote-escaping is unreliable — the escaped quote gets mangled and the
+/// filter options are glued into the filename), and `;`, `[`, `]` are
+/// rejected outright by escape_filter_path. Cache filenames derived from
+/// free-text concepts (e.g. "3 o'clock") must therefore never contain them;
+/// each is replaced with `_`. Spaces are handled by callers (concept
+/// keywords are already space-free by the time they reach the filename).
+pub(crate) fn sanitize_cache_stem(s: &str) -> String {
+    s.replace(['\'', ';', '[', ']'], "_")
+}
+
 pub const CONCEPT_ALIASES: &[(&str, &[&str])] = &[
     (
         "technology",
@@ -410,7 +422,7 @@ impl PexelsClient {
 
         let cache_key_file = self
             .cache_dir
-            .join(format!("{}.json", cache_key.replace(' ', "_")));
+            .join(format!("{}.json", sanitize_cache_stem(&cache_key.replace(' ', "_"))));
         if let Some(parent) = cache_key_file.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -461,7 +473,7 @@ impl PexelsClient {
             .unwrap_or("mp4");
         let dest = self.cache_dir.join(format!(
             "{}_{}.{}",
-            concept.replace(' ', "_"),
+            sanitize_cache_stem(&concept.replace(' ', "_")),
             video.id,
             ext
         ));
@@ -648,5 +660,15 @@ mod tests {
     fn test_unknown_concept_has_no_alias() {
         let result = CONCEPT_ALIASES.iter().find(|(k, _)| *k == "unknown");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_sanitize_cache_stem_strips_filter_unsafe_chars() {
+        // Apostrophes break the ffmpeg movie filter even when escaped —
+        // the sanitizer must replace them so cache filenames stay playable.
+        assert_eq!(sanitize_cache_stem("clock_hands_3_o'clock_night"), "clock_hands_3_o_clock_night");
+        assert_eq!(sanitize_cache_stem("won't_stop;tonight[4]"), "won_t_stop_tonight_4_");
+        // Safe stems pass through untouched.
+        assert_eq!(sanitize_cache_stem("city_skyline_dawn"), "city_skyline_dawn");
     }
 }
