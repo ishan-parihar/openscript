@@ -396,6 +396,44 @@ pub(crate) async fn handle_broll_fetch(args: serde_json::Value) -> Result<serde_
         if !segments.is_empty() {
             let mut tl = Timeline::load(tl_path)
                 .map_err(|e| ToolError::Io(std::io::Error::other(format!("Failed to load timeline: {}", e))))?;
+            // Idempotent re-placement: drop b-roll events previously placed by
+            // broll.fetch (they are regenerable) so re-runs — e.g. video.to_video
+            // reusing the same timeline file — never stack stale clips on top of
+            // fresh ones (the 44-event BROLL_REPEAT false positive: old events
+            // kept their broll_{i} asset ids, colliding with the new placement).
+            // Non-broll.fetch events (manual b-roll, broll_bg, script.to_timeline
+            // background) are untouched.
+            let prev_count = tl
+                .tracks
+                .get_mut(&TrackType::Broll)
+                .map(|evs| {
+                    let before = evs.len();
+                    evs.retain(|e| {
+                        !matches!(
+                            e.provenance.as_ref().map(|p| p.tool.as_str()),
+                            Some("broll.fetch")
+                        )
+                    });
+                    before - evs.len()
+                })
+                .unwrap_or(0);
+            if prev_count > 0 {
+                // Prune asset records orphaned by the event clear (ids no
+                // longer referenced by any remaining b-roll event).
+                let keep_ids: std::collections::HashSet<String> = tl
+                    .tracks
+                    .get(&TrackType::Broll)
+                    .cloned()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|e| e.asset_id.clone())
+                    .collect();
+                tl.assets.broll.retain(|k, _| keep_ids.contains(k));
+                tracing::info!(
+                    "[broll.fetch] cleared {} previously placed broll.fetch event(s) for idempotent re-place",
+                    prev_count
+                );
+            }
             let mut assigned_count = 0usize;
             // Distribute clips to segments. When there are MORE segments than
             // concepts (the common 44-seg/12-concept case), cycle through each
@@ -1910,6 +1948,10 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
                 json!({
                     "id": d.segment_id.clone(),
                     "caption": caption,
+                    // Emphatic/intent ride along so sticker.validate_keywords
+                    // can apply the emotional intent when judging GIFs.
+                    "emphatic": d.emphatic,
+                    "intent": d.intent.clone().unwrap_or_else(|| "emphasis".to_string()),
                     "sticker_keywords": crate::keywords::blend_sticker_keywords(
                         &d.visual,
                         &d.reactions
