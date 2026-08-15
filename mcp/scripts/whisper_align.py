@@ -104,13 +104,14 @@ def align_with_whisper(
     _log(f"Loading Whisper model '{model_name}' for alignment...")
     start = time.time()
 
+    device = _resolve_device()
     try:
-        model = whisper.load_model(model_name, device=_resolve_device())
+        model = whisper.load_model(model_name, device=device)
     except Exception as e:
         return {"error": f"Failed to load Whisper model: {e}", "status": "error"}
 
     load_time = time.time() - start
-    _log(f"Model loaded in {load_time:.1f}s")
+    _log(f"Model loaded in {load_time:.1f}s (device={device})")
 
     # Transcribe with word timestamps. When a reference transcript is given,
     # seed the decoder with it as initial_prompt — this conditions Whisper
@@ -124,7 +125,10 @@ def align_with_whisper(
         language=language if language != "auto" else None,
         word_timestamps=True,
         condition_on_previous_text=False,
-        fp16=False,  # CPU mode
+        # fp16 on CUDA only (openai-whisper crashes with fp16 on CPU). This
+        # halves memory + doubles throughput for the forced-alignment pass on
+        # GPU machines — the enrichment runs on the full A2V/V2V audio.
+        fp16=(device == "cuda"),
     )
     if text and text.strip():
         # Strip ASR markup that Whisper could echo back (timestamps, brackets).

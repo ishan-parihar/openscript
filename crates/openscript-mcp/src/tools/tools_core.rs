@@ -61,14 +61,233 @@ pub(crate) async fn handle_transcribe(args: serde_json::Value) -> Result<serde_j
         .await
         .ok();
 
+    // Real word-timing enrichment: whisper.cpp's -osrt gives audio-accurate
+    // phrase windows, but the word timings inside them are char-proportional
+    // estimates (words can land in mid-phrase silences — the residual caption
+    // desync). When transcription.whisper_align is enabled, run openai-whisper
+    // forced alignment ONCE over the full media seeded with the phrase
+    // transcript, and if it yields genuinely word-granular timings, rewrite
+    // the word SRT in place so every word carries a real audio-derived
+    // boundary. The caption gate (caption_words_for_phrase) still per-phrase
+    // verifies the aligned words against the phrase text before using them,
+    // so a mismatched tail phrase harmlessly falls back to char-proportional.
+    let mut word_srt_path = result.word_srt_path;
+    if let Some(ref phrase_srt) = result.phrase_srt_path {
+        if let Some(ref mut wsrt) = word_srt_path {
+            let enriched = enrich_transcribe_word_timings(
+                &media_path,
+                phrase_srt,
+                wsrt,
+                &language_hint,
+            )
+            .await;
+            if let Some(msg) = enriched {
+                tracing::info!("[transcribe] word-timing enrichment: {}", msg);
+            } else {
+                // Enrichment skipped/failed — the transcriber's own word SRT
+                // (char-proportional within accurate phrase windows) stays.
+            }
+        }
+    }
+
     Ok(json!({
         "status": "transcribed",
         "output_srt_path": result.output_path,
         "entry_count": result.entry_count,
-        "word_srt_path": result.word_srt_path,
+        "word_srt_path": word_srt_path,
         "phrase_srt_path": result.phrase_srt_path,
         "engine": format!("{}", result.engine),
     }))
+}
+
+/// Format milliseconds as an SRT timestamp (HH:MM:SS,mmm).
+fn srt_ts(ms: i64) -> String {
+    let ms = ms.max(0);
+    let h = ms / 3_600_000;
+    let m = (ms % 3_600_000) / 60_000;
+    let s = (ms % 60_000) / 1000;
+    let milli = ms % 1000;
+    format!("{:02}:{:02}:{:02},{:03}", h, m, s, milli)
+}
+
+/// Write word timings as an SRT file (one entry per word).
+fn write_word_srt(path: &str, words: &[WordTiming]) -> std::io::Result<()> {
+    let mut out = String::new();
+    for (i, w) in words.iter().enumerate() {
+        out.push_str(&format!(
+            "{}\n{} --> {}\n{}\n\n",
+            i + 1,
+            srt_ts(w.start_ms),
+            srt_ts(w.end_ms),
+            w.word
+        ));
+    }
+    std::fs::write(path, out)
+}
+
+/// Best-effort REAL word-timing enrichment for the A2V/V2V transcribe path.
+///
+/// Runs openai-whisper forced alignment (whisper_align.py) ONCE over the
+/// full media, seeded with the phrase transcript, then rewrites the word SRT
+/// in place when the result is genuinely word-granular (roughly one
+/// single-token entry per word, covering ≥ half the phrase words). Returns
+/// Some(log-message) on success, None when skipped/failed — the caller keeps
+/// the transcriber's own word SRT (char-proportional inside accurate phrase
+/// windows) in that case. Feature-gated on transcription.whisper_align.
+///
+/// Without this, A2V/V2V word highlights are even-spaced estimates that can
+/// flash words during mid-phrase pauses; with real alignment each word lights
+/// exactly when it is spoken.
+async fn enrich_transcribe_word_timings(
+    media_path: &str,
+    phrase_srt_path: &str,
+    word_srt_path: &str,
+    language_hint: &str,
+) -> Option<String> {
+    if !crate::config::feature_transcription("whisper_align") {
+        return None;
+    }
+    let phrase_entries = openscript_core::srt::parse_srt(phrase_srt_path).ok()?;
+    if phrase_entries.is_empty() {
+        return None;
+    }
+    let full_text: String = phrase_entries
+        .iter()
+        .map(|e| e.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if full_text.trim().is_empty() {
+        return None;
+    }
+    let sidecar = resolve_repo_path("mcp/scripts/whisper_align.py");
+    let tmp_json = format!("{}.fullalign.json", phrase_srt_path);
+    let language = if language_hint == "auto" {
+        "hi"
+    } else {
+        language_hint
+    };
+    let output = tokio::process::Command::new("python3")
+        .arg(&sidecar)
+        .arg("--wav")
+        .arg(media_path)
+        .arg("--text")
+        .arg(&full_text)
+        .arg("--language")
+        .arg(language)
+        .arg("--model")
+        .arg("base")
+        .arg("--output")
+        .arg(&tmp_json)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output()
+        .await
+        .ok()?;
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&tmp_json);
+        return None;
+    }
+    let align_str = std::fs::read_to_string(&tmp_json).ok()?;
+    let _ = std::fs::remove_file(&tmp_json);
+    let align: serde_json::Value = serde_json::from_str(&align_str).ok()?;
+    if let Some(err) = align.get("error").and_then(|v| v.as_str()) {
+        tracing::warn!("[transcribe] whisper align enrichment skipped: {}", err);
+        return None;
+    }
+    let mut words = Vec::new();
+    if let Some(word_arr) = align.get("words").and_then(|v| v.as_array()) {
+        for w in word_arr {
+            let word = w
+                .get("word")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let start_ms = w
+                .get("start_s")
+                .and_then(|v| v.as_f64())
+                .map(|s| (s * 1000.0).round() as i64)
+                .unwrap_or(0);
+            let end_ms = w
+                .get("end_s")
+                .and_then(|v| v.as_f64())
+                .map(|s| (s * 1000.0).round() as i64)
+                .unwrap_or(start_ms);
+            if !word.is_empty() && end_ms > start_ms {
+                words.push(WordTiming {
+                    word,
+                    start_ms,
+                    end_ms,
+                });
+            }
+        }
+    }
+    // Granularity gate: genuinely word-granular means roughly one word per
+    // entry (no embedded whitespace) AND the count covers at least half the
+    // phrase words. A phrase-sized fallback or a collapsed result would be
+    // WORSE than the char-proportional estimates — reject it.
+    let phrase_word_count: usize = full_text.split_whitespace().count();
+    if words.len() < (phrase_word_count + 1) / 2 {
+        tracing::warn!(
+            "[transcribe] whisper align enrichment skipped: {} words vs {} phrase words",
+            words.len(),
+            phrase_word_count
+        );
+        return None;
+    }
+    if words.iter().any(|w| w.word.contains(char::is_whitespace)) {
+        tracing::warn!("[transcribe] whisper align enrichment skipped: phrase-sized (multi-word) entries");
+        return None;
+    }
+    // Aggregate acceptance gate: the caption pipeline only uses real word
+    // timings per-phrase when the aligned words match that phrase's text
+    // (Jaccard >= 0.5 — caption_words_for_phrase). If the aligner's output is
+    // a DIFFERENT script/language than the transcript (observed: openai-whisper
+    // base returns Devanagari for Hinglish audio while the phrase SRT is
+    // Latin Hinglish), every phrase would be rejected and the rewrite would
+    // replace a good char-proportional SRT with unusable foreign-script
+    // words. Only accept the enrichment when a MAJORITY of phrase windows
+    // actually agree with the aligned words.
+    let mut matched = 0usize;
+    let mut total = 0usize;
+    let tol = 0.05f64;
+    for ph in &phrase_entries {
+        let overlapping: Vec<String> = words
+            .iter()
+            .filter(|w| {
+                (w.start_ms as f64 / 1000.0) >= ph.start - tol
+                    && (w.end_ms as f64 / 1000.0) <= ph.end + tol
+            })
+            .map(|w| w.word.clone())
+            .collect();
+        if overlapping.is_empty() {
+            continue;
+        }
+        total += 1;
+        let joined = overlapping.join(" ");
+        if caption_text_similarity(&joined, &ph.text) >= 0.5 {
+            matched += 1;
+        }
+    }
+    if total == 0 || matched * 2 < total {
+        tracing::warn!(
+            "[transcribe] whisper align enrichment skipped: aligned words match only {}/{} phrase windows (script/language mismatch?)",
+            matched,
+            total
+        );
+        return None;
+    }
+    if write_word_srt(word_srt_path, &words).is_err() {
+        return None;
+    }
+    Some(format!(
+        "wrote {} real word timings to {} ({}% phrase windows matched)",
+        words.len(),
+        word_srt_path,
+        if total > 0 { matched * 100 / total } else { 0 }
+    ))
 }
 
 // ---------------------------------------------------------------------------

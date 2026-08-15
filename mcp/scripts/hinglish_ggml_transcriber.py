@@ -75,6 +75,24 @@ def _log_hinglish(msg: str):
     _log(msg, prefix="hinglish-ggml")
 
 
+def _probe_wav_duration(wav_path: str) -> float:
+    """Duration in seconds of the 16kHz mono PCM WAV (stdlib wave module).
+
+    whisper.cpp can emit trailing hallucinated segments past the real audio
+    end; probing the WAV gives the authoritative duration to clamp against.
+    Returns 0.0 on any failure (caller skips clamping).
+    """
+    try:
+        import wave as _wave
+
+        with _wave.open(wav_path, "rb") as w:
+            frames = w.getnframes()
+            rate = w.getframerate()
+        return frames / float(rate) if rate else 0.0
+    except Exception:
+        return 0.0
+
+
 # ---------------------------------------------------------------------------
 # SRT parsing
 # ---------------------------------------------------------------------------
@@ -279,6 +297,23 @@ def transcribe_ggml(
         return {"error": "Segment SRT was empty or unparseable"}
     
     _log_hinglish(f"Parsed {len(entries)} segments")
+    
+    # Clamp hallucinated segments past the real audio end. whisper.cpp (with
+    # VAD on, as here) can emit trailing segments beyond the source duration
+    # — the caption-sync overrun bug: cues at 141-150s on 135.4s audio burn
+    # text over silence at the tail. Probe the 16kHz mono WAV duration and
+    # drop/clamp anything past it.
+    wav_dur = _probe_wav_duration(wav_path)
+    if wav_dur > 0:
+        before = len(entries)
+        entries = [e for e in entries if e["start_s"] < wav_dur - 0.05]
+        for e in entries:
+            if e["end_s"] > wav_dur:
+                e["end_s"] = wav_dur
+        if len(entries) != before:
+            _log_hinglish(
+                f"Clamped {before - len(entries)} hallucinated segment(s) past audio end ({wav_dur:.1f}s)"
+            )
     
     # Parse word-level SRT (actual timestamps from -owts)
     all_words = []
