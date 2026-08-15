@@ -2,6 +2,18 @@ project:
   name: "openscript"
   type: "rust-content-creation"
 
+# Directories pruned from all lint walks (by basename). These are gitignored
+# dev-environment trees — Rust build output (target/) and the per-engine Python
+# virtualenvs (.venv-*) that host the TTS/ML sidecars. Deleting them would break
+# the engines / force full rebuilds; they are never committed, so the lint
+# ignores them entirely (mirrors the validator's node_modules/target precedent).
+ignore_dirs:
+  - "target"
+  - "node_modules"
+  - ".venv-higgs"
+  - ".venv-indextts"
+  - ".venv-voicedesign"
+
 structure:
   canonical:
     - path: "crates"
