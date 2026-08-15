@@ -87,7 +87,13 @@ pub struct SceneKeywords {
 
 impl SceneKeywords {
     fn fallback(input: &SegmentInput) -> SceneKeywords {
-        let visual = extract_salient_keywords(&input.caption, 4);
+        let mut visual = extract_salient_keywords(&input.caption, 4);
+        // Hinglish fallback must also be English-only (same residue gate as the
+        // LLM output — the translated caption still leaks function words).
+        let lang = input.language_hint.as_deref().unwrap_or("english");
+        if is_hinglish_lang(lang) {
+            visual.retain(|k| is_searchable_english_keyword(k));
+        }
         SceneKeywords {
             segment_id: input.segment_id.clone(),
             visual,
@@ -331,6 +337,33 @@ pub fn translate_caption_if_needed(caption: &str, language: &str) -> String {
     } else {
         caption.to_string()
     }
+}
+
+/// Hinglish function/residue tokens the drafter tends to echo verbatim instead
+/// of translating (pronouns, particles, verbs, filler — never stock-searchable).
+const HINGLISH_RESIDUE: &[&str] = &[
+    "hisaab", "saahab", "sahab", "hote", "bane", "thodi", "pad", "rahe", "raha",
+    "hai", "ho", "ki", "ka", "ko", "ke", "se", "mein", "bhai", "yah", "yeh",
+    "aur", "par", "na", "inhen", "inke", "unki", "tarike", "kyonki", "chaahe",
+    "zindagi", "aavaaz", "avaz", "dekh", "mil", "nikal", "khila", "pahunch",
+    "shuruaat", "badhiya", "chaaloo", "chalu", "garibi", "zaroori", "saare", "farq", "farak", "fark",
+    "aise", "aisa", "usi", "jis", "inhonne", "jinhonne", "chayan", "phati",
+    "patti", "thi", "the", "tha", "jata", "jaate", "karta", "karte", "kuchh",
+    "kuch", "bhi", "lena", "dete", "samajh", "enge", "bajaaya", "galgoate",
+    "nahin", "nahi", "keval", "wahin", "baad", "hain", "inhe", "koi", "apna",
+    "apni", "unka", "iska", "uska", "chahiye", "karna", "karne", "hua", "hue",
+];
+
+/// Deterministic English-only gate for DRAFTED keywords on Hinglish/Hindi
+/// sources. The LLM is non-deterministic — on a bad draw it echoes raw Hinglish
+/// tokens ("chaaloo", "farq", "thodi") that Pexels cannot search. A keyword is
+/// searchable when it has no Devanagari characters and no Hinglish residue.
+pub fn is_searchable_english_keyword(kw: &str) -> bool {
+    if kw.chars().any(|c| ('\u{0900}'..='\u{097F}').contains(&c)) {
+        return false;
+    }
+    let lower = kw.trim().to_lowercase();
+    !HINGLISH_RESIDUE.contains(&lower.as_str())
 }
 
 /// Derive the whole-video context (title + topic keywords) from a transcript —
@@ -799,7 +832,10 @@ fn build_prompt(inputs: &[SegmentInput], language: &str) -> (String, String) {
         Rules:\n\
         1. Output ONLY valid JSON — no markdown, no explanation\n\
         2. Each keyword 1-3 words; concrete and searchable; no abstractions\n\
-        3. Translate Hinglish/Hindi (or any language) by MEANING, not word-for-word\n\
+        3. Translate Hinglish/Hindi (or any language) by MEANING, not word-for-word. \
+        NEVER output raw Hinglish/Hindi words (e.g. 'hisaab', 'saahab', 'chaaloo', 'farq', \
+        'thodi') — every visual and reaction keyword MUST be English (or the target \
+        stock site's language). If a segment is in Hinglish, write the English concept.\n\
         4. Use the segment's duration (long window → wider shot term; short window → single-subject term) and position (hook/body/close) to pick specificity\n\
         5. Echo the EXACT segment id for every segment — one result per segment, no renumbering\n\
         6. Vary phrasing ACROSS segments: never reuse the same query template for consecutive scenes \
@@ -859,7 +895,8 @@ fn apply_llm_result(
         let Some(&idx) = id_map.get(id) else {
             continue;
         };
-        let visual: Vec<String> = r
+        let lang = inputs[idx].language_hint.as_deref().unwrap_or("english");
+        let mut visual: Vec<String> = r
             .get("visual")
             .or_else(|| r.get("keywords"))
             .and_then(|v| v.as_array())
@@ -870,6 +907,12 @@ fn apply_llm_result(
                     .collect()
             })
             .unwrap_or_default();
+        // Deterministic English-only gate for Hinglish sources: a bad LLM draw
+        // that echoes raw Hinglish is never searchable — the <2-keyword hybrid
+        // merge below then fills from the (translated) heuristic.
+        if is_hinglish_lang(lang) {
+            visual.retain(|k| is_searchable_english_keyword(k));
+        }
         let reactions: Vec<String> = r
             .get("reactions")
             .or_else(|| r.get("sticker_keywords"))
@@ -878,6 +921,7 @@ fn apply_llm_result(
                 arr.iter()
                     .filter_map(|k| k.as_str().map(String::from))
                     .filter(|k| k.chars().count() >= 2)
+                    .filter(|k| !is_hinglish_lang(lang) || is_searchable_english_keyword(k))
                     .collect()
             })
             .unwrap_or_default();
@@ -1298,5 +1342,25 @@ mod tests {
         assert!(!big.contains(&"eee".to_string()), "capped at 4");
         // Never empty.
         assert_eq!(blend_sticker_keywords(&[], &[]), vec!["funny".to_string()]);
+    }
+
+    #[test]
+    fn searchable_english_keyword_rejects_hinglish_residue_and_devanagari() {
+        // Devanagari — never searchable.
+        assert!(!is_searchable_english_keyword("सरकार"));
+        // Hinglish residue the LLM echoes — never searchable.
+        for bad in ["chaaloo", "hisaab", "farq", "thodi", "saahab", "inhonne"] {
+            assert!(
+                !is_searchable_english_keyword(bad),
+                "'{}' must be filtered as Hinglish residue",
+                bad
+            );
+        }
+        // English keywords pass.
+        for good in ["government", "building", "protest", "corruption", "crowd"] {
+            assert!(is_searchable_english_keyword(good), "'{}' must pass", good);
+        }
+        // Case-insensitive.
+        assert!(!is_searchable_english_keyword("Hisaab"));
     }
 }
