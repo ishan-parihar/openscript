@@ -1165,9 +1165,8 @@ pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Res
     let pattern = args.get("pattern").and_then(|v| v.as_str());
     let every_n = args.get("every_n").and_then(|v| v.as_u64()).map(|v| v as u32);
     let broll_ratio = args.get("broll_ratio").and_then(|v| v.as_f64());
-    let source_audio = args.get("source_audio").and_then(|v| v.as_str());
 
-    if mode.is_none() && pattern.is_none() && every_n.is_none() && broll_ratio.is_none() && source_audio.is_none() {
+    if mode.is_none() && pattern.is_none() && every_n.is_none() && broll_ratio.is_none() {
         let roles: serde_json::Map<String, serde_json::Value> = timeline
             .segments
             .iter()
@@ -1184,7 +1183,6 @@ pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Res
             "mode": timeline.directives.presentation.mode,
             "pattern": timeline.directives.presentation.pattern,
             "every_n": timeline.directives.presentation.every_n,
-            "source_audio": timeline.directives.presentation.source_audio,
             "visual_roles": roles,
         }));
     }
@@ -1204,9 +1202,6 @@ pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Res
             }
             if let Some(n) = every_n {
                 timeline.directives.presentation.every_n = n;
-            }
-            if let Some(sa) = source_audio {
-                timeline.directives.presentation.source_audio = sa.to_string();
             }
             let roles = openscript_core::presentation::plan_alternation(
                 &timeline.segments,
@@ -1234,9 +1229,6 @@ pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Res
         if let Some(n) = every_n {
             timeline.directives.presentation.every_n = n;
         }
-        if let Some(sa) = source_audio {
-            timeline.directives.presentation.source_audio = sa.to_string();
-        }
         let roles = openscript_core::presentation::plan_alternation(
             &timeline.segments,
             &timeline.directives.presentation.pattern,
@@ -1259,30 +1251,18 @@ pub(crate) async fn handle_timeline_presentation(args: serde_json::Value) -> Res
             )
         })
         .collect();
-    // Re-voice ducking is a documented Phase-2 filter-graph addition — the
-    // schema/tool accept source_audio but the renderer does NOT implement it
-    // yet. Surface that honestly so agents never believe "duck" is active.
-    let source_audio = timeline.directives.presentation.source_audio.clone();
-    let note = if source_audio != "keep" {
-        Some(format!(
-            "source_audio='{}' is accepted but re-voice ducking is not yet wired into the renderer - output uses the original audio unattenuated (keep).",
-            source_audio
-        ))
-    } else {
-        None
-    };
-
+    // Re-voice (source_audio 'duck') is EXCLUDED from V2V by decision — the
+    // original video's audio is always preserved as-is (genuine output). See
+    // docs/V2V_ALTERNATION_ARCHITECTURE.md §3.6 for rationale + revisit path.
+    // The schema field is retained for backward compatibility and is "keep".
     let mut resp = serde_json::Map::new();
     resp.insert("status".into(), json!("planned"));
     resp.insert("timeline_path".into(), json!(timeline_path));
     resp.insert("mode".into(), json!(timeline.directives.presentation.mode));
     resp.insert("pattern".into(), json!(timeline.directives.presentation.pattern));
     resp.insert("every_n".into(), json!(timeline.directives.presentation.every_n));
-    resp.insert("source_audio".into(), json!(source_audio));
+    resp.insert("source_audio".into(), json!("keep"));
     resp.insert("visual_roles".into(), json!(roles));
-    if let Some(n) = note {
-        resp.insert("note".into(), json!(n));
-    }
     Ok(serde_json::Value::Object(resp))
 }
 

@@ -1551,11 +1551,9 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
         .to_string();
     let alt_every_n = alternation.get("every_n").and_then(|v| v.as_u64()).unwrap_or(2) as u32;
     let alt_ratio = alternation.get("broll_ratio").and_then(|v| v.as_f64());
-    let alt_source_audio = alternation
-        .get("source_audio")
-        .and_then(|v| v.as_str())
-        .unwrap_or("keep")
-        .to_string();
+    // NOTE: re-voice (source_audio 'duck') is EXCLUDED from V2V by decision —
+    // the original video's audio is always preserved as-is. See
+    // docs/V2V_ALTERNATION_ARCHITECTURE.md §3.6.
 
     let mut broll_segments = segments.clone();
     let mut alternation_summary: Option<serde_json::Value> = None;
@@ -1571,7 +1569,8 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
         tl.directives.presentation.visual_roles = roles.clone();
         tl.directives.presentation.pattern = alt_pattern.clone();
         tl.directives.presentation.every_n = alt_every_n;
-        tl.directives.presentation.source_audio = alt_source_audio.clone();
+        // source_audio stays "keep" (re-voice excluded — schema field retained
+        // for backward compatibility only).
         tl.updated_at = chrono::Utc::now();
         tl.save(&timeline_path)?;
         let roles_owned = roles;
@@ -1589,7 +1588,7 @@ pub(crate) async fn handle_broll_auto(args: serde_json::Value) -> Result<serde_j
             "pattern": alt_pattern,
             "every_n": alt_every_n,
             "broll_ratio": alt_ratio,
-            "source_audio": alt_source_audio,
+            "revoice": "excluded",
             "broll_segments": broll_segments.len(),
             "source_segments": source_count,
         }));

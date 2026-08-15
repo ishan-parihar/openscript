@@ -325,7 +325,7 @@ pub fn tool_definitions() -> serde_json::Value {
         },
         {
             "name": "timeline.presentation",
-            "description": "Inspect or re-plan the V2V alternation presentation directive on a timeline (docs/V2V_ALTERNATION_ARCHITECTURE.md). Query mode (timeline_path only) returns the current mode + every segment's visual role. Plan mode (pass mode='alternate' + pattern/every_n/broll_ratio) re-plans roles via presentation::plan_alternation and persists them; mode='cover' clears roles (full-coverage default behaviour). Use to set up [broll → video → broll] alternation manually, or inspect what broll.auto / video.to_video planned. Returns: status, mode, pattern, every_n, source_audio, visual_roles.",
+            "description": "Inspect or re-plan the V2V alternation presentation directive on a timeline (docs/V2V_ALTERNATION_ARCHITECTURE.md). Query mode (timeline_path only) returns the current mode + every segment's visual role. Plan mode (pass mode='alternate' + pattern/every_n/broll_ratio) re-plans roles via presentation::plan_alternation and persists them; mode='cover' clears roles (full-coverage default behaviour). Use to set up [broll → video → broll] alternation manually, or inspect what broll.auto / video.to_video planned. Re-voice (source_audio 'duck') is EXCLUDED from V2V by decision — the original video's audio is always preserved as-is (docs/V2V_ALTERNATION_ARCHITECTURE.md §3.6). Returns: status, mode, pattern, every_n, source_audio, visual_roles.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -333,8 +333,7 @@ pub fn tool_definitions() -> serde_json::Value {
                     "mode": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "'alternate' (V2V alternation) or 'cover' (full b-roll coverage). Omit for query-only."},
                     "pattern": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Alternation cadence when planning: 'every_other' ([broll→source→broll→…]), 'broll_lead', 'source_lead' (starts with original video), 'every_n'."},
                     "every_n": {"anyOf": [{"type": "integer"}, {"type": "null"}], "description": "Consecutive broll segments when pattern='every_n'."},
-                    "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Explicit share (0.0-1.0) of segments that get b-roll, spread evenly. Overrides the pattern cadence. 0 = all original footage, 1 = all stock."},
-                    "source_audio": {"anyOf": [{"type": "string"}, {"type": "null"}], "description": "Original-video audio handling: 'keep' or 'duck' (reserved for re-voice mode)."}
+                    "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Explicit share (0.0-1.0) of segments that get b-roll, spread evenly. Overrides the pattern cadence. 0 = all original footage, 1 = all stock."}
                 },
                 "required": ["timeline_path"],
                 "additionalProperties": false
@@ -812,8 +811,7 @@ pub fn tool_definitions() -> serde_json::Value {
                         "enabled": {"type": "boolean", "default": false, "description": "Enable V2V alternation mode: the visual layer alternates stock b-roll ↔ the ORIGINAL source video per transcript segment. source-role segments get NO b-roll event, so timeline.render (with the original video as source) shows the original footage there — [broll → video → broll]."},
                         "pattern": {"type": "string", "default": "every_other", "description": "Alternation cadence: 'every_other' ([broll→source→broll→…]), 'broll_lead' (same as every_other), 'source_lead' (starts with the original video), 'every_n' (n consecutive broll segments then 1 source)."},
                         "every_n": {"type": "integer", "default": 2, "description": "Consecutive broll segments when pattern='every_n'."},
-                        "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Optional explicit share (0.0-1.0) of segments that get b-roll, spread evenly. 0.0 = all-source (pure captioned original footage), 1.0 = all-broll (full coverage). Overrides the pattern cadence."},
-                        "source_audio": {"type": "string", "default": "keep", "description": "Original-video audio handling: 'keep' (default) or 'duck' (reserved for re-voice mode — lowers original audio under cloned voiceover)."}
+                        "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Optional explicit share (0.0-1.0) of segments that get b-roll, spread evenly. 0.0 = all-source (pure captioned original footage), 1.0 = all-broll (full coverage). Overrides the pattern cadence."}
                     }}
                 },
                 "required": [],
@@ -901,8 +899,7 @@ pub fn tool_definitions() -> serde_json::Value {
                         "enabled": {"type": "boolean", "default": true, "description": "V2V alternation (default true for video.to_video). Set false for full b-roll coverage."},
                         "pattern": {"type": "string", "default": "every_other", "description": "Cadence: 'every_other' ([broll→source→broll→…]), 'source_lead' (starts with original video), 'every_n' (n broll then 1 source)."},
                         "every_n": {"type": "integer", "default": 2, "description": "Consecutive broll segments when pattern='every_n'."},
-                        "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Explicit share (0.0-1.0) of segments that get b-roll (0 = all original footage, 1 = all stock). Overrides the pattern."},
-                        "source_audio": {"type": "string", "default": "keep", "description": "'keep' or 'duck' (reserved for re-voice mode)."}
+                        "broll_ratio": {"anyOf": [{"type": "number"}, {"type": "null"}], "description": "Explicit share (0.0-1.0) of segments that get b-roll (0 = all original footage, 1 = all stock). Overrides the pattern."}
                     }}
                 },
                 "required": ["video_path"],

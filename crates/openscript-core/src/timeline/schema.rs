@@ -228,8 +228,11 @@ pub struct PresentationDirective {
     pub pattern: String,
     /// Consecutive broll segments when pattern == "every_n".
     pub every_n: u32,
-    /// What to do with the ORIGINAL video's audio in re-voice mode:
-    /// "keep" (default) or "duck" (lower under cloned voiceover).
+    /// What to do with the ORIGINAL video's audio in re-voice mode.
+    /// EXCLUDED from V2V by decision (docs/V2V_ALTERNATION_ARCHITECTURE.md
+    /// §3.6): always "keep" — the original video's audio is preserved as-is
+    /// for genuine output. Retained for backward compatibility (serde
+    /// default) and reserved for a future re-voice/lip-sync track.
     pub source_audio: String,
 }
 

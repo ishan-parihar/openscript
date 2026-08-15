@@ -1,6 +1,10 @@
 # V2V Alternation Architecture — `[broll → video → broll]`
 
-> **Status:** Architecture proposal (investigation complete)
+> **Status:** IMPLEMENTED for the visual alternation — schema, planner,
+> `broll.auto` alternation mode, `video.to_video` orchestrator, alternation-aware
+> validation, `timeline.presentation`, and the renderer convention-b fix are all
+> shipped and verified by a rendered fixture (`[broll → video → broll]` frame
+> audit). **Re-voice (`source_audio: "duck"`) is EXCLUDED by decision** — see §3.6.
 > **Scope:** Video-to-video presentation mode — the full A2V pipeline (voices,
 > captions, music, stickers) stays identical, but the **visual layer** alternates
 > between stock b-roll and the **original video footage**, segregated by the
@@ -78,7 +82,7 @@ and no tool can place b-roll on a subset of segments.
 | Place b-roll on a SUBSET (alternate) | ❌ fetch maps concepts 1:1 to every segment | 🔨 **NEW** |
 | Record which segments are "source" vs "broll" | ❌ no intent field | 🔨 **NEW** |
 | Validate the alternation pattern | ❌ | 🔨 **NEW** |
-| Re-voice mode (clone narration over original footage) | ⚠️ voiceover track exists but source audio not ducked | 🔨 **NEW** (optional) |
+| Re-voice mode (clone narration over original footage) | ❌ **EXCLUDED by decision** — original audio always preserved ("keep") | ⏸️ deferred (see §3.6) |
 
 ---
 
@@ -111,10 +115,11 @@ pub struct PresentationDirective {
     #[serde(default)]
     pub every_n: u32,
 
-    /// What to do with the ORIGINAL video's audio in re-voice mode:
-    /// "keep" (default for V2V keep-audio) or "duck" (lower under cloned VO).
+    /// What to do with the ORIGINAL video's audio in re-voice mode.
+    /// EXCLUDED from V2V by decision — always "keep" (original audio
+    /// preserved as-is). Field retained for backward compatibility only.
     #[serde(default)]
-    pub source_audio: String, // "keep" | "duck"
+    pub source_audio: String, // "keep" (always)
 }
 ```
 
@@ -212,16 +217,38 @@ timeline.presentation { timeline_path, mode, pattern,
 3. **Breadth**: the alternation must not leave >70% of segments as source
    unless `broll_ratio` was explicitly set (catches accidental all-source).
 
-### 3.6 Re-voice mode (optional phase 2)
+### 3.6 Re-voice mode — EXCLUDED from V2V (decision, 2026-08-15)
 
-For "regenerate narration with a cloned voice over original footage":
-- `voiceover` track already exists and mixes above `[0:a]`.
-- Add `directives.presentation.source_audio == "duck"` → the filter graph
-  applies `volume=` ducking to the trimmed `[0:a]` under voiceover windows
-  (a tiny addition to `build_post_trim` — the sidechain ducking machinery for
-  music already exists; the same pattern applies to source audio).
-- This is OPTIONAL for the first implementation (keep-audio mode is the
-  default and needs zero render changes).
+**Decision:** re-voice (`source_audio == "duck"`) is **excluded** from the V2V
+pipeline. The ORIGINAL video's audio is always preserved as-is (`source_audio`
+is permanently "keep" — the "genuine output" default). The schema field is
+retained only for backward compatibility; the tool surfaces (`broll.auto`,
+`video.to_video`, `timeline.presentation`) no longer accept `source_audio`.
+
+**Rationale (lip-sync risk):** V2V re-uses the original *footage*. Lowering
+the original audio under cloned narration is only safe when the face is not
+visible (b-roll/stock segments) or the transcript text is byte-identical and
+paced to the original windows. For a visible talking head with changed text
+(translation, rewrites, added lines), a clone speaking different words over
+the original lip movements is unwatchable — audio-only re-voice cannot fix
+that, and no audio-driven lip-sync model (Wav2Lip / LivePortrait / LatentSync
+class) is integrated.
+
+**What was not needed:** for A2V (script/audio-to-video) content — the
+pipeline's primary output — every frame is stock b-roll, so the voiceover
+track is already the sole narration and "re-voice" is meaningless. The
+voice-cloning workflows (audio8 / IndexTTS) already own narration generation.
+
+**Revisit path (if a real use case appears):**
+1. Per-segment `revoice` safety gate: allow re-voice only on b-roll-role
+   segments and same-text source segments; visible-face + changed-text
+   segments keep the original audio.
+2. Same-text timing lock: TTS synthesis targets the original segment duration
+   so the clone fits the mouth window.
+3. For dubbed faces: integrate an audio-driven lip-sync model as an optional
+   post-render stage — a separate research + integration track.
+4. Then wire the ~20-line sidechain duck in `build_post_trim` (mirror the
+   existing music-ducking `sidechaincompress` pattern).
 
 ---
 
@@ -243,9 +270,10 @@ For "regenerate narration with a cloned voice over original footage":
 
 ## 5. Renderer changes
 
-**Zero** for keep-audio mode — `render_from_timeline` already composites
-`[broll → video → broll]`. Optional ducking for re-voice mode is a ~20-line
-filter-graph addition.
+**Zero** — `render_from_timeline` already composites `[broll → video → broll]`.
+Re-voice ducking is NOT implemented (excluded, see §3.6). The convention-a/b
+asset-resolution fix (Phase 176) was the only renderer change required to make
+the alternation visible.
 
 ## 6. Testing plan
 
