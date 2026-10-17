@@ -167,7 +167,7 @@ in a new environment** — it tells you which downstream tools will work.
   `shlex.quote` every interpolation.
 - **Stdin/stdout JSON protocol** for long-lived sidecars. Fresh-process-per-call
   is acceptable for one-shot tools but NEVER for per-segment TTS or alignment.
-  (Note: `music_library_indexer.py` was deleted in Phase C — its `--build` path
+  (Note: the Python music library indexer was deleted in Phase C — its `--build` path
   is now a native Rust module at `crates/openscript-mcp/src/library_indexer.rs`.The 2 remaining Python sidecars — `kokoro_tts_sidecar.py` and `whisper_align.py` — wrap Python-only ML models and must stay Python. The HinglishGgml transcription uses `hinglish_ggml_transcriber.py` (whisper.cpp wrapper).)
 - **No `os.system`**, no `eval`, no `exec`.
 
@@ -483,17 +483,17 @@ a comment listing all the candidates.
 
 ### What belongs in git
 
-- **Source code** (`.rs`, `.py`, `.ts`, `.tsx`, `.html`, `.css`, `.md`)
-- **Hand-authored data** (`mcp/assets/voices.json`, `mcp/assets/svg_presets/*.svg`,
-  `mcp/assets/music_index.json` for the 20 committed stock tracks)
+- **Source code** (Rust, Python, TypeScript, TSX, HTML, CSS, and Markdown files)
+- **Hand-authored data** (`mcp/assets/svg_presets/*.svg`,
+  the stock-track index for the 20 committed tracks)
 - **Fonts** (`mcp/fonts/BebasNeue-Regular.ttf` — needed for ASS caption burning)
 - **Stickers** (`mcp/assets/stickers/*.png|gif` — small, hand-curated)
 - **Lockfiles** (`Cargo.lock`, `package-lock.json`)
 
 ### What does NOT belong in git
 
-- **Generated JSON indices** (`mcp/assets/sfx_index.json`,
-  `mcp/assets/music_library_index.json`) — regenerate at runtime via
+- **Generated JSON indices** (the sfx index,
+  the music library index) — regenerate at runtime via
   `sfx.index` / `library.build` tools. They also leak developer paths.
 - **Procedural backgrounds** (`mcp/assets/backgrounds/*.mp4`) —
   `generate_procedural_background` in `tools.rs` produces them on demand.
@@ -634,7 +634,7 @@ When in doubt, run `cargo audit` and the ponytail audit script (see
 OpenScript does not have formal releases yet. When it does:
 
 1. Bump version in root `Cargo.toml` and all crate `Cargo.toml`s
-2. Update `CHANGELOG.md` (to be created)
+2. Update the changelog (to be created)
 3. Tag `vX.Y.Z` on the commit
 4. Build release binaries for Linux, macOS, Windows
 5. Update `system.capabilities` to report the version
@@ -740,8 +740,8 @@ egui panel that renders inside the Tauri window via a custom widget.
 2. **Create `crates/openscript-tauri/src/egui_panel/` module:**
    - `mod.rs` — panel registration
    - `timeline.rs` — the egui timeline widget (reads `Timeline` struct directly, no JSON serialization)
-   - `ruler.rs` — the time ruler (native, no PNG)
-   - `playhead.rs` — the playhead (drag-to-seek, frame-accurate)
+   - the time ruler (native, no PNG)
+   - the playhead (drag-to-seek, frame-accurate)
 
 3. **Bridge egui into Tauri:** Use `tauri::WindowEvent` + a custom
    `tauri::WebviewWindowBuilder` variant that hosts an egui `eframe::App`
@@ -955,7 +955,7 @@ STOP — see §7.5.
 
 The workspace-lint validator (`workspace-lint.yaml` + `scripts/workspace-lint/workspace_lint.py`)
 catches:
-- **Scratch files at root** — `.timeline.json`, `.edl.json`, `.ass`, `.wav`,
+- **Scratch files at root** — timeline and EDL JSON files, `.ass`, `.wav`,
   `output.mp4` that should be in `artifacts/`
 - **Forbidden files** — `.log`, `.tmp`, `.pyc`, render artifacts
 - **Oversized files** — binaries or assets that exceed size limits
