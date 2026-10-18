@@ -90,3 +90,5 @@ output/
 .claude/
 skills-lock.json
 skills/readme-craft
+.benchmarks/
+.ruff_cache/
