@@ -4,23 +4,13 @@
 
 AI-directed video editing pipeline — raw footage to polished 9:16 reel. Transcription → creative brief → timeline → FFmpeg render → verified output. Rust + Python + TypeScript. **109 MCP tools** (verified: 103 static + 6 dynamic in `openscript-mcp/src/tools.rs`). 9 Rust crates.
 
-[![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
-![LOC](https://img.shields.io/badge/LOC-74.6K-informational?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 [![CI](https://github.com/ishan-parihar/openscript/actions/workflows/ci.yml/badge.svg)](https://github.com/ishan-parihar/openscript/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)](https://ffmpeg.org/)
 [![MCP](https://img.shields.io/badge/MCP-Server-violet?logo=modelcontextprotocol)](https://modelcontextprotocol.io/)
-[![Tools](https://img.shields.io/badge/tools-109-brightgreen)](https://github.com/ishan-parihar/openscript)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-[![Rust](https://img.shields.io/badge/Rust-2021-orange?logo=rust)](https://www.rust-lang.org/)
-[![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)](https://www.python.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![FFmpeg](https://img.shields.io/badge/FFmpeg-6+-red?logo=ffmpeg)](https://ffmpeg.org/)
-[![MCP](https://img.shields.io/badge/MCP-Server-violet?logo=modelcontextprotocol)](https://modelcontextprotocol.io/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 ---
 
