@@ -1,5 +1,20 @@
 # Production Quality Scoring v4.0 Implementation Plan
 
+## Contents
+
+- [Global Constraints](#global-constraints)
+- [Files Modified](#files-modified)
+- [v4.0 Weight Table (sums to 100)](#v40-weight-table-sums-to-100)
+- [Task 1: Add scoresfxquality dimension (6 pts)](#task-1-add-scoresfxquality-dimension-6-pts)
+- [Task 2: Rename + expand scoremusicvariance → scoremusicquality (8 pts)](#task-2-rename-expand-scoremusicvariance-scoremusicquality-8-pts)
+- [Task 3: Expand scorestickerdesign (add overlap, off-screen, always-on detection)](#task-3-expand-scorestickerdesign-add-overlap-off-screen-always-on-detection)
+- [Task 4: Expand scorecaptions → scorecaptionquality (6 pts, expanded)](#task-4-expand-scorecaptions-scorecaptionquality-6-pts-expanded)
+- [Task 5: Add scorevoiceoverquality (6 pts)](#task-5-add-scorevoiceoverquality-6-pts)
+- [Task 6: Add scoreaudiomixquality (5 pts)](#task-6-add-scoreaudiomixquality-5-pts)
+- [Task 7: Add scorevisualhierarchy (5 pts) + scoreplatformoptimization (5 pts)](#task-7-add-scorevisualhierarchy-5-pts-scoreplatformoptimization-5-pts)
+- [Task 8: Integration — wire all dimensions into evaluateproductionquality (v4.0 weights, 100 pts)](#task-8-integration-wire-all-dimensions-into-evaluateproductionquality-v40-weights-100-pts)
+- [Self-Review Checklist](#self-review-checklist)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Upgrade `production_quality.rs` from v3.0 (100 pts across 11 dimensions) to v4.0 (100 pts across 15 dimensions) by adding 4 new scoring dimensions (SFX, voiceover quality, audio mix quality, visual hierarchy, platform optimization) and expanding 3 existing ones (music, sticker, captions), then wiring all new weights into `evaluate_production_quality`.

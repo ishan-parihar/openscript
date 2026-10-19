@@ -1,5 +1,29 @@
 # Agent Guide — OpenScript MCP Tool Catalog
 
+## Contents
+
+- [Tool Families (30 families, 113 tools)](#tool-families-30-families-113-tools)
+- [Trajectory E — Asset Development (user-curated footage library)](#trajectory-e-asset-development-user-curated-footage-library)
+  - [Background acquisition fallback discipline (scenemedia)](#background-acquisition-fallback-discipline-scenemedia)
+- [Trajectory A — From-Scratch Video Creation (Golden Path)](#trajectory-a-from-scratch-video-creation-golden-path)
+  - [Choosing the TTS audio model (script → video)](#choosing-the-tts-audio-model-script-video)
+  - [Designing novel character voices (voice.design)](#designing-novel-character-voices-voicedesign)
+  - [Expressive 100+ language TTS (higgs — Higgs Audio v3, 4B ONNX GenAI int4)](#expressive-100-language-tts-higgs-higgs-audio-v3-4b-onnx-genai-int4)
+  - [Emotion-take presets (per-line tonality — voice.profile.add emotions)](#emotion-take-presets-per-line-tonality-voiceprofileadd-emotions)
+  - [Expression knobs (prosody / emotion control)](#expression-knobs-prosody-emotion-control)
+  - [Character-first workflow (two-part — character.)](#character-first-workflow-two-part-character)
+  - [Content formats — shape HOW you author the script](#content-formats-shape-how-you-author-the-script)
+- [Trajectory B — NLE Editing (Existing Footage)](#trajectory-b-nle-editing-existing-footage)
+- [Trajectory C — Audio to Video (A2V)](#trajectory-c-audio-to-video-a2v)
+- [Trajectory D — Video to Video (V2V)](#trajectory-d-video-to-video-v2v)
+- [Media Search & Download](#media-search-download)
+- [Music Sources](#music-sources)
+- [Quality Checks](#quality-checks)
+- [Discovery Tools](#discovery-tools)
+  - [Feature toggles (config-driven gating)](#feature-toggles-config-driven-gating)
+- [Deprecated Tools](#deprecated-tools)
+- [Important Notes](#important-notes)
+
 > This document is the canonical reference for AI agents using OpenScript's MCP tools.
 > Every agent MUST read this before calling any tool.
 

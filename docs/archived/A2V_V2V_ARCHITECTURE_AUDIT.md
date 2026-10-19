@@ -1,5 +1,32 @@
 # Architecture Audit: A2V/V2V Pipeline vs Golden Path
 
+## Contents
+
+- [Executive Summary](#executive-summary)
+- [1. The Three Pipelines Compared](#1-the-three-pipelines-compared)
+  - [1.1 script.tovideo (Golden Path — 1,856 lines)](#11-scripttovideo-golden-path-1856-lines)
+  - [1.2 audio.tovideo (The Problem — 370 lines)](#12-audiotovideo-the-problem-370-lines)
+  - [1.3 reelize.timeline (V2V — ~2,000 lines)](#13-reelizetimeline-v2v-2000-lines)
+- [2. The Fragmentation Problem](#2-the-fragmentation-problem)
+- [3. The Caption Bug](#3-the-caption-bug)
+  - [3.1 audio.tovideo caption flow:](#31-audiotovideo-caption-flow)
+  - [3.2 script.tovideo caption flow:](#32-scripttovideo-caption-flow)
+  - [3.3 The fix:](#33-the-fix)
+- [4. The Validation Gap](#4-the-validation-gap)
+  - [What script.tovideo has (that A2V/V2V lack):](#what-scripttovideo-has-that-a2vv2v-lack)
+  - [What ALL THREE lack:](#what-all-three-lack)
+  - [The fix:](#the-fix)
+- [5. The Refactor Plan](#5-the-refactor-plan)
+  - [Phase 1: Delete the monolithic audio.tovideo handler](#phase-1-delete-the-monolithic-audiotovideo-handler)
+  - [Phase 2: Delete the monolithic reelize.timeline handler](#phase-2-delete-the-monolithic-reelizetimeline-handler)
+  - [Phase 3: Add verify.production to script.tovideo](#phase-3-add-verifyproduction-to-scripttovideo)
+  - [Phase 4: Fix caption rendering](#phase-4-fix-caption-rendering)
+  - [Phase 5: Per-scene backgrounds for A2V](#phase-5-per-scene-backgrounds-for-a2v)
+  - [Phase 6: Music/SFX from Pixabay](#phase-6-musicsfx-from-pixabay)
+- [6. What the Agent Should See](#6-what-the-agent-should-see)
+- [7. Priority Order](#7-priority-order)
+- [8. The Anti-Pattern](#8-the-anti-pattern)
+
 **Date:** 2026-07-23
 **Scope:** Why `audio.to_video` produces garbage and how to fix the architecture
 **Input analyzed:** `tools.rs` (88 MCP handlers), `multilayer_render.rs`, `server.rs`

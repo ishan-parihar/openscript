@@ -1,5 +1,43 @@
 # OpenScript System Architecture v2 — Asset-Development Pipeline & Fallback Discipline
 
+## Contents
+
+- [0. Progress tracker (active / pending / completed)](#0-progress-tracker-active-pending-completed)
+- [1. Executive summary](#1-executive-summary)
+- [2. Part A — Root cause: why procedural cuts were used](#2-part-a-root-cause-why-procedural-cuts-were-used)
+  - [A.1 The two chains have drifted (primary bug)](#a1-the-two-chains-have-drifted-primary-bug)
+  - [A.2 Ranked-0 candidates → silent procedural (query-quality gap)](#a2-ranked-0-candidates-silent-procedural-query-quality-gap)
+  - [A.3 Vision gate is fail-open on quota exhaustion](#a3-vision-gate-is-fail-open-on-quota-exhaustion)
+  - [A.4 Procedural is too easy to reach](#a4-procedural-is-too-easy-to-reach)
+  - [A.5 No source prior anywhere](#a5-no-source-prior-anywhere)
+- [3. Part B — Fallback discipline (Phase 1, P0)](#3-part-b-fallback-discipline-phase-1-p0)
+  - [B.1 One unified acquisition function (kill the drift)](#b1-one-unified-acquisition-function-kill-the-drift)
+  - [B.2 Strict provider hierarchy with per-provider acceptance thresholds](#b2-strict-provider-hierarchy-with-per-provider-acceptance-thresholds)
+  - [B.3 Procedural policy — loud warning + production score penalty (user decision)](#b3-procedural-policy-loud-warning-production-score-penalty-user-decision)
+  - [B.4 Diagnostics (cheap, high value)](#b4-diagnostics-cheap-high-value)
+- [4. Part C — YouTube tier: opt-in for generation, engine for asset-development (user decision)](#4-part-c-youtube-tier-opt-in-for-generation-engine-for-asset-development-user-decision)
+  - [C.1 Generation: YouTube off by default](#c1-generation-youtube-off-by-default)
+  - [C.2 Asset-development: YouTube always available as an acquisition engine](#c2-asset-development-youtube-always-available-as-an-acquisition-engine)
+  - [C.3 Ranking improvements (apply when YouTube is enabled)](#c3-ranking-improvements-apply-when-youtube-is-enabled)
+- [5. Part D — Asset-Development Pipeline (Phase 2, backend-first)](#5-part-d-asset-development-pipeline-phase-2-backend-first)
+  - [D.1 Data model — mcp/assets/userlibraryindex.json](#d1-data-model-mcpassetsuserlibraryindexjson)
+  - [D.2 Tool family (asset. — 6 tools, all routing through routetool)](#d2-tool-family-asset-6-tools-all-routing-through-routetool)
+  - [D.3 Curation workflow (the loop the user described)](#d3-curation-workflow-the-loop-the-user-described)
+  - [D.4 Local indexing (reuse, don't reinvent)](#d4-local-indexing-reuse-dont-reinvent)
+  - [D.5 Generation integration (Phase 3) — the library becomes Tier 1](#d5-generation-integration-phase-3-the-library-becomes-tier-1)
+- [6. Part E — Unified architecture reflection: mcp/ vs a unified mcp/cli](#6-part-e-unified-architecture-reflection-mcp-vs-a-unified-mcpcli)
+  - [E.1 What exists today (the split the user flagged)](#e1-what-exists-today-the-split-the-user-flagged)
+  - [E.2 Target: one binary, two front-ends, one core](#e2-target-one-binary-two-front-ends-one-core)
+  - [E.3 What does NOT change](#e3-what-does-not-change)
+- [7. Implementation phases (each ends with the full R&D gate: build → test → lint → commit → push)](#7-implementation-phases-each-ends-with-the-full-rd-gate-build-test-lint-commit-push)
+  - [Phase 1 (P0) — Fallback discipline](#phase-1-p0-fallback-discipline)
+  - [Phase 2 (P1) — Asset-development backend](#phase-2-p1-asset-development-backend)
+  - [Phase 3 (P1) — Generation integration + YouTube opt-in](#phase-3-p1-generation-integration-youtube-opt-in)
+  - [Phase 4 (P2) — Unified CLI + tools.rs decomposition](#phase-4-p2-unified-cli-toolsrs-decomposition)
+  - [Phase 5 (P3, later) — Tauri curation UI](#phase-5-p3-later-tauri-curation-ui)
+- [8. Risks & mitigations](#8-risks-mitigations)
+- [9. Open questions (non-blocking)](#9-open-questions-non-blocking)
+
 **Status:** PLAN (approved decisions locked in) — not yet implemented
 **Date:** 2026-08-08
 **Owner:** OpenScript R&D

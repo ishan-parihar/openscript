@@ -1,5 +1,36 @@
 # OpenScript MCP Tool Audit Report
 
+## Contents
+
+- [1. Tool Status Summary](#1-tool-status-summary)
+  - [✅ Fully Tested — PASS (18 tools)](#fully-tested-pass-18-tools)
+  - [✅ Tested — PASS (10 tools, lower-coverage)](#tested-pass-10-tools-lower-coverage)
+  - [⚠️ Partial (2 tools — functional but with UX issues)](#partial-2-tools-functional-but-with-ux-issues)
+  - [❌ Blocked — External Dependency Not Available (7 tools)](#blocked-external-dependency-not-available-7-tools)
+  - [⏸️ Not Tested — No Test Assets Available (10 tools)](#not-tested-no-test-assets-available-10-tools)
+- [2. Detailed Issue Analysis & Proposed Fixes](#2-detailed-issue-analysis-proposed-fixes)
+  - [P0 — Blocking / Crash Issues](#p0-blocking-crash-issues)
+    - [P0-1: timeline.autofillbroll + timeline.render → FFmpeg Filter Graph Crash](#p0-1-timelineautofillbroll-timelinerender-ffmpeg-filter-graph-crash)
+    - [P0-2: timeline.render Error Details Hidden in Log File](#p0-2-timelinerender-error-details-hidden-in-log-file)
+  - [P1 — Confusing / Misleading UX for AI Agents](#p1-confusing-misleading-ux-for-ai-agents)
+    - [P1-1: sfx.assign with "hook" Role Returns assetpath: null](#p1-1-sfxassign-with-hook-role-returns-assetpath-null)
+    - [P1-2: Voicebox Dependency Cascade — 7 Tools Fail Without Clear Guidance](#p1-2-voicebox-dependency-cascade-7-tools-fail-without-clear-guidance)
+    - [P1-3: music.search with loopable=true Always Returns 0 Results](#p1-3-musicsearch-with-loopabletrue-always-returns-0-results)
+    - [P1-4: sfx.assign Returns warning but Still Creates Event](#p1-4-sfxassign-returns-warning-but-still-creates-event)
+    - [P1-5: broll.fetch and broll.director Fail Without Pexels API Key](#p1-5-brollfetch-and-brolldirector-fail-without-pexels-api-key)
+  - [P2 — Minor Usability Issues](#p2-minor-usability-issues)
+    - [P2-1: timeline.preview Caps Captions at 60 Characters](#p2-1-timelinepreview-caps-captions-at-60-characters)
+    - [P2-2: music.assign Always Creates Ducking Directives Even Without Dialogue](#p2-2-musicassign-always-creates-ducking-directives-even-without-dialogue)
+    - [P2-3: verify.audio Reports 96kHz Sample Rate on Rendered Output](#p2-3-verifyaudio-reports-96khz-sample-rate-on-rendered-output)
+    - [P2-4: timeline.diff Returns Segment IDs Unsorted](#p2-4-timelinediff-returns-segment-ids-unsorted)
+- [3. Recommendations for AI Agent UX](#3-recommendations-for-ai-agent-ux)
+  - [3.1 Tool Discovery Improvement](#31-tool-discovery-improvement)
+  - [3.2 Progressive Error Recovery](#32-progressive-error-recovery)
+  - [3.3 Consistent Response Schema](#33-consistent-response-schema)
+  - [3.4 Pre-flight Checks](#34-pre-flight-checks)
+- [4. Infrastructure Readiness Checklist](#4-infrastructure-readiness-checklist)
+- [5. Priority Fix Order](#5-priority-fix-order)
+
 **Date:** April 11, 2026  
 **Scope:** All 43 MCP tools — functional testing, UX evaluation for AI agents, proposed fixes  
 **Test Environment:** Linux, FFmpeg n8.1, Remotion v4, Node v25, voicebox Docker on :17493, RTX 2060 SUPER  

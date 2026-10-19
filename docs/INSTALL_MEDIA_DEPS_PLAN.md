@@ -1,5 +1,35 @@
 # Fresh Install: Media & Asset Dependencies Plan
 
+## Contents
+
+- [0. Executive summary](#0-executive-summary)
+- [1. Brainstorm: why “clone and go” fails](#1-brainstorm-why-clone-and-go-fails)
+  - [1.1 Gradient “success” is the wrong failure mode](#11-gradient-success-is-the-wrong-failure-mode)
+  - [1.2 Keys are not bootstrap-first](#12-keys-are-not-bootstrap-first)
+  - [1.3 Music has two universes](#13-music-has-two-universes)
+  - [1.4 SFX is machine-local](#14-sfx-is-machine-local)
+  - [1.5 YT B-roll is a footgun](#15-yt-b-roll-is-a-footgun)
+  - [1.6 HTTP clients need identity](#16-http-clients-need-identity)
+  - [1.7 Design principle](#17-design-principle)
+- [2. Target zero-to-hero flow](#2-target-zero-to-hero-flow)
+- [3. This machine — keys updated (local only)](#3-this-machine-keys-updated-local-only)
+- [4. Dependency matrix](#4-dependency-matrix)
+  - [A. Required for production-grade shorts](#a-required-for-production-grade-shorts)
+  - [B. Strongly recommended](#b-strongly-recommended)
+  - [C. Optional / advanced](#c-optional-advanced)
+- [5. Implementation plan (phased)](#5-implementation-plan-phased)
+  - [Phase I — Config + doctor ✅ / partial](#phase-i-config-doctor-partial)
+  - [Phase II — First-run asset indexes](#phase-ii-first-run-asset-indexes)
+  - [Phase III — Stock path reliability (product code)](#phase-iii-stock-path-reliability-product-code)
+  - [Phase IV — One-command install](#phase-iv-one-command-install)
+  - [Phase V — Validation](#phase-v-validation)
+- [6. bootstrapmedia.sh contract](#6-bootstrapmediash-contract)
+- [7. Remaining gaps by priority](#7-remaining-gaps-by-priority)
+- [8. Acceptance: productionready](#8-acceptance-productionready)
+- [9. Immediate next engineering steps](#9-immediate-next-engineering-steps)
+- [10. Security note](#10-security-note)
+- [11. Suggested iteration commits (AGENTS.md)](#11-suggested-iteration-commits-agentsmd)
+
 **Status:** Implemented (Phase CO–CS foundations) — portable packs + fail-closed + doctor  
 **Date:** 2026-07-16  
 **Goal:** Every new OpenScript install goes from `git clone` → production-grade render without scavenger hunts or silent gradient “success.”

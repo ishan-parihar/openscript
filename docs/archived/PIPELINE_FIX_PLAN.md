@@ -1,5 +1,36 @@
 # OpenScript Full-Pipeline Fix Plan
 
+## Contents
+
+  - [Implementation log](#implementation-log)
+- [0. Diagnosis (what is actually broken)](#0-diagnosis-what-is-actually-broken)
+  - [0.1 What you saw (v3)](#01-what-you-saw-v3)
+  - [0.2 Root-cause map](#02-root-cause-map)
+- [1. Goals / non-goals](#1-goals-non-goals)
+  - [Goals](#goals)
+  - [Non-goals (defer)](#non-goals-defer)
+- [2. Target architecture (signal vs noise end-to-end)](#2-target-architecture-signal-vs-noise-end-to-end)
+- [3. Workstreams (implementation phases)](#3-workstreams-implementation-phases)
+  - [Phase A — Validator: fail closed on “no visual hooks” (1–2 days)](#phase-a-validator-fail-closed-on-no-visual-hooks-12-days)
+  - [Phase B — Providers: make stock actually work (2–3 days)](#phase-b-providers-make-stock-actually-work-23-days)
+  - [Phase C — Music: topic-tagged selection (2–3 days)](#phase-c-music-topic-tagged-selection-23-days)
+  - [Phase D — SFX: use the tagged library you already have (1–2 days)](#phase-d-sfx-use-the-tagged-library-you-already-have-12-days)
+  - [Phase E — Relevance closed loop (2 days)](#phase-e-relevance-closed-loop-2-days)
+  - [Phase F — Golden-path productization (2 days)](#phase-f-golden-path-productization-2-days)
+- [4. KPI v3 weight sketch (after Phase A)](#4-kpi-v3-weight-sketch-after-phase-a)
+- [5. Provider matrix (honest)](#5-provider-matrix-honest)
+- [6. Implementation order & estimates](#6-implementation-order-estimates)
+- [7. Acceptance tests (definition of done)](#7-acceptance-tests-definition-of-done)
+  - [T1 — Procedural majority rejected](#t1-procedural-majority-rejected)
+  - [T2 — Pexels path (key required)](#t2-pexels-path-key-required)
+  - [T3 — Music topic](#t3-music-topic)
+  - [T4 — SFX present](#t4-sfx-present)
+  - [T5 — Cold agent](#t5-cold-agent)
+  - [T6 — Regression](#t6-regression)
+- [8. Immediate actions (today)](#8-immediate-actions-today)
+- [9. Success picture](#9-success-picture)
+- [10. Open decisions (need owner call)](#10-open-decisions-need-owner-call)
+
 **Status:** Implemented (Phases A–F landed 2026-07-15)  
 **Date:** 2026-07-15  
 **Driven by:** Cold-agent trials v2/v3 + production KPI gaps + provider/config audit  

@@ -1,5 +1,31 @@
 # V2V & A2V Workflow Architecture Audit
 
+## Contents
+
+- [1. Executive Summary](#1-executive-summary)
+  - [Key Findings](#key-findings)
+- [2. Detailed Analysis](#2-detailed-analysis)
+  - [2.1 reelize.timeline (Video → Video) — Monolithic Architecture](#21-reelizetimeline-video-video-monolithic-architecture)
+  - [2.2 audio.tovideo (Audio → Video) — Monolithic Architecture](#22-audiotovideo-audio-video-monolithic-architecture)
+  - [2.3 script.tovideo (Golden Path) — Reference Architecture](#23-scripttovideo-golden-path-reference-architecture)
+- [3. Implementation Gap Matrix](#3-implementation-gap-matrix)
+  - [3.1 Missing Atomic Tools for V2V/A2V Agent-Orchestration](#31-missing-atomic-tools-for-v2va2v-agent-orchestration)
+  - [3.2 DRY Violations Between Handlers](#32-dry-violations-between-handlers)
+- [4. Proposed Architecture: Agent-Orchestrated V2V/A2V](#4-proposed-architecture-agent-orchestrated-v2va2v)
+  - [4.1 New Trajectory — Trajectory E: Video/Audio → Video (Agent-Directed)](#41-new-trajectory-trajectory-e-videoaudio-video-agent-directed)
+  - [4.2 New/Upgraded Atomic Tools](#42-newupgraded-atomic-tools)
+  - [4.3 Refactored Handlers (Thin Wrappers)](#43-refactored-handlers-thin-wrappers)
+- [5. Implementation Plan](#5-implementation-plan)
+  - [Phase 1: Extract Atomic Tools (P0 — Unblocks everything)](#phase-1-extract-atomic-tools-p0-unblocks-everything)
+  - [Phase 2: Refactor Handlers to Use Atomic Tools (P1 — Clean up monoliths)](#phase-2-refactor-handlers-to-use-atomic-tools-p1-clean-up-monoliths)
+  - [Phase 3: Documentation & Agent UX (P2 — Agent discoverability)](#phase-3-documentation-agent-ux-p2-agent-discoverability)
+- [6. Risk Assessment](#6-risk-assessment)
+- [7. Success Criteria](#7-success-criteria)
+- [8. Comparison: Before vs After](#8-comparison-before-vs-after)
+  - [Before (Monolithic)](#before-monolithic)
+  - [After (Agentic)](#after-agentic)
+  - [Or Agent Uses Convenience Wrapper (Same as Before)](#or-agent-uses-convenience-wrapper-same-as-before)
+
 > **Date:** July 23, 2026
 > **Scope:** `reelize.timeline` (V2V), `audio.to_video` (A2V), `script.to_video` (golden path reference)
 > **Goal:** Audit monolithic vs agentic patterns, identify implementation gaps, create a plan to atomize V2V/A2V into agentic tool-call sequences.

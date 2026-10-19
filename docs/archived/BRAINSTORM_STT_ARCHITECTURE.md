@@ -1,5 +1,33 @@
 # OpenScript — Ideal STT Pipeline Architecture (Refined)
 
+## Contents
+
+- [Critical Findings](#critical-findings)
+- [Refined Architecture: Single Model + LLM Post-Processing](#refined-architecture-single-model-llm-post-processing)
+  - [Core Philosophy](#core-philosophy)
+  - [Why This Wins](#why-this-wins)
+- [Pipeline Architecture](#pipeline-architecture)
+- [LLM Post-Processor Design](#llm-post-processor-design)
+  - [Prompt Template](#prompt-template)
+  - [Implementation Options](#implementation-options)
+- [Word Alignment: WhisperX (Not NFA)](#word-alignment-whisperx-not-nfa)
+  - [Why Not NFA?](#why-not-nfa)
+  - [WhisperX Approach](#whisperx-approach)
+- [Backend Selection: sherpa-onnx (Recommended)](#backend-selection-sherpa-onnx-recommended)
+  - [Why sherpa-onnx?](#why-sherpa-onnx)
+  - [Integration](#integration)
+- [Deprecation Plan](#deprecation-plan)
+- [Implementation Phases](#implementation-phases)
+  - [Phase 1: Nemotron Integration (Week 1)](#phase-1-nemotron-integration-week-1)
+  - [Phase 2: LLM Post-Processor (Week 1-2)](#phase-2-llm-post-processor-week-1-2)
+  - [Phase 3: WhisperX Alignment (Week 2)](#phase-3-whisperx-alignment-week-2)
+  - [Phase 4: Unified Rust API (Week 2-3)](#phase-4-unified-rust-api-week-2-3)
+  - [Phase 5: Cleanup (Week 3)](#phase-5-cleanup-week-3)
+- [Language Hint Mapping](#language-hint-mapping)
+- [Quality Gates](#quality-gates)
+- [Open Questions](#open-questions)
+- [Summary](#summary)
+
 **Date:** 2026-07-20  
 **Context:** Use Nemotron 3.5 ASR as single unified model + LLM post-processing for Hinglish. Deprecate Trelis.
 
