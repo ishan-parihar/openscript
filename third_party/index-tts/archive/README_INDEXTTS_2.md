@@ -62,7 +62,7 @@
 
 **IndexTTS2.5: Voice beyond language**
 
-[![IndexTTS2.5 Demo](assets/index2.5_video_cover.png)](https://www.bilibili.com/video/BV1uvMk6ZEdK)
+[![IndexTTS2.5 Demo](../assets/index2.5_video_cover.png)](https://www.bilibili.com/video/BV1uvMk6ZEdK)
 
 ### Abstract
 
@@ -87,7 +87,7 @@ Finally, experimental results on multiple datasets show that IndexTTS2 outperfor
 
 **IndexTTS2: The Future of Voice, Now Generating**
 
-[![IndexTTS2 Demo](assets/IndexTTS2-video-pic.png)](https://www.bilibili.com/video/BV136a9zqEk5)
+[![IndexTTS2 Demo](../assets/IndexTTS2-video-pic.png)](https://www.bilibili.com/video/BV136a9zqEk5)
 
 *Click the image to watch the IndexTTS2 introduction video.*
 
@@ -459,7 +459,7 @@ text = "大家好，我现在正在bilibili 体验 ai 科技，说实话，来�
 tts.infer(voice, text, 'gen.wav')
 ```
 
-For more detailed information, see [README_INDEXTTS_1_5](archive/README_INDEXTTS_1_5.md),
+For more detailed information, see [README_INDEXTTS_1_5](README_INDEXTTS_1_5.md),
 or visit the IndexTTS1 repository at <a href="https://github.com/index-tts/index-tts/tree/v1.5.0">index-tts:v1.5.0</a>.
 
 

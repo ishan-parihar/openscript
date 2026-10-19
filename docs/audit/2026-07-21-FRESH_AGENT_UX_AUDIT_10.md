@@ -2,7 +2,7 @@
 
 > **Date:** 2026-07-21
 > **Base Commit:** `85e3828` (Phase 19b)
-> **Prior Audit:** Run #9 (`FRESH_AGENT_UX_AUDIT_9.md`)
+> **Prior Audit:** Run #9 (`docs/audit/2026-07-21-FRESH_AGENT_UX_AUDIT_9.md`)
 > **Topic:** Agent freely chose "The History of Coffee"
 > **Methodology:** Minimal instructions — agent gets only server location, discovers tools via MCP protocol
 

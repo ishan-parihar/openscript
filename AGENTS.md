@@ -2,7 +2,7 @@
 
 > This document is the canonical development protocol for the OpenScript repository.
 > Every agent (human or AI) that touches this codebase MUST follow the rules below.
-> The companion [`AGENT_GUIDE.md`](./AGENT_GUIDE.md) covers the MCP *tool* surface
+> The companion [`AGENT_GUIDE.md`](docs/AGENT_GUIDE.md) covers the MCP *tool* surface
 > for runtime agents; this document covers the *engineering* rules for development
 > agents.
 

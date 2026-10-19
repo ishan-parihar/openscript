@@ -109,4 +109,4 @@
 | Timeline | `/home/ishanp/Downloads/audit26_timeline.json` |
 | Captions ASS | `/home/ishanp/Downloads/audit26_captions.ass` |
 | Full results | `/home/ishanp/Downloads/audit26_results.json` |
-| Audit report | `FRESH_AGENT_UX_AUDIT_26.md` |
+| Audit report | `docs/audit/2026-07-27-FRESH_AGENT_UX_AUDIT_26.md` |

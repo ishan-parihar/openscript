@@ -139,4 +139,4 @@ captions registration are functional. The pipeline is now end-to-end operable.
 | Timeline | `/home/ishanp/Downloads/fresh_agent_timeline.json` |
 | Captions ASS | `/home/ishanp/Downloads/fresh_agent_captions.ass` |
 | Full results | `/home/ishanp/Downloads/fresh_agent_phase4_results.json` |
-| Audit report | `FRESH_AGENT_UX_AUDIT_25.md` (this file) |
+| Audit report | `docs/audit/2026-07-27-FRESH_AGENT_UX_AUDIT_25.md` (this file) |
