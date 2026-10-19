@@ -156,6 +156,10 @@ mcp dev src/openscript_mcp/server.py
 cargo build --release
 ```
 
+## Documentation
+
+Every doc in `docs/` is listed with the question it answers in [docs/PAGE-INDEX.md](docs/PAGE-INDEX.md).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
