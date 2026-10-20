@@ -92,3 +92,8 @@ skills-lock.json
 skills/readme-craft
 .benchmarks/
 .ruff_cache/
+
+# genome runtime state (locks, temp files, recon tokens, read marks)
+*.genome-lock
+*.genome-tmp
+.genome/
