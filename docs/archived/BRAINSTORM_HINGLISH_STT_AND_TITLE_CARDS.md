@@ -130,7 +130,7 @@ This is not worth the effort when we already have:
 
 HyperFrames is **underused**. Currently it only renders the final video composition (main video + b-roll layers). But the HTML+GSAP architecture is perfect for **title card overlays** — animated text, hooks, CTAs, lower thirds.
 
-### Architecture
+### Brainstorm: Architecture Sketch
 
 The `edl_v2_to_html.ts` compiler already generates:
 ```html
